@@ -190,6 +190,8 @@ CrossFrame 是 **explicit-only**：只有用户明确点名 CrossFrame、`crossf
 
 `crossframe-max` 是独立的 v6 世界观前置 meta-runtime。它用于用户明确要求最大尺度、穷尽推演、完整解释、无限制长文、全尺度世界观解释，或要求审查 skill、prompt、agent、工具、模板、脚本和运行协议设计的任务。
 
+Suite release version 是 v5.1.7；`crossframe-max` 使用的 source framework version 是 v6.0。
+
 它的运行核心是先让 AI 加载 v6 判断框架，再把对象建模为局部世界。完整运行会读取 `references/v6-full-source/`、`references/v6-route-map.yaml`、`references/concept-registry/index.md`、`references/concept-contracts/v6-core-contracts.md` 和检索触发策略，随后生成阶段锁、读取台账、命题台账、概念命中台账、举证推理审计、结构底稿和完整长文。
 
 `crossframe-max` 有三个运行档位：

@@ -65,6 +65,15 @@ jobs:
       - name: Validate v5 DLC publication bundle
         run: python scripts/check_v5_dlc_publication_bundle.py --repo .
 
+      - name: Validate CrossFrame Max v6 full source
+        run: python scripts/check_crossframe_max_v6_full_source.py --repo .
+
+      - name: Validate CrossFrame Max registry anchors
+        run: python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
+
+      - name: Validate CrossFrame Max route ledger fixtures
+        run: python scripts/validate_crossframe_max_route_ledger_fixtures.py
+
       - name: Check mirror sync
         run: python scripts/sync_skill_mirrors.py --check
 

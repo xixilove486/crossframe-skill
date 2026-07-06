@@ -30,6 +30,11 @@ ARTIFACTS_TO_SCAN = [
     "max-output-plan.locked.md",
 ]
 
+PRESENT_FALSE_RE = re.compile(
+    r'(?:present\s*["\']?\s*[:=]\s*false|absent\s*["\']?\s*[:=]\s*true)',
+    re.IGNORECASE,
+)
+
 
 def default_skill_root() -> Path:
     script_path = Path(__file__).resolve()
@@ -99,6 +104,18 @@ def parse_registry_concepts(path: Path) -> tuple[set[str], list[str]]:
         if concept:
             concepts.add(concept)
     return concepts, []
+
+
+def check_route_registry_closure(
+    routes: dict[str, dict[str, list[str]]], registry_concepts: set[str], errors: list[str]
+) -> None:
+    for route_key, route in sorted(routes.items()):
+        missing = sorted(set(route.get("required_concepts", [])) - registry_concepts)
+        if missing:
+            errors.append(
+                f"v6-route-map.yaml: route {route_key} required_concepts missing from concept registry: "
+                + ", ".join(missing)
+            )
 
 
 def require_list(data: dict[str, Any], field: str, label: str, errors: list[str]) -> list[Any]:
@@ -183,13 +200,15 @@ def check_concept_hits(data: Any, route: dict[str, list[str]], registry_concepts
     return seen
 
 
-def check_claims(data: Any, route: dict[str, list[str]], errors: list[str]) -> tuple[set[str], set[str]]:
+def check_claims(
+    data: Any, route_key: str | None, route: dict[str, list[str]], errors: list[str]
+) -> tuple[set[str], set[str], set[str]]:
     if not isinstance(data, dict) or not isinstance(data.get("claims"), list):
         errors.append("max-claim-ledger.json: claims must be a list")
-        return set(), set()
+        return set(), set(), set()
     claim_ids: set[str] = set()
     design_ids: set[str] = set()
-    covered_rules: set[str] = set()
+    covered_concepts: set[str] = set()
     for idx, claim in enumerate(data["claims"], start=1):
         if not isinstance(claim, dict):
             errors.append(f"max-claim-ledger.json: claim {idx} must be an object")
@@ -201,20 +220,23 @@ def check_claims(data: Any, route: dict[str, list[str]], errors: list[str]) -> t
             "claim_type",
             "source_anchor",
             "evidence_status",
-            "v6_rule_ids",
-            "design_decision_id",
+            "concept_ids",
             "action_limit",
         ]:
             if not claim.get(field):
                 errors.append(f"max-claim-ledger.json: {claim_id} missing {field}")
+        if isinstance(claim.get("concept_ids"), list):
+            covered_concepts.update(concept for concept in claim["concept_ids"] if isinstance(concept, str))
+        if route_key == "skill_design":
+            for field in ["v6_rule_ids", "design_decision_id"]:
+                if not claim.get(field):
+                    errors.append(f"max-claim-ledger.json: {claim_id} missing {field}")
         if isinstance(claim.get("design_decision_id"), str):
             design_ids.add(claim["design_decision_id"])
-        if isinstance(claim.get("v6_rule_ids"), list):
-            covered_rules.update(rule for rule in claim["v6_rule_ids"] if isinstance(rule, str))
-    missing_rules = sorted(set(route.get("required_concepts", [])) - covered_rules)
-    if missing_rules:
-        errors.append(f"max-claim-ledger.json: route concepts missing from v6_rule_ids: {', '.join(missing_rules)}")
-    return claim_ids, design_ids
+    missing_concepts = sorted(set(route.get("required_concepts", [])) - covered_concepts)
+    if missing_concepts:
+        errors.append(f"max-claim-ledger.json: route concepts missing from concept_ids: {', '.join(missing_concepts)}")
+    return claim_ids, design_ids, covered_concepts
 
 
 def check_audits(data: Any, claim_ids: set[str], design_ids: set[str], errors: list[str]) -> tuple[set[str], set[str]]:
@@ -246,6 +268,23 @@ def check_audits(data: Any, claim_ids: set[str], design_ids: set[str], errors: l
     return audit_claim_ids, audit_design_ids
 
 
+def markdown_lines_for_forbidden_scan(text: str) -> list[tuple[int, str]]:
+    lines: list[tuple[int, str]] = []
+    in_code_block = False
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block or stripped.startswith(">"):
+            continue
+        normalized = stripped.replace("`", "")
+        if PRESENT_FALSE_RE.search(normalized):
+            continue
+        lines.append((line_no, normalized))
+    return lines
+
+
 def check_forbidden_outputs(workspace: Path, route: dict[str, list[str]], errors: list[str]) -> None:
     forbidden_outputs = route.get("forbidden_outputs", [])
     if not forbidden_outputs:
@@ -254,10 +293,12 @@ def check_forbidden_outputs(workspace: Path, route: dict[str, list[str]], errors
         path = workspace / filename
         if not path.exists() or not path.is_file():
             continue
-        text = path.read_text(encoding="utf-8")
+        scan_lines = markdown_lines_for_forbidden_scan(path.read_text(encoding="utf-8"))
         for forbidden in forbidden_outputs:
-            if forbidden in text:
-                errors.append(f"{filename}: forbidden output appears: {forbidden}")
+            for line_no, line in scan_lines:
+                if forbidden in line:
+                    errors.append(f"{filename}:{line_no}: forbidden output appears as final artifact text: {forbidden}")
+                    break
 
 
 def check(workspace: Path, skill_root: Path) -> list[str]:
@@ -266,6 +307,7 @@ def check(workspace: Path, skill_root: Path) -> list[str]:
     errors.extend(route_errors)
     registry_concepts, registry_errors = parse_registry_concepts(skill_root / "references" / "concept-registry" / "index.md")
     errors.extend(registry_errors)
+    check_route_registry_closure(routes, registry_concepts, errors)
     read_plan = read_json(workspace / "max-read-plan.json", errors)
     concept_hits = read_json(workspace / "max-concept-hit-ledger.json", errors)
     claims = read_json(workspace / "max-claim-ledger.json", errors)
@@ -273,8 +315,11 @@ def check(workspace: Path, skill_root: Path) -> list[str]:
     route_key, route = check_route_plan(read_plan, route_version, routes, errors)
     if not route:
         return errors
-    check_concept_hits(concept_hits, route, registry_concepts, errors)
-    claim_ids, design_ids = check_claims(claims, route, errors)
+    seen_concepts = check_concept_hits(concept_hits, route, registry_concepts, errors)
+    claim_ids, design_ids, claim_concepts = check_claims(claims, route_key, route, errors)
+    missing_claim_hits = sorted(claim_concepts - seen_concepts)
+    if missing_claim_hits:
+        errors.append(f"max-claim-ledger.json: concept_ids missing concept hits: {', '.join(missing_claim_hits)}")
     check_audits(audits, claim_ids, design_ids, errors)
     if route_key == "skill_design":
         if not design_ids:

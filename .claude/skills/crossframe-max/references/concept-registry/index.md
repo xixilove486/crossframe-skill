@@ -41,6 +41,10 @@ local structural variable -> concept-registry lookup -> full-source paragraph re
 | 条件势场 | 外部条件, 压力分布, 势场系数, 多层条件场 | `03-world-layer.md` `P0919-P0920`, `P1180-P1219`, `P1464-P1466`; `04-state-layer.md` `P1708-P1718` | 边界与接口, 嵌套耦合, 局部实现, 负向势场螺旋 |
 | 结构负荷 | 维护债, 熵增, 恢复余量下降, 虚稳态 | `03-world-layer.md` `P0921-P0922`, `P1320-P1416`, `P1471-P1472` | 状态坐标, 修复, 有序退场 |
 | 演化相位 | 阶段, 生命周期, 状态坐标, 路径窗口 | `03-world-layer.md` `P0923-P0924`; `04-state-layer.md` `P1520-P1813` | 非线性路径库, 路径置信分层, 有序退场 |
+| 时间不可逆 | 修复窗口, 不可复原, 路径依赖, 已发生伤害 | `03-world-layer.md` `P1467-P1470`; `04-state-layer.md` `P1520-P1813` | 演化相位, 有序退场, 不可穷尽声明 |
+| 演化记忆 | 经验记忆, 制度资产/负债, 记忆保存, 继承经验 | `03-world-layer.md` `P1354-P1417`; `04-state-layer.md` `P1729-P1813` | 有序退场, 良性消亡, 开放性承担行动 |
+| 状态坐标与生命周期 | 状态坐标, 生命周期, 阶段0-6, 时间窗口 | `04-state-layer.md` `P1520-P1813`; `06-tool-layer.md` `P1991-P2120` | 演化相位, 非线性路径库, 路径置信分层 |
+| 路径置信分层 | 路径置信, 概率分层, 反事实边界, 多路径判断 | `04-state-layer.md` `P1604-P1654`; `06-tool-layer.md` `P1991-P2120` | 非线性路径库, 强判断八件套, 不可穷尽声明 |
 | 开放性承担行动 | 爱的操作化边界, 真实成本, 非工具性, 生成事件 | `03-world-layer.md` `P0925-P0933`, `P1478-P1480`, `P1508-P1519`; `09-governance-layer.md` `P3168-P3178` | 超越性窗口, 边界保护, 不可穷尽声明 |
 | 解释准入 | 能否解释, 解释对象, 材料边界, 适用范围 | `02-boundary-layer.md` `P0195-P0275`; `05-interface-layer.md` `P1814-P1846` | 工具准入, 来源-证据-判断-行动上限, 不可判断区 |
 | 工具准入 | 能否使用诊断工具, 输出边界, 工具权限 | `02-boundary-layer.md` `P0276-P0355`; `06-tool-layer.md` `P1858-P1915` | 干涉授权, 过程性产物边界, 强判断八件套 |
@@ -63,6 +67,7 @@ local structural variable -> concept-registry lookup -> full-source paragraph re
 | 反领域殖民 | 一个领域话语吞并其他领域, 专业接口越权 | `02-boundary-layer.md` `P0195-P0275`; `09-governance-layer.md` `P2886-P2950` | 解释准入, 工具准入, 正当不透明 |
 | 概念武器化 | 用概念压人, 用框架定罪, 用理论取消申诉 | `09-governance-layer.md` `P2886-P2950`; `09-governance-layer.md` `P3264-P3265` | 低权力主体保护, 过程性产物边界, 强判断八件套 |
 | 正当不透明 | 不可完全解释, 隐私边界, 不透明保护, 非文本证据 | `09-governance-layer.md` `P3168-P3178`; `02-boundary-layer.md` `P0195-P0275` | 不可穷尽声明, 解释准入, 反模型殖民 |
+| 不可穷尽声明 | 不可判断区, 解释边界, 未穷尽资料, 不终审 | `09-governance-layer.md` `P3168-P3178`; `02-boundary-layer.md` `P0195-P0275` | 正当不透明, 开放断言, 解释准入 |
 | 非文本证据 | 行动痕迹, 沉默, 退出, 身体/时间成本, 非话语材料 | `05-interface-layer.md` `P1814-P1849`; `06-tool-layer.md` `P1850-P1857`; `02-boundary-layer.md` `P0271-P0275` | 来源-证据-判断-行动上限, 低权力主体保护 |
 | 虚稳态 | 表面稳定, 高维护债, 失真反馈, 结构脆弱 | `03-world-layer.md` `P1320-P1416`; `04-state-layer.md` `P1604-P1654` | 结构负荷, 反馈写回, 非线性路径库 |
 | 有序退场 | 保护性退出, 锚点移交, 资源释放, 演化记忆保存 | `04-state-layer.md` `P1729-P1813`; `07-intervention-layer.md` `P2428-P2546`; `08-application-layer.md` `P2547-P2590` | 良性消亡, 不浪费爱原则, T0-T4 恢复与再承接 |

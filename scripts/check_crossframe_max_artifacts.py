@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -200,6 +202,11 @@ FORBIDDEN_FINAL_MARKERS = [
 MIN_ESSAY_TO_DOSSIER_RATIO = 1.6
 STRONG_ESSAY_TO_DOSSIER_RATIO = 2.2
 MAX_ESSAY_TO_DOSSIER_RATIO = 3.0
+MIN_DOSSIER_SECTION_CHARS = 32
+MAX_CONSECUTIVE_REPEATED_LINES = 5
+MAX_REPEATED_LINE_RATIO = 0.20
+MAX_HEADING_LINE_RATIO = 0.45
+CLAIM_OR_SOURCE_RE = re.compile(r"\bCL[A-Za-z0-9_-]*\b|source_anchor")
 
 DEFAULT_FILENAMES = {
     "manifest": "max-artifact-manifest.md",
@@ -295,6 +302,61 @@ def check_ordered_headings(text: str, headings: list[str], label: str, errors: l
         previous = current
 
 
+def heading_positions(text: str, headings: list[str]) -> list[tuple[str, int]]:
+    lines = text.splitlines()
+    positions: list[tuple[str, int]] = []
+    for heading in headings:
+        for idx, line in enumerate(lines):
+            if line.startswith(heading):
+                positions.append((heading, idx))
+                break
+    return positions
+
+
+def check_heading_sections_nonempty(text: str, headings: list[str], label: str, errors: list[str]) -> None:
+    lines = text.splitlines()
+    positions = heading_positions(text, headings)
+    if len(positions) != len(headings):
+        return
+    for index, (heading, start) in enumerate(positions):
+        end = positions[index + 1][1] if index + 1 < len(positions) else len(lines)
+        section = "\n".join(line for line in lines[start + 1 : end] if line.strip())
+        section_chars = visible_chars(section)
+        if section_chars < MIN_DOSSIER_SECTION_CHARS:
+            errors.append(
+                f"{label}: heading section too thin: {heading} "
+                f"({section_chars} visible chars, required>={MIN_DOSSIER_SECTION_CHARS})"
+            )
+
+
+def check_repetitive_filler(text: str, label: str, errors: list[str]) -> None:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return
+    heading_lines = [line for line in lines if line.startswith("#")]
+    if len(lines) >= 10 and len(heading_lines) / len(lines) > MAX_HEADING_LINE_RATIO:
+        errors.append(f"{label}: heading-to-content ratio too high for a completed artifact")
+
+    previous = None
+    repeated = 0
+    for line in lines:
+        if line == previous:
+            repeated += 1
+            if repeated >= MAX_CONSECUTIVE_REPEATED_LINES:
+                errors.append(f"{label}: consecutive repeated line filler detected")
+                break
+        else:
+            previous = line
+            repeated = 1
+
+    countable = [line for line in lines if not line.startswith("#") and len(line) >= 8]
+    if len(countable) < 12:
+        return
+    line, count = Counter(countable).most_common(1)[0]
+    if count >= 6 and count / len(countable) > MAX_REPEATED_LINE_RATIO:
+        errors.append(f"{label}: repeated template line filler detected: {line[:60]}")
+
+
 def check_no_template_truncation(text: str, errors: list[str]) -> None:
     if "## max-unexhaustible-declaration" in text and "## 证据与台账" not in text:
         errors.append(
@@ -321,6 +383,16 @@ def check_longform_dominance(dossier: str, essay: str, errors: list[str]) -> Non
             f"max-essay visible chars must be at least {MIN_ESSAY_TO_DOSSIER_RATIO:.1f}x max-dossier "
             f"(essay={essay_chars}, dossier={dossier_chars}, required>={required_chars})"
         )
+
+
+def check_essay_claim_or_source_references(essay: str, claim_ids: set[str], errors: list[str]) -> None:
+    if not claim_ids:
+        return
+    if any(claim_id in essay for claim_id in claim_ids):
+        return
+    if CLAIM_OR_SOURCE_RE.search(essay):
+        return
+    errors.append("max-essay.md: final explanation must reference claim_id or source_anchor from structured ledgers")
 
 
 def check_no_incomplete_final(text: str, label: str, errors: list[str]) -> None:
@@ -512,19 +584,26 @@ def check_crossframe_max_artifacts(workspace: Path, skill_root: Path | None = No
     essay = read_text(workspace / DEFAULT_FILENAMES["essay"], errors)
     ledger = read_text(workspace / DEFAULT_FILENAMES["ledger"], errors)
     index = read_text(workspace / DEFAULT_FILENAMES["index"], errors)
+    claim_ids_for_essay = (
+        ids_from_claim_ledger(workspace, errors) if (workspace / "max-claim-ledger.json").exists() else set()
+    )
 
     if manifest:
         check_markers(manifest, REQUIRED_MANIFEST_MARKERS, "max-artifact-manifest.md", errors)
         check_no_incomplete_final(manifest, "max-artifact-manifest.md", errors)
     if dossier:
         check_ordered_headings(dossier, REQUIRED_DOSSIER_HEADINGS, "max-dossier.md", errors)
+        check_heading_sections_nonempty(dossier, REQUIRED_DOSSIER_HEADINGS, "max-dossier.md", errors)
         check_markers(dossier, REQUIRED_DOSSIER_MARKERS, "max-dossier.md", errors)
         check_markers(dossier, REQUIRED_FULL_SOURCE_FILES, "max-dossier.md", errors)
         check_no_incomplete_final(dossier, "max-dossier.md", errors)
         check_no_template_truncation(dossier, errors)
+        check_repetitive_filler(dossier, "max-dossier.md", errors)
     if essay:
         check_markers(essay, REQUIRED_ESSAY_MARKERS, "max-essay.md", errors)
         check_no_incomplete_final(essay, "max-essay.md", errors)
+        check_essay_claim_or_source_references(essay, claim_ids_for_essay, errors)
+        check_repetitive_filler(essay, "max-essay.md", errors)
     if dossier and essay:
         check_longform_dominance(dossier, essay, errors)
     if ledger:

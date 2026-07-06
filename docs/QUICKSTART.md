@@ -65,6 +65,9 @@ python scripts/validate_claim_ledger_schema_fixtures.py --repo .
 python scripts/validate_v5_dlc_quantification_schema_fixtures.py --repo .
 python scripts/check_v5_dlc_casebook_trials.py --repo .
 python scripts/check_v5_dlc_publication_bundle.py --repo .
+python scripts/check_crossframe_max_v6_full_source.py --repo .
+python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
+python scripts/validate_crossframe_max_route_ledger_fixtures.py
 python scripts/sync_skill_mirrors.py --check
 bash -n scripts/install-codex.sh
 python -m py_compile scripts/*.py
