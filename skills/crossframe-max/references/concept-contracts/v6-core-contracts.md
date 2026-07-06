@@ -125,3 +125,192 @@
 - `downgrade_if`：没有检查正式/非正式通道，或只凭结果反推封闭。
 - `stop_if`：材料不足以判断通道是否存在、是否可用、是否有报复成本。
 - `withdraw_if`：发现有效申诉/退出/反证/纠错通道真实存在，并且低权力主体可安全使用。
+
+## 时间不可逆
+
+- `allowed_when`：判断依赖修复窗口、路径依赖、不可复原损失或已发生行动对后续结构的约束。
+- `forbidden_when`：把不可逆写成宿命论、历史必然、放弃修复或追责取消。
+- `required_inputs`：时间窗口、已发生行动、不可复原部分、可新建结构、相关 `source_paragraph_ids`。
+- `downgrade_if`：只能说明时间经过，不能说明结构窗口或损失已经改变。
+- `stop_if`：继续推理会把可修复对象写成不可挽回。
+- `withdraw_if`：后续证据显示关键窗口仍存在，或所谓损失可以通过新结构承接。
+
+## 演化记忆
+
+- `allowed_when`：可以识别经验、失败教训、制度资产/负债、记忆载体或跨阶段继承机制。
+- `forbidden_when`：把情绪记忆、怀旧叙事或宣传口号直接写成可继承结构资产。
+- `required_inputs`：记忆内容、载体、继承路径、污染风险、清除/保存边界、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法说明记忆如何被记录、传递、再解释或进入下一轮行动。
+- `stop_if`：材料只支持个人回忆，不支持结构性继承。
+- `withdraw_if`：发现记忆被系统性篡改、清除、污染，或主要服务于创伤再生产。
+
+## 有序退场
+
+- `allowed_when`：结构修复不再安全或不再必要，需要保护主体、转移资源、保存记忆和外部承接。
+- `forbidden_when`：把退场写成逃避责任、抛弃低权力主体、终止追责或浪漫化牺牲。
+- `required_inputs`：退场触发条件、受影响主体、资源转移、记忆保存、留下者保护、相关 `source_paragraph_ids`。
+- `downgrade_if`：退出路径、承接对象或保护条件不清楚。
+- `stop_if`：退场建议会增加暴露、报复、资源剥夺或责任断裂。
+- `withdraw_if`：出现可安全修复路径，或退场条件被证明尚未触发。
+
+## 不可穷尽声明
+
+- `allowed_when`：材料、视角、主体位置、外部事实或未来路径仍有不可消除缺口。
+- `forbidden_when`：用不可穷尽掩盖证据不足、逃避判断、制造神秘化或免除撤回义务。
+- `required_inputs`：已读边界、未读队列、不可判断区、撤回条件、下一步补证入口、相关 `source_paragraph_ids`。
+- `downgrade_if`：不可穷尽声明没有指明具体缺口或补证路径。
+- `stop_if`：继续输出会把未穷尽材料写成终审。
+- `withdraw_if`：后续补证消除了相关缺口，或声明被用来阻止反证。
+
+## 正当不透明
+
+- `allowed_when`：隐私、沉默、非文本证据、低权力主体安全或位置遮蔽构成合理不可完全解释边界。
+- `forbidden_when`：把不透明当作免证、拒绝复核、权力遮蔽或概念神秘化。
+- `required_inputs`：不透明来源、保护对象、可说边界、不可说边界、替代证据、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法区分保护性不透明与证据缺席。
+- `stop_if`：继续解释会暴露隐私、制造二次伤害或强迫主体自证。
+- `withdraw_if`：发现不透明被强势主体用于逃避责任或压制申诉。
+
+## 状态坐标与生命周期
+
+- `allowed_when`：需要描述对象在特定层级、时间窗口和结构变量组合下的阶段位置。
+- `forbidden_when`：把阶段当成线性命运、价值等级、全体对象必经路径或进步叙事。
+- `required_inputs`：对象、层级、时间窗口、并行子系统、反向条件、暂停判断条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：状态判断缺少尺度、窗口或可撤回条件。
+- `stop_if`：继续推理会从阶段标签直接推出命运。
+- `withdraw_if`：后续证据显示对象处于并行状态、回退、休眠、分裂或外部接管。
+
+## 非线性路径库
+
+- `allowed_when`：对象可能出现跳阶、回退、休眠、分裂、合并、外部接管、吞并或良性消亡。
+- `forbidden_when`：把路径库当成任意想象、单一路径预言或反事实文学。
+- `required_inputs`：当前坐标、候选路径、触发条件、反向条件、路径置信、相关 `source_paragraph_ids`。
+- `downgrade_if`：路径缺少触发条件、证据锚点或置信分层。
+- `stop_if`：材料不足以区分路径候选。
+- `withdraw_if`：关键触发条件被证伪，或路径已被现实事件排除。
+
+## 路径置信分层
+
+- `allowed_when`：多个未来路径或历史解释路径并存，需要区分高/中/低置信和不可判断区。
+- `forbidden_when`：把低置信路径写成结论，或用概率词包装无证据猜测。
+- `required_inputs`：路径列表、支持证据、反向证据、触发条件、撤回条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法说明路径之间的证据差异。
+- `stop_if`：路径分层会制造确定性幻觉或行动误导。
+- `withdraw_if`：新证据改变路径排序，或某路径进入不可判断区。
+
+## 虚稳态
+
+- `allowed_when`：表面稳定依赖高维护债、反馈失真、低恢复余量或指标健康掩盖脆弱性。
+- `forbidden_when`：把任何稳定、忙碌、压力或短期平静都叫作虚稳态。
+- `required_inputs`：稳定表象、维护成本、反馈失真、恢复余量、破裂信号、相关 `source_paragraph_ids`。
+- `downgrade_if`：只能证明系统稳定，不能证明稳定依赖隐藏成本。
+- `stop_if`：缺少负荷承接者或反馈失真证据。
+- `withdraw_if`：证据显示稳定来自真实恢复能力，而非维护债遮蔽。
+
+## 干涉授权
+
+- `allowed_when`：从解释进入行动、修复、保护、撤离、治理或资源配置建议前，需要确认授权和上限。
+- `forbidden_when`：从诊断直接跳到处分、惩罚、公开标签、资源剥夺或现实处置。
+- `required_inputs`：行动目的、授权来源、受影响主体、停止条件、回滚方式、行动上限、相关 `source_paragraph_ids`。
+- `downgrade_if`：授权来源、风险边界或回滚机制不清楚。
+- `stop_if`：行动会越过事实、法律、伦理、低权力主体保护或用户授权。
+- `withdraw_if`：发现授权不存在、主体拒绝、风险升高或行动被误用。
+
+## 低权力主体保护
+
+- `allowed_when`：判断或行动可能影响受害者、沉默者、退出者、无法申诉者或低可见主体。
+- `forbidden_when`：用保护名义代替主体意愿、制造公开暴露、要求继续承接或取消责任链。
+- `required_inputs`：低权力主体位置、风险、退出权、申诉权、反报复保护、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法识别受影响主体或其安全条件。
+- `stop_if`：输出会增加二次伤害、报复、曝光或证明负担。
+- `withdraw_if`：主体位置判断错误，或保护建议被强势主体利用。
+
+## 责任链硬规则
+
+- `allowed_when`：需要防止意义、爱、复杂性、疗愈或组织利益取消伤害事实和补证义务。
+- `forbidden_when`：把责任链简化为道德归罪、人格审判或单向惩罚。
+- `required_inputs`：伤害事实、责任主体、补证义务、保护边界、不可取消条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：事实、责任、补证义务或主体边界缺任一项。
+- `stop_if`：继续解释会替代正式调查或扩大无证据定责。
+- `withdraw_if`：关键事实被推翻，或责任主体位置设错。
+
+## T0-T4 恢复与再承接
+
+- `allowed_when`：需要把修复、疗愈、保护、再承接、撤离或转移排列为可停止的操作阶段。
+- `forbidden_when`：把 T0-T4 当成线性康复剧本、强迫和解路径或继续忍耐义务。
+- `required_inputs`：安全条件、信任载体、修复接口、再承接条件、撤离触发、相关 `source_paragraph_ids`。
+- `downgrade_if`：阶段条件、停止权或回滚路径不清楚。
+- `stop_if`：修复建议会压低安全条件或要求低权力主体继续承接。
+- `withdraw_if`：T0 安全条件失效，或 T4 触发条件成立。
+
+## 过程性产物边界
+
+- `allowed_when`：输出是 AI 报告、审查、诊断、台账、模板、评分或其他过程性材料。
+- `forbidden_when`：过程性产物被写成事实证明、现实终审、处分授权或机构结论。
+- `required_inputs`：产物用途、输入边界、不能证明什么、复核入口、撤回条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：产物缺少边界、复核或撤回机制。
+- `stop_if`：产物会直接进入现实处置、公开定性或资源分配。
+- `withdraw_if`：发现产物被用于契约外用途或越过行动上限。
+
+## 来源-证据-判断-行动上限
+
+- `allowed_when`：任何 claim 需要从来源进入证据链、判断档位和行动边界。
+- `forbidden_when`：只给来源编号、不说明证据能证明什么、不能证明什么和行动上限。
+- `required_inputs`：source_anchor、source_paragraph_ids、claim_id、证据档位、反向证据、行动上限。
+- `downgrade_if`：来源、证据、判断或行动上限任一环缺失。
+- `stop_if`：没有反证入口或撤回条件。
+- `withdraw_if`：来源失效、证据不支持 claim，或行动上限被输出突破。
+
+## 开放断言
+
+- `allowed_when`：证据不足以终审，但足以形成低强度、可追问、可撤回的候选陈述。
+- `forbidden_when`：把开放断言包装成确定结论、公共定性或行动命令。
+- `required_inputs`：claim_id、证据边界、反证入口、降档条件、撤回条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：开放断言缺少可检验条件或撤回路径。
+- `stop_if`：表达会被读成强判断或现实授权。
+- `withdraw_if`：反证成立，或材料边界不足以保留候选判断。
+
+## 命题验证表
+
+- `allowed_when`：需要逐条检查 claim 的来源、证据、概念、推理、反证、降档和撤回条件。
+- `forbidden_when`：把表格填写当成证明，或用格式完整替代证据有效。
+- `required_inputs`：claim、source_anchor、concept_ids、evidence_status、counterevidence、downgrade_condition、withdrawal_condition。
+- `downgrade_if`：任一验证项为空、泛化或无法回指材料。
+- `stop_if`：命题验证表不能区分事实、推断和行动建议。
+- `withdraw_if`：表格回指失效、claim 被拆分，或反向证据改变判断。
+
+## 强判断八件套
+
+- `allowed_when`：强判断必须同时具备来源、证据、推理、概念契约、反证、校准、撤回和行动上限。
+- `forbidden_when`：从词命中、概念密度、语感、单一材料或框架推演直接形成强判断。
+- `required_inputs`：source_anchor、source_paragraph_ids、claim_id、concept_ids、counterevidence、calibration_rounds、withdrawal_condition、action_limit。
+- `downgrade_if`：八件套任一项缺失、空泛或不能回指材料。
+- `stop_if`：强判断会替代调查、法律程序、医疗心理判断或机构审查。
+- `withdraw_if`：关键来源失效、反例成立、主体位置错置或行动上限被突破。
+
+## 反模型殖民
+
+- `allowed_when`：AI、模型语言、评分、诊断或模板可能压过现实主体、材料边界或专业程序。
+- `forbidden_when`：把反模型殖民当成拒绝工具、拒绝证据或拒绝自动化的口号。
+- `required_inputs`：模型位置、受影响主体、输出路径、现实后果、复核入口、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法说明模型语言如何进入现实结构。
+- `stop_if`：输出会成为强势主体背书、处分依据或事实替代。
+- `withdraw_if`：确认输出只在低风险内部草稿中使用且有明确复核边界。
+
+## 反领域殖民
+
+- `allowed_when`：一个领域的话语、指标、专业接口或制度逻辑正在吞并其他领域判断边界。
+- `forbidden_when`：把跨领域引用、专业协作或必要翻译都视为殖民。
+- `required_inputs`：领域边界、接口关系、被吞并对象、替代证据、复核机制、相关 `source_paragraph_ids`。
+- `downgrade_if`：只能证明领域差异，不能证明越权吞并。
+- `stop_if`：继续输出会取消必要专业接口或制造反专业姿态。
+- `withdraw_if`：证据显示领域接口有授权、复核和边界保护。
+
+## 概念武器化
+
+- `allowed_when`：概念、框架、理论或诊断语言被用于压制申诉、定罪、羞辱、消除复杂性或越权处置。
+- `forbidden_when`：把严肃批评、边界提醒或证据要求都说成概念武器化。
+- `required_inputs`：使用者位置、被影响主体、概念用途、现实后果、反证与撤回条件、相关 `source_paragraph_ids`。
+- `downgrade_if`：无法说明概念如何造成现实压制或行动越界。
+- `stop_if`：判断本身会变成新的概念武器。
+- `withdraw_if`：后续证据显示概念只是内部分析工具，未进入压制或处置链。

@@ -2890,6 +2890,10 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
     for needle in [
         "parse_route_map",
         "parse_registry_concepts",
+        "parse_registry_anchor_map",
+        "parse_contract_headings",
+        "source_ranges_from_registry does not match registry anchors",
+        "contract_id heading not found",
         "route_required_concepts",
         "route_forbidden_outputs_checked",
         "design_decision_id",

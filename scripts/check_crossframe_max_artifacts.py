@@ -206,7 +206,7 @@ MIN_DOSSIER_SECTION_CHARS = 32
 MAX_CONSECUTIVE_REPEATED_LINES = 5
 MAX_REPEATED_LINE_RATIO = 0.20
 MAX_HEADING_LINE_RATIO = 0.45
-CLAIM_OR_SOURCE_RE = re.compile(r"\bCL[A-Za-z0-9_-]*\b|source_anchor")
+SOURCE_PARAGRAPH_RE = re.compile(r"\bP\d{4}\b")
 
 DEFAULT_FILENAMES = {
     "manifest": "max-artifact-manifest.md",
@@ -385,14 +385,17 @@ def check_longform_dominance(dossier: str, essay: str, errors: list[str]) -> Non
         )
 
 
-def check_essay_claim_or_source_references(essay: str, claim_ids: set[str], errors: list[str]) -> None:
-    if not claim_ids:
+def check_essay_claim_or_source_references(
+    essay: str, claim_ids: set[str], source_paragraph_ids: set[str], errors: list[str]
+) -> None:
+    if not claim_ids and not source_paragraph_ids:
         return
     if any(claim_id in essay for claim_id in claim_ids):
         return
-    if CLAIM_OR_SOURCE_RE.search(essay):
+    essay_source_ids = set(SOURCE_PARAGRAPH_RE.findall(essay))
+    if source_paragraph_ids & essay_source_ids:
         return
-    errors.append("max-essay.md: final explanation must reference claim_id or source_anchor from structured ledgers")
+    errors.append("max-essay.md: final explanation must reference a real claim_id or source_paragraph_id from structured ledgers")
 
 
 def check_no_incomplete_final(text: str, label: str, errors: list[str]) -> None:
@@ -418,6 +421,22 @@ def ids_from_claim_ledger(workspace: Path, errors: list[str]) -> set[str]:
         for claim in data["claims"]
         if isinstance(claim, dict) and isinstance(claim.get("claim_id"), str)
     }
+
+
+def source_ids_from_claim_ledger(workspace: Path, errors: list[str]) -> set[str]:
+    data = read_json_file(workspace / "max-claim-ledger.json", errors, "structured ledger")
+    if not isinstance(data, dict) or not isinstance(data.get("claims"), list):
+        return set()
+    source_ids: set[str] = set()
+    for claim in data["claims"]:
+        if not isinstance(claim, dict) or not isinstance(claim.get("source_paragraph_ids"), list):
+            continue
+        source_ids.update(
+            source_id
+            for source_id in claim["source_paragraph_ids"]
+            if isinstance(source_id, str) and SOURCE_PARAGRAPH_RE.fullmatch(source_id)
+        )
+    return source_ids
 
 
 def check_phase_lock_artifacts(workspace: Path, errors: list[str]) -> None:
@@ -587,6 +606,9 @@ def check_crossframe_max_artifacts(workspace: Path, skill_root: Path | None = No
     claim_ids_for_essay = (
         ids_from_claim_ledger(workspace, errors) if (workspace / "max-claim-ledger.json").exists() else set()
     )
+    source_ids_for_essay = (
+        source_ids_from_claim_ledger(workspace, errors) if (workspace / "max-claim-ledger.json").exists() else set()
+    )
 
     if manifest:
         check_markers(manifest, REQUIRED_MANIFEST_MARKERS, "max-artifact-manifest.md", errors)
@@ -602,7 +624,7 @@ def check_crossframe_max_artifacts(workspace: Path, skill_root: Path | None = No
     if essay:
         check_markers(essay, REQUIRED_ESSAY_MARKERS, "max-essay.md", errors)
         check_no_incomplete_final(essay, "max-essay.md", errors)
-        check_essay_claim_or_source_references(essay, claim_ids_for_essay, errors)
+        check_essay_claim_or_source_references(essay, claim_ids_for_essay, source_ids_for_essay, errors)
         check_repetitive_filler(essay, "max-essay.md", errors)
     if dossier and essay:
         check_longform_dominance(dossier, essay, errors)

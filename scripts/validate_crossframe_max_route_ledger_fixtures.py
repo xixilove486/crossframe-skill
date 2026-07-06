@@ -17,7 +17,7 @@ from check_crossframe_max_artifacts import (
     check_crossframe_max_artifacts,
 )
 from check_crossframe_max_read_ledger import EXPECTED_FILE_RANGES, EXPECTED_TOTAL_PARAGRAPHS
-from check_crossframe_max_route_ledgers import check
+from check_crossframe_max_route_ledgers import check, paragraph_range_tuple, parse_registry_anchor_map
 
 
 SKILL_DESIGN_CONCEPTS = [
@@ -130,10 +130,37 @@ ROUTE_FIXTURES = {
 }
 
 ROUTE_CONCEPTS = SKILL_DESIGN_CONCEPTS
+_REGISTRY_ANCHOR_MAP: dict[str, set[str]] | None = None
 
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def registry_anchor_map() -> dict[str, set[str]]:
+    global _REGISTRY_ANCHOR_MAP
+    if _REGISTRY_ANCHOR_MAP is None:
+        anchor_map, errors = parse_registry_anchor_map(
+            repo_root() / "skills" / "crossframe-max" / "references" / "concept-registry" / "index.md"
+        )
+        if errors:
+            raise AssertionError(f"registry anchor map failed: {errors}")
+        _REGISTRY_ANCHOR_MAP = anchor_map
+    return _REGISTRY_ANCHOR_MAP
+
+
+def sorted_anchor_ranges(concept: str) -> list[str]:
+    ranges = registry_anchor_map().get(concept)
+    if not ranges:
+        raise AssertionError(f"missing registry anchors for fixture concept: {concept}")
+    return sorted(ranges, key=lambda value: paragraph_range_tuple(value) or (9999, 9999))
+
+
+def first_source_id(ranges: list[str]) -> str:
+    parsed = paragraph_range_tuple(ranges[0])
+    if parsed is None:
+        raise AssertionError(f"invalid fixture range: {ranges[0]}")
+    return f"P{parsed[0]:04d}"
 
 
 def base_fixture(route_key: str = "skill_design") -> dict[str, object]:
@@ -141,26 +168,29 @@ def base_fixture(route_key: str = "skill_design") -> dict[str, object]:
     route_concepts = route["concepts"]
     concept_hits = []
     for index, concept in enumerate(route_concepts, start=1):
+        concept_ranges = sorted_anchor_ranges(concept)
+        source_id = first_source_id(concept_ranges)
         concept_hits.append(
             {
                 "concept_id": concept,
                 "hit_type": "direct",
-                "trigger_variable": f"skill-design-variable-{index}",
+                "trigger_variable": f"{route_key}-variable-{index}",
                 "registry_anchor": "concept-registry/index.md",
-                "source_ranges_from_registry": ["P0276-P0355"],
-                "source_ranges_read": ["P0276-P0355"],
-                "source_paragraph_ids": ["P0276"],
+                "source_ranges_from_registry": concept_ranges,
+                "source_ranges_read": concept_ranges,
+                "source_paragraph_ids": [source_id],
                 "contract_id": f"v6-core-contracts.md#{concept}",
                 "contract_checked": True,
                 "downgraded_after_source_read": False,
             }
         )
+    claim_source_id = first_source_id(sorted_anchor_ranges(route_concepts[0]))
     claim = {
         "claim_id": "CL1",
         "claim": f"The {route_key} route must keep route concepts, evidence, and action limits separated.",
         "claim_type": "mechanism_candidate",
-        "source_anchor": "P0276-P0355",
-        "source_paragraph_ids": ["P0276"],
+        "source_anchor": sorted_anchor_ranges(route_concepts[0])[0],
+        "source_paragraph_ids": [claim_source_id],
         "concept_ids": route_concepts,
         "evidence_status": "full",
         "counterevidence_status": "searched",
@@ -170,8 +200,8 @@ def base_fixture(route_key: str = "skill_design") -> dict[str, object]:
     }
     audit = {
         "claim_id": "CL1",
-        "source_paragraph_ids": ["P0276"],
-        "evidence_chain": ["P0276-P0355", "P3103-P3116"],
+        "source_paragraph_ids": [claim_source_id],
+        "evidence_chain": [sorted_anchor_ranges(route_concepts[0])[0], "P3103-P3116"],
         "reasoning_chain": [
             "route key -> required concept set",
             "required concept set -> concept hit ledger",
@@ -433,6 +463,24 @@ def main() -> int:
     fake_concept["max-concept-hit-ledger.json"]["concept_hits"][0]["concept_id"] = "不存在概念"  # type: ignore[index]
     run_case("fake-concept-id", fake_concept, "not found in concept registry")
 
+    wrong_source_range = copy.deepcopy(base_fixture("history_analysis"))
+    wrong_source_range["max-concept-hit-ledger.json"]["concept_hits"][0]["source_ranges_from_registry"] = [  # type: ignore[index]
+        "P0276-P0355"
+    ]
+    run_case("wrong-registry-source-range", wrong_source_range, "source_ranges_from_registry does not match")
+
+    source_id_outside_read = copy.deepcopy(base_fixture("history_analysis"))
+    source_id_outside_read["max-concept-hit-ledger.json"]["concept_hits"][0]["source_paragraph_ids"] = [  # type: ignore[index]
+        "P0276"
+    ]
+    run_case("source-id-outside-read", source_id_outside_read, "source_paragraph_ids not covered")
+
+    missing_contract_heading = copy.deepcopy(valid)
+    missing_contract_heading["max-concept-hit-ledger.json"]["concept_hits"][0]["contract_id"] = (  # type: ignore[index]
+        "v6-core-contracts.md#不存在契约"
+    )
+    run_case("missing-contract-heading", missing_contract_heading, "contract_id heading not found")
+
     missing_v6_rule = copy.deepcopy(valid)
     del missing_v6_rule["max-claim-ledger.json"]["claims"][0]["v6_rule_ids"]  # type: ignore[index]
     run_case("missing-v6-rule-ids", missing_v6_rule, "missing v6_rule_ids")
@@ -491,7 +539,7 @@ def main() -> int:
             encoding="utf-8",
         )
         errors = check_crossframe_max_artifacts(workspace, repo_root() / "skills" / "crossframe-max")
-        if not any("must reference claim_id or source_anchor" in error for error in errors):
+        if not any("must reference a real claim_id or source_paragraph_id" in error for error in errors):
             raise AssertionError(f"claim reference fixture: expected claim/source failure, got {errors}")
 
     with tempfile.TemporaryDirectory(prefix="crossframe-max-repetition-") as temp_dir:
