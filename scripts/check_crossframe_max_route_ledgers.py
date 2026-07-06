@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import json
 import re
 import sys
@@ -35,6 +37,63 @@ PRESENT_FALSE_RE = re.compile(
     re.IGNORECASE,
 )
 PARAGRAPH_RANGE_RE = re.compile(r"P(\d{4})(?:-P?(\d{4}))?")
+ANCHOR_WITH_FILE_RE = re.compile(r"`([^`]+\.md)`\s+`(P\d{4})(?:-P?(\d{4}))?`")
+VALIDATOR_NAME = "check_crossframe_max_route_ledgers"
+
+PHASE_DOWNSTREAM = {
+    "read_plan": [
+        "max-source-snapshot.json",
+        "max-worldview-capsule.locked.md",
+        "max-local-world-model.locked.md",
+        "max-concept-hit-ledger.json",
+        "max-claim-board.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "concept_hit": [
+        "max-claim-ledger.json",
+        "max-claim-board.json",
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "claim": [
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "audit": [
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "final_markdown": [],
+    "repository_maintenance": [],
+}
+
+
+@dataclass(frozen=True)
+class ValidationError:
+    error_id: str
+    validator: str
+    error_type: str
+    severity: str
+    artifact: str
+    field: str | None
+    message: str
+    affected_phase: str
+    repair_action: str
+    downstream_reset: list[str]
+    final_output_allowed: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def normalize_dash(value: str) -> str:
@@ -104,6 +163,12 @@ def normalize_paragraph_range(value: str) -> str | None:
     return f"P{start:04d}-P{end:04d}"
 
 
+def normalize_file_anchor(match: re.Match[str]) -> str:
+    file_name, start, end_digits = match.groups()
+    range_value = normalize_paragraph_range(f"{start}-{end_digits or start}")
+    return f"{file_name}:{range_value}" if range_value else f"{file_name}:{start}"
+
+
 def paragraph_range_tuple(value: str) -> tuple[int, int] | None:
     match = PARAGRAPH_RANGE_RE.search(value)
     if not match:
@@ -159,7 +224,8 @@ def parse_registry_entries(path: Path) -> tuple[set[str], dict[str, set[str]], l
         if not concept:
             continue
         concepts.add(concept)
-        ranges = {
+        file_ranges = {normalize_file_anchor(match) for match in ANCHOR_WITH_FILE_RE.finditer(anchor_column)}
+        ranges = file_ranges or {
             normalized
             for normalized in (normalize_paragraph_range(match.group(0)) for match in PARAGRAPH_RANGE_RE.finditer(anchor_column))
             if normalized
@@ -196,6 +262,29 @@ def parse_contract_headings(path: Path) -> tuple[set[str], list[str]]:
     return headings, []
 
 
+def parse_contract_map(path: Path) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    if not path.exists():
+        return {}, [f"missing contract map: {path}"]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        return {}, [f"v6-contract-map.json: invalid JSON: {exc}"]
+    if not isinstance(data, dict) or not isinstance(data.get("contracts"), dict):
+        return {}, ["v6-contract-map.json: contracts must be an object"]
+    contracts: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for concept, entry in data["contracts"].items():
+        if not isinstance(concept, str) or not isinstance(entry, dict):
+            errors.append("v6-contract-map.json: each contract entry must be an object keyed by concept_id")
+            continue
+        contract_id = entry.get("contract_id")
+        if not isinstance(contract_id, str) or "#" not in contract_id:
+            errors.append(f"v6-contract-map.json: {concept} missing contract_id with heading anchor")
+            continue
+        contracts[concept] = entry
+    return contracts, errors
+
+
 def check_route_registry_closure(
     routes: dict[str, dict[str, list[str]]], registry_concepts: set[str], errors: list[str]
 ) -> None:
@@ -206,6 +295,29 @@ def check_route_registry_closure(
                 f"v6-route-map.yaml: route {route_key} required_concepts missing from concept registry: "
                 + ", ".join(missing)
             )
+
+
+def check_contract_map_closure(
+    routes: dict[str, dict[str, list[str]]],
+    contract_map: dict[str, dict[str, Any]],
+    contract_headings: set[str],
+    errors: list[str],
+) -> None:
+    required_concepts = sorted({concept for route in routes.values() for concept in route.get("required_concepts", [])})
+    for concept in required_concepts:
+        entry = contract_map.get(concept)
+        if not entry:
+            errors.append(f"v6-contract-map.json: missing contract map entry for route concept: {concept}")
+            continue
+        contract_id = entry.get("contract_id")
+        if not isinstance(contract_id, str) or "#" not in contract_id:
+            errors.append(f"v6-contract-map.json: {concept} contract_id must include heading anchor")
+            continue
+        contract_file, heading = contract_id.split("#", 1)
+        if contract_file != "v6-core-contracts.md":
+            errors.append(f"v6-contract-map.json: {concept} contract_id must target v6-core-contracts.md")
+        if heading not in contract_headings and normalize_dash(heading) not in contract_headings:
+            errors.append(f"v6-contract-map.json: {concept} contract_id heading not found: {heading}")
 
 
 def require_list(data: dict[str, Any], field: str, label: str, errors: list[str]) -> list[Any]:
@@ -290,7 +402,13 @@ def parse_source_paragraph_ids(value: Any, label: str, concept_id: str, errors: 
     return ids
 
 
-def check_contract_id(contract_id: Any, concept_id: str, contract_headings: set[str], errors: list[str]) -> None:
+def check_contract_id(
+    contract_id: Any,
+    concept_id: str,
+    contract_headings: set[str],
+    contract_map: dict[str, dict[str, Any]],
+    errors: list[str],
+) -> None:
     if not isinstance(contract_id, str) or not contract_id:
         errors.append(f"max-concept-hit-ledger.json: {concept_id} missing contract_id")
         return
@@ -300,6 +418,11 @@ def check_contract_id(contract_id: Any, concept_id: str, contract_headings: set[
     contract_file, heading = contract_id.split("#", 1)
     if contract_file != "v6-core-contracts.md":
         errors.append(f"max-concept-hit-ledger.json: {concept_id} contract_id must target v6-core-contracts.md")
+    expected = contract_map.get(concept_id, {}).get("contract_id")
+    if isinstance(expected, str) and contract_id != expected:
+        errors.append(
+            f"max-concept-hit-ledger.json: {concept_id} contract_id must equal v6-contract-map.json entry: {expected}"
+        )
     if heading not in contract_headings and normalize_dash(heading) not in contract_headings:
         errors.append(f"max-concept-hit-ledger.json: {concept_id} contract_id heading not found: {heading}")
 
@@ -351,6 +474,7 @@ def check_concept_hits(
     registry_concepts: set[str],
     registry_anchor_map: dict[str, set[str]],
     contract_headings: set[str],
+    contract_map: dict[str, dict[str, Any]],
     errors: list[str],
 ) -> set[str]:
     if not isinstance(data, dict) or not isinstance(data.get("concept_hits"), list):
@@ -378,7 +502,7 @@ def check_concept_hits(
         ]:
             if not hit.get(field):
                 errors.append(f"max-concept-hit-ledger.json: {label} missing {field}")
-        check_contract_id(hit.get("contract_id"), concept_id, contract_headings, errors)
+        check_contract_id(hit.get("contract_id"), concept_id, contract_headings, contract_map, errors)
         check_concept_hit_source_anchors(hit, concept_id, registry_anchor_map, errors)
         if hit.get("contract_checked") is not True:
             errors.append(f"max-concept-hit-ledger.json: {label} contract_checked must be true")
@@ -503,7 +627,12 @@ def check(workspace: Path, skill_root: Path) -> list[str]:
         skill_root / "references" / "concept-contracts" / "v6-core-contracts.md"
     )
     errors.extend(contract_errors)
+    contract_map, contract_map_errors = parse_contract_map(
+        skill_root / "references" / "concept-contracts" / "v6-contract-map.json"
+    )
+    errors.extend(contract_map_errors)
     check_route_registry_closure(routes, registry_concepts, errors)
+    check_contract_map_closure(routes, contract_map, contract_headings, errors)
     read_plan = read_json(workspace / "max-read-plan.json", errors)
     concept_hits = read_json(workspace / "max-concept-hit-ledger.json", errors)
     claims = read_json(workspace / "max-claim-ledger.json", errors)
@@ -512,7 +641,7 @@ def check(workspace: Path, skill_root: Path) -> list[str]:
     if not route:
         return errors
     seen_concepts = check_concept_hits(
-        concept_hits, route, registry_concepts, registry_anchor_map, contract_headings, errors
+        concept_hits, route, registry_concepts, registry_anchor_map, contract_headings, contract_map, errors
     )
     claim_ids, design_ids, claim_concepts = check_claims(claims, route_key, route, errors)
     missing_claim_hits = sorted(claim_concepts - seen_concepts)
@@ -526,14 +655,112 @@ def check(workspace: Path, skill_root: Path) -> list[str]:
     return errors
 
 
+def extract_artifact(message: str) -> str:
+    for token in [
+        "max-read-plan.json",
+        "max-concept-hit-ledger.json",
+        "max-claim-ledger.json",
+        "max-evidence-reasoning-audit.json",
+        "max-dossier.md",
+        "max-essay.md",
+        "v6-route-map.yaml",
+        "v6-contract-map.json",
+        "concept-registry/index.md",
+    ]:
+        if token in message:
+            return token
+    return "workspace"
+
+
+def classify_message(message: str) -> tuple[str, str, str, str | None]:
+    lowered = message.lower()
+    if "invalid json" in lowered:
+        return "invalid_json", "create_missing_artifact", "read_plan", None
+    if "missing route-ledger artifact" in message:
+        return "missing_artifact", "create_missing_artifact", "read_plan", None
+    if "required_concepts missing from concept registry" in message or "missing route required concepts" in message:
+        return "route_registry_closure_failed", "regenerate_concept_hit_and_downstream", "concept_hit", "route_required_concepts"
+    if "route_key" in message or "route_map_version" in message or "missing route " in message or "forbidden output check" in message:
+        return "route_plan_mismatch", "regenerate_output_plan_and_final_markdown", "read_plan", None
+    if "not found in concept registry" in message:
+        return "concept_registry_missing", "regenerate_concept_hit_and_downstream", "concept_hit", "concept_id"
+    if "source_ranges_from_registry does not match" in message or "source_ranges_read does not overlap" in message:
+        return "concept_source_anchor_mismatch", "regenerate_concept_hit_and_downstream", "concept_hit", "source_ranges_from_registry"
+    if "source_paragraph_ids not covered" in message:
+        return "source_paragraph_not_in_read_range", "regenerate_concept_hit_and_downstream", "concept_hit", "source_paragraph_ids"
+    if "contract_id" in message or "v6-contract-map.json" in message:
+        return "concept_contract_missing", "repository_maintenance_required", "repository_maintenance", "contract_id"
+    if "concept_ids missing concept hits" in message:
+        return "claim_missing_concept_hit", "regenerate_concept_hit_and_downstream", "concept_hit", "concept_ids"
+    if "final claims missing audits" in message or "design decisions missing audits" in message:
+        return "claim_missing_audit", "regenerate_audit_and_downstream", "audit", "claim_id"
+    if "missing evidence_chain" in message or "evidence chain" in lowered:
+        return "evidence_chain_missing", "regenerate_audit_and_downstream", "audit", "evidence_chain"
+    if "missing counterevidence" in message or "counterevidence_status" in message:
+        return "counterevidence_missing", "regenerate_audit_and_downstream", "audit", "counterevidence"
+    if "forbidden output appears" in message:
+        return "forbidden_output_present", "regenerate_markdown_only", "final_markdown", None
+    return "route_plan_mismatch", "regenerate_output_plan_and_final_markdown", "read_plan", None
+
+
+def check_structured(workspace: Path, skill_root: Path) -> list[ValidationError]:
+    errors = check(workspace, skill_root)
+    structured: list[ValidationError] = []
+    for index, message in enumerate(errors, start=1):
+        error_type, repair_action, affected_phase, field = classify_message(message)
+        structured.append(
+            ValidationError(
+                error_id=f"route-{index:04d}",
+                validator=VALIDATOR_NAME,
+                error_type=error_type,
+                severity="error",
+                artifact=extract_artifact(message),
+                field=field,
+                message=message,
+                affected_phase=affected_phase,
+                repair_action=repair_action,
+                downstream_reset=list(PHASE_DOWNSTREAM.get(affected_phase, [])),
+                final_output_allowed=False,
+            )
+        )
+    return structured
+
+
+def validator_report(workspace: Path, errors: list[ValidationError]) -> dict[str, Any]:
+    return {
+        "report_version": "v1",
+        "workspace": str(workspace),
+        "passed": not errors,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "validators": [VALIDATOR_NAME],
+        "errors": [error.to_dict() for error in errors],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check crossframe-max route and design ledgers.")
     parser.add_argument("--workspace", default=".", help="Directory containing max route ledger JSON files.")
     parser.add_argument("--skill-root", default=None, help="Path to crossframe-max skill root.")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Emit machine-readable validator report.")
+    parser.add_argument(
+        "--write-report",
+        nargs="?",
+        const="",
+        default=None,
+        help="Write max-validator-report.json; optional explicit path.",
+    )
     args = parser.parse_args()
     workspace = Path(args.workspace).resolve()
     skill_root = Path(args.skill_root).resolve() if args.skill_root else default_skill_root()
-    errors = check(workspace, skill_root)
+    structured_errors = check_structured(workspace, skill_root)
+    report = validator_report(workspace, structured_errors)
+    if args.write_report is not None:
+        report_path = Path(args.write_report).resolve() if args.write_report else workspace / "max-validator-report.json"
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.json_output:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if structured_errors else 0
+    errors = [error.message for error in structured_errors]
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

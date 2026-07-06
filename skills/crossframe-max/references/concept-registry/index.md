@@ -18,6 +18,10 @@ Minimum chain:
 local structural variable -> concept-registry lookup -> full-source paragraph read -> concept contract -> claim ledger
 ```
 
+## Source Anchor Closure Rule
+
+每个 `concept_id` 进入 `max-concept-hit-ledger.json` 时，`source_ranges_from_registry` 必须来自本 registry 的 primary source anchors。`source_ranges_read` 必须覆盖或至少交叉对应 source range，`source_paragraph_ids` 必须落在 `source_ranges_read` 内。否则进入 `concept_source_anchor_mismatch`，不得通过补写 final Markdown 修复。
+
 ## Lookup Outcomes
 
 | outcome | meaning | required action |

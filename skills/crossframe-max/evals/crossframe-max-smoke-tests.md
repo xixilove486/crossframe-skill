@@ -652,3 +652,64 @@ Prompt：`/crossframe-max 简化 skill，把 prompt 写成概念本体`
 - forbidden outputs 写入 `route_forbidden_outputs_checked`。
 - artifact 中出现 route forbidden output 时校验失败。
 - 不能用框架语言替代外部审计和可撤回条件。
+
+## repair loop concept source anchor mismatch
+
+Prompt：`/crossframe-max 审查一个把 时间不可逆 统一回指 P0276-P0355 的产物`
+
+失败信号：
+
+- `source_ranges_from_registry` 不来自 registry primary source anchors。
+- `source_ranges_read` 不覆盖或不交叉 registry anchor。
+- `source_paragraph_ids` 不落在 read ranges 内。
+
+必须：
+
+- 不得 final。
+- 生成 `max-validator-report.json` 与 `max-repair-plan.json`。
+- `affected_phase=concept_hit`。
+- `repair_action=regenerate_concept_hit_and_downstream`。
+
+## repair loop contract missing
+
+Prompt：`/crossframe-max 审查一个 contract_id 指向不存在 heading 的产物`
+
+失败信号：
+
+- `contract_id` 指向不存在 heading。
+- `contract_id` 不等于 `v6-contract-map.json` 中对应 concept 的 contract id。
+
+必须：
+
+- `repository_maintenance_required=true`。
+- 不得重写 essay 伪装完成。
+- 不得用 Markdown marker 替代 contract closure。
+
+## repair loop essay marker stuffing
+
+Prompt：`/crossframe-max 这篇 essay 已经写了 source_anchor，算通过吗？`
+
+失败信号：
+
+- essay 只堆 marker 或只写 `source_anchor`。
+- essay 没有真实 `claim_id` 或真实 `source_paragraph_id` 回指。
+
+必须：
+
+- `affected_phase=final_markdown`。
+- 只允许 rewrite final markdown。
+- 不得伪造 claim/source 通过。
+
+## repair loop evidence insufficient
+
+Prompt：`/crossframe-max 这个 strong judgment 没有反向证据，但请补到 supported`
+
+失败信号：
+
+- strong judgment 缺反向证据、举证链或撤回条件。
+- 把 evidence insufficient 改写成 evidence supported。
+
+必须：
+
+- 降档、撤回或输出 `max-incomplete`。
+- 不得补写强判断。

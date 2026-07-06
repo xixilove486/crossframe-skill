@@ -68,6 +68,9 @@ python scripts/check_v5_dlc_publication_bundle.py --repo .
 python scripts/check_crossframe_max_v6_full_source.py --repo .
 python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
 python scripts/validate_crossframe_max_route_ledger_fixtures.py
+python -m json.tool skills/crossframe-max/schemas/max-validator-report.schema.json
+python -m json.tool skills/crossframe-max/schemas/max-repair-plan.schema.json
+python scripts/validate_crossframe_max_repair_fixtures.py
 python scripts/sync_skill_mirrors.py --check
 bash -n scripts/install-codex.sh
 python -m py_compile scripts/*.py
@@ -95,3 +98,18 @@ python scripts\build_v5_dlc_docx.py --repo .
 ```powershell
 python scripts\check_source_continuity.py --version v5 --source-docx <path-to-v5-docx> --repo .
 ```
+
+## 5. Max 校验失败怎么办
+
+validator failed 后不要直接重写完整回答。运行：
+
+```bash
+python scripts/build_crossframe_max_repair_plan.py --workspace <artifact-dir> --write-report --write-repair-plan
+```
+
+它会生成：
+
+- `max-validator-report.json`
+- `max-repair-plan.json`
+
+根据 repair plan，只重建受影响阶段及其下游；证据不足时降档、撤回或输出 `max-incomplete/progress`。

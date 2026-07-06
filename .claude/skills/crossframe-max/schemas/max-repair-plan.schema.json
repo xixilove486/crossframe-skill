@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CrossFrame Max Repair Plan",
+  "type": "object",
+  "required": [
+    "repair_plan_version",
+    "validation_attempt",
+    "retry_count",
+    "final_output_allowed",
+    "affected_phases",
+    "must_regenerate",
+    "must_not_patch_only",
+    "repair_actions",
+    "max_incomplete_if_unresolved"
+  ],
+  "properties": {
+    "repair_plan_version": {
+      "const": "v1"
+    },
+    "workspace": {
+      "type": "string"
+    },
+    "validation_attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "final_output_allowed": {
+      "type": "boolean"
+    },
+    "max_retry_count": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "errors": {
+      "type": "array"
+    },
+    "affected_phases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "must_regenerate": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "must_not_patch_only": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "repair_actions": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "create_missing_artifact",
+          "regenerate_markdown_only",
+          "regenerate_concept_hit_and_downstream",
+          "regenerate_claim_and_downstream",
+          "regenerate_audit_and_downstream",
+          "regenerate_output_plan_and_final_markdown",
+          "downgrade_claim",
+          "withdraw_claim",
+          "needs_external_search",
+          "repository_maintenance_required",
+          "max_incomplete"
+        ]
+      }
+    },
+    "downgrade_required": {
+      "type": "array"
+    },
+    "withdraw_required": {
+      "type": "array"
+    },
+    "external_search_required": {
+      "type": "boolean"
+    },
+    "repository_maintenance_required": {
+      "type": "boolean"
+    },
+    "max_incomplete_if_unresolved": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "final_output_allowed": {
+            "const": false
+          }
+        },
+        "required": [
+          "final_output_allowed"
+        ]
+      },
+      "then": {
+        "properties": {
+          "repair_actions": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

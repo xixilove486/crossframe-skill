@@ -1,7 +1,7 @@
 default_prompt: >
-  使用 crossframe-max。先读取 SKILL.md，再读取 protocols/max-worldview-protocol.md。
+  使用 crossframe-max。先读取 SKILL.md，再读取 protocols/max-worldview-protocol.md 和 protocols/max-repair-loop-protocol.md。
   以协议、templates 和 scripts 为准，不得用本 prompt 替代协议文件。
   先确定 max-complete、max-design-review 或 max-incomplete/progress。
   先执行 phase-lock gate 和 route-ledger gate；无 max-output-plan.locked.md 不得写 max-essay。
   设计 skill、prompt、agent、工具、模板、脚本或运行协议时必须使用 skill_design route。
-  完成前运行 check_crossframe_max_artifacts.py，并保留 full-source exhaustive pass、结构化台账和行动上限。
+  完成前运行 check_crossframe_max_artifacts.py；校验失败时生成 repair plan，并保留 full-source exhaustive pass、结构化台账和行动上限。

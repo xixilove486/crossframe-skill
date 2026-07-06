@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CrossFrame Max Validator Report",
+  "type": "object",
+  "required": [
+    "report_version",
+    "workspace",
+    "passed",
+    "generated_at",
+    "validators",
+    "errors"
+  ],
+  "properties": {
+    "report_version": {
+      "const": "v1"
+    },
+    "workspace": {
+      "type": "string"
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "validators": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "error_id",
+          "validator",
+          "error_type",
+          "severity",
+          "artifact",
+          "affected_phase",
+          "repair_action",
+          "final_output_allowed"
+        ],
+        "properties": {
+          "error_id": {
+            "type": "string"
+          },
+          "validator": {
+            "type": "string"
+          },
+          "error_type": {
+            "enum": [
+              "missing_artifact",
+              "invalid_json",
+              "route_registry_closure_failed",
+              "route_plan_mismatch",
+              "concept_registry_missing",
+              "concept_source_anchor_mismatch",
+              "concept_contract_missing",
+              "source_paragraph_not_in_read_range",
+              "claim_missing_audit",
+              "claim_missing_concept_hit",
+              "evidence_chain_missing",
+              "counterevidence_missing",
+              "external_search_required",
+              "essay_too_short",
+              "dossier_section_too_thin",
+              "repeated_filler",
+              "forbidden_output_present",
+              "missing_claim_or_source_reference",
+              "full_source_incomplete",
+              "unrepairable_repository_state",
+              "retry_budget_exhausted"
+            ]
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ]
+          },
+          "artifact": {
+            "type": "string"
+          },
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "affected_phase": {
+            "type": "string"
+          },
+          "repair_action": {
+            "type": "string"
+          },
+          "downstream_reset": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "final_output_allowed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

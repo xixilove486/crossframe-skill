@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- 新增 `crossframe-max` repair loop：validator 失败后生成 `max-validator-report.json` 与 `max-repair-plan.json`，按 affected phase 执行受控重建、降档、撤回或 incomplete。
+- 新增 Max repair schemas、repair plan template、repair fixture validator 和 repair plan builder。
+- 新增 v6 contract map，校验 route-required concepts、registry anchors 与 concept contracts 的闭环。
+
+### Changed
+
+- `check_crossframe_max_route_ledgers.py` 增加 concept source anchor closure、contract closure 和结构化 JSON 报告。
+- `check_crossframe_max_artifacts.py` 增加结构化错误、真实 claim/source 回指检查和 repair action 映射。
+- CI 增加 Max repair fixtures 与 repair schemas 校验。
+
 ## v5.1.7 - 2026-06-24
 
 ### Added

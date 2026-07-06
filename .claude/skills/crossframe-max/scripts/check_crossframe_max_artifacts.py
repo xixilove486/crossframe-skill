@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from check_crossframe_max_read_ledger import check as check_structured_ledgers
 from check_crossframe_max_route_ledgers import check as check_route_ledgers
@@ -30,6 +33,7 @@ REQUIRED_DOSSIER_HEADINGS = [
     "## 处理问题",
     "## 证据与台账",
     "## max-evidence-reasoning-audit",
+    "## max-validation-and-repair-state",
     "## 反例与撤回条件",
     "## max-essay 准备",
     "## max-output-layers",
@@ -76,6 +80,21 @@ REQUIRED_DOSSIER_MARKERS = [
     "max-claim-ledger.json",
     "max-concept-hit-ledger.json",
     "max-evidence-reasoning-audit.json",
+    "max-validator-report.json",
+    "max-repair-plan.json",
+    "validation_attempt",
+    "affected_phase",
+    "downstream_reset",
+    "repair_action",
+    "final_output_allowed",
+    "registry expected source ranges",
+    "source_ranges_from_registry",
+    "source_ranges_read",
+    "source_paragraph_ids inside read ranges",
+    "contract_id",
+    "contract heading exists",
+    "contract map status",
+    "concept-source-contract closure",
 ]
 
 REQUIRED_ESSAY_MARKERS = [
@@ -107,6 +126,7 @@ REQUIRED_ESSAY_MARKERS = [
     "max-claim-ledger.json",
     "max-concept-hit-ledger.json",
     "max-evidence-reasoning-audit.json",
+    "max-validator-report.json",
 ]
 
 REQUIRED_LEDGER_MARKERS = [
@@ -253,6 +273,95 @@ ALLOWED_AUDIT_RESULTS = {
     "needs_external_search",
     "move_to_unexhaustible",
 }
+
+VALIDATOR_NAME = "check_crossframe_max_artifacts"
+
+PHASE_DOWNSTREAM = {
+    "run_contract": [
+        "max-read-plan.json",
+        "max-source-snapshot.json",
+        "max-worldview-capsule.locked.md",
+        "max-local-world-model.locked.md",
+        "max-concept-hit-ledger.json",
+        "max-claim-ledger.json",
+        "max-claim-board.json",
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+        "max-continuation-ledger.md",
+        "max-continuation-index.md",
+    ],
+    "read_plan": [
+        "max-source-snapshot.json",
+        "max-worldview-capsule.locked.md",
+        "max-local-world-model.locked.md",
+        "max-concept-hit-ledger.json",
+        "max-claim-board.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "source_snapshot": [
+        "max-worldview-capsule.locked.md",
+        "max-local-world-model.locked.md",
+        "max-concept-hit-ledger.json",
+        "max-claim-ledger.json",
+        "max-evidence-reasoning-audit.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "concept_hit": [
+        "max-claim-ledger.json",
+        "max-claim-board.json",
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "claim": [
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "audit": [
+        "max-output-plan.locked.md",
+        "max-dossier.md",
+        "max-essay.md",
+    ],
+    "output_plan": [
+        "max-dossier.md",
+        "max-essay.md",
+        "max-continuation-ledger.md",
+        "max-continuation-index.md",
+    ],
+    "final_markdown": [],
+    "repository_maintenance": [],
+}
+
+
+@dataclass(frozen=True)
+class ValidationError:
+    error_id: str
+    validator: str
+    error_type: str
+    severity: str
+    artifact: str
+    field: str | None
+    message: str
+    affected_phase: str
+    repair_action: str
+    downstream_reset: list[str]
+    final_output_allowed: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def read_text(path: Path, errors: list[str]) -> str:
@@ -646,17 +755,174 @@ def check_crossframe_max_artifacts(workspace: Path, skill_root: Path | None = No
     return errors
 
 
+def phase_for_artifact(artifact: str) -> str:
+    if artifact == "max-run-contract.json":
+        return "run_contract"
+    if artifact == "max-read-plan.json":
+        return "read_plan"
+    if artifact == "max-source-snapshot.json":
+        return "source_snapshot"
+    if artifact == "max-concept-hit-ledger.json":
+        return "concept_hit"
+    if artifact in {"max-claim-ledger.json", "max-claim-board.json"}:
+        return "claim"
+    if artifact in {"max-evidence-reasoning-audit.json", "max-audit-board.json"}:
+        return "audit"
+    if artifact == "max-output-plan.locked.md":
+        return "output_plan"
+    if artifact in {
+        "max-artifact-manifest.md",
+        "max-dossier.md",
+        "max-essay.md",
+        "max-continuation-ledger.md",
+        "max-continuation-index.md",
+    }:
+        return "final_markdown"
+    return "final_markdown"
+
+
+def extract_artifact(message: str) -> str:
+    for token in [
+        "max-run-contract.json",
+        "max-read-plan.json",
+        "max-source-snapshot.json",
+        "max-worldview-capsule.locked.md",
+        "max-local-world-model.locked.md",
+        "max-concept-hit-ledger.json",
+        "max-claim-ledger.json",
+        "max-claim-board.json",
+        "max-evidence-reasoning-audit.json",
+        "max-audit-board.json",
+        "max-output-plan.locked.md",
+        "max-artifact-manifest.md",
+        "max-dossier.md",
+        "max-essay.md",
+        "max-continuation-ledger.md",
+        "max-continuation-index.md",
+        "v6-route-map.yaml",
+        "v6-contract-map.json",
+        "concept-registry/index.md",
+    ]:
+        if token in message:
+            return token
+    if message.startswith("missing file:"):
+        name = Path(message.split(":", 1)[1].strip()).name
+        if name:
+            return name
+    if ": " in message:
+        prefix = message.split(":", 1)[0]
+        if prefix.endswith((".json", ".md", ".yaml")):
+            return prefix
+    return "workspace"
+
+
+def classify_message(message: str) -> tuple[str, str, str, str | None]:
+    lowered = message.lower()
+    artifact = extract_artifact(message)
+    if "invalid json" in lowered:
+        return "invalid_json", "create_missing_artifact", phase_for_artifact(artifact), None
+    if message.startswith("missing file:") or message.startswith("missing structured ledger:") or "missing phase-lock artifact" in message or "missing route-ledger artifact" in message:
+        return "missing_artifact", "create_missing_artifact", phase_for_artifact(artifact), None
+    if "full-source" in message and ("not satisfied" in lowered or "partial" in lowered or "missing" in lowered):
+        return "full_source_incomplete", "max_incomplete", "source_snapshot", None
+    if "source_ranges_from_registry does not match" in message or "source_ranges_read does not overlap" in message:
+        return "concept_source_anchor_mismatch", "regenerate_concept_hit_and_downstream", "concept_hit", "source_ranges_from_registry"
+    if "source_paragraph_ids not covered" in message:
+        return "source_paragraph_not_in_read_range", "regenerate_concept_hit_and_downstream", "concept_hit", "source_paragraph_ids"
+    if "contract_id" in message or "v6-contract-map.json" in message:
+        return "concept_contract_missing", "repository_maintenance_required", "repository_maintenance", "contract_id"
+    if "not found in concept registry" in message:
+        return "concept_registry_missing", "regenerate_concept_hit_and_downstream", "concept_hit", "concept_id"
+    if "required_concepts missing from concept registry" in message or "missing route required concepts" in message:
+        return "route_registry_closure_failed", "regenerate_concept_hit_and_downstream", "concept_hit", "route_required_concepts"
+    if "route_key" in message or "route_map_version" in message or "missing route " in message or "forbidden output check" in message:
+        return "route_plan_mismatch", "regenerate_output_plan_and_final_markdown", "read_plan", None
+    if "concept_ids missing concept hits" in message:
+        return "claim_missing_concept_hit", "regenerate_concept_hit_and_downstream", "concept_hit", "concept_ids"
+    if "final claims missing audits" in message or "design decisions missing audits" in message:
+        return "claim_missing_audit", "regenerate_audit_and_downstream", "audit", "claim_id"
+    if "missing evidence_chain" in message or "evidence chain" in lowered:
+        return "evidence_chain_missing", "regenerate_audit_and_downstream", "audit", "evidence_chain"
+    if "missing counterevidence" in message or "counterevidence_status" in message:
+        return "counterevidence_missing", "regenerate_audit_and_downstream", "audit", "counterevidence"
+    if "external search" in lowered or "needs_external_search" in message:
+        return "external_search_required", "needs_external_search", "audit", None
+    if "longform-dominance gate failed" in message:
+        return "essay_too_short", "regenerate_markdown_only", "final_markdown", None
+    if "heading section too thin" in message:
+        return "dossier_section_too_thin", "regenerate_markdown_only", "final_markdown", None
+    if "repeated" in lowered or "marker stuffing" in lowered:
+        return "repeated_filler", "regenerate_markdown_only", "final_markdown", None
+    if "forbidden output appears" in message:
+        return "forbidden_output_present", "regenerate_markdown_only", "final_markdown", None
+    if "must reference a real claim_id or source_paragraph_id" in message:
+        return "missing_claim_or_source_reference", "regenerate_markdown_only", "final_markdown", None
+    return "unrepairable_repository_state", "max_incomplete", phase_for_artifact(artifact), None
+
+
+def check_crossframe_max_artifacts_structured(
+    workspace: Path, skill_root: Path | None = None
+) -> list[ValidationError]:
+    errors = check_crossframe_max_artifacts(workspace, skill_root)
+    structured: list[ValidationError] = []
+    for index, message in enumerate(errors, start=1):
+        error_type, repair_action, affected_phase, field = classify_message(message)
+        structured.append(
+            ValidationError(
+                error_id=f"artifact-{index:04d}",
+                validator=VALIDATOR_NAME,
+                error_type=error_type,
+                severity="error",
+                artifact=extract_artifact(message),
+                field=field,
+                message=message,
+                affected_phase=affected_phase,
+                repair_action=repair_action,
+                downstream_reset=list(PHASE_DOWNSTREAM.get(affected_phase, [])),
+                final_output_allowed=False,
+            )
+        )
+    return structured
+
+
+def validator_report(workspace: Path, errors: list[ValidationError]) -> dict[str, Any]:
+    return {
+        "report_version": "v1",
+        "workspace": str(workspace),
+        "passed": not errors,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "validators": ["check_crossframe_max_artifacts", "check_crossframe_max_route_ledgers"],
+        "errors": [error.to_dict() for error in errors],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="check_crossframe_max_artifacts: validate generated crossframe-max files against artifact-first, template-fidelity, longform-dominance, and route-ledger gates."
     )
     parser.add_argument("--workspace", default=".", help="Directory containing max-dossier.md and related artifacts.")
     parser.add_argument("--skill-root", default=None, help="Path to the crossframe-max skill root for source-id validation.")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="Emit machine-readable validator report.")
+    parser.add_argument(
+        "--write-report",
+        nargs="?",
+        const="",
+        default=None,
+        help="Write max-validator-report.json; optional explicit path.",
+    )
     args = parser.parse_args()
 
     workspace = Path(args.workspace).resolve()
     skill_root = Path(args.skill_root).resolve() if args.skill_root else default_skill_root()
-    errors = check_crossframe_max_artifacts(workspace, skill_root)
+    structured_errors = check_crossframe_max_artifacts_structured(workspace, skill_root)
+    report = validator_report(workspace, structured_errors)
+    if args.write_report is not None:
+        report_path = Path(args.write_report).resolve() if args.write_report else workspace / "max-validator-report.json"
+        report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if args.json_output:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if structured_errors else 0
+    errors = [error.message for error in structured_errors]
     if errors:
         for error in errors:
             print(error, file=sys.stderr)

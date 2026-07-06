@@ -38,6 +38,8 @@
 - 说明反向推演：如果这套解释是错的，最可能错在哪里，哪些地方存在框架偏好遮蔽和解释力幻觉。
 - 说明不可穷尽声明：内心动机、未来自由行动、沉默主体经验、未公开材料、历史偶然性和超越性窗口不能被假装穷尽。
 - 说明产物优先交付与输出分层：`max-artifact-manifest.md`、结构底稿、完整长文和续写索引如何互相承接。
+- 若本轮经过 repair loop，正文结尾必须说明 validator failure 如何处理：哪些 claim 被降档、撤回，哪些阶段被重建，哪些问题进入 max-incomplete 或续写队列。
+- 正文不得把 repair plan 当作完成证明；只有 validator pass 且 final_output_allowed=true 才能宣称 max-complete。
 - 保留不可判断区、撤回条件和行动上限。
 - 不把框架写成现实终审，不把世界观写成万能解释机器。
 
@@ -64,7 +66,7 @@
 
 结尾：把解释回落到现实行动边界，并附产物清单与续写索引。
 
-产物清单必须包含：phase-lock gate；max-run-contract.json；max-read-plan.json；max-source-snapshot.json；max-worldview-capsule.locked.md；max-local-world-model.locked.md；max-claim-board.json；max-audit-board.json；max-output-plan.locked.md；full-source exhaustive pass: satisfied；total paragraphs: 3273 / 3273；max-full-source-read-ledger；max-read-ledger.json；max-claim-ledger.json；max-concept-hit-ledger.json；max-evidence-reasoning-audit.json；read status: full / partial / missing；stage 8 final read audit。
+产物清单必须包含：phase-lock gate；max-run-contract.json；max-read-plan.json；max-source-snapshot.json；max-worldview-capsule.locked.md；max-local-world-model.locked.md；max-claim-board.json；max-audit-board.json；max-output-plan.locked.md；full-source exhaustive pass: satisfied；total paragraphs: 3273 / 3273；max-full-source-read-ledger；max-read-ledger.json；max-claim-ledger.json；max-concept-hit-ledger.json；max-evidence-reasoning-audit.json；max-validator-report.json；max-repair-plan.json（如本轮发生 validation failure）；read status: full / partial / missing；stage 8 final read audit。
 ```
 
 ## 禁止

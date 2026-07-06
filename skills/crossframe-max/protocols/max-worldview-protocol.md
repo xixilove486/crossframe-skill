@@ -62,6 +62,8 @@ max-run-contract.json
 
 后续阶段不得直接改写已经冻结的前序产物；异常只登记为 `phase_exception_record`；处理规则为 `affected phase reset`，仅回到受影响阶段。反向证据只改变 claim 状态。
 
+validator failure 也必须遵守 phase lock。失败后不得直接 patch final Markdown，必须按 `max-repair-loop-protocol.md` 生成 repair plan，并回到 affected phase。
+
 状态表：
 
 ```text
@@ -186,6 +188,10 @@ audit result:
 9. 在 `max-claim-ledger.json` 中登记 `claim_id`、source_anchor、判断档位、行动上限、撤回条件、已使用的 full-source paragraph id、反向证据状态和 full-source exhaustive pass 状态。
 10. 进入 `max-evidence-reasoning-audit` 与 `max-evidence-reasoning-audit.json`，对中心命题执行严密举证、严密推理、反向证据检查和反复推敲校准。
 11. 进入 `route-ledger gate`，按 `references/v6-route-map.yaml` 校验 `route_key`、required layers、required concepts、required outputs、forbidden outputs、concept registry 命中、design decision、v6 rule、行动上限和审计回指。
+
+若 validator 发现 `concept_id` 存在但 `source_ranges_from_registry` 与 registry anchor 不匹配，必须回到 `concept_hit` phase。若 validator 发现 `contract_id` 不存在或不对应 `concept_id`，必须回到 concept contract maintenance；本轮不得通过补写 Markdown 完成。
+
+`route-ledger gate` 不只是 pass/fail gate，而是 repair classifier 的输入。每个 route-ledger failure 必须映射到 `error_type`、`affected_phase`、`downstream_reset` 和 `repair_action`。
 
 最低链路：
 

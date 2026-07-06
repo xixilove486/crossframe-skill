@@ -104,6 +104,7 @@ python scripts/validate_claim_ledger_schema_fixtures.py --repo .
 python scripts/check_crossframe_max_v6_full_source.py --repo . --source-docx <path-to-v6-docx> --allow-source-path-mismatch
 python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
 python scripts/validate_crossframe_max_route_ledger_fixtures.py
+python scripts/validate_crossframe_max_repair_fixtures.py
 python scripts/sync_skill_mirrors.py --check
 bash -n scripts/install-codex.sh
 python -m py_compile scripts/*.py
@@ -201,6 +202,16 @@ Suite release version 是 v5.1.7；`crossframe-max` 使用的 source framework v
 - `max-incomplete/progress`：上下文、权限、工具或时间不足时，只输出读态、缺口、下一步读取计划和 `max-incomplete:*`，不得宣称完成。
 
 Max 的完成条件不是“写得很长”，而是结构产物能通过校验：`max-read-ledger.json` 覆盖 v6 源段落，route 概念来自 registry，强判断有 source anchor、反证、降档和撤回条件，设计判断不越过行动上限。`max-essay` 是最终完整解释层，不能只是 `max-dossier` 摘要。
+
+Max 的 validator 不是终点。校验失败时必须生成 `max-validator-report.json` 与 `max-repair-plan.json`，按 `affected_phase` 重置受影响阶段及其下游产物。能补生成的补生成，能重写的只重写对应 Markdown；证据不足、source anchor 不成立或 concept contract 不存在时，必须降档、撤回或输出 `max-incomplete/progress`，不得通过补 marker 伪装完成。
+
+Max 相关验证：
+
+```bash
+python scripts/validate_crossframe_max_route_ledger_fixtures.py
+python scripts/validate_crossframe_max_repair_fixtures.py
+python scripts/build_crossframe_max_repair_plan.py --workspace <artifact-dir> --write-report --write-repair-plan
+```
 
 ---
 

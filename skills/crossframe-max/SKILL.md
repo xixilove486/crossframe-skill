@@ -37,18 +37,20 @@ disable-model-invocation: true
 ## 必读顺序
 
 1. `protocols/max-worldview-protocol.md`
-2. `references/source_manifest.json`
-3. `references/v6-route-map.yaml`
-4. `references/concept-registry/index.md`
-5. `references/concept-contracts/v6-core-contracts.md`
-6. `references/retrieval-trigger-policy.md`
-7. `references/v6-full-source/00-index.md`
-8. `references/v6-full-source/00-heading-index.md`
-9. `references/v6-full-source/00-term-index.md`
-10. `references/v6-full-source/00-table-index.md`
-11. route 指定的 v6 full-source 分层文件与 `tables/`
-12. `templates/` 中本轮产物对应 contract
-13. `scripts/` 中对应 validator
+2. `protocols/max-repair-loop-protocol.md`
+3. `references/source_manifest.json`
+4. `references/v6-route-map.yaml`
+5. `references/concept-registry/index.md`
+6. `references/concept-contracts/v6-core-contracts.md`
+7. `references/concept-contracts/v6-contract-map.json`
+8. `references/retrieval-trigger-policy.md`
+9. `references/v6-full-source/00-index.md`
+10. `references/v6-full-source/00-heading-index.md`
+11. `references/v6-full-source/00-term-index.md`
+12. `references/v6-full-source/00-table-index.md`
+13. route 指定的 v6 full-source 分层文件与 `tables/`
+14. `templates/` 中本轮产物对应 contract
+15. `scripts/` 中对应 validator
 
 任务路由以 `references/v6-route-map.yaml` 为准。route map 只决定阶段读取顺序，不能降低最终 full-source exhaustive pass 要求。概念注册表只做定位、别名、邻域和触发，不替代 full-source。
 
@@ -66,6 +68,14 @@ disable-model-invocation: true
 - `max-output-plan.locked.md`
 
 没有 `max-output-plan.locked.md`，不得生成 `max-essay.md`。后续阶段不得直接改写前序冻结产物；异常登记为 `phase_exception_record`，并按 `affected phase reset` 回到受影响阶段。
+
+## 校验失败后的 repair loop
+
+validator failure 不等于整轮重写。必须先生成 `max-validator-report.json`，再生成 `max-repair-plan.json`。
+
+repair plan 必须登记 `error_id`、`error_type`、`severity`、`artifact`、`field`、`affected_phase`、`downstream_reset`、`repair_action`、`retry_count`、`final_output_allowed`。只允许重建 `affected_phase` 及其 downstream artifacts。
+
+不得为了通过 validator 补 marker、伪造 `source_anchor`、伪造 `claim_id`、伪造 `source_paragraph_ids`，或把 evidence insufficient 写成 supported。若 repair plan 的 `final_output_allowed=false`，不得输出 final chat，只能执行受控重建、降档、撤回或输出 `max-incomplete/progress`。
 
 ## 必建模块
 
@@ -97,10 +107,14 @@ disable-model-invocation: true
 - `max-claim-ledger.json`
 - `max-concept-hit-ledger.json`
 - `max-evidence-reasoning-audit.json`
+- `max-validator-report.json`：每次 validator 运行后的机器可读报告；失败时必建，成功时可建。
+- `max-repair-plan.json`：validator 失败后的修复计划；只在失败时必建。
 
 `max-read-plan.json` 必须登记 `route_key`、`route_map_version`、`route_required_layers`、`route_required_concepts`、`route_required_outputs`、`route_forbidden_outputs_checked`。`skill_design` route 的设计判断必须登记 `design_decision_id`、`v6_rule_ids`、`action_limit`、`source_anchor`、`counterevidence`、`withdrawal_condition`。
 
 Markdown 章节不能替代 JSON 台账。source paragraph id 必须存在于 v6 full-source；route concepts 必须来自 concept registry；强判断、设计建议和行动路径必须有反向证据、降档条件、撤回条件和行动上限。
+
+通过 final validation 时，`max-repair-plan.json` 可以不存在；只要 validation failed，就必须存在，且 `final_output_allowed=false`。
 
 ## 资料前沿
 
@@ -139,6 +153,7 @@ Markdown 章节不能替代 JSON 台账。source paragraph id 必须存在于 v6
 
 ```bash
 python scripts/check_crossframe_max_artifacts.py --workspace <artifact-dir>
+python scripts/build_crossframe_max_repair_plan.py --workspace <artifact-dir> --write-report --write-repair-plan
 ```
 
 源库维护或发布前运行：
@@ -148,6 +163,7 @@ python scripts/check_crossframe_max_v6_full_source.py --repo <repo> --source-doc
 python scripts/check_crossframe_max_v6_registry_anchors.py --repo <repo>
 python scripts/check_crossframe_max_route_ledgers.py --workspace <artifact-dir>
 python scripts/validate_crossframe_max_route_ledger_fixtures.py
+python scripts/validate_crossframe_max_repair_fixtures.py
 ```
 
 未完成全量读取、route-ledger、举证推理、阶段锁或 artifact validation 时，只能输出 `max-incomplete:*`，不得宣称完成。

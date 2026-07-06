@@ -1,0 +1,160 @@
+{
+  "version": "v6.0",
+  "contracts": {
+    "T0-T4 恢复与再承接": {
+      "contract_id": "v6-core-contracts.md#T0-T4 恢复与再承接",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "不可穷尽声明": {
+      "contract_id": "v6-core-contracts.md#不可穷尽声明",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "低权力主体保护": {
+      "contract_id": "v6-core-contracts.md#低权力主体保护",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "低条件试探行动": {
+      "contract_id": "v6-core-contracts.md#低条件试探行动",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "动力-承接链": {
+      "contract_id": "v6-core-contracts.md#动力-承接链",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "反模型殖民": {
+      "contract_id": "v6-core-contracts.md#反模型殖民",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "反领域殖民": {
+      "contract_id": "v6-core-contracts.md#反领域殖民",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "反馈写回": {
+      "contract_id": "v6-core-contracts.md#反馈写回",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "命题验证表": {
+      "contract_id": "v6-core-contracts.md#命题验证表",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "工具准入": {
+      "contract_id": "v6-core-contracts.md#工具准入",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "干涉授权": {
+      "contract_id": "v6-core-contracts.md#干涉授权",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "开放性承担行动": {
+      "contract_id": "v6-core-contracts.md#开放性承担行动",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "开放断言": {
+      "contract_id": "v6-core-contracts.md#开放断言",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "强判断八件套": {
+      "contract_id": "v6-core-contracts.md#强判断八件套",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "时间不可逆": {
+      "contract_id": "v6-core-contracts.md#时间不可逆",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "有序退场": {
+      "contract_id": "v6-core-contracts.md#有序退场",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "权力封闭度": {
+      "contract_id": "v6-core-contracts.md#权力封闭度",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "来源-证据-判断-行动上限": {
+      "contract_id": "v6-core-contracts.md#来源-证据-判断-行动上限",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "概念武器化": {
+      "contract_id": "v6-core-contracts.md#概念武器化",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "正当不透明": {
+      "contract_id": "v6-core-contracts.md#正当不透明",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "演化记忆": {
+      "contract_id": "v6-core-contracts.md#演化记忆",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "状态坐标与生命周期": {
+      "contract_id": "v6-core-contracts.md#状态坐标与生命周期",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "结构负荷": {
+      "contract_id": "v6-core-contracts.md#结构负荷",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "虚稳态": {
+      "contract_id": "v6-core-contracts.md#虚稳态",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "行动承接层": {
+      "contract_id": "v6-core-contracts.md#行动承接层",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "观测反身性": {
+      "contract_id": "v6-core-contracts.md#观测反身性",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "解释准入": {
+      "contract_id": "v6-core-contracts.md#解释准入",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "责任链硬规则": {
+      "contract_id": "v6-core-contracts.md#责任链硬规则",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "路径置信分层": {
+      "contract_id": "v6-core-contracts.md#路径置信分层",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "过程性产物边界": {
+      "contract_id": "v6-core-contracts.md#过程性产物边界",
+      "contract_type": "concept_contract",
+      "required": true
+    },
+    "非线性路径库": {
+      "contract_id": "v6-core-contracts.md#非线性路径库",
+      "contract_type": "concept_contract",
+      "required": true
+    }
+  }
+}

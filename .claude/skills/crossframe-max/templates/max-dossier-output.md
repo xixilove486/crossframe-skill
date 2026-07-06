@@ -199,6 +199,14 @@
 - 禁止偷换：
 - 已读取概念卡：
 - 已检查概念契约：
+- registry expected source ranges：
+- source_ranges_from_registry：
+- source_ranges_read：
+- source_paragraph_ids inside read ranges：
+- contract_id：
+- contract heading exists：
+- contract map status：
+- concept-source-contract closure：
 - 已读取 full-source paragraph id：
 - 已回查 layer digest：
 - registry gap 处理：
@@ -359,6 +367,18 @@
 - 已进入补证队列：
 - 未通过项：
 - 输出前状态：
+
+## max-validation-and-repair-state
+
+- validator status：
+- max-validator-report.json：
+- max-repair-plan.json：
+- validation_attempt：
+- affected_phase：
+- downstream_reset：
+- repair_action：
+- final_output_allowed：
+- downgrade / withdraw / incomplete decision：
 
 ## 反例与撤回条件
 

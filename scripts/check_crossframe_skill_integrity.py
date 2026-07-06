@@ -403,6 +403,12 @@ def check_repo_adapters(repo: Path, label: str) -> None:
         "max-claim-ledger.json",
         "max-concept-hit-ledger.json",
         "max-evidence-reasoning-audit.json",
+        "max-validator-report.json",
+        "max-repair-plan.json",
+        "max-validation-and-repair-state",
+        "ValidationError",
+        "check_crossframe_max_artifacts_structured",
+        "repair_action",
         "check_structured_ledgers",
         "check_route_ledgers",
         "check_crossframe_max_route_ledgers",
@@ -555,6 +561,8 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "python -m json.tool skills/crossframe/schemas/calibration-anchor.schema.json > /dev/null",
             "python -m json.tool skills/crossframe/schemas/mechanism-update.schema.json > /dev/null",
             "python -m json.tool skills/crossframe/schemas/counterexample-register.schema.json > /dev/null",
+            "python -m json.tool skills/crossframe-max/schemas/max-validator-report.schema.json > /dev/null",
+            "python -m json.tool skills/crossframe-max/schemas/max-repair-plan.schema.json > /dev/null",
             "python -m pip install jsonschema",
             "python scripts/validate_claim_ledger_schema_fixtures.py --repo .",
             "python scripts/validate_v5_dlc_quantification_schema_fixtures.py --repo .",
@@ -563,6 +571,8 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "python scripts/check_crossframe_max_v6_full_source.py --repo .",
             "python scripts/check_crossframe_max_v6_registry_anchors.py --repo .",
             "python scripts/validate_crossframe_max_route_ledger_fixtures.py",
+            "python scripts/validate_crossframe_max_repair_fixtures.py",
+            "python scripts/build_crossframe_max_repair_plan.py",
             "python scripts/sync_skill_mirrors.py --check",
             "python scripts/package_crossframe_skill.py --repo . --version ci",
             "git diff --check",
@@ -587,10 +597,10 @@ def check_public_release_docs(repo: Path, label: str) -> None:
         require(retired_demo_marker not in public_page_text, f"{label}: public page still has sensitive landing demo marker: {retired_demo_marker}")
 
     required_docs = {
-        "README.md": ["15 个 `crossframe-*` skills", "crossframe-max", "局部世界", "安全边界先行", "source_id -> claim_id", "docs/QUICKSTART.md", "framework-CrossFrame_v5.1.7", "review_%E2%86%92_inquiry", "https://xi-kari.github.io/crossframe-skill/", "网页介绍", "install-codex.sh", "validate_claim_ledger_schema_fixtures.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "v6 世界观前置 meta-runtime", "skill_design", "route-ledger gate", "max-incomplete/progress", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py", "brief-visible", "standard-visible"],
-        "CHANGELOG.md": ["v5.1.7", "v5.1.6", "v5.1.5", "v5.1.4", "v5.1.3", "site/", "GitHub Pages", "v5.0.2", "crossframe-history", "crossframe-inquiry", "source_id"],
+        "README.md": ["15 个 `crossframe-*` skills", "crossframe-max", "局部世界", "安全边界先行", "source_id -> claim_id", "docs/QUICKSTART.md", "framework-CrossFrame_v5.1.7", "review_%E2%86%92_inquiry", "https://xi-kari.github.io/crossframe-skill/", "网页介绍", "install-codex.sh", "validate_claim_ledger_schema_fixtures.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "v6 世界观前置 meta-runtime", "skill_design", "route-ledger gate", "max-incomplete/progress", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py", "brief-visible", "standard-visible"],
+        "CHANGELOG.md": ["v5.1.7", "v5.1.6", "v5.1.5", "v5.1.4", "v5.1.3", "site/", "GitHub Pages", "v5.0.2", "crossframe-history", "crossframe-inquiry", "source_id", "max-validator-report.json", "max-repair-plan.json"],
         "docs/WHAT_IS_CROSSFRAME.md": ["CrossFrame 是一组给 AI 使用的中文结构思考 skills", "一个一分钟例子", "它不是什么", "最推荐怎么用", "crossframe-inquiry", "crossframe-max"],
-        "docs/QUICKSTART.md": ["install-codex.ps1", "install-codex.sh", "--materials-only", "--source-docx", "validate_claim_ledger_schema_fixtures.py", "validate_v5_dlc_quantification_schema_fixtures.py", "check_v5_dlc_casebook_trials.py", "check_v5_dlc_publication_bundle.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "build_v5_dlc_publication_bundle.py", "build_v5_dlc_docx.py", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py"],
+        "docs/QUICKSTART.md": ["install-codex.ps1", "install-codex.sh", "--materials-only", "--source-docx", "validate_claim_ledger_schema_fixtures.py", "validate_v5_dlc_quantification_schema_fixtures.py", "check_v5_dlc_casebook_trials.py", "check_v5_dlc_publication_bundle.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "max-validator-report.schema.json", "max-repair-plan.schema.json", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "build_v5_dlc_publication_bundle.py", "build_v5_dlc_docx.py", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py"],
         "docs/CONCEPTS.md": ["Claim Ledger", "source_id", "Concept Contract"],
         "docs/WORKFLOWS.md": ["previous_context -> crossframe-inquiry", "crossframe-max -> crossframe-review", "claim ledger / claim-ledger-check", "纯致谢", "brief-visible", "standard-visible"],
         "docs/EXAMPLES.md": ["首页只使用安全模拟样例", "真实/高敏主题", "source_id", "claim_id", "evidence grade", "withdrawal condition", "publish_boundary", "历史草稿档", "crossframe-inquiry", "mini 输出示例"],
@@ -2123,16 +2133,21 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
     required_files = [
         "SKILL.md",
         "protocols/max-worldview-protocol.md",
+        "protocols/max-repair-loop-protocol.md",
         "templates/max-dossier-output.md",
         "templates/max-essay-output.md",
         "templates/max-phase-lock-output.md",
         "templates/max-read-ledger-output.md",
         "templates/max-evidence-reasoning-audit-output.md",
+        "templates/max-repair-plan-output.md",
+        "schemas/max-validator-report.schema.json",
+        "schemas/max-repair-plan.schema.json",
         "evals/crossframe-max-smoke-tests.md",
         "agents/openai.yaml",
         "scripts/check_crossframe_max_artifacts.py",
         "scripts/check_crossframe_max_read_ledger.py",
         "scripts/check_crossframe_max_route_ledgers.py",
+        "scripts/build_crossframe_max_repair_plan.py",
         "scripts/check_crossframe_max_v6_full_source.py",
         "scripts/check_crossframe_max_v6_registry_anchors.py",
         "scripts/generate_crossframe_max_v6_full_source.py",
@@ -2140,6 +2155,7 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "references/v6-route-map.yaml",
         "references/concept-registry/index.md",
         "references/concept-contracts/v6-core-contracts.md",
+        "references/concept-contracts/v6-contract-map.json",
         "references/retrieval-trigger-policy.md",
         "references/v6-full-source/00-index.md",
         "references/v6-full-source/00-heading-index.md",
@@ -2202,9 +2218,11 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         '反向证据',
         '证据-推理-反例-降档循环',
         'references/source_manifest.json',
+        'protocols/max-repair-loop-protocol.md',
         'references/v6-route-map.yaml',
         'references/concept-registry/index.md',
         'references/concept-contracts/v6-core-contracts.md',
+        'references/concept-contracts/v6-contract-map.json',
         'references/retrieval-trigger-policy.md',
         'references/v6-full-source/00-index.md',
         'references/v6-full-source/00-heading-index.md',
@@ -2212,6 +2230,12 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         'references/v6-full-source/00-table-index.md',
         'tables/',
         '阶段锁',
+        '校验失败后的 repair loop',
+        'max-validator-report.json',
+        'max-repair-plan.json',
+        'affected_phase',
+        'downstream_reset',
+        'repair_action',
         'max-run-contract.json',
         'max-read-plan.json',
         'max-source-snapshot.json',
@@ -2268,6 +2292,8 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         '3.0 倍',
         'scripts/check_crossframe_max_artifacts.py',
         'check_crossframe_max_route_ledgers.py',
+        'build_crossframe_max_repair_plan.py',
+        'validate_crossframe_max_repair_fixtures.py',
     ]:
         require(needle in skill_text, f"{label}: crossframe-max SKILL.md missing marker: {needle}")
 
@@ -2298,6 +2324,11 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "max-audit-board.json",
         "max-output-plan.locked.md",
         "affected phase reset",
+        "validator failure 也必须遵守 phase lock",
+        "max-repair-loop-protocol.md",
+        "concept_id` 存在但 `source_ranges_from_registry`",
+        "contract_id` 不存在或不对应 `concept_id`",
+        "repair classifier",
         "phase_exception_record",
         "状态表",
         "反向证据只改变 claim 状态",
@@ -2428,6 +2459,40 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
             "candidate -> supported -> final",
             "red_team_final_text_authority",
         ],
+        "protocols/max-repair-loop-protocol.md": [
+            "Max Repair Loop Protocol",
+            "validator 不是终点，而是状态转换器",
+            "max-validator-report.json",
+            "max-repair-plan.json",
+            "affected phase reset",
+            "concept_source_anchor_mismatch",
+            "concept_contract_missing",
+            "missing_claim_or_source_reference",
+            "repository_maintenance_required",
+            "validation-retry-budget-exhausted",
+        ],
+        "templates/max-repair-plan-output.md": [
+            "max-repair-plan",
+            "validation_attempt",
+            "retry_count",
+            "final_output_allowed",
+            "affected_phases",
+            "must_regenerate",
+            "repair_actions",
+            "repository_maintenance_required",
+        ],
+        "schemas/max-validator-report.schema.json": [
+            "CrossFrame Max Validator Report",
+            "concept_source_anchor_mismatch",
+            "concept_contract_missing",
+            "missing_claim_or_source_reference",
+        ],
+        "schemas/max-repair-plan.schema.json": [
+            "CrossFrame Max Repair Plan",
+            "retry_count",
+            "repair_actions",
+            "repository_maintenance_required",
+        ],
         "references/concept-contracts/v6-core-contracts.md": [
             "CrossFrame Max v6 Core Concept Contracts",
             "allowed_when",
@@ -2445,7 +2510,7 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
             "停止条件",
             "撤回条件",
             "行动承接层",
-            "动力—承接链",
+            "动力-承接链",
             "反馈写回",
             "结构负荷",
             "解释准入",
@@ -2455,11 +2520,21 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
             "观测反身性",
             "权力封闭度",
         ],
+        "references/concept-contracts/v6-contract-map.json": [
+            '"version": "v6.0"',
+            '"contracts"',
+            '"时间不可逆"',
+            '"强判断八件套"',
+            '"contract_type": "concept_contract"',
+        ],
         "references/concept-registry/index.md": [
             "CrossFrame Max Concept Registry",
             "concept-registry lookup",
             "It does not replace the full-source primary knowledge base",
             "local structural variable -> concept-registry lookup -> full-source paragraph read -> concept contract -> claim ledger",
+            "Source Anchor Closure Rule",
+            "source_ranges_from_registry",
+            "concept_source_anchor_mismatch",
             "direct hit",
             "neighbor hit",
             "conflict hit",
@@ -2546,6 +2621,43 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         for needle in needles:
             require(needle in text, f"{label}: crossframe-max {rel} missing marker: {needle}")
 
+    route_required_concepts: set[str] = set()
+    current_route_field: str | None = None
+    for line in read(max_root / "references" / "v6-route-map.yaml").splitlines():
+        field_match = re.match(r"^    ([a-z_]+):\s*$", line)
+        if field_match:
+            current_route_field = field_match.group(1)
+            continue
+        item_match = re.match(r"^      -\s+(.+?)\s*$", line)
+        if item_match and current_route_field == "required_concepts":
+            route_required_concepts.add(item_match.group(1).strip().strip("\"'"))
+    contract_map = json.loads(read(max_root / "references" / "concept-contracts" / "v6-contract-map.json")).get("contracts", {})
+    contract_text = read(max_root / "references" / "concept-contracts" / "v6-core-contracts.md")
+    contract_headings = {
+        heading
+        for heading in (match.group(1).strip() for match in re.finditer(r"^##\s+(.+?)\s*$", contract_text, re.MULTILINE))
+    }
+    normalized_contract_headings = {heading.replace("—", "-").replace("–", "-") for heading in contract_headings}
+    registry_concepts = {
+        columns[0].strip().strip("`")
+        for line in read(max_root / "references" / "concept-registry" / "index.md").splitlines()
+        if line.startswith("|") and "---" not in line
+        for columns in ([column.strip() for column in line.strip().strip("|").split("|")],)
+        if columns and columns[0].strip().strip("`") not in {"concept", "concept / gate", "anchor", "outcome"}
+    }
+    for concept in sorted(route_required_concepts):
+        entry = contract_map.get(concept)
+        require(isinstance(entry, dict), f"{label}: v6-contract-map missing route-required concept: {concept}")
+        contract_id = entry.get("contract_id") if isinstance(entry, dict) else None
+        require(isinstance(contract_id, str) and "#" in contract_id, f"{label}: invalid contract_id for {concept}")
+        heading = contract_id.split("#", 1)[1] if isinstance(contract_id, str) and "#" in contract_id else ""
+        require(
+            heading in contract_headings or heading in normalized_contract_headings,
+            f"{label}: contract heading missing for route-required concept: {concept}",
+        )
+    for concept in sorted(contract_map):
+        require(concept in registry_concepts, f"{label}: contract map concept missing from registry: {concept}")
+
     dossier_text = read(max_root / "templates" / "max-dossier-output.md")
     for needle in [
         "max-phase-lock",
@@ -2586,6 +2698,14 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "neighbor hit",
         "conflict hit",
         "gap hit",
+        "registry expected source ranges",
+        "source_ranges_from_registry",
+        "source_ranges_read",
+        "source_paragraph_ids inside read ranges",
+        "contract_id",
+        "contract heading exists",
+        "contract map status",
+        "concept-source-contract closure",
         "先查 registry 再读 full-source",
         "不替代 full-source",
         "max-scale-map",
@@ -2607,6 +2727,14 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "max-claim-ledger.json",
         "max-concept-hit-ledger.json",
         "max-evidence-reasoning-audit.json",
+        "max-validator-report.json",
+        "max-repair-plan.json",
+        "max-validation-and-repair-state",
+        "validation_attempt",
+        "affected_phase",
+        "downstream_reset",
+        "repair_action",
+        "final_output_allowed",
         "stage 0 source inventory",
         "stage 8 final read audit",
         "read status: full / partial / missing",
@@ -2715,6 +2843,8 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "max-claim-ledger.json",
         "max-concept-hit-ledger.json",
         "max-evidence-reasoning-audit.json",
+        "max-validator-report.json",
+        "max-repair-plan.json",
         "stage 8 final read audit",
         "layer digest",
         "超越性窗口",
@@ -2729,6 +2859,8 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "续写索引",
         "正文主导原则",
         "解释覆盖率",
+        "若本轮经过 repair loop",
+        "final_output_allowed=true",
         "非当前术语必须先归一到 v6 分层",
         "max-dossier 的 1.6 倍",
         "2.2 倍",
@@ -2782,6 +2914,12 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "max-claim-ledger.json",
         "max-concept-hit-ledger.json",
         "max-evidence-reasoning-audit.json",
+        "max-validator-report.json",
+        "max-repair-plan.json",
+        "repair loop concept source anchor mismatch",
+        "repair loop contract missing",
+        "repair loop essay marker stuffing",
+        "repair loop evidence insufficient",
         "stage 8 final read audit",
         "有序退场",
         "局部世界建模缺失",
@@ -2823,6 +2961,7 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         '使用 crossframe-max',
         'SKILL.md',
         'protocols/max-worldview-protocol.md',
+        'protocols/max-repair-loop-protocol.md',
         '不得用本 prompt 替代协议文件',
         'max-complete',
         'max-design-review',
@@ -2892,8 +3031,14 @@ def check_crossframe_max_skill(root: Path, label: str) -> None:
         "parse_registry_concepts",
         "parse_registry_anchor_map",
         "parse_contract_headings",
+        "parse_contract_map",
+        "v6-contract-map.json",
         "source_ranges_from_registry does not match registry anchors",
+        "must equal v6-contract-map.json entry",
         "contract_id heading not found",
+        "check_structured",
+        "--json",
+        "--write-report",
         "route_required_concepts",
         "route_forbidden_outputs_checked",
         "design_decision_id",

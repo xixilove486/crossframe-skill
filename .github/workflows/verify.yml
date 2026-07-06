@@ -50,6 +50,8 @@ jobs:
           python -m json.tool skills/crossframe/schemas/calibration-anchor.schema.json > /dev/null
           python -m json.tool skills/crossframe/schemas/mechanism-update.schema.json > /dev/null
           python -m json.tool skills/crossframe/schemas/counterexample-register.schema.json > /dev/null
+          python -m json.tool skills/crossframe-max/schemas/max-validator-report.schema.json > /dev/null
+          python -m json.tool skills/crossframe-max/schemas/max-repair-plan.schema.json > /dev/null
 
       - name: Install schema validator
         run: python -m pip install jsonschema
@@ -74,6 +76,15 @@ jobs:
       - name: Validate CrossFrame Max route ledger fixtures
         run: python scripts/validate_crossframe_max_route_ledger_fixtures.py
 
+      - name: Validate CrossFrame Max repair fixtures
+        run: python scripts/validate_crossframe_max_repair_fixtures.py
+
+      - name: Validate CrossFrame Max repair planner smoke
+        run: |
+          temp_dir="$(mktemp -d)"
+          python scripts/validate_crossframe_max_repair_fixtures.py --write-valid-fixture "$temp_dir"
+          python scripts/build_crossframe_max_repair_plan.py --workspace "$temp_dir" --dry-run
+
       - name: Check mirror sync
         run: python scripts/sync_skill_mirrors.py --check
 
@@ -93,6 +104,8 @@ jobs:
               "scripts/install-codex.sh",
               "scripts/install-codex.ps1",
               ".github/workflows/verify.yml",
+              "skills/crossframe-max/protocols/max-repair-loop-protocol.md",
+              "skills/crossframe-max/schemas/max-repair-plan.schema.json",
           ]:
               if name not in names:
                   raise SystemExit(f"package smoke missing: {name}")

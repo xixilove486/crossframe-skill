@@ -17,7 +17,12 @@ from check_crossframe_max_artifacts import (
     check_crossframe_max_artifacts,
 )
 from check_crossframe_max_read_ledger import EXPECTED_FILE_RANGES, EXPECTED_TOTAL_PARAGRAPHS
-from check_crossframe_max_route_ledgers import check, paragraph_range_tuple, parse_registry_anchor_map
+from check_crossframe_max_route_ledgers import (
+    check,
+    paragraph_range_tuple,
+    parse_contract_map,
+    parse_registry_anchor_map,
+)
 
 
 SKILL_DESIGN_CONCEPTS = [
@@ -131,6 +136,7 @@ ROUTE_FIXTURES = {
 
 ROUTE_CONCEPTS = SKILL_DESIGN_CONCEPTS
 _REGISTRY_ANCHOR_MAP: dict[str, set[str]] | None = None
+_CONTRACT_MAP: dict[str, dict[str, object]] | None = None
 
 
 def repo_root() -> Path:
@@ -147,6 +153,30 @@ def registry_anchor_map() -> dict[str, set[str]]:
             raise AssertionError(f"registry anchor map failed: {errors}")
         _REGISTRY_ANCHOR_MAP = anchor_map
     return _REGISTRY_ANCHOR_MAP
+
+
+def contract_map() -> dict[str, dict[str, object]]:
+    global _CONTRACT_MAP
+    if _CONTRACT_MAP is None:
+        contracts, errors = parse_contract_map(
+            repo_root()
+            / "skills"
+            / "crossframe-max"
+            / "references"
+            / "concept-contracts"
+            / "v6-contract-map.json"
+        )
+        if errors:
+            raise AssertionError(f"contract map failed: {errors}")
+        _CONTRACT_MAP = contracts
+    return _CONTRACT_MAP
+
+
+def contract_id_for_concept(concept: str) -> str:
+    entry = contract_map().get(concept)
+    if not entry or not isinstance(entry.get("contract_id"), str):
+        raise AssertionError(f"missing contract map entry for fixture concept: {concept}")
+    return entry["contract_id"]
 
 
 def sorted_anchor_ranges(concept: str) -> list[str]:
@@ -179,7 +209,7 @@ def base_fixture(route_key: str = "skill_design") -> dict[str, object]:
                 "source_ranges_from_registry": concept_ranges,
                 "source_ranges_read": concept_ranges,
                 "source_paragraph_ids": [source_id],
-                "contract_id": f"v6-core-contracts.md#{concept}",
+                "contract_id": contract_id_for_concept(concept),
                 "contract_checked": True,
                 "downgraded_after_source_read": False,
             }
@@ -480,6 +510,12 @@ def main() -> int:
         "v6-core-contracts.md#不存在契约"
     )
     run_case("missing-contract-heading", missing_contract_heading, "contract_id heading not found")
+
+    contract_id_not_equal_map = copy.deepcopy(valid)
+    contract_id_not_equal_map["max-concept-hit-ledger.json"]["concept_hits"][0]["contract_id"] = (  # type: ignore[index]
+        "v6-core-contracts.md#解释准入"
+    )
+    run_case("contract-id-not-equal-map", contract_id_not_equal_map, "must equal v6-contract-map.json entry")
 
     missing_v6_rule = copy.deepcopy(valid)
     del missing_v6_rule["max-claim-ledger.json"]["claims"][0]["v6_rule_ids"]  # type: ignore[index]
