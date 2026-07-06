@@ -101,9 +101,6 @@ python scripts/check_source_continuity.py --materials-only --repo .
 python -m json.tool skills/crossframe/schemas/claim-ledger.schema.json
 python -m pip install jsonschema
 python scripts/validate_claim_ledger_schema_fixtures.py --repo .
-python scripts/validate_v5_dlc_quantification_schema_fixtures.py --repo .
-python scripts/check_v5_dlc_casebook_trials.py --repo .
-python scripts/check_v5_dlc_publication_bundle.py --repo .
 python scripts/check_crossframe_max_v6_full_source.py --repo . --source-docx <path-to-v6-docx> --allow-source-path-mismatch
 python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
 python scripts/validate_crossframe_max_route_ledger_fixtures.py
@@ -112,12 +109,6 @@ bash -n scripts/install-codex.sh
 python -m py_compile scripts/*.py
 git diff --check
 ```
-
-v5.0 半量化 DLC 基础层只是内部审计层：它用锚点评分、schema fixtures 和降档检查暴露不确定性、撤回条件和行动上限。它不是总分系统、预测模型、认证系统或处置工具。
-
-v5.0 半量化 DLC 案例库验证是失败发现 shakedown：它用组织、关系、公共争议和误用反例试跑来暴露降档压力、评分者分歧、锚点修订和模板阻断需求。它不能证明框架现实正确，也不能替代调查、受影响位置反馈或外部复核。
-
-v5.0 半量化 DLC 发布源稿见 [docs/CROSSFRAME_V5_DLC.md](docs/CROSSFRAME_V5_DLC.md)，工具原型说明见 [docs/V5_DLC_TOOL_PROTOTYPE.md](docs/V5_DLC_TOOL_PROTOTYPE.md)。需要生成可分发 DOCX 时运行 `python scripts/build_v5_dlc_docx.py --repo .`。
 
 完整上手说明见 [docs/QUICKSTART.md](docs/QUICKSTART.md)。
 
