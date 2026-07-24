@@ -539,7 +539,7 @@ def _validate_excerpt_array(
             raise ValueError(
                 f"{field} contains an evidence_excerpt not found verbatim in essay"
             )
-        if essay.count(excerpt) != 1:
+        if essay.find(excerpt) != essay.rfind(excerpt):
             raise ValueError(
                 f"{field} contains an ambiguous repeated evidence_excerpt"
             )
@@ -549,7 +549,7 @@ def _validate_excerpt_array(
 def _sentence_spans(text: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     start = 0
-    for match in re.finditer(r"[。！？!?]+|(?:\r?\n)+", text):
+    for match in re.finditer(r"[。！？!?]+|\r?\n[ \t]*\r?\n+", text):
         end = match.end()
         if text[start:end].strip():
             spans.append((start, end))

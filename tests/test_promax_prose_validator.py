@@ -19,6 +19,7 @@ from promax_runtime.deliverables import (  # noqa: E402
     validate_v2_reader_documents,
 )
 from promax_runtime.jsonio import sha256_json  # noqa: E402
+from promax_runtime.prose import _validate_excerpt_array  # noqa: E402
 
 
 RUN_ID = "promax-prose-test"
@@ -591,6 +592,59 @@ class ProMaxProseReviewTests(unittest.TestCase):
             "excerpt|sentence|region|substantive|distinct",
         ):
             self.validate_review(candidate)
+
+    def test_review_does_not_treat_markdown_soft_breaks_as_new_sentences(self) -> None:
+        fragments = (
+            "现实入口展示成本开始转移",
+            "中心命题说明当前判断方向",
+            "机制递进解释结果如何生成",
+            "证据绑定限制结论能够多强",
+            "最强反方指出试验可能扩损",
+            "公平比较保持同一评价维度",
+            "明确立场没有躲进模糊措辞",
+            "撤回条件规定何时停止推进",
+            "行动边界拒绝制造现实授权",
+            "固定声口不迎合也不唱反调",
+            "全文检查确认没有审计泄漏",
+        )
+        soft_break_essay = "\n".join(fragments) + "。"
+        candidate = prose_review()
+        candidate["essay_sha256"] = hashlib.sha256(
+            soft_break_essay.encode("utf-8")
+        ).hexdigest()
+        candidate["required_beat_mappings"][0]["evidence_excerpts"] = [
+            fragments[0]
+        ]
+        candidate["required_beat_mappings"][1]["evidence_excerpts"] = [
+            fragments[-1]
+        ]
+        for dimension, fragment in zip(candidate["dimensions"].values(), fragments):
+            dimension["evidence_excerpts"] = [fragment]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "sentence region|distinct",
+        ):
+            validate_prose_review(
+                candidate,
+                essay=soft_break_essay,
+                position=position(),
+                output_plan=output_plan(),
+                run_id=RUN_ID,
+                source_snapshot_sha256=SOURCE_SHA,
+            )
+
+    def test_excerpt_uniqueness_detects_overlapping_occurrences(self) -> None:
+        excerpt = "甲乙丙丁甲乙丙丁"
+        essay_text = "甲乙丙丁甲乙丙丁甲乙丙丁。"
+
+        with self.assertRaisesRegex(ValueError, "ambiguous repeated"):
+            _validate_excerpt_array(
+                [excerpt],
+                essay=essay_text,
+                field="test.evidence_excerpts",
+                allow_empty=False,
+            )
 
 
 if __name__ == "__main__":
