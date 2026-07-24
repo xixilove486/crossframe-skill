@@ -2,6 +2,20 @@
 
 本文件规定 CrossFrame skill family 的连续触发规则。
 
+<!-- PROMAX-ROUTING-BEGIN -->
+## ProMax 独立路由矩阵
+
+- `PROMAX-NAMED-ONLY`：精确命中范围仅为 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax`。
+- `PROMAX-ROUTE-EXACT-PROMAX-TO-PROMAX`：精确点名 ProMax → `skills/crossframe-promax/SKILL.md` 的独立 v8 artifact workflow。
+- `PROMAX-PRIORITY-OVER-MAX` 与 `PROMAX-ROUTE-BOTH-NAMES-TO-PROMAX`：ProMax + Max → ProMax；Max 仅作为冲突名称留档。
+- `PROMAX-NO-FALLBACK-TO-MAX`：路由冻结后不改走 Max，未完成也保留 ProMax 状态。
+- `PROMAX-ROUTE-MAX-ONLY-TO-MAX`：只点名 Max → 既有 `crossframe-max`。
+- `PROMAX-GENERIC-MAX-STAYS-MAX`：只要求最大算力、全尺度或不限字数 → 既有 Max，不升级 ProMax。
+- `PROMAX-ROUTE-NEAR-MISS-NO-MATCH`：`ProMax`、`crossframe pro max`、`crossframe-promaxx`、`crossframe-pro` → 不命中 ProMax。
+
+ProMax 不进入 suite 的 mode/role/article selector，不串接 `crossframe-review`，也不以 sibling 知识作为其理论面。
+<!-- PROMAX-ROUTING-END -->
+
 ## 核心链路
 
 | 用户目标 | 默认工作流 | 说明 |

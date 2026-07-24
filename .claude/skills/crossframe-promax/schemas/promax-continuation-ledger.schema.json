@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-continuation-ledger.schema.json",
+  "title": "CrossFrame ProMax continuation ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "run_id", "source_snapshot_sha256", "parent_manifest_sha256", "continuations", "updated_at"],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.continuation-ledger"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "parent_manifest_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "continuations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/continuation"}
+    },
+    "updated_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "$defs": {
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["continuation_id", "sequence", "parent_artifact_sha256", "resume_from_phase", "pending_artifact_paths", "reason", "status"],
+      "properties": {
+        "continuation_id": {"type": "string", "pattern": "^CONT-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "sequence": {"type": "integer", "minimum": 1},
+        "parent_artifact_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "resume_from_phase": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+        "pending_artifact_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/relativePath"}
+        },
+        "reason": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "status": {"enum": ["pending", "in_progress", "completed", "superseded"]}
+      }
+    }
+  }
+}

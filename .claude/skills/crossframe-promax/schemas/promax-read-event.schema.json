@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-read-event.schema.json",
+  "title": "CrossFrame ProMax v8 source read event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "event_id",
+    "run_id",
+    "source_snapshot_sha256",
+    "sequence",
+    "source_kind",
+    "source_anchor",
+    "source_file",
+    "content_sha256",
+    "read_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.read-event"},
+    "schema_version": {"const": 1},
+    "event_id": {"type": "string", "pattern": "^read-event-[0-9]{6,}(?![\\s\\S])"},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "source_kind": {"enum": ["paragraph", "table"]},
+    "source_anchor": {"type": "string"},
+    "source_file": {"type": "string", "pattern": "^(?:00-source-envelope|(?:0[1-9]|1[0-6])-[a-z0-9-]+|tables/V8-T[0-9]{3})\\.md(?![\\s\\S])"},
+    "content_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "read_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"source_kind": {"const": "paragraph"}}, "required": ["source_kind"]},
+      "then": {"properties": {"source_anchor": {"pattern": "^V8-P[0-9]{4}(?![\\s\\S])"}}},
+      "else": {"properties": {"source_anchor": {"pattern": "^V8-T[0-9]{3}(?![\\s\\S])"}, "source_file": {"pattern": "^tables/V8-T[0-9]{3}\\.md(?![\\s\\S])"}}}
+    }
+  ]
+}

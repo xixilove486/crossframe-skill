@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-run-contract.schema.json",
+  "title": "CrossFrame ProMax v8 immutable P0 run contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "run_id",
+    "run_nonce",
+    "request_sha256",
+    "source_snapshot_sha256",
+    "mode",
+    "recommendation_required",
+    "blocker",
+    "requested_skill_names",
+    "routing_conflict",
+    "capabilities",
+    "orchestration_mode",
+    "role_plan",
+    "budgets",
+    "completion_criteria",
+    "created_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.run-contract"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.0"},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "run_nonce": {"$ref": "promax-common.schema.json#/$defs/runNonce"},
+    "request_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "mode": {
+      "enum": [
+        "promax-artifact-run",
+        "promax-complete",
+        "promax-design-review",
+        "promax-blocked/progress"
+      ]
+    },
+    "recommendation_required": {"type": "boolean"},
+    "blocker": {
+      "oneOf": [
+        {"$ref": "#/$defs/blocker"},
+        {"type": "null"}
+      ]
+    },
+    "requested_skill_names": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/routingProMaxSkillName"},
+          {"$ref": "#/$defs/routingMaxSkillName"}
+        ]
+      },
+      "contains": {"const": "crossframe-promax"},
+      "minContains": 1,
+      "maxContains": 1
+    },
+    "routing_conflict": {"$ref": "#/$defs/routingConflict"},
+    "capabilities": {"$ref": "#/$defs/capabilities"},
+    "orchestration_mode": {"$ref": "promax-common.schema.json#/$defs/orchestrationMode"},
+    "role_plan": {"$ref": "promax-common.schema.json#/$defs/orderedRolePlan"},
+    "budgets": {"$ref": "#/$defs/budgets"},
+    "completion_criteria": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "source-closure",
+          "concept-closure",
+          "claim-path-closure",
+          "retrieval-and-counterexample-closure",
+          "position-lock",
+          "output-and-validator-closure"
+        ]
+      },
+      "allOf": [
+        {"contains": {"const": "source-closure"}},
+        {"contains": {"const": "concept-closure"}},
+        {"contains": {"const": "claim-path-closure"}},
+        {"contains": {"const": "retrieval-and-counterexample-closure"}},
+        {"contains": {"const": "position-lock"}},
+        {"contains": {"const": "output-and-validator-closure"}}
+      ]
+    },
+    "created_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"mode": {"const": "promax-blocked/progress"}},
+        "required": ["mode"]
+      },
+      "then": {"properties": {"blocker": {"$ref": "#/$defs/blocker"}}},
+      "else": {"properties": {"blocker": {"type": "null"}}}
+    },
+    {
+      "if": {
+        "properties": {
+          "requested_skill_names": {"contains": {"$ref": "#/$defs/routingMaxSkillName"}}
+        },
+        "required": ["requested_skill_names"]
+      },
+      "then": {
+        "properties": {
+          "routing_conflict": {
+            "properties": {
+              "detected": {"const": true},
+              "conflicting_names": {
+                "minItems": 2,
+                "maxItems": 2,
+                "allOf": [
+                  {"contains": {"$ref": "#/$defs/routingProMaxSkillName"}},
+                  {"contains": {"$ref": "#/$defs/routingMaxSkillName"}}
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "routing_conflict": {
+            "properties": {
+              "detected": {"const": false},
+              "conflicting_names": {"maxItems": 0}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capabilities": {
+            "properties": {
+              "subagents": {
+                "properties": {"available": {"const": true}},
+                "required": ["available"]
+              }
+            },
+            "required": ["subagents"]
+          }
+        },
+        "required": ["capabilities"]
+      },
+      "then": {
+        "properties": {
+          "orchestration_mode": {"const": "multi-agent-isolated"},
+          "role_plan": {
+            "not": {
+              "contains": {
+                "properties": {"execution_mode": {"const": "single-agent-separated"}},
+                "required": ["execution_mode"]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "orchestration_mode": {"const": "single-agent-separated"},
+          "role_plan": {
+            "not": {
+              "contains": {
+                "properties": {"execution_mode": {"const": "multi-agent-isolated"}},
+                "required": ["execution_mode"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "routingProMaxSkillName": {
+      "const": "crossframe-promax"
+    },
+    "routingMaxSkillName": {
+      "const": "crossframe-max"
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "detail"],
+      "properties": {
+        "category": {
+          "enum": [
+            "source_unavailable",
+            "filesystem_unwritable",
+            "required_tool_forbidden",
+            "user_stopped",
+            "safety_boundary"
+          ]
+        },
+        "detail": {"type": "string", "minLength": 1, "pattern": "\\S"}
+      }
+    },
+    "routingConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detected", "conflicting_names", "resolved_to", "priority_rule", "fallback_allowed"],
+      "properties": {
+        "detected": {"type": "boolean"},
+        "conflicting_names": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "oneOf": [
+              {"$ref": "#/$defs/routingProMaxSkillName"},
+              {"$ref": "#/$defs/routingMaxSkillName"}
+            ]
+          }
+        },
+        "resolved_to": {"const": "crossframe-promax"},
+        "priority_rule": {"const": "routing-priority-crossframe-promax-over-crossframe-max-no-fallback"},
+        "fallback_allowed": {"const": false}
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+    },
+    "fileCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "readable", "writable", "limitations"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "readable": {"type": "boolean"},
+        "writable": {"type": "boolean"},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"available": {"const": false}}, "required": ["available"]},
+          "then": {"properties": {"readable": {"const": false}, "writable": {"const": false}}}
+        }
+      ]
+    },
+    "networkCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "live_retrieval", "limitations"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "live_retrieval": {"type": "boolean"},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"available": {"const": false}}, "required": ["available"]},
+          "then": {"properties": {"live_retrieval": {"const": false}}}
+        }
+      ]
+    },
+    "subagentCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "isolated_roles", "max_parallelism", "limitations"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "isolated_roles": {"type": "boolean"},
+        "max_parallelism": {"type": "integer", "minimum": 0},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"available": {"const": true}}, "required": ["available"]},
+          "then": {"properties": {"isolated_roles": {"const": true}, "max_parallelism": {"minimum": 1}}},
+          "else": {"properties": {"isolated_roles": {"const": false}, "max_parallelism": {"const": 0}, "limitations": {"minItems": 1}}}
+        }
+      ]
+    },
+    "validatorCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "executable", "validator_ids", "limitations"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "executable": {"type": "boolean"},
+        "validator_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "pattern": "\\S"}
+        },
+        "limitations": {"$ref": "#/$defs/limitations"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"available": {"const": true}}, "required": ["available"]},
+          "then": {"properties": {"executable": {"const": true}, "validator_ids": {"minItems": 1}}},
+          "else": {"properties": {"executable": {"const": false}, "validator_ids": {"maxItems": 0}}}
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "network", "subagents", "validators"],
+      "properties": {
+        "files": {"$ref": "#/$defs/fileCapability"},
+        "network": {"$ref": "#/$defs/networkCapability"},
+        "subagents": {"$ref": "#/$defs/subagentCapability"},
+        "validators": {"$ref": "#/$defs/validatorCapability"}
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paragraphs", "tables", "registry_concepts", "minimum_red_team_rounds", "minimum_no_novelty_rounds"],
+      "properties": {
+        "paragraphs": {"const": 3863},
+        "tables": {"const": 117},
+        "registry_concepts": {"const": 709},
+        "minimum_red_team_rounds": {"type": "integer", "minimum": 2},
+        "minimum_no_novelty_rounds": {"type": "integer", "minimum": 2}
+      }
+    }
+  }
+}

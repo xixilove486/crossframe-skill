@@ -16,7 +16,7 @@ macOS / Linux：
 bash scripts/install-codex.sh
 ```
 
-它会安装 15 个 `crossframe-*` skills 到 `$HOME/.codex/skills`。
+它会安装 16 个 `crossframe-*` skills 到 `$HOME/.codex/skills`。
 
 ## 2. Claude Code
 
@@ -25,6 +25,7 @@ Claude Code 项目内使用：
 ```text
 /crossframe-suite 分析这个团队为什么复盘很多但没有真实修复
 /crossframe-max 把这件事当作一个局部世界，做全尺度结构推演并写完整解释
+/crossframe-promax 用 v8 框架穷尽分析这个判断，主动搜索反例并给出明确立场
 /crossframe-essay 写一篇关于平台治理的中文评论文章
 /crossframe-inquiry 基于刚才的文章继续追问反证和迁移条件
 ```
@@ -51,6 +52,8 @@ docs/ADAPTERS.md
 ```
 
 效果最好的是完整保留 `skills/crossframe*` 目录，因为真实规则、协议、模板和检查表都在 skill 主体里。
+
+CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
 
 ## 4. 本地验证
 

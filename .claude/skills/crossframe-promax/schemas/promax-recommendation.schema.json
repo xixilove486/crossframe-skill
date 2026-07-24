@@ -1,0 +1,522 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-recommendation.schema.json",
+  "title": "CrossFrame ProMax locked recommendation",
+  "oneOf": [
+    {"$ref": "#/$defs/fullRecommendation"},
+    {"$ref": "#/$defs/notRequested"}
+  ],
+  "$defs": {
+    "fullRecommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "source_snapshot_sha256",
+        "position_sha256",
+        "options",
+        "evaluation_dimensions",
+        "ranking",
+        "ranking_policy",
+        "ranking_evidence_refs",
+        "selection_review_wrapper",
+        "option_kind_ranking",
+        "option_record_hashes",
+        "option_semantic_ranking",
+        "preferred_option_id",
+        "second_option_id",
+        "no_action_option_id",
+        "switch_conditions",
+        "inaction_consequences",
+        "authorization_status",
+        "locked_at"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.promax.v8.recommendation"},
+        "schema_version": {"const": 1},
+        "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+        "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+        "position_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "options": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/option"},
+          "allOf": [
+            {"contains": {"properties": {"option_kind": {"const": "maintain_status_quo"}}, "required": ["option_kind"]}},
+            {"contains": {"properties": {"option_kind": {"const": "active_action"}}, "required": ["option_kind"]}},
+            {"contains": {"properties": {"option_kind": {"const": "delayed_action"}}, "required": ["option_kind"]}},
+            {"contains": {"properties": {"option_kind": {"const": "probe_action"}}, "required": ["option_kind"]}},
+            {"contains": {"properties": {"option_kind": {"const": "exit_or_transfer"}}, "required": ["option_kind"]}},
+            {
+              "contains": {"properties": {"option_kind": {"const": "no_action"}}, "required": ["option_kind"]},
+              "minContains": 1,
+              "maxContains": 1
+            }
+          ]
+        },
+        "evaluation_dimensions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "ranking": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "ranking_policy": {"enum": ["promax_low_information_house_policy_not_v8", "evidence_bound_case_comparison"]},
+        "ranking_evidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "selection_review_wrapper": {"$ref": "#/$defs/selectionReviewWrapper"},
+        "option_kind_ranking": {
+          "type": "array",
+          "minItems": 6,
+          "items": {"enum": ["maintain_status_quo", "active_action", "delayed_action", "probe_action", "exit_or_transfer", "no_action"]}
+        },
+        "option_record_hashes": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/optionRecordHash"}
+        },
+        "option_semantic_ranking": {
+          "type": "array",
+          "minItems": 6,
+          "items": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+        },
+        "preferred_option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "second_option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "no_action_option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "switch_conditions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "inaction_consequences": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "authorization_status": {"enum": ["conditional_recommendation_only", "authorized", "not_authorized", "authorization_unknown"]},
+        "locked_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ranking_policy": {"const": "promax_low_information_house_policy_not_v8"}
+            },
+            "required": ["ranking_policy"]
+          },
+          "then": {
+            "properties": {
+              "ranking_evidence_refs": {"maxItems": 0},
+              "selection_review_wrapper": {
+                "properties": {
+                  "declared_low_information_house_policy_eligibility": {
+                    "properties": {
+                      "case_specific_facts_present": {"const": false},
+                      "choice_changing_retrieval_evidence_present": {"const": false}
+                    }
+                  },
+                  "ranking_support": {"maxItems": 0},
+                  "least_harm": {
+                    "properties": {
+                      "evidence_refs": {"maxItems": 0},
+                      "status": {"const": "pending"}
+                    }
+                  },
+                  "proportionality": {
+                    "properties": {
+                      "evidence_refs": {"maxItems": 0},
+                      "status": {"const": "pending"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ranking_policy": {"const": "evidence_bound_case_comparison"}
+            },
+            "required": ["ranking_policy"]
+          },
+          "then": {
+            "properties": {
+              "ranking_evidence_refs": {"minItems": 1},
+              "selection_review_wrapper": {
+                "properties": {
+                  "declared_low_information_house_policy_eligibility": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "case_specific_facts_present": {"const": true}
+                        },
+                        "required": ["case_specific_facts_present"]
+                      },
+                      {
+                        "properties": {
+                          "choice_changing_retrieval_evidence_present": {"const": true}
+                        },
+                        "required": ["choice_changing_retrieval_evidence_present"]
+                      }
+                    ]
+                  },
+                  "ranking_support": {"minItems": 1}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "notRequested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {"const": "not_requested"}
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "option_id",
+        "option_kind",
+        "description",
+        "forecast_refs",
+        "normative_premise_refs",
+        "affected_position_refs",
+        "rights_floor_refs",
+        "expected_paths",
+        "worst_acceptable_outcome",
+        "cross_circle_spillovers",
+        "distribution_of_costs_and_benefits",
+        "information_value",
+        "lock_in_risk",
+        "reversibility",
+        "resource_cost",
+        "authorized_actor_ref",
+        "authorization_record_ref",
+        "stop_conditions",
+        "rollback_and_remedy"
+      ],
+      "properties": {
+        "option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "option_kind": {"enum": ["maintain_status_quo", "active_action", "delayed_action", "probe_action", "exit_or_transfer", "no_action"]},
+        "description": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "forecast_refs": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "normative_premise_refs": {"$ref": "#/$defs/normativePremiseArray"},
+        "affected_position_refs": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "rights_floor_refs": {"$ref": "#/$defs/protectionFloorArray"},
+        "expected_paths": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "worst_acceptable_outcome": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "cross_circle_spillovers": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "distribution_of_costs_and_benefits": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "information_value": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "lock_in_risk": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "reversibility": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "resource_cost": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "authorized_actor_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "authorization_record_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "stop_conditions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "rollback_and_remedy": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    },
+    "optionRecordHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option_id", "record_sha256"],
+      "properties": {
+        "option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "record_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+      }
+    },
+    "selectionReviewWrapper": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wrapper_schema_id",
+        "wrapper_schema_version",
+        "wrapper_role",
+        "source_paragraph_refs",
+        "selection_type",
+        "selection_status",
+        "public_value_premises",
+        "value_conflicts",
+        "unresolved_dissent_refs",
+        "rights_floor",
+        "affected_positions",
+        "low_power_position_ids",
+        "jurisdiction_review_boundary",
+        "procedure_states",
+        "least_harm",
+        "proportionality",
+        "declared_low_information_house_policy_eligibility",
+        "ranking_support"
+      ],
+      "properties": {
+        "wrapper_schema_id": {"const": "crossframe.promax.selection-review-wrapper"},
+        "wrapper_schema_version": {"const": 1},
+        "wrapper_role": {"const": "promax_machine_verification_wrapper_not_v8_source_schema"},
+        "source_paragraph_refs": {
+          "const": [
+            "V8-P3561",
+            "V8-P3564",
+            "V8-P3569",
+            "V8-P3570",
+            "V8-P3571",
+            "V8-P3572",
+            "V8-P3574",
+            "V8-P3575",
+            "V8-P3580",
+            "V8-P3581",
+            "V8-P3584",
+            "V8-P3587",
+            "V8-P3588",
+            "V8-P3589",
+            "V8-P3596",
+            "V8-P3598",
+            "V8-P3599",
+            "V8-P3601",
+            "V8-P3602"
+          ]
+        },
+        "selection_type": {"enum": ["SEL-AGT", "SEL-GOV"]},
+        "selection_status": {"const": "under_review"},
+        "public_value_premises": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/publicValuePremise"},
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "normative_principle_id": {"const": "N1"},
+                  "role": {"const": "veto_gate"}
+                },
+                "required": ["normative_principle_id", "role"]
+              }
+            },
+            {
+              "contains": {
+                "properties": {
+                  "normative_principle_id": {"enum": ["N2", "N3", "N4", "N5"]}
+                },
+                "required": ["normative_principle_id"]
+              }
+            }
+          ]
+        },
+        "value_conflicts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/valueConflict"}
+        },
+        "unresolved_dissent_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "rights_floor": {"$ref": "#/$defs/protectionFloorArray"},
+        "affected_positions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "low_power_position_ids": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "jurisdiction_review_boundary": {"$ref": "#/$defs/jurisdictionReviewBoundary"},
+        "procedure_states": {"$ref": "#/$defs/procedureStates"},
+        "least_harm": {
+          "allOf": [
+            {"$ref": "#/$defs/principleReview"},
+            {
+              "properties": {
+                "principle_id": {"const": "NSP-LEAST-HARM"}
+              }
+            }
+          ]
+        },
+        "proportionality": {
+          "allOf": [
+            {"$ref": "#/$defs/principleReview"},
+            {
+              "properties": {
+                "principle_id": {"const": "NSP-PROPORTIONALITY"}
+              }
+            }
+          ]
+        },
+        "declared_low_information_house_policy_eligibility": {"$ref": "#/$defs/housePolicyEligibility"},
+        "ranking_support": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/rankingSupport"}
+        }
+      }
+    },
+    "publicValuePremise": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normative_principle_id", "role", "statement"],
+      "properties": {
+        "normative_principle_id": {"enum": ["N1", "N2", "N3", "N4", "N5"]},
+        "role": {"enum": ["target", "constraint", "veto_gate"]},
+        "statement": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"normative_principle_id": {"const": "N1"}},
+            "required": ["normative_principle_id"]
+          },
+          "then": {"properties": {"statement": {"const": "解释不授权处置"}}}
+        },
+        {
+          "if": {
+            "properties": {"normative_principle_id": {"const": "N2"}},
+            "required": ["normative_principle_id"]
+          },
+          "then": {"properties": {"statement": {"const": "保护不得降级"}}}
+        },
+        {
+          "if": {
+            "properties": {"normative_principle_id": {"const": "N3"}},
+            "required": ["normative_principle_id"]
+          },
+          "then": {"properties": {"statement": {"const": "高影响判断可纠错"}}}
+        },
+        {
+          "if": {
+            "properties": {"normative_principle_id": {"const": "N4"}},
+            "required": ["normative_principle_id"]
+          },
+          "then": {"properties": {"statement": {"const": "不征用爱与承担"}}}
+        },
+        {
+          "if": {
+            "properties": {"normative_principle_id": {"const": "N5"}},
+            "required": ["normative_principle_id"]
+          },
+          "then": {"properties": {"statement": {"const": "存续与筛选不等于正当"}}}
+        }
+      ]
+    },
+    "valueConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conflict_id",
+        "premise_ids",
+        "affected_position_refs",
+        "dissent_refs",
+        "decision_rule",
+        "status"
+      ],
+      "properties": {
+        "conflict_id": {"type": "string", "pattern": "^VALUE-CONFLICT-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "premise_ids": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "affected_position_refs": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "dissent_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "decision_rule": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "status": {"enum": ["open", "mitigated", "resolved", "paused"]}
+      }
+    },
+    "jurisdictionReviewBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundary_role",
+        "reviewed_option_id",
+        "decision_actor_ref",
+        "authorization_source_ref",
+        "jurisdiction_ref",
+        "scope",
+        "valid_from",
+        "valid_until",
+        "authorization_status"
+      ],
+      "properties": {
+        "boundary_role": {"const": "promax_review_boundary_not_atomic_v8_j_tuple"},
+        "reviewed_option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "decision_actor_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "authorization_source_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "jurisdiction_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "scope": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "valid_from": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "valid_until": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "authorization_status": {"enum": ["not_authorized", "unknown"]}
+      }
+    },
+    "protectionFloorArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^PF-(?:[1-9]|10)$"
+      }
+    },
+    "normativePremiseArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^N[1-5]$"
+      }
+    },
+    "procedureStates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["O1", "O2", "O3", "O4"],
+      "properties": {
+        "O1": {"enum": ["complete", "in_review", "blocked"]},
+        "O2": {"enum": ["complete", "in_review", "blocked"]},
+        "O3": {"enum": ["complete", "in_review", "blocked"]},
+        "O4": {"const": "not_started"}
+      }
+    },
+    "principleReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principle_id",
+        "principle_version",
+        "selected_option_id",
+        "compared_option_ids",
+        "evaluation_dimensions",
+        "sufficient_reason",
+        "evidence_refs",
+        "reviewer_ref",
+        "reviewed_at",
+        "status"
+      ],
+      "properties": {
+        "principle_id": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "principle_version": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "selected_option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "compared_option_ids": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "evaluation_dimensions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "sufficient_reason": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "reviewer_ref": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "reviewed_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "status": {"enum": ["pending", "passed", "failed"]}
+      }
+    },
+    "housePolicyEligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_specific_facts_present",
+        "choice_changing_retrieval_evidence_present",
+        "basis"
+      ],
+      "properties": {
+        "case_specific_facts_present": {"type": "boolean"},
+        "choice_changing_retrieval_evidence_present": {"type": "boolean"},
+        "basis": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "rankingSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "option_id",
+        "evaluation_dimension",
+        "evidence_refs",
+        "support_reason"
+      ],
+      "properties": {
+        "option_id": {"type": "string", "pattern": "^OPTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "evaluation_dimension": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "support_reason": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

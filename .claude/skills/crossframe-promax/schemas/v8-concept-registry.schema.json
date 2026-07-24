@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/v8-concept-registry.schema.json",
+  "title": "CrossFrame ProMax v8 canonical concept registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "snapshot_sha256",
+    "canonical_namespace",
+    "provisional_namespace",
+    "curation_basis",
+    "global_action_ceiling",
+    "concept_count",
+    "concept_inventory_sha256",
+    "concepts"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.concept-registry"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.0"},
+    "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "canonical_namespace": {"const": "V8-CANON-"},
+    "provisional_namespace": {"const": "PROMAX-PROV-"},
+    "curation_basis": {"type": "string", "minLength": 20},
+    "global_action_ceiling": {"$ref": "#/$defs/global_action_ceiling"},
+    "concept_count": {"const": 709},
+    "concept_inventory_sha256": {"$ref": "#/$defs/sha256"},
+    "concepts": {
+      "type": "array",
+      "minItems": 709,
+      "maxItems": 709,
+      "items": {"$ref": "#/$defs/concept"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "concept_id": {"type": "string", "pattern": "^V8-CANON-[A-Z0-9][A-Z0-9-]*$"},
+    "nonempty_string_array": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "string_array": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "allowed_inference_array": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 4}
+    },
+    "source_anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchor_id", "source_file"],
+      "properties": {
+        "anchor_id": {"type": "string", "pattern": "^V8-P[0-9]{4}$"},
+        "source_file": {"type": "string", "pattern": "^(?:00-source-envelope|(?:0[1-9]|1[0-6])-[a-z0-9-]+)\\.md$"}
+      }
+    },
+    "hv_source_card_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label_text", "label_anchor", "raw_value_text", "value_anchor"],
+      "properties": {
+        "label_text": {"type": "string", "minLength": 1},
+        "label_anchor": {"$ref": "#/$defs/source_anchor"},
+        "raw_value_text": {"type": "string", "minLength": 1},
+        "value_anchor": {"$ref": "#/$defs/source_anchor"}
+      }
+    },
+    "hv_source_card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_id", "field_count", "card_anchor", "fields", "content_sha256"],
+      "properties": {
+        "schema_id": {"const": "crossframe-promax-v8-human-variable-source-card/1.0.0"},
+        "field_count": {"const": 39},
+        "card_anchor": {"$ref": "#/$defs/source_anchor"},
+        "fields": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "qualified_id",
+            "name",
+            "proposition",
+            "scope",
+            "claim_type",
+            "contract_role",
+            "pause_condition",
+            "allowed_inference",
+            "prohibited_leap",
+            "inferential_requires",
+            "protocol_requires",
+            "specializes",
+            "applies_to",
+            "conditional_support_routes",
+            "scale_profile",
+            "effective_object",
+            "state",
+            "observables",
+            "evidence",
+            "input_dependencies",
+            "output_effects",
+            "carrier",
+            "responsible_subject",
+            "time_window_and_lag",
+            "uncertainty",
+            "local_exclusion_zone",
+            "affected_positions",
+            "normative_status",
+            "scale_invariants",
+            "required_scale_additions",
+            "changing_semantics",
+            "non_applicable_objects",
+            "forbidden_elevation",
+            "judgment_ceiling",
+            "action_ceiling",
+            "counterexamples",
+            "appeal",
+            "rollback"
+          ],
+          "properties": {
+            "id": {"$ref": "#/$defs/hv_source_card_field"},
+            "qualified_id": {"$ref": "#/$defs/hv_source_card_field"},
+            "name": {"$ref": "#/$defs/hv_source_card_field"},
+            "proposition": {"$ref": "#/$defs/hv_source_card_field"},
+            "scope": {"$ref": "#/$defs/hv_source_card_field"},
+            "claim_type": {"$ref": "#/$defs/hv_source_card_field"},
+            "contract_role": {"$ref": "#/$defs/hv_source_card_field"},
+            "pause_condition": {"$ref": "#/$defs/hv_source_card_field"},
+            "allowed_inference": {"$ref": "#/$defs/hv_source_card_field"},
+            "prohibited_leap": {"$ref": "#/$defs/hv_source_card_field"},
+            "inferential_requires": {"$ref": "#/$defs/hv_source_card_field"},
+            "protocol_requires": {"$ref": "#/$defs/hv_source_card_field"},
+            "specializes": {"$ref": "#/$defs/hv_source_card_field"},
+            "applies_to": {"$ref": "#/$defs/hv_source_card_field"},
+            "conditional_support_routes": {"$ref": "#/$defs/hv_source_card_field"},
+            "scale_profile": {"$ref": "#/$defs/hv_source_card_field"},
+            "effective_object": {"$ref": "#/$defs/hv_source_card_field"},
+            "state": {"$ref": "#/$defs/hv_source_card_field"},
+            "observables": {"$ref": "#/$defs/hv_source_card_field"},
+            "evidence": {"$ref": "#/$defs/hv_source_card_field"},
+            "input_dependencies": {"$ref": "#/$defs/hv_source_card_field"},
+            "output_effects": {"$ref": "#/$defs/hv_source_card_field"},
+            "carrier": {"$ref": "#/$defs/hv_source_card_field"},
+            "responsible_subject": {"$ref": "#/$defs/hv_source_card_field"},
+            "time_window_and_lag": {"$ref": "#/$defs/hv_source_card_field"},
+            "uncertainty": {"$ref": "#/$defs/hv_source_card_field"},
+            "local_exclusion_zone": {"$ref": "#/$defs/hv_source_card_field"},
+            "affected_positions": {"$ref": "#/$defs/hv_source_card_field"},
+            "normative_status": {"$ref": "#/$defs/hv_source_card_field"},
+            "scale_invariants": {"$ref": "#/$defs/hv_source_card_field"},
+            "required_scale_additions": {"$ref": "#/$defs/hv_source_card_field"},
+            "changing_semantics": {"$ref": "#/$defs/hv_source_card_field"},
+            "non_applicable_objects": {"$ref": "#/$defs/hv_source_card_field"},
+            "forbidden_elevation": {"$ref": "#/$defs/hv_source_card_field"},
+            "judgment_ceiling": {"$ref": "#/$defs/hv_source_card_field"},
+            "action_ceiling": {"$ref": "#/$defs/hv_source_card_field"},
+            "counterexamples": {"$ref": "#/$defs/hv_source_card_field"},
+            "appeal": {"$ref": "#/$defs/hv_source_card_field"},
+            "rollback": {"$ref": "#/$defs/hv_source_card_field"}
+          }
+        },
+        "content_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concept_id", "disambiguation"],
+      "properties": {
+        "concept_id": {"$ref": "#/$defs/concept_id"},
+        "disambiguation": {"type": "string", "minLength": 1}
+      }
+    },
+    "deduction_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_concept_id", "relation", "output_ceiling"],
+      "properties": {
+        "target_concept_id": {"$ref": "#/$defs/concept_id"},
+        "relation": {"type": "string", "minLength": 1},
+        "output_ceiling": {"type": "string", "minLength": 1}
+      }
+    },
+    "conditional_support_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_id",
+        "claim_level",
+        "when",
+        "additional_inferential_requires",
+        "additional_protocol_requires",
+        "allowed_conclusion",
+        "result_ceiling",
+        "source_text",
+        "required_concept_ids",
+        "source_anchor"
+      ],
+      "properties": {
+        "route_id": {"type": "string", "pattern": "^HV(?:0[1-9]|1[01])-R[0-9]+-[a-z0-9-]+$"},
+        "claim_level": {"type": "string", "minLength": 1},
+        "when": {"type": "string", "minLength": 1},
+        "additional_inferential_requires": {"type": "string", "minLength": 1},
+        "additional_protocol_requires": {"type": "string", "minLength": 1},
+        "allowed_conclusion": {"type": "string", "minLength": 1},
+        "result_ceiling": {"type": "string", "minLength": 1},
+        "source_text": {"type": "string", "minLength": 1},
+        "required_concept_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/concept_id"}
+        },
+        "source_anchor": {"$ref": "#/$defs/source_anchor"}
+      }
+    },
+    "global_action_ceiling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clauses", "source_anchors"],
+      "properties": {
+        "clauses": {"$ref": "#/$defs/nonempty_string_array"},
+        "source_anchors": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source_anchor"}
+        }
+      }
+    },
+    "contract_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "json_pointer", "binding_role"],
+      "properties": {
+        "contract_id": {"enum": ["v8_actor_state_contracts", "v8_multicircle_contracts", "v8_simulation_forecast_contracts"]},
+        "json_pointer": {"type": "string", "pattern": "^/(?:[^~/]|~[01])*(?:/(?:[^~/]|~[01])*)*$"},
+        "binding_role": {"enum": ["domain", "definition", "enum_set", "enum_value", "record_schema", "required_field", "example", "constraint", "forbidden", "action_ceiling"]}
+      }
+    },
+    "concept": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {"concept_type": {"const": "human_variable_interface"}},
+            "required": ["concept_type"]
+          },
+          "then": {"required": ["source_card"]},
+          "else": {"not": {"required": ["source_card"]}}
+        }
+      ],
+      "required": [
+        "concept_id",
+        "authoritative_name_zh",
+        "concept_type",
+        "responsibility_layer",
+        "definition",
+        "authoritative_wire_tokens",
+        "primary_source_anchor_id",
+        "source_anchors",
+        "prerequisites",
+        "allowed_inferences",
+        "forbidden_substitutions_or_generalizations",
+        "common_misuses",
+        "required_neighbor_ids",
+        "conflicts_disambiguation",
+        "evidence_requirements",
+        "counterexamples",
+        "withdrawal_conditions",
+        "deduction_interfaces",
+        "action_ceiling",
+        "conditional_support_routes",
+        "source_undefined_fields",
+        "contract_ids",
+        "contract_bindings",
+        "route_ids"
+      ],
+      "properties": {
+        "concept_id": {"$ref": "#/$defs/concept_id"},
+        "authoritative_name_zh": {"type": "string", "minLength": 1},
+        "concept_type": {"type": "string", "minLength": 1},
+        "responsibility_layer": {
+          "enum": [
+            "U-general-structure",
+            "S-scale-transform",
+            "H-human-structure",
+            "A-actor-state",
+            "MC-multicircle-state",
+            "P-path-forecast",
+            "I-reality-interface",
+            "N-normative-authorization"
+          ]
+        },
+        "definition": {"type": "string", "minLength": 2},
+        "authoritative_wire_tokens": {"$ref": "#/$defs/string_array"},
+        "primary_source_anchor_id": {"type": "string", "pattern": "^V8-P[0-9]{4}$"},
+        "source_anchors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source_anchor"}
+        },
+        "prerequisites": {"$ref": "#/$defs/string_array"},
+        "allowed_inferences": {"$ref": "#/$defs/allowed_inference_array"},
+        "forbidden_substitutions_or_generalizations": {"$ref": "#/$defs/string_array"},
+        "common_misuses": {"$ref": "#/$defs/string_array"},
+        "required_neighbor_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/concept_id"}
+        },
+        "conflicts_disambiguation": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/conflict"}
+        },
+        "evidence_requirements": {"$ref": "#/$defs/string_array"},
+        "counterexamples": {"$ref": "#/$defs/string_array"},
+        "withdrawal_conditions": {"$ref": "#/$defs/string_array"},
+        "deduction_interfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/deduction_interface"}
+        },
+        "action_ceiling": {
+          "oneOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "conditional_support_routes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/conditional_support_route"}
+        },
+        "source_card": {"$ref": "#/$defs/hv_source_card"},
+        "source_undefined_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "prerequisites",
+              "forbidden_substitutions_or_generalizations",
+              "common_misuses",
+              "conflicts_disambiguation",
+              "evidence_requirements",
+              "counterexamples",
+              "withdrawal_conditions",
+              "deduction_interfaces",
+              "action_ceiling"
+            ]
+          }
+        },
+        "contract_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"enum": ["v8_actor_state_contracts", "v8_multicircle_contracts", "v8_simulation_forecast_contracts"]}
+        },
+        "contract_bindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/contract_binding"}
+        },
+        "route_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^V8-ROUTE-[0-9]{2}-[A-Z0-9-]+$"}
+        }
+      }
+    }
+  }
+}

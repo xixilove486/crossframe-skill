@@ -20,6 +20,8 @@ CrossFrame skills 在 Gemini CLI 中也是显式调用 only。不要因为普通
 
 如果用户显式调用 `crossframe-max`、`/crossframe-max`、`$crossframe-max`，或要求最大算力、全尺度穷尽推演、不设字数限制完整解释，请读取 `skills/crossframe-max/SKILL.md`。这是独立模式，不走 `crossframe-suite` 的 `2+1` 模式/角色选择器，也不走普通文章类型选择器；它把一件事当作局部世界来建模，展开世界观、运行规律、问题结构、处理路径和演化分支。
 
+CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+
 如果用户显式调用 `crossframe-essay` 或经 `crossframe-suite` 路由到写作，并要求写中文文章、长文、评论、思想文章、批判性洞察文章或结构洞察文章，请读取：
 
 1. `skills/crossframe-essay/SKILL.md`
@@ -66,6 +68,7 @@ CrossFrame skills 在 Gemini CLI 中也是显式调用 only。不要因为普通
 - 历史材料、历史事件、史料互读、长时段演化、archive/FOIA backlog：`skills/crossframe-history/SKILL.md`
 - 完成态后继续追问、反证、补证、迁移应用或行动边界确认：`skills/crossframe-inquiry/SKILL.md`
 - 最大化结构推演、局部世界建模、全尺度解释、演化路径穷尽：`skills/crossframe-max/SKILL.md`
+- 精确点名的 v8 ProMax 穷尽推演、全概念命中、自反例攻击：`skills/crossframe-promax/SKILL.md`
 - 公共议题、平台申诉、制度评论、合规材料：`skills/crossframe-public/SKILL.md`
 - 组织修复、反馈写回、复盘改造、低风险试点：`skills/crossframe-org/SKILL.md`
 - 概念教学、误读纠偏、练习题：`skills/crossframe-teach/SKILL.md`

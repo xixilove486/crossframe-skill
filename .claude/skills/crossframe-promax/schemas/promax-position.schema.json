@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-position.schema.json",
+  "title": "CrossFrame ProMax locked position",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "source_snapshot_sha256",
+    "central_claim_id",
+    "relation_to_proposition",
+    "proposition_verdict",
+    "position",
+    "judgment_strength",
+    "primary_reasons",
+    "runner_up_explanation",
+    "strongest_counterevidence",
+    "why_not_adopted",
+    "withdrawal_conditions",
+    "action_ceiling",
+    "locked_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.position"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "central_claim_id": {"$ref": "promax-common.schema.json#/$defs/claimId"},
+    "relation_to_proposition": {"enum": ["supports", "rejects", "mixed", "indeterminate"]},
+    "proposition_verdict": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+    "position": {"type": "string", "minLength": 2, "pattern": "\\S"},
+    "judgment_strength": {"enum": ["tentative", "moderate", "strong", "indeterminate"]},
+    "primary_reasons": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "runner_up_explanation": {"type": "string", "minLength": 2, "pattern": "\\S"},
+    "strongest_counterevidence": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "why_not_adopted": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "withdrawal_conditions": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "action_ceiling": {"type": "string", "minLength": 2, "pattern": "\\S"},
+    "locked_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  }
+}

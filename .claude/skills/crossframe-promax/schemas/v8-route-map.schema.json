@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/v8-route-map.schema.json",
+  "title": "CrossFrame ProMax v8 task/object route map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "framework_version", "snapshot_sha256", "signal_semantics", "route_count", "routes"],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.route-map"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.0"},
+    "snapshot_sha256": {"$ref": "#/$defs/sha256"},
+    "signal_semantics": {"const": "task_signals 与 object_signals 是人工固化的 v8 运行路由词，不是 v8 canonical definitions，也不得据此创造或改写 canonical concepts。"},
+    "route_count": {"const": 16},
+    "routes": {
+      "type": "array",
+      "minItems": 16,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["route_id", "source_section", "task_signals", "object_signals", "required_concept_ids", "neighbor_closure_ids"],
+        "properties": {
+          "route_id": {"type": "string", "pattern": "^V8-ROUTE-[0-9]{2}-[A-Z0-9-]+$"},
+          "source_section": {"type": "string", "pattern": "^(?:0[1-9]|1[0-6])-[a-z0-9-]+\\.md$"},
+          "task_signals": {"$ref": "#/$defs/nonempty_string_array"},
+          "object_signals": {"$ref": "#/$defs/nonempty_string_array"},
+          "required_concept_ids": {"$ref": "#/$defs/nonempty_concept_id_array"},
+          "neighbor_closure_ids": {"$ref": "#/$defs/concept_id_array"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nonempty_string_array": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "concept_id": {"type": "string", "pattern": "^V8-CANON-[A-Z0-9][A-Z0-9-]*$"},
+    "concept_id_array": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/concept_id"}
+    },
+    "nonempty_concept_id_array": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/concept_id"}
+    }
+  }
+}

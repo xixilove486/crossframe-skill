@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-artifact-manifest.schema.json",
+  "title": "CrossFrame ProMax artifact and isolated-role manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "run_nonce",
+    "request_sha256",
+    "source_snapshot_sha256",
+    "run_contract_sha256",
+    "mode",
+    "orchestration_mode",
+    "role_records",
+    "phase_chain_head_sha256",
+    "artifacts",
+    "generated_at",
+    "manifest_sha256"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.artifact-manifest"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "run_nonce": {"$ref": "promax-common.schema.json#/$defs/runNonce"},
+    "request_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "run_contract_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "mode": {"$ref": "promax-common.schema.json#/$defs/mode"},
+    "orchestration_mode": {"$ref": "promax-common.schema.json#/$defs/orchestrationMode"},
+    "role_records": {"$ref": "promax-common.schema.json#/$defs/orderedRoleRecords"},
+    "phase_chain_head_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "generated_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+    "manifest_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"orchestration_mode": {"const": "multi-agent-isolated"}}, "required": ["orchestration_mode"]},
+      "then": {
+        "properties": {
+          "role_records": {
+            "not": {
+              "contains": {
+                "properties": {"execution_mode": {"const": "single-agent-separated"}},
+                "required": ["execution_mode"]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "role_records": {
+            "not": {
+              "contains": {
+                "properties": {"execution_mode": {"const": "multi-agent-isolated"}},
+                "required": ["execution_mode"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"mode": {"const": "promax-complete"}}, "required": ["mode"]},
+      "then": {
+        "properties": {
+          "role_records": {
+            "not": {
+              "contains": {
+                "properties": {"status": {"enum": ["blocked", "invalidated"]}},
+                "required": ["status"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "media_type", "generating_phase", "input_artifact_sha256s", "status"],
+      "properties": {
+        "path": {"$ref": "promax-common.schema.json#/$defs/relativePath"},
+        "sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "media_type": {"type": "string", "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+(?![\\s\\S])"},
+        "generating_phase": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+        "input_artifact_sha256s": {"$ref": "promax-common.schema.json#/$defs/hashArray"},
+        "status": {"enum": ["current", "invalidated", "superseded"]}
+      }
+    }
+  }
+}

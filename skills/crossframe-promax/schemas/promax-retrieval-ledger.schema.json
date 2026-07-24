@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-retrieval-ledger.schema.json",
+  "title": "CrossFrame ProMax external retrieval frontier ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "run_id", "source_snapshot_sha256", "entries", "saturation_rounds", "network_available", "completed_at"],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.retrieval-ledger"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "entries": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/retrievalEntry"},
+      "allOf": [
+        {"contains": {"properties": {"direction": {"const": "support"}}, "required": ["direction"]}},
+        {"contains": {"properties": {"direction": {"const": "reverse"}}, "required": ["direction"]}},
+        {"contains": {"properties": {"direction": {"const": "failure"}}, "required": ["direction"]}},
+        {"contains": {"properties": {"direction": {"const": "alternative_mechanism"}}, "required": ["direction"]}},
+        {"contains": {"properties": {"direction": {"const": "affected_or_low_power"}}, "required": ["direction"]}}
+      ]
+    },
+    "saturation_rounds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/saturationRound"}
+    },
+    "network_available": {"type": "boolean"},
+    "completed_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "title", "publisher", "published_at", "event_date", "source_type", "interest_relevance", "independence_group", "duplicate_relation", "duplicate_of_url"],
+      "properties": {
+        "url": {"type": "string", "format": "uri"},
+        "title": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "publisher": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "published_at": {"$ref": "promax-common.schema.json#/$defs/date"},
+        "event_date": {"$ref": "promax-common.schema.json#/$defs/date"},
+        "source_type": {"enum": ["primary", "official", "research", "journalistic", "first_person", "secondary"]},
+        "interest_relevance": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "independence_group": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "duplicate_relation": {"enum": ["independent", "same_origin", "syndicated", "derived", "duplicate"]},
+        "duplicate_of_url": {
+          "oneOf": [
+            {"type": "string", "format": "uri"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"duplicate_relation": {"const": "independent"}}, "required": ["duplicate_relation"]},
+          "then": {"properties": {"duplicate_of_url": {"type": "null"}}},
+          "else": {"properties": {"duplicate_of_url": {"type": "string", "format": "uri"}}}
+        }
+      ]
+    },
+    "retrievalEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retrieval_id", "round", "direction", "claim_relation", "query", "tool", "retrieved_at", "sources", "claim_ids", "finding", "cannot_prove", "stop_reason"],
+      "properties": {
+        "retrieval_id": {"type": "string", "pattern": "^RETRIEVAL-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "round": {"type": "integer", "minimum": 1},
+        "direction": {"enum": ["support", "reverse", "failure", "alternative_mechanism", "affected_or_low_power"]},
+        "claim_relation": {"enum": ["supports", "refutes", "mixed", "contextual", "alternative_mechanism", "affected_position"]},
+        "query": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "tool": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "retrieved_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/source"}
+        },
+        "claim_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/claimId"}
+        },
+        "finding": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "cannot_prove": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "stop_reason": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "saturationRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "substantive_novelty", "changed_claim_ids", "stop_reason"],
+      "properties": {
+        "round": {"type": "integer", "minimum": 1},
+        "substantive_novelty": {"type": "boolean"},
+        "changed_claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/claimId"}
+        },
+        "stop_reason": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

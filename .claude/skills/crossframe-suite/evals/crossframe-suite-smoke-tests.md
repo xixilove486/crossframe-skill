@@ -204,3 +204,23 @@ Prompt：`/crossframe-suite` 后用户说“改用 crossframe-max，把这件事
 - 不进入普通文章类型选择器。
 - 直接转交 `crossframe-max -> crossframe-review`。
 - 明确 `crossframe-max` 是独立模式，不是 suite 的体积档位。
+
+## 14. CrossFrame ProMax 精确优先
+
+责任标记：`PROMAX-NAMED-ONLY`、`PROMAX-PRIORITY-OVER-MAX`、`PROMAX-NO-FALLBACK-TO-MAX`、`PROMAX-GENERIC-MAX-STAYS-MAX`。
+
+Prompt A：同时使用 `crossframe-max` 和 `CrossFrame ProMax`，失败时改用 Max。
+
+期望：
+
+- 直接读取 `skills/crossframe-promax/SKILL.md`，不启动 suite 选择器，不串接 review。
+- ProMax 优先；Max 只作为已解决的冲突名称记录。
+- 验证失败仍留在 ProMax 状态。
+
+Prompt B：请用最大算力完整解释，但未说四种 ProMax 名称。
+
+期望：维持既有 Max 路由，不升级为 ProMax。
+
+Prompt C：分别使用 `ProMax`、`crossframe pro max`、`crossframe-promaxx`、`crossframe-pro`。
+
+期望：四个近似名称均不命中 ProMax。

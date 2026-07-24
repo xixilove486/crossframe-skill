@@ -58,6 +58,34 @@ jobs:
           python scripts/check_crossframe_max_v6_full_source.py --repo .
           python scripts/check_crossframe_max_v6_registry_anchors.py --repo .
 
+  promax-contracts-and-artifacts:
+    name: promax-contracts-and-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ProMax test dependencies
+        run: python -m pip install jsonschema pytest PyYAML
+      - name: Validate ProMax v8 source and knowledge
+        run: |
+          python scripts/check_crossframe_promax_v8_full_source.py --repo .
+          python scripts/check_crossframe_promax_v8_knowledge.py --repo .
+      - name: Parse every ProMax JSON schema
+        run: |
+          for schema in skills/crossframe-promax/schemas/*.json; do
+            python -m json.tool "$schema" > /dev/null
+          done
+      - name: Run ProMax runtime, materializer, routing, and installer contracts
+        run: |
+          python -B -m pytest -q \
+            tests/test_promax_*.py \
+            tests/test_promax_materializer.py \
+            tests/test_promax_repository_integration.py
+
   schemas-and-fixtures:
     name: schemas-and-fixtures
     runs-on: ubuntu-latest
@@ -121,6 +149,8 @@ jobs:
 
           required = {
               ".github/workflows/verify.yml",
+              ".claude/commands/crossframe-promax.md",
+              ".claude/skills/crossframe-promax/SKILL.md",
               "scripts/crossframe_max_fixture_factory.py",
               "scripts/crossframe_max_runtime_contract.py",
               "scripts/validate_crossframe_max_route_ledger_fixtures.py",
@@ -132,6 +162,11 @@ jobs:
               "skills/crossframe-max/templates/max-artifact-manifest-output.md",
               "skills/crossframe-max/templates/max-continuation-ledger-output.md",
               "skills/crossframe-max/templates/max-continuation-index-output.md",
+              "skills/crossframe-promax/SKILL.md",
+              "skills/crossframe-promax/references/v8-full-source/00-index.md",
+              "skills/crossframe-promax/schemas/promax-run-contract.schema.json",
+              "skills/crossframe-promax/scripts/check_crossframe_promax_artifacts.py",
+              "skills/crossframe-promax/templates/promax-artifact-manifest-output.md",
           }
           zips = sorted(Path("outputs").glob("crossframe-skill-suite-ci-*.zip"))
           if not zips:

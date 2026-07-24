@@ -1,0 +1,190 @@
+{
+  "schema_id": "v8_simulation_forecast_contracts",
+  "schema_version": "1.0.0",
+  "closed": true,
+  "scope": "事件驱动的多路径推演、条件前瞻、有限选择与结果回写",
+  "event_kinds": [
+    "observed",
+    "reported",
+    "planned",
+    "hypothetical",
+    "simulated"
+  ],
+  "event_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "event_id",
+      "event_kind",
+      "occurrence_time_or_window",
+      "observation_time",
+      "source_refs",
+      "affected_actor_refs",
+      "affected_circle_refs",
+      "channel_refs",
+      "direct_changes",
+      "evidence_state",
+      "disputes",
+      "competing_explanations",
+      "reversibility",
+      "duration",
+      "follow_up_observations"
+    ]
+  },
+  "simulation_run_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "run_id",
+      "model_version",
+      "frozen_snapshot_ref",
+      "input_cutoff",
+      "event_refs",
+      "authorized_action_refs",
+      "mechanism_assumptions",
+      "parameter_ranges",
+      "unknowns",
+      "residual_policy",
+      "clock_policy",
+      "propagation_policy",
+      "path_root_refs",
+      "stop_conditions",
+      "output_state"
+    ],
+    "propagation_rule": "只沿已声明通道传播；每一步分别记录直接效应、时延、阈值、反馈、跨圈层级联与未解释残差"
+  },
+  "path_node_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "node_id",
+      "run_id",
+      "parent_node_refs",
+      "condition_set",
+      "event_or_action_ref",
+      "state_delta_refs",
+      "affected_clock_refs",
+      "support_state",
+      "probability_or_rank",
+      "early_signals",
+      "counter_signals",
+      "next_node_refs",
+      "terminal_reason_or_open"
+    ],
+    "dag_rule": "路径节点不得形成环；分叉路径不能在没有合并合同的情况下被叙事性合并"
+  },
+  "variable_candidate_ledger_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "candidate_id",
+      "originating_residual_refs",
+      "proposed_name",
+      "proposed_type",
+      "possible_channels",
+      "observable_implications",
+      "competing_candidates",
+      "minimum_test",
+      "privacy_and_risk",
+      "current_state",
+      "evidence_refs",
+      "promotion_conditions",
+      "rejection_conditions"
+    ],
+    "allowed_states": [
+      "proposed",
+      "under_test",
+      "supported_candidate",
+      "rejected",
+      "retired"
+    ],
+    "truth_rule": "生成变量候选只扩展待检验集合，不自动生成现实取值或事实状态"
+  },
+  "forecast_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "forecast_id",
+      "model_version",
+      "target",
+      "horizon",
+      "object_scope",
+      "circle_scope",
+      "baseline_time",
+      "input_cutoff",
+      "simple_baseline",
+      "candidate_mechanisms",
+      "paths",
+      "probability_or_rank_expression",
+      "calibration_plan",
+      "decision_thresholds",
+      "early_signals",
+      "counter_signals",
+      "pause_conditions",
+      "retirement_conditions",
+      "outcome_writeback",
+      "registration_time",
+      "evidence_refs"
+    ],
+    "comparison_rule": "多圈层模型必须与复杂度匹配的单焦点或单圈层简单基线做样本外比较；无稳定增益时退回简单模型",
+    "metric_rule": "概率任务预登记 Brier 分数、对数损失、校准与覆盖率中的适用指标；非概率任务预登记领域指标"
+  },
+  "required_option_kinds": [
+    "maintain_status_quo",
+    "active_action",
+    "delayed_action",
+    "probe_action",
+    "exit_or_transfer",
+    "no_action"
+  ],
+  "option_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "option_id",
+      "option_kind",
+      "description",
+      "forecast_refs",
+      "normative_premise_refs",
+      "affected_position_refs",
+      "rights_floor_refs",
+      "expected_paths",
+      "worst_acceptable_outcome",
+      "cross_circle_spillovers",
+      "distribution_of_costs_and_benefits",
+      "information_value",
+      "lock_in_risk",
+      "reversibility",
+      "resource_cost",
+      "authorized_actor_ref",
+      "authorization_record_ref",
+      "stop_conditions",
+      "rollback_and_remedy"
+    ]
+  },
+  "outcome_writeback_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "writeback_id",
+      "forecast_or_run_ref",
+      "outcome_observation_time",
+      "outcome_source_refs",
+      "observed_outcome",
+      "path_match_state",
+      "calibration_metrics",
+      "baseline_comparison_result",
+      "unexpected_effects",
+      "affected_position_review",
+      "model_updates",
+      "claim_downgrades",
+      "retired_variables_or_paths",
+      "next_review"
+    ]
+  },
+  "writeback_policy": "append_only",
+  "authorization_policy": "external_verified_reference_only",
+  "baseline_policy": "complexity_matched_out_of_sample_comparison_required",
+  "guards": [
+    "推演路径不是唯一未来，必须保留分叉、反向信号和未知项",
+    "变量候选账本不得把候选变量或模拟值冒充现实事实",
+    "条件前瞻必须有目标、期限、输入截止、简单基线、校准计划、暂停与结果回写",
+    "预测不能自动生成授权，授权只接受可解析且外部核验的记录引用",
+    "选择集必须明确包含不行动，并为不行动登记成本、溢出和责任",
+    "结果写回只能追加，不能覆盖原预测、失败、偏离或旧版本",
+    "复杂模型未取得稳定样本外增益时必须退回简单模型"
+  ]
+}

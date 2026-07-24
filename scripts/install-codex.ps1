@@ -1,10 +1,14 @@
 param(
-  [string]$Repo = "xi-kari/crossframe-skill"
+  [string]$Repo = "xi-kari/crossframe-skill",
+  [string]$DestinationRoot = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills"),
+  [string]$InstallerPath = (Join-Path ([Environment]::GetFolderPath("UserProfile")) ".codex\skills\.system\skill-installer\scripts\install-skill-from-github.py")
 )
 
 $ErrorActionPreference = "Stop"
 
-$installer = Join-Path $HOME ".codex\skills\.system\skill-installer\scripts\install-skill-from-github.py"
+$null = New-Item -ItemType Directory -Path $DestinationRoot -Force
+$resolvedSkillsRoot = (Resolve-Path -LiteralPath $DestinationRoot).Path
+$installer = $InstallerPath
 $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
 $pythonExe = Get-Command python -ErrorAction SilentlyContinue
 
@@ -22,11 +26,11 @@ function Invoke-CodexSkillInstaller {
   )
 
   if ($pyLauncher) {
-    & $pyLauncher.Source -3 $installer --repo $Repo --path $SkillPath
+    & $pyLauncher.Source -3 $installer --repo $Repo --path $SkillPath --dest $resolvedSkillsRoot
     return
   }
 
-  & $pythonExe.Source $installer --repo $Repo --path $SkillPath
+  & $pythonExe.Source $installer --repo $Repo --path $SkillPath --dest $resolvedSkillsRoot
 }
 
 $skills = @(
@@ -40,6 +44,7 @@ $skills = @(
   "skills/crossframe-history",
   "skills/crossframe-inquiry",
   "skills/crossframe-max",
+  "skills/crossframe-promax",
   "skills/crossframe-public",
   "skills/crossframe-org",
   "skills/crossframe-teach",
@@ -49,12 +54,14 @@ $skills = @(
 
 foreach ($skillPath in $skills) {
   $skillName = Split-Path -Leaf $skillPath
-  $skillsRoot = Join-Path $HOME ".codex\skills"
-  $destDir = Join-Path $skillsRoot $skillName
+  $destDir = [System.IO.Path]::GetFullPath((Join-Path $resolvedSkillsRoot $skillName))
   $installed = Join-Path $destDir "SKILL.md"
-  $resolvedSkillsRoot = (Resolve-Path -LiteralPath $skillsRoot).Path
+  $rootPrefix = $resolvedSkillsRoot
+  if (-not $rootPrefix.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+    $rootPrefix += [System.IO.Path]::DirectorySeparatorChar
+  }
 
-  if (-not $destDir.StartsWith($resolvedSkillsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+  if (-not $destDir.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Unsafe destination: $destDir"
   }
 
@@ -79,7 +86,7 @@ foreach ($skillPath in $skills) {
     }
   }
   catch {
-    if ((Test-Path -LiteralPath $destDir) -and $backupDir) {
+    if (Test-Path -LiteralPath $destDir) {
       Remove-Item -LiteralPath $destDir -Recurse -Force
     }
     if ($backupDir -and (Test-Path -LiteralPath $backupDir)) {

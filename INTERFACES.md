@@ -12,13 +12,14 @@
 - `skills/crossframe-history/SKILL.md`
 - `skills/crossframe-inquiry/SKILL.md`
 - `skills/crossframe-max/SKILL.md`
+- `skills/crossframe-promax/SKILL.md`
 - `skills/crossframe-public/SKILL.md`
 - `skills/crossframe-org/SKILL.md`
 - `skills/crossframe-teach/SKILL.md`
 - `skills/crossframe-debate/SKILL.md`
 - `skills/crossframe-notebook/SKILL.md`
 
-`crossframe-suite` 负责复杂任务的连续调度；`crossframe` 负责结构诊断；`crossframe-essay` 负责把结构诊断转成中文批判性洞察文章；`crossframe-critical` 是只允许点名触发的结构批判长文 skill，不接入 suite 默认链路；`crossframe-max` 是只允许显式点名触发的最大化结构推演入口，把一件事当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支；其它 `crossframe-*` 负责评审、答复、案例、历史研究、追问、公共议题、组织修复、教学、辩论和研究笔记。其他接口文件只是薄适配层，用来告诉不同 AI 工具如何读取与调用这些 skill。不要把完整协议复制成多份，以免内容漂移。
+`crossframe-suite` 负责复杂任务的连续调度；`crossframe` 负责结构诊断；`crossframe-essay` 负责把结构诊断转成中文批判性洞察文章；`crossframe-critical` 是只允许点名触发的结构批判长文 skill，不接入 suite 默认链路；`crossframe-max` 是只允许显式点名触发的最大化结构推演入口，把一件事当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支；`crossframe-promax` 是精确点名的 v8 独立 runtime；其它 `crossframe-*` 负责评审、答复、案例、历史研究、追问、公共议题、组织修复、教学、辩论和研究笔记。其他接口文件只是薄适配层，用来告诉不同 AI 工具如何读取与调用这些 skill。不要把完整协议复制成多份，以免内容漂移。
 
 ## 适配原则
 
@@ -31,7 +32,8 @@
 - 完整链路完成后，下一轮实质输入默认进入 `crossframe-inquiry`；纯致谢、确认收到或结束语只轻量收束。
 - `crossframe-critical` 不进入总入口调度。只有用户明确写 `$crossframe-critical`、`crossframe-critical` 或要求测试这个批判 skill 时才读取它。
 - `crossframe-max` 不进入 suite 的 `2+1` 模式/角色选择器，也不走普通文章类型选择器。只有用户明确写 `$crossframe-max`、`/crossframe-max`、`crossframe-max` 或要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取它。
-- 当前仓库包含 15 个 CrossFrame skill。
+- CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+- 当前仓库包含 16 个 CrossFrame skill。
 - 只有用户明确说“只要/不要文章/短答/表格/清单/纯诊断/仅行动方案”时，才关闭默认文章层。
 - 若需要更新框架主体，优先更新 `skills/crossframe/`，再回填薄适配层。
 - 若需要更新文章写作主体，优先更新 `skills/crossframe-essay/`，并确认它仍通过相对路径读取 `skills/crossframe/`。
@@ -52,7 +54,7 @@
 | 接口 | 入口文件 | 说明 |
 | --- | --- | --- |
 | Codex | `skills/crossframe*/` | 可直接用 skill-installer 安装；安装后不被动触发，需用户显式点名；suite 显式启动后仍可联合调用 sibling skill |
-| Claude Code | `.claude/skills/crossframe*/SKILL.md` + `.claude/commands/crossframe*.md` + `CLAUDE.md` | 禁止自动触发 skill；通过 `/crossframe`、`/crossframe-suite`、`/crossframe-max`、`/crossframe-explain`、`/crossframe-audit`、`/crossframe-essay` 或明确点名启动 |
+| Claude Code | `.claude/skills/crossframe*/SKILL.md` + `.claude/commands/crossframe*.md` + `CLAUDE.md` | 禁止自动触发 skill；通过 `/crossframe`、`/crossframe-suite`、`/crossframe-max`、`/crossframe-promax`、`/crossframe-explain`、`/crossframe-audit`、`/crossframe-essay` 或明确点名启动 |
 | Gemini CLI | `GEMINI.md` | 仓库级上下文入口 |
 | Cursor | `.cursor/rules/crossframe-suite.mdc` + `.cursor/rules/crossframe.mdc` + `.cursor/rules/crossframe-essay.mdc` + `AGENTS.md` | 规则文件与通用入口 |
 | GitHub Copilot | `.github/copilot-instructions.md` | 仓库级说明 |

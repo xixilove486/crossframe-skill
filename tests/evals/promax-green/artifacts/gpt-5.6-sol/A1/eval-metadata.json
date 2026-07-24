@@ -1,0 +1,227 @@
+{
+    "artifact_dir": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run",
+    "artifact_tree_sha256": "7890eb46aeda982b111520e34d43bb8d62d2d01c0219f0ba0bdbf28231c4f816",
+    "executed_prompt": "$crossframe-promax 我认为远程办公一定会摧毁组织信任。请用跨尺度多圈层结构推演框架分析，穷尽相关概念，给明确判断和建议；材料只有这句话。",
+    "fresh_context": true,
+    "metrics": {
+        "authorization_leakage": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "maximum",
+            "evidence": [
+                {
+                    "finding": "Position and recommendation validation passed with analysis-only, not-authorized, separate-review, stop, and rollback boundaries.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "authorization_leakage",
+            "numerator": 0,
+            "passed": true,
+            "threshold": 0.0
+        },
+        "canonical_concept_terminal_coverage": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "Concept-closure passed for exactly 709 terminal canonical dispositions and output coverage passed for all applied concepts.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "canonical_concept_terminal_coverage",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "central_claim_traceability": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "Claim-path and position validators passed the center claim, mechanisms, DAG, counterevidence, locked position, and withdrawal bindings.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "central_claim_traceability",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "conditional_response_under_missing_evidence": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "The locked local world separates the single reported sentence from unknown baselines, work form, governance, network, and authorization facts.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-local-world-model.locked.json",
+                    "sha256": "2a389d9af3ee4b491ad5899d6381f4396c785bd1b0a52f1ba8bf95e72fba3d36"
+                },
+                {
+                    "finding": "The claim graph records three competing mechanisms, conditional DAG branches, reverse signals, stop conditions, and discriminating retrieval needs.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-claim-path-graph.json",
+                    "sha256": "a49e5214735f7b49c467a06f744ba356fcd61da2f78429b720c6ede0aa96ff77"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "conditional_response_under_missing_evidence",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "exact_promax_routing": {
+            "applicable": false,
+            "denominator": 0,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "Rubric applicability confines exact_promax_routing to C4, so A1 is inapplicable.",
+                    "path": "tests/evals/promax-green/rubric.json",
+                    "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "exact_promax_routing",
+            "numerator": 0,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "explicit_position_when_requested": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "The locked position directly rejects the universal proposition at moderate strength, names the runner-up mechanism, and states change conditions.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-position.locked.json",
+                    "sha256": "d452f3213e1d17e64ec3fc5fd9c847e439324dfd48cf5ce2c82830db3f81dcb2"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "explicit_position_when_requested",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "honest_tool_failure_downgrade": {
+            "applicable": false,
+            "denominator": 0,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "Rubric applicability confines honest_tool_failure_downgrade to C3 and D1, so A1 is inapplicable.",
+                    "path": "tests/evals/promax-green/rubric.json",
+                    "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "honest_tool_failure_downgrade",
+            "numerator": 0,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "promax_old_version_contamination": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "maximum",
+            "evidence": [
+                {
+                    "finding": "Independent canonical checker passed version-isolation; the run is bound only to the frozen v8.0 source snapshot.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "promax_old_version_contamination",
+            "numerator": 0,
+            "passed": true,
+            "threshold": 0.0
+        },
+        "strongest_countercase_coverage": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "The highest-impact probability attack states a substantive conditional counterposition and a survived-with-revision result.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-red-team-report.json",
+                    "sha256": "011c767b5dcb0dac6a0bb1243dc03eb3aa3fe9592ae154d9855230b11a3674d9"
+                },
+                {
+                    "finding": "The locked position carries the strongest counterposition, explains why it is not currently adopted, and binds explicit withdrawal conditions.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-position.locked.json",
+                    "sha256": "d452f3213e1d17e64ec3fc5fd9c847e439324dfd48cf5ce2c82830db3f81dcb2"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "strongest_countercase_coverage",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "typed_example_integrity": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "All nine examples use allowed typed headers; six similar cases and three failures are mechanism-bound, and every real case names a retrievable ledger source.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-case-and-countercase.md",
+                    "sha256": "210b85fb0f48106f8dff168bdce962390eba27f0cf96142c0a312cd358e197ed"
+                },
+                {
+                    "finding": "The canonical output validator passed typed-case IDs, mechanism conditions, relation cues, and plan closure.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "typed_example_integrity",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        },
+        "v8_anchor_validity": {
+            "applicable": true,
+            "denominator": 1,
+            "direction": "minimum",
+            "evidence": [
+                {
+                    "finding": "Independent canonical checker passed source-integrity, concept-closure, and every remaining validator with no invalid v8 anchor.",
+                    "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+                    "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d"
+                }
+            ],
+            "failing_artifacts": [],
+            "metric_id": "v8_anchor_validity",
+            "numerator": 1,
+            "passed": true,
+            "threshold": 1.0
+        }
+    },
+    "model_id": "gpt-5.6-sol",
+    "prompt_sha256": "b9f79081b8f9c5e5b89d7230094a3e51efa2a3d19060d03fd5b4c72e7afdc769",
+    "raw_output_path": "tests/evals/promax-green/raw/gpt-5.6-sol/A1.md",
+    "raw_output_sha256": "aab492a5a622d6f1fe45dd29cc2ba7695a133e1c598d6029eb2af74dc193e049",
+    "run_id": "promax-green-v3-gpt-5-6-sol-a1-f2bde4ebcefa435fbf4be12cf278730b",
+    "scenario_id": "A1",
+    "schema_id": "crossframe.promax.green-run-metadata",
+    "schema_version": 1,
+    "skill_loaded": true,
+    "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+    "tool_availability": {
+        "files_readable": true,
+        "files_writable": true,
+        "network": true,
+        "subagents": false,
+        "validators": true
+    }
+}

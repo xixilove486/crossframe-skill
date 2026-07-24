@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>封面</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>第一部分　导读</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第一部分　导读</w:t></w:r></w:p>
+    <w:p><w:r><w:t>导读正文</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第二部分　边界与方法</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第二部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第三部分　通用结构语法</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第三部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第四部分　根假设与推论</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第四部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第五部分　跨尺度与跨圈层变换</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第五部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第六部分　运转与演化</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第六部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第七部分　人类结构化世界</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第七部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第八部分　人类状态原型</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第八部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第九部分　行动者状态与人格假设</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第九部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十部分　多圈层对象与联合状态</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十一部分　事件驱动的动态推演</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十一部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十二部分　条件前瞻与有限选择</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十二部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十三部分　接口与工具</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十三部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十四部分　规范选择</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十四部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十五部分　干涉与应用</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十五部分正文</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>第十六部分　治理</w:t></w:r></w:p>
+    <w:p><w:r><w:t>第十六部分正文</w:t></w:r></w:p>
+  </w:body>
+</w:document>

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "scenario_id": "valid-complete",
+      "fixture_class": "positive",
+      "mutation": null,
+      "expected_outcome": "pass"
+    },
+    {
+      "scenario_id": "artifact-incomplete",
+      "fixture_class": "incomplete",
+      "mutation": "record_network_unavailable_with_empty_sources",
+      "expected_outcome": "promax-artifact-incomplete:network-unavailable"
+    },
+    {
+      "scenario_id": "marker-stuffing",
+      "fixture_class": "adversarial",
+      "mutation": "replace_semantic_content_with_identifiers",
+      "expected_error_type": "semantic_content_missing"
+    },
+    {
+      "scenario_id": "empty-strings",
+      "fixture_class": "adversarial",
+      "mutation": "blank_strongest_attack",
+      "expected_error_type": "schema_validation_failed"
+    },
+    {
+      "scenario_id": "forged-read-coverage",
+      "fixture_class": "adversarial",
+      "mutation": "duplicate_read_anchor_to_preserve_count",
+      "expected_error_type": "source_read_coverage_invalid"
+    },
+    {
+      "scenario_id": "equal-count-source-mutation",
+      "fixture_class": "adversarial",
+      "mutation": "mutate_source_content_without_changing_counts",
+      "expected_error_type": "source_snapshot_content_mismatch"
+    },
+    {
+      "scenario_id": "unsupported-url",
+      "fixture_class": "adversarial",
+      "mutation": "replace_network_source_with_file_uri",
+      "expected_error_type": "schema_validation_failed"
+    },
+    {
+      "scenario_id": "duplicate-sources-independent",
+      "fixture_class": "adversarial",
+      "mutation": "declare_same_origin_sources_independent",
+      "expected_error_type": "source_independence_invalid"
+    },
+    {
+      "scenario_id": "missing-reverse",
+      "fixture_class": "adversarial",
+      "mutation": "remove_reverse_retrieval",
+      "expected_error_type": "retrieval_direction_missing"
+    },
+    {
+      "scenario_id": "no-action-omitted",
+      "fixture_class": "adversarial",
+      "mutation": "remove_inaction_option",
+      "expected_error_type": "recommendation_option_set_incomplete"
+    },
+    {
+      "scenario_id": "stance-flip",
+      "fixture_class": "adversarial",
+      "mutation": "record_position_drift_without_new_evidence",
+      "expected_error_type": "stance_stability_failed"
+    },
+    {
+      "scenario_id": "authorization-leakage",
+      "fixture_class": "adversarial",
+      "mutation": "claim_unheld_execution_authority",
+      "expected_error_type": "authorization_ceiling_exceeded"
+    },
+    {
+      "scenario_id": "untyped-examples",
+      "fixture_class": "adversarial",
+      "mutation": "remove_example_type",
+      "expected_error_type": "mechanism_example_coverage_invalid"
+    },
+    {
+      "scenario_id": "phase-replay",
+      "fixture_class": "adversarial",
+      "mutation": "replay_phase_event_from_another_run",
+      "expected_error_type": "phase_history_replay"
+    },
+    {
+      "scenario_id": "stale-manifest",
+      "fixture_class": "adversarial",
+      "mutation": "change_artifact_after_manifest",
+      "expected_error_type": "manifest_stale"
+    },
+    {
+      "scenario_id": "wrong-continuation-parent",
+      "fixture_class": "adversarial",
+      "mutation": "attach_continuation_to_noncurrent_manifest",
+      "expected_error_type": "continuation_parent_mismatch"
+    }
+  ]
+}

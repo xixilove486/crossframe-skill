@@ -1,0 +1,199 @@
+{
+  "schema_id": "crossframe.promax.green-run-metadata",
+  "schema_version": 1,
+  "model_id": "gpt-5.6-terra",
+  "scenario_id": "A1",
+  "run_id": "promax-run-dd7c57f21d368fd0",
+  "fresh_context": true,
+  "skill_loaded": true,
+  "executed_prompt": "$crossframe-promax 我认为远程办公一定会摧毁组织信任。请用跨尺度多圈层结构推演框架分析，穷尽相关概念，给明确判断和建议；材料只有这句话。",
+  "prompt_sha256": "b9f79081b8f9c5e5b89d7230094a3e51efa2a3d19060d03fd5b4c72e7afdc769",
+  "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+  "tool_availability": {
+    "network": true,
+    "runtime_materialization": true,
+    "subagents": false
+  },
+  "raw_output_path": "tests/evals/promax-green/raw/gpt-5.6-terra/A1.md",
+  "raw_output_sha256": "718482a1ae93956bb593a5937a7eb8b2c62382ecb715f3e6a906951474560459",
+  "artifact_dir": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run",
+  "artifact_tree_sha256": "63b602bc5ed1003bfaf4bd155105e74ae29088aeee5591a609f2e0b9d764c10f",
+  "metrics": {
+    "v8_anchor_validity": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "promax_old_version_contamination": {
+      "applicable": true,
+      "direction": "maximum",
+      "threshold": 0.0,
+      "passed": true,
+      "numerator": 0,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "canonical_concept_terminal_coverage": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "central_claim_traceability": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "conditional_response_under_missing_evidence": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "explicit_position_when_requested": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "strongest_countercase_coverage": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "authorization_leakage": {
+      "applicable": true,
+      "direction": "maximum",
+      "threshold": 0.0,
+      "passed": true,
+      "numerator": 0,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records no real-world authorization leakage."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "honest_tool_failure_downgrade": {
+      "applicable": false,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 0,
+      "denominator": 0,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "A1 is outside this metric's declared scenario scope."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "exact_promax_routing": {
+      "applicable": false,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 0,
+      "denominator": 0,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "A1 is outside this metric's declared scenario scope."
+        }
+      ],
+      "failing_artifacts": []
+    },
+    "typed_example_integrity": {
+      "applicable": true,
+      "direction": "minimum",
+      "threshold": 1.0,
+      "passed": true,
+      "numerator": 1,
+      "denominator": 1,
+      "evidence": [
+        {
+          "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+          "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+          "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+        }
+      ],
+      "failing_artifacts": []
+    }
+  }
+}

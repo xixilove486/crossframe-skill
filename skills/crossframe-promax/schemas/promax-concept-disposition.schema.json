@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-concept-disposition.schema.json",
+  "title": "CrossFrame ProMax v8 concept disposition ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "source_snapshot_sha256",
+    "registry_sha256",
+    "route_ids",
+    "dispositions",
+    "unchecked_concept_ids",
+    "closure_complete",
+    "completed_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.concept-disposition"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "registry_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "route_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^V8-ROUTE-[0-9]{2}-[A-Z0-9-]+(?![\\s\\S])"}
+    },
+    "dispositions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/disposition"}
+    },
+    "unchecked_concept_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/conceptId"}
+    },
+    "closure_complete": {"type": "boolean"},
+    "completed_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"closure_complete": {"const": true}}, "required": ["closure_complete"]},
+      "then": {"properties": {"unchecked_concept_ids": {"maxItems": 0}}}
+    }
+  ],
+  "$defs": {
+    "disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concept_id",
+        "status",
+        "rationale",
+        "evidence_refs",
+        "required_neighbor_ids",
+        "misuses_excluded",
+        "output_section_ids",
+        "pending_evidence"
+      ],
+      "properties": {
+        "concept_id": {"$ref": "promax-common.schema.json#/$defs/conceptId"},
+        "status": {"enum": ["applied", "tested_rejected", "not_applicable", "unknown_pending"]},
+        "rationale": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "evidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "required_neighbor_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/conceptId"}
+        },
+        "misuses_excluded": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "output_section_ids": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "pending_evidence": {"$ref": "promax-common.schema.json#/$defs/stringArray"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "unknown_pending"}}, "required": ["status"]},
+          "then": {"properties": {"pending_evidence": {"minItems": 1}}}
+        }
+      ]
+    }
+  }
+}

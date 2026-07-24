@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-common.schema.json",
+  "title": "CrossFrame ProMax v8 common runtime definitions",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {},
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "nullableSha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/sha256"},
+        {"type": "null"}
+      ]
+    },
+    "v8SnapshotSha256": {
+      "const": "3186805a3e46e1b16948a4e51d08e7693a8e0dd04aa6b4604e796266d649936c"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?![\\s\\S])"
+    },
+    "runNonce": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9._~-]{32,256}(?![\\s\\S])"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "nonemptyString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonemptyString"}
+    },
+    "nonemptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonemptyString"}
+    },
+    "phaseId": {
+      "enum": ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11"]
+    },
+    "iso8601Duration": {
+      "type": "string",
+      "pattern": "^P(?=(?:[0-9]|T[0-9]))(?:(?:[0-9]+(?:\\.[0-9]+)?W)|(?:(?:[0-9]+(?:\\.[0-9]+)?Y)?(?:[0-9]+(?:\\.[0-9]+)?M)?(?:[0-9]+(?:\\.[0-9]+)?D)?(?:T(?=[0-9])(?:[0-9]+(?:\\.[0-9]+)?H)?(?:[0-9]+(?:\\.[0-9]+)?M)?(?:[0-9]+(?:\\.[0-9]+)?S)?)?))(?![\\s\\S])"
+    },
+    "mode": {
+      "enum": [
+        "promax-artifact-run",
+        "promax-complete",
+        "promax-design-review",
+        "promax-blocked/progress"
+      ]
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[\\s\\S]+(?![\\s\\S])",
+      "format": "promax-relative-path"
+    },
+    "artifactHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "media_type"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relativePath"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "media_type": {"type": "string", "pattern": "^[A-Za-z0-9!#$&^_.+-]+/[A-Za-z0-9!#$&^_.+-]+(?![\\s\\S])"}
+      }
+    },
+    "artifactHashArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/artifactHash"}
+    },
+    "hashArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/sha256"}
+    },
+    "phaseHashMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^P(?:[0-9]|1[01])(?![\\s\\S])": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifactHashMap": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/relativePath"},
+      "additionalProperties": {"$ref": "#/$defs/sha256"}
+    },
+    "roleId": {
+      "enum": [
+        "v8_source_concept_auditor",
+        "external_case_researcher",
+        "counterexample_auditor",
+        "position_adjudicator",
+        "longform_writer"
+      ]
+    },
+    "orchestrationMode": {
+      "enum": ["multi-agent-isolated", "single-agent-separated"]
+    },
+    "rolePlanRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_id", "sequence", "execution_mode", "exchange_protocol"],
+      "properties": {
+        "role_id": {"$ref": "#/$defs/roleId"},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 5},
+        "execution_mode": {"$ref": "#/$defs/orchestrationMode"},
+        "exchange_protocol": {"const": "structured-artifacts-only"}
+      }
+    },
+    "roleRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role_id",
+        "sequence",
+        "execution_mode",
+        "exchange_protocol",
+        "input_artifacts",
+        "observed_input_artifacts",
+        "output_artifacts",
+        "status"
+      ],
+      "properties": {
+        "role_id": {"$ref": "#/$defs/roleId"},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 5},
+        "execution_mode": {"$ref": "#/$defs/orchestrationMode"},
+        "exchange_protocol": {"const": "structured-artifacts-only"},
+        "input_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/artifactHash"}
+        },
+        "observed_input_artifacts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/artifactHash"}
+        },
+        "output_artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/artifactHash"}
+        },
+        "agent_id": {"$ref": "#/$defs/nonemptyString"},
+        "execution_attestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "run_id",
+            "request_sha256",
+            "source_snapshot_sha256",
+            "completed_at",
+            "observed_input_artifacts",
+            "produced_output_artifacts",
+            "claim_sha256"
+          ],
+          "properties": {
+            "run_id": {"$ref": "#/$defs/runId"},
+            "request_sha256": {"$ref": "#/$defs/sha256"},
+            "source_snapshot_sha256": {"$ref": "#/$defs/v8SnapshotSha256"},
+            "completed_at": {"$ref": "#/$defs/timestamp"},
+            "observed_input_artifacts": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/artifactHash"}
+            },
+            "produced_output_artifacts": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"$ref": "#/$defs/artifactHash"}
+            },
+            "claim_sha256": {"$ref": "#/$defs/sha256"}
+          }
+        },
+        "status": {"enum": ["completed", "blocked", "invalidated"]}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"execution_mode": {"const": "multi-agent-isolated"}},
+            "required": ["execution_mode"]
+          },
+          "then": {"required": ["agent_id", "execution_attestation"]},
+          "else": {
+            "not": {
+              "anyOf": [
+                {"required": ["agent_id"]},
+                {"required": ["execution_attestation"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "orderedRolePlan": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "prefixItems": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "v8_source_concept_auditor"}, "sequence": {"const": 1}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "external_case_researcher"}, "sequence": {"const": 2}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "counterexample_auditor"}, "sequence": {"const": 3}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "position_adjudicator"}, "sequence": {"const": 4}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "longform_writer"}, "sequence": {"const": 5}}}
+          ]
+        }
+      ],
+      "items": false
+    },
+    "orderedRoleRecords": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "prefixItems": [
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "v8_source_concept_auditor"}, "sequence": {"const": 1}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "external_case_researcher"}, "sequence": {"const": 2}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "counterexample_auditor"}, "sequence": {"const": 3}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "position_adjudicator"}, "sequence": {"const": 4}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "longform_writer"}, "sequence": {"const": 5}}}
+          ]
+        }
+      ],
+      "items": false
+    },
+    "conceptId": {
+      "type": "string",
+      "pattern": "^V8-CANON-[A-Z0-9][A-Z0-9-]*(?![\\s\\S])"
+    },
+    "claimId": {
+      "type": "string",
+      "pattern": "^CLAIM-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
+    }
+  }
+}

@@ -2,6 +2,20 @@
 
 本协议把用户请求转成连续 skill 工作流。它只做调度，不替代专项判断。
 
+<!-- PROMAX-ROUTING-BEGIN -->
+## ProMax 前置精确路由
+
+- `PROMAX-NAMED-ONLY`：只有 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax` 四种名称命中 ProMax。
+- `PROMAX-PRIORITY-OVER-MAX`：`PROMAX-ROUTE-BOTH-NAMES-TO-PROMAX`；同时点名 ProMax 与 Max 时，选择 ProMax并记录冲突已经解决。
+- `PROMAX-NO-FALLBACK-TO-MAX`：ProMax 一经选择便保持其独立 v8 工件运行时；任何能力或验证结果都不改走 Max。
+- `PROMAX-ROUTE-EXACT-PROMAX-TO-PROMAX`：命中精确名称后直接读取 `skills/crossframe-promax/SKILL.md`，终止本协议其余选择器和 sibling 链。
+- `PROMAX-ROUTE-MAX-ONLY-TO-MAX`：只有 Max 名称时保持既有 Max 路由。
+- `PROMAX-GENERIC-MAX-STAYS-MAX`：泛化的最大算力、全尺度、长输出要求仍由既有 Max 处理，不触发 ProMax。
+- `PROMAX-ROUTE-NEAR-MISS-NO-MATCH`：`ProMax`、`crossframe pro max`、`crossframe-promaxx`、`crossframe-pro` 均不命中 ProMax。
+
+这一步先于模式、角色、文章类型和 review 判定；本协议不读取 ProMax 的理论知识。
+<!-- PROMAX-ROUTING-END -->
+
 ## 0. 模式与角色判定
 
 若用户点名 `crossframe-max`、`/crossframe-max`、`$crossframe-max`，或明确要求“最大算力 / 全尺度穷尽推演 / 不设字数限制完整解释”，本协议不启动 `2+1` 模式/角色选择器，直接转交 `../../crossframe-max/SKILL.md`。`crossframe-max` 是独立模式，不是 suite 的体积档位，也不走普通文章类型选择器。

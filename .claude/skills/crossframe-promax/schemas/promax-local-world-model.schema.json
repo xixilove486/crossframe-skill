@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-local-world-model.schema.json",
+  "title": "CrossFrame ProMax P3 locked local world model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "source_snapshot_sha256",
+    "phase_id",
+    "object_boundary",
+    "actor_records",
+    "circle_candidates",
+    "scale_profile",
+    "material_channel",
+    "experiential_meaning_channel",
+    "M_state",
+    "Psi_state",
+    "clocks",
+    "events",
+    "evidence_cutoff",
+    "unknowns",
+    "residuals",
+    "identity_criteria",
+    "action_limits",
+    "authorization_limits",
+    "locked_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.local-world-model"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "phase_id": {"const": "P3"},
+    "object_boundary": {"$ref": "#/$defs/objectBoundary"},
+    "actor_records": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/actorRecord"}
+    },
+    "circle_candidates": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/circleCandidate"}
+    },
+    "scale_profile": {"$ref": "#/$defs/scaleProfile"},
+    "material_channel": {"$ref": "#/$defs/channel"},
+    "experiential_meaning_channel": {"$ref": "#/$defs/channel"},
+    "M_state": {"$ref": "#/$defs/stateChannel"},
+    "Psi_state": {"$ref": "#/$defs/stateChannel"},
+    "clocks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/clock"}
+    },
+    "events": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/event"}
+    },
+    "evidence_cutoff": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+    "unknowns": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/unknown"}
+    },
+    "residuals": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/residual"}
+    },
+    "identity_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identityCriterion"}
+    },
+    "action_limits": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "authorization_limits": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "locked_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "$defs": {
+    "objectBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_id", "name", "in_scope", "out_of_scope"],
+      "properties": {
+        "object_id": {"type": "string", "pattern": "^OBJ-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "name": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "in_scope": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "out_of_scope": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    },
+    "actorRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor_id", "label", "roles", "observed_state", "inferred_state", "inference_limits"],
+      "properties": {
+        "actor_id": {"type": "string", "pattern": "^ACTOR-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "label": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "roles": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "observed_state": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "inferred_state": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "inference_limits": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    },
+    "circleCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["circle_id", "label", "membership_basis", "reification_risks"],
+      "properties": {
+        "circle_id": {"type": "string", "pattern": "^CIRCLE-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "label": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "membership_basis": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "reification_risks": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    },
+    "scaleProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["focal_scale", "included_scales", "excluded_scales", "transformation_limits"],
+      "properties": {
+        "focal_scale": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "included_scales": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "excluded_scales": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "transformation_limits": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "observables", "unknowns"],
+      "properties": {
+        "state": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+        "observables": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "unknowns": {"$ref": "promax-common.schema.json#/$defs/stringArray"}
+      }
+    },
+    "stateChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "evidence_refs", "uncertainties"],
+      "properties": {
+        "description": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "uncertainties": {"$ref": "promax-common.schema.json#/$defs/stringArray"}
+      }
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clock_id", "label", "current_time", "horizon", "lag"],
+      "properties": {
+        "clock_id": {"type": "string", "pattern": "^CLOCK-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "label": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "current_time": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "horizon": {"$ref": "promax-common.schema.json#/$defs/iso8601Duration"},
+        "lag": {"$ref": "promax-common.schema.json#/$defs/iso8601Duration"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "event_type", "time", "description", "evidence_refs"],
+      "properties": {
+        "event_id": {"type": "string", "pattern": "^EVENT-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "event_type": {"enum": ["observed", "reported", "inferred", "counterfactual"]},
+        "time": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+        "description": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"}
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unknown_id", "question", "decision_impact", "retrieval_plan"],
+      "properties": {
+        "unknown_id": {"type": "string", "pattern": "^UNKNOWN-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "question": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "decision_impact": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "retrieval_plan": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "residual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["residual_id", "description", "handling"],
+      "properties": {
+        "residual_id": {"type": "string", "pattern": "^RESIDUAL-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "description": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "handling": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "identityCriterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "test"],
+      "properties": {
+        "criterion": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "test": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "schema_id": "v8_actor_state_contracts",
+  "schema_version": "1.0.0",
+  "closed": true,
+  "scope": "人类行动者在指定事件、圈层、尺度与时间窗中的非临床状态表示",
+  "variable_states": [
+    "observed",
+    "supported_hypothesis",
+    "candidate",
+    "contested",
+    "unknown",
+    "retired"
+  ],
+  "timescale_bands": [
+    {
+      "id": "slow",
+      "name": "慢变量",
+      "definition": "在多个事件窗口中相对稳定，但仍可被长期学习、关系重构、资源位置变化或重大事件改变的候选状态",
+      "minimum_evidence": "跨时间、跨情境或独立来源的一致证据，并保留反例",
+      "examples": [
+        "长期价值排序",
+        "习惯化解释方式",
+        "长期能力与资源位置",
+        "身份承诺",
+        "信任与依恋倾向"
+      ]
+    },
+    {
+      "id": "medium",
+      "name": "中变量",
+      "definition": "在阶段性角色、关系与目标窗口中持续，可被组织流程、关系反馈和近期学习更新的状态",
+      "minimum_evidence": "同一阶段内重复观察，并说明角色与圈层条件",
+      "examples": [
+        "角色认同",
+        "阶段性目标",
+        "联盟位置",
+        "疲劳积累",
+        "近期声誉与关系预期"
+      ]
+    },
+    {
+      "id": "fast",
+      "name": "快变量",
+      "definition": "随即时事件、身体状态、信息与互动回合快速变化的状态",
+      "minimum_evidence": "绑定观察时点、来源和事件上下文",
+      "examples": [
+        "即时情绪与唤醒",
+        "当前注意与信念",
+        "短时身体状态",
+        "机会与威胁感知",
+        "当前策略"
+      ]
+    }
+  ],
+  "actor_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "actor_id",
+      "observation_window",
+      "scale_profile_ref",
+      "circle_membership_refs",
+      "role_refs",
+      "state_variable_refs",
+      "unknowns",
+      "privacy_level",
+      "allowed_uses",
+      "prohibited_uses",
+      "review_state"
+    ]
+  },
+  "variable_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "variable_id",
+      "actor_id",
+      "name",
+      "timescale_band",
+      "state",
+      "value_or_range",
+      "observation_time",
+      "source_refs",
+      "stability_hypothesis",
+      "circle_conditions",
+      "competing_explanations",
+      "counterevidence_refs",
+      "confidence_state",
+      "privacy_level",
+      "allowed_uses",
+      "falsification_or_retirement_conditions"
+    ],
+    "state_upgrade_rule": "candidate 只有在预先声明的证据门通过后才能升级为 supported_hypothesis；observed 只描述观察记录，不证明稳定人格",
+    "unknown_rule": "缺失、拒绝披露、不可观察与尚未测量分别登记，不得静默插补"
+  },
+  "personality_hypothesis_contract": {
+    "status": "nonclinical_slow_variable_candidate",
+    "required_fields": [
+      "hypothesis_id",
+      "actor_id",
+      "trait_description",
+      "behavioral_indicators",
+      "contexts_observed",
+      "contexts_not_observed",
+      "time_span",
+      "source_refs",
+      "competing_explanations",
+      "disconfirming_cases",
+      "current_state",
+      "allowed_uses",
+      "review_date"
+    ],
+    "forbidden_outputs": [
+      "临床诊断",
+      "精神医学诊断",
+      "人格本质裁决",
+      "仅凭标签预测具体行为",
+      "从模型输出生成处置权限"
+    ]
+  },
+  "privacy_levels": [
+    "public",
+    "context_limited",
+    "sensitive",
+    "highly_sensitive",
+    "withheld"
+  ],
+  "guards": [
+    "不得把人格假设写成临床诊断或精神医学诊断",
+    "不得把候选状态 candidate 或 supported_hypothesis 冒充已观察事实",
+    "不得用单次行为推定稳定人格",
+    "必须分别登记圈层条件、角色激活与竞争解释",
+    "必须依据隐私等级和允许用途限制读取、传播与行动调用",
+    "行动者状态输出不产生行动授权",
+    "当事人拒绝披露时登记 withheld，不把沉默解释为证据"
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-red-team-report.schema.json",
+  "title": "CrossFrame ProMax adversarial red-team report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "run_id", "source_snapshot_sha256", "central_claim_id", "attacks", "stability_checks", "revision_summary", "completed_at"],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.red-team-report"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "central_claim_id": {"$ref": "promax-common.schema.json#/$defs/claimId"},
+    "attacks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/attack"}
+    },
+    "stability_checks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/stabilityCheck"}
+    },
+    "revision_summary": {"$ref": "promax-common.schema.json#/$defs/nonemptyStringArray"},
+    "completed_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "$defs": {
+    "attack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attack_id", "attack_class", "target_id", "challenge", "counterevidence_refs", "strongest_counterposition", "result", "revision", "position_impact"],
+      "properties": {
+        "attack_id": {"type": "string", "pattern": "^ATTACK-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "attack_class": {
+          "enum": [
+            "object_reification",
+            "boundary_error",
+            "scale_transformation_error",
+            "personality_overinference",
+            "circle_reification",
+            "stage_model_misuse",
+            "baseline_leakage",
+            "path_storytelling",
+            "uncalibrated_probability",
+            "prediction_authorization_leakage",
+            "inaction_zero_cost",
+            "decision_irrelevant_counterexample"
+          ]
+        },
+        "target_id": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "challenge": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "counterevidence_refs": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "strongest_counterposition": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "result": {"enum": ["survived", "survived_with_revision", "rejected", "unresolved"]},
+        "revision": {"type": "string", "minLength": 1, "pattern": "\\S"},
+        "position_impact": {"enum": ["none", "low", "medium", "high", "decisive"]}
+      }
+    },
+    "stabilityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "prompt_pair_id",
+        "pro_prompt",
+        "anti_prompt",
+        "pro_prompt_sha256",
+        "anti_prompt_sha256",
+        "evidence_basis_sha256_before",
+        "evidence_basis_sha256_after",
+        "semantic_problem_sha256_before",
+        "semantic_problem_sha256_after",
+        "central_position_id_before",
+        "central_position_id_after",
+        "central_statement_sha256_before",
+        "central_statement_sha256_after",
+        "relation_to_proposition_before",
+        "relation_to_proposition_after",
+        "judgment_strength_before",
+        "judgment_strength_after",
+        "option_ranking_before",
+        "option_ranking_after",
+        "option_kind_ranking_before",
+        "option_kind_ranking_after",
+        "option_semantic_ranking_before",
+        "option_semantic_ranking_after",
+        "normative_selection_basis_sha256_before",
+        "normative_selection_basis_sha256_after",
+        "position_drift",
+        "explanation"
+      ],
+      "properties": {
+        "prompt_pair_id": {"type": "string", "pattern": "^PAIR-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "pro_prompt": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "anti_prompt": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "pro_prompt_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "anti_prompt_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "evidence_basis_sha256_before": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "evidence_basis_sha256_after": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "semantic_problem_sha256_before": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "semantic_problem_sha256_after": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "central_position_id_before": {"$ref": "promax-common.schema.json#/$defs/claimId"},
+        "central_position_id_after": {"$ref": "promax-common.schema.json#/$defs/claimId"},
+        "central_statement_sha256_before": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "central_statement_sha256_after": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "relation_to_proposition_before": {"enum": ["supports", "rejects", "mixed", "indeterminate"]},
+        "relation_to_proposition_after": {"enum": ["supports", "rejects", "mixed", "indeterminate"]},
+        "judgment_strength_before": {"enum": ["tentative", "moderate", "strong", "indeterminate"]},
+        "judgment_strength_after": {"enum": ["tentative", "moderate", "strong", "indeterminate"]},
+        "option_ranking_before": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "option_ranking_after": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "option_kind_ranking_before": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "option_kind_ranking_after": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "option_semantic_ranking_before": {
+          "type": "array",
+          "items": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+        },
+        "option_semantic_ranking_after": {
+          "type": "array",
+          "items": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+        },
+        "normative_selection_basis_sha256_before": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "normative_selection_basis_sha256_after": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+        "position_drift": {"const": "none"},
+        "explanation": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

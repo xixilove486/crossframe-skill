@@ -1,0 +1,144 @@
+{
+  "schema_id": "v8_multicircle_contracts",
+  "schema_version": "1.0.0",
+  "closed": true,
+  "scope": "平行、嵌套、重叠、桥接、竞争与临时圈层的联合对象、关系和状态快照",
+  "relation_kinds": [
+    "parallel",
+    "nested",
+    "overlapping",
+    "bridging",
+    "competitive",
+    "temporary"
+  ],
+  "relation_transition_results": [
+    "unchanged",
+    "strengthened",
+    "weakened",
+    "reoriented",
+    "transformed",
+    "dissolved",
+    "unknown"
+  ],
+  "condition_channels": [
+    "material",
+    "experiential_meaning"
+  ],
+  "clock_kinds": [
+    "immediate",
+    "interaction",
+    "organizational",
+    "institutional",
+    "long_term"
+  ],
+  "circle_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "circle_id",
+      "candidate_name",
+      "boundary_contract",
+      "membership_rule",
+      "role_rule",
+      "entry_conditions",
+      "exit_conditions",
+      "internal_state_refs",
+      "external_interfaces",
+      "material_channel_refs",
+      "experiential_meaning_channel_refs",
+      "constraints",
+      "time_window",
+      "scale_profile_ref",
+      "identity_criterion",
+      "evidence_state",
+      "counterexamples",
+      "object_support_ref"
+    ],
+    "object_rule": "命名、共同标签或叙事相似性不构成圈层对象支持；必须通过有限对象识别门"
+  },
+  "membership_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "membership_id",
+      "actor_or_component_id",
+      "circle_id",
+      "role_ids",
+      "start_time",
+      "end_time_or_open",
+      "membership_basis",
+      "commitment_level",
+      "exit_capacity",
+      "source_refs",
+      "contested_state"
+    ]
+  },
+  "relation_record_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "relation_id",
+      "relation_kind",
+      "source_circle_id",
+      "target_circle_id",
+      "direction",
+      "shared_members_or_interfaces",
+      "channel_refs",
+      "strength_or_range",
+      "time_window",
+      "lag",
+      "threshold",
+      "evidence_refs",
+      "counterexamples",
+      "failure_conditions",
+      "transition_result"
+    ],
+    "nested_rule": "source_circle_id 与 target_circle_id 不得相同；包含必须声明成员、合同或接口中的具体包含基准",
+    "parallel_rule": "平行只否定当前窗口内的包含关系，不否定共享环境、事件或间接耦合",
+    "transformation_rule": "transformed 只能作为 transition_result，不能作为静态 relation_kind"
+  },
+  "joint_state_schema": {
+    "schema_id": "MC_snapshot_v8",
+    "additional_fields": false,
+    "required_fields": [
+      "snapshot_id",
+      "timestamp",
+      "actor_refs",
+      "circle_refs",
+      "relation_refs",
+      "membership_refs",
+      "material_state_refs",
+      "experiential_meaning_state_refs",
+      "channel_refs",
+      "constraint_refs",
+      "clock_states",
+      "scale_profile_refs",
+      "evidence_cutoff",
+      "unknowns",
+      "residuals",
+      "identity_criteria",
+      "frozen_state"
+    ]
+  },
+  "event_touch_schema": {
+    "additional_fields": false,
+    "required_fields": [
+      "event_id",
+      "touched_actor_refs",
+      "touched_circle_refs",
+      "touched_relation_refs",
+      "channel",
+      "clock_kind",
+      "direct_state_changes",
+      "lagged_change_candidates",
+      "untouched_variables",
+      "evidence_state"
+    ],
+    "asynchronous_rule": "事件只更新被已声明通道触达且通过当前门槛的变量；未触达变量保持原值或转为 unknown"
+  },
+  "guards": [
+    "圈层只能作为候选对象进入，不能因命名自动实体化",
+    "平行、嵌套、重叠、桥接、竞争与临时关系必须逐条给出证据、方向、时窗和失效条件",
+    "物质条件与体验—意义条件必须分别登记，不得相互替代",
+    "个人影响圈层与圈层影响个人必须分别建立通道",
+    "不得假定所有圈层与变量同步更新",
+    "联合状态不产生正当性、人格裁决或行动授权"
+  ]
+}

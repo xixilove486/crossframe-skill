@@ -17,12 +17,16 @@ CROSSFRAME_SKILLS = [
     "crossframe-history",
     "crossframe-inquiry",
     "crossframe-max",
+    "crossframe-promax",
     "crossframe-public",
     "crossframe-org",
     "crossframe-teach",
     "crossframe-debate",
     "crossframe-notebook",
 ]
+
+IGNORED_DIRECTORY_NAMES = {"__pycache__", ".pytest_cache"}
+IGNORED_FILE_NAMES = {".v8-full-source.lock"}
 
 
 def require(condition: bool, message: str) -> None:
@@ -43,6 +47,8 @@ def tree_hashes(root: Path) -> dict[str, str]:
         path.relative_to(root).as_posix(): file_sha256(path)
         for path in sorted(root.rglob("*"))
         if path.is_file()
+        and path.name not in IGNORED_FILE_NAMES
+        and not any(part in IGNORED_DIRECTORY_NAMES for part in path.relative_to(root).parts)
     }
 
 
@@ -59,7 +65,11 @@ def sync_skill(src: Path, dst: Path, check_only: bool) -> None:
     if dst.exists():
         require(dst.is_dir(), f"mirror destination is not a directory: {dst}")
         shutil.rmtree(dst)
-    shutil.copytree(src, dst)
+    shutil.copytree(
+        src,
+        dst,
+        ignore=shutil.ignore_patterns(*IGNORED_DIRECTORY_NAMES, *IGNORED_FILE_NAMES),
+    )
 
 
 def main() -> int:

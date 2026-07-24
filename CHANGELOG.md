@@ -1,9 +1,12 @@
 # Changelog
 
-## Unreleased
+## CrossFrame ProMax 1.0.0 - 2026-07-24
 
 ### Added
 
+- 新增 `crossframe-promax`：直接搭载 v8.0 全源快照、概念注册表、概念契约、路由图、穷尽推演工件和独立校验/修复闭环；权威入口为 `skills/crossframe-promax/SKILL.md`。
+- CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时触发；Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+- 新增 Cursor、Continue、Cline、Roo Code 与 Windsurf/Cascade 的 ProMax 专用薄入口；Roo Code 与 Windsurf 同时提供原生 skill 发现入口。Codex、Claude Code、Gemini CLI、GitHub Copilot、Aider 与通用 agent 继续使用各自已有适配。
 - 新增四种 Max validation profile、v2 run/report/repair contract、规范化核心产物模板与语义 fixture。
 - 新增 adversarial profile tests，覆盖伪完成、陈旧 manifest、marker-only、重复 id、断裂回指和 design-review 闭环失败。
 - 新增 `crossframe-max` repair loop：validator 失败后生成 `max-validator-report.json` 与 `max-repair-plan.json`，按 affected phase 执行受控重建、降档、撤回或 incomplete。

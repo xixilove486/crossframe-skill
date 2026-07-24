@@ -43,6 +43,10 @@ EXCLUDED_PARTS = {
     "work",
 }
 
+EXCLUDED_NAMES = {
+    ".v8-full-source.lock",
+}
+
 
 def iter_package_files(repo: Path):
     for rel in INCLUDE_FILES:
@@ -54,7 +58,11 @@ def iter_package_files(repo: Path):
         if not root.exists():
             continue
         for path in root.rglob("*"):
-            if path.is_file() and not any(part in EXCLUDED_PARTS for part in path.relative_to(repo).parts):
+            if (
+                path.is_file()
+                and path.name not in EXCLUDED_NAMES
+                and not any(part in EXCLUDED_PARTS for part in path.relative_to(repo).parts)
+            ):
                 yield path
 
 

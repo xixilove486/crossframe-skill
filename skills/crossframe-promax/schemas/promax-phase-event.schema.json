@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-phase-event.schema.json",
+  "title": "CrossFrame ProMax append-only phase event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "event_index",
+    "event_type",
+    "run_id",
+    "run_nonce",
+    "request_sha256",
+    "source_snapshot_sha256",
+    "phase_id",
+    "status",
+    "parent_phase_sha256",
+    "input_phase_hashes",
+    "input_artifact_hashes",
+    "output_artifact_hashes",
+    "previous_event_sha256",
+    "invalidated_phases",
+    "reset_reason",
+    "event_sha256"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.phase-event"},
+    "schema_version": {"const": 1},
+    "event_index": {"type": "integer", "minimum": 0},
+    "event_type": {"enum": ["phase_sealed", "phase_reset"]},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "run_nonce": {"$ref": "promax-common.schema.json#/$defs/runNonce"},
+    "request_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "phase_id": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+    "status": {"enum": ["completed", "reset"]},
+    "parent_phase_sha256": {"$ref": "promax-common.schema.json#/$defs/nullableSha256"},
+    "input_phase_hashes": {"$ref": "promax-common.schema.json#/$defs/phaseHashMap"},
+    "input_artifact_hashes": {"$ref": "promax-common.schema.json#/$defs/artifactHashMap"},
+    "output_artifact_hashes": {"$ref": "promax-common.schema.json#/$defs/artifactHashMap"},
+    "previous_event_sha256": {"$ref": "promax-common.schema.json#/$defs/nullableSha256"},
+    "invalidated_phases": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/phaseId"}
+    },
+    "reset_reason": {
+      "oneOf": [
+        {"type": "string", "minLength": 1, "pattern": "\\S"},
+        {"type": "null"}
+      ]
+    },
+    "event_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"event_type": {"const": "phase_sealed"}}, "required": ["event_type"]},
+      "then": {
+        "properties": {
+          "status": {"const": "completed"},
+          "invalidated_phases": {"maxItems": 0},
+          "reset_reason": {"type": "null"}
+        }
+      },
+      "else": {
+        "properties": {
+          "status": {"const": "reset"},
+          "invalidated_phases": {"minItems": 1},
+          "reset_reason": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "input_artifact_hashes": {"maxProperties": 0},
+          "output_artifact_hashes": {"maxProperties": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"phase_id": {"const": "P0"}}, "required": ["phase_id"]},
+      "then": {
+        "properties": {
+          "parent_phase_sha256": {"type": "null"},
+          "input_phase_hashes": {"maxProperties": 0},
+          "input_artifact_hashes": {"maxProperties": 0}
+        }
+      }
+    }
+  ]
+}

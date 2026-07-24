@@ -1,0 +1,24 @@
+{
+  "schema_id": "crossframe.promax.green-evaluated-skill-tree",
+  "schema_version": 1,
+  "evaluated_skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+  "current_release_compatibility": {
+    "scope": "activation-boundary-only",
+    "changed_paths": [
+      "skills/crossframe-promax/SKILL.md",
+      "skills/crossframe-promax/protocols/promax-repair-loop-protocol.md",
+      "skills/crossframe-promax/protocols/promax-runtime-protocol.md",
+      "skills/crossframe-promax/references/.v8-full-source.lock",
+      "skills/crossframe-promax/references/runtime-routing-map.md",
+      "skills/crossframe-promax/scripts/crossframe_promax_runtime.py",
+      "skills/crossframe-promax/scripts/promax_runtime/artifacts.py",
+      "skills/crossframe-promax/scripts/promax_runtime/pollution.py"
+    ],
+    "deterministic_tests": [
+      "tests.test_promax_behavioral_contract.ProMaxTargetBehaviorContractTests.test_loaded_skill_does_not_repeat_the_activation_gate",
+      "tests.test_promax_runtime_contract.ProMaxRunInitializationTests.test_platform_selected_runtime_does_not_reparse_the_request_for_activation",
+      "tests.test_promax_runtime_contract.ProMaxRuntimeCLITests.test_cli_has_no_activation_subcommand_and_root_entrypoint_is_thin",
+      "tests.test_promax_repository_integration.ProMaxRepositoryTargetTests.test_promax_runtime_does_not_reimplement_suite_activation"
+    ]
+  }
+}

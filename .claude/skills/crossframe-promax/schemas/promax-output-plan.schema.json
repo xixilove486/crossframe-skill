@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-output-plan.schema.json",
+  "title": "CrossFrame ProMax locked longform output plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_id", "schema_version", "run_id", "source_snapshot_sha256", "sections", "required_artifacts", "unexpanded_branch_ids", "coverage_complete", "locked_at"],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.output-plan"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/section"}
+    },
+    "required_artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/relativePath"},
+      "allOf": [
+        {"contains": {"const": "promax-dossier.md"}},
+        {"contains": {"const": "promax-concept-atlas.md"}},
+        {"contains": {"const": "promax-case-and-countercase.md"}},
+        {"contains": {"const": "promax-essay.md"}}
+      ]
+    },
+    "unexpanded_branch_ids": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+    "coverage_complete": {"type": "boolean"},
+    "locked_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"coverage_complete": {"const": true}}, "required": ["coverage_complete"]},
+      "then": {"properties": {"unexpanded_branch_ids": {"maxItems": 0}}}
+    }
+  ],
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["section_id", "title", "concept_ids", "claim_ids", "example_ids", "counterexample_ids", "judgment_ids", "artifact_paths"],
+      "properties": {
+        "section_id": {"type": "string", "pattern": "^SECTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "title": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "concept_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/conceptId"}
+        },
+        "claim_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/claimId"}
+        },
+        "example_ids": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "counterexample_ids": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "judgment_ids": {"$ref": "promax-common.schema.json#/$defs/stringArray"},
+        "artifact_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/relativePath"}
+        }
+      }
+    }
+  }
+}

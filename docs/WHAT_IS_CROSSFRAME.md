@@ -81,3 +81,11 @@ CrossFrame 会先拆：
 ```
 
 它不是 suite 的普通加长档，而是独立模式；不走 `2+1` 选择器，也不走普通文章类型选择器。
+
+如果你要明确使用 v8 的 ProMax，必须直接写出它的名字：
+
+```text
+/crossframe-promax 用 v8 框架穷尽分析这个判断，并主动攻击自己的结论
+```
+
+CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。

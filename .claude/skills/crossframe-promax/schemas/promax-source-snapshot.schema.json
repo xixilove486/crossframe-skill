@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-source-snapshot.schema.json",
+  "title": "CrossFrame ProMax v8 verified source snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "snapshot_id",
+    "source_snapshot_sha256",
+    "source_manifest_sha256",
+    "concept_registry_sha256",
+    "contract_map_sha256",
+    "route_map_sha256",
+    "paragraph_count",
+    "non_whitespace_chars",
+    "table_count",
+    "section_count",
+    "verified_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.source-snapshot"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.0"},
+    "snapshot_id": {"type": "string", "pattern": "^crossframe-promax-v8-source-[0-9a-f]{8,64}(?![\\s\\S])"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "source_manifest_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "concept_registry_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "contract_map_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "route_map_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "paragraph_count": {"const": 3863},
+    "non_whitespace_chars": {"const": 155721},
+    "table_count": {"const": 117},
+    "section_count": {"const": 16},
+    "verified_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  }
+}

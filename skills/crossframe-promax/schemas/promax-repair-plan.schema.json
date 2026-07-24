@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-repair-plan.schema.json",
+  "title": "CrossFrame ProMax local reset and repair plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "source_snapshot_sha256",
+    "failed_report_sha256",
+    "failures",
+    "reset_from_phase",
+    "invalidated_phases",
+    "repair_actions",
+    "validation_state",
+    "manifest_regeneration_required",
+    "revalidation_required",
+    "revalidation_scope",
+    "created_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.repair-plan"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "failed_report_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "failures": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/failure"}
+    },
+    "reset_from_phase": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+    "invalidated_phases": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/phaseId"}
+    },
+    "repair_actions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/repairAction"}
+    },
+    "validation_state": {"const": "not_run"},
+    "manifest_regeneration_required": {"const": true},
+    "revalidation_required": {"const": true},
+    "revalidation_scope": {"const": "full-validator-set"},
+    "created_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "$defs": {
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error_type", "artifact", "affected_phase", "downstream_reset", "repair_action"],
+      "properties": {
+        "error_type": {"type": "string", "pattern": "^[a-z][a-z0-9_]{2,63}(?![\\s\\S])"},
+        "artifact": {"$ref": "promax-common.schema.json#/$defs/relativePath"},
+        "affected_phase": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+        "downstream_reset": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/phaseId"}
+        },
+        "repair_action": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "repairAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "phase_id", "description", "expected_output_paths"],
+      "properties": {
+        "action_id": {"type": "string", "pattern": "^REPAIR-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"},
+        "phase_id": {"$ref": "promax-common.schema.json#/$defs/phaseId"},
+        "description": {"type": "string", "minLength": 2, "pattern": "\\S"},
+        "expected_output_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/relativePath"}
+        }
+      }
+    }
+  }
+}

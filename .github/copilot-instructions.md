@@ -5,7 +5,7 @@
 - 总调度 skill 位于 `skills/crossframe-suite/`；复杂任务先用它决定连续触发顺序。
 - `crossframe-suite` 是推荐默认入口。只要从总入口进入任何 CrossFrame 内容任务，默认先完成必要专项 skill，再追加 `crossframe-essay -> crossframe-review`，输出 `full-visible-v5-longform`：完整可见底稿 + 完整长文正文；只有用户明确说“只要/不要文章/短答/表格/清单/纯诊断/仅行动方案”时才关闭文章层。
 - 平行文章写作 skill 位于 `skills/crossframe-essay/`。
-- 其它平行专项 skill 位于 `skills/crossframe-review/`、`skills/crossframe-dialogue/`、`skills/crossframe-casebook/`、`skills/crossframe-history/`、`skills/crossframe-inquiry/`、`skills/crossframe-max/`、`skills/crossframe-public/`、`skills/crossframe-org/`、`skills/crossframe-teach/`、`skills/crossframe-debate/`、`skills/crossframe-notebook/`。
+- 其它平行专项 skill 位于 `skills/crossframe-review/`、`skills/crossframe-dialogue/`、`skills/crossframe-casebook/`、`skills/crossframe-history/`、`skills/crossframe-inquiry/`、`skills/crossframe-max/`、`skills/crossframe-promax/`、`skills/crossframe-public/`、`skills/crossframe-org/`、`skills/crossframe-teach/`、`skills/crossframe-debate/`、`skills/crossframe-notebook/`。
 - `README.md` 与 `skills/crossframe/SKILL.md` 是原始说明来源；新增适配优先薄封装，不要复制出多套漂移正文。
 - 结构诊断、推演、开放断言、反俘获审查或低条件行动任务请遵循 `AGENTS.md`。
 - 中文文章、长文、评论、思想文章、批判性洞察文章和结构洞察文章任务请遵循 `skills/crossframe-essay/SKILL.md`。
@@ -13,6 +13,7 @@
 - 多 skill 连续任务请先遵循 `skills/crossframe-suite/SKILL.md`，例如公共评论文章走 `crossframe -> crossframe-public -> crossframe-essay -> crossframe-review`，组织复盘文章走 `crossframe -> crossframe-org -> crossframe-essay -> crossframe-review`，历史研究走 `crossframe -> crossframe-history -> crossframe-essay -> crossframe-review`，完成后追问走 `crossframe -> crossframe-review(lite) -> crossframe-inquiry`；不要一次读取全部 skill。
 - 完整链路已经完成分析、成文和 review 后，下一轮用户未明确说“新任务 / 换主题 / 退出追问 / 不接着上文”，且不是“谢谢 / 好的 / 明白了 / 先这样”等纯致谢、确认收到或结束语时，默认进入 `crossframe-inquiry`；它可以定向检索 1-3 个相关 sibling skill 的必要材料，但不得把检索写成正式专项判断。
 - `crossframe-max` 是 named-only 独立模式；只有明确点名或要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取 `skills/crossframe-max/SKILL.md`，不走 suite 的 `2+1` 选择器或普通文章类型选择器。
+- CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
 - 文章任务需要深度、概念上升、引经据典、理论参照或文学互文时，按需读取 `skills/crossframe-essay/protocols/concept-elevation-protocol.md` 与 `skills/crossframe-essay/references/reference-and-allusion-rules.md`。
 - 文章任务自动成文默认读取 `skills/crossframe-essay/protocols/editorial-comrade-voice-protocol.md` 与 `skills/crossframe-essay/references/editorial-voice-principles.md`；只有显式中性报告/备忘录/表格/纯诊断时关闭。
 - 概念解释或思想解释任务也应进入 CrossFrame，但先读 `skills/crossframe/protocols/concept-explanation-protocol.md`。

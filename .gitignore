@@ -8,3 +8,10 @@ __pycache__/
 node_modules/
 outputs/
 work/
+/skills/crossframe-promax/references/.v8-full-source.lock
+/skills/crossframe-promax/references/.v8-full-source.transaction.json
+/skills/crossframe-promax/references/..v8-full-source.transaction.json.tmp-*
+/skills/crossframe-promax/references/.v8-full-source.stage-*
+/skills/crossframe-promax/references/.v8-full-source.backup-*
+/skills/crossframe-promax/references/.source_manifest.json.stage-*
+/skills/crossframe-promax/references/.source_manifest.json.backup-*

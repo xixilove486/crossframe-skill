@@ -1,0 +1,7 @@
+interface:
+  display_name: "CrossFrame ProMax"
+  short_description: "Explicit-only v8 structural inference with auditable artifacts."
+  default_prompt: "Use $crossframe-promax to run the v8-only auditable artifact workflow and deliver a complete structural judgment."
+
+policy:
+  allow_implicit_invocation: false

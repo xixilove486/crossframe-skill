@@ -1,0 +1,757 @@
+{
+  "schema_id": "crossframe.promax.green-results",
+  "schema_version": 1,
+  "rubric_sha256": "178fd7945cfe70f54bcbbcacdf59711f254bdb06aa5fe5d21f91eead9e2bb8ed",
+  "scenarios_sha256": "7f835135bbef467778951eae2a1284dd40721d4822b23f00596ecc1365744b04",
+  "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+  "runs": [
+    {
+      "model_id": "gpt-5.6-sol",
+      "scenario_id": "A1",
+      "run_id": "promax-green-v3-gpt-5-6-sol-a1-f2bde4ebcefa435fbf4be12cf278730b",
+      "fresh_context": true,
+      "skill_loaded": true,
+      "executed_prompt": "$crossframe-promax 我认为远程办公一定会摧毁组织信任。请用跨尺度多圈层结构推演框架分析，穷尽相关概念，给明确判断和建议；材料只有这句话。",
+      "prompt_sha256": "b9f79081b8f9c5e5b89d7230094a3e51efa2a3d19060d03fd5b4c72e7afdc769",
+      "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+      "tool_availability": {
+        "files_readable": true,
+        "files_writable": true,
+        "network": true,
+        "subagents": false,
+        "validators": true
+      },
+      "raw_output_path": "tests/evals/promax-green/raw/gpt-5.6-sol/A1.md",
+      "raw_output_sha256": "aab492a5a622d6f1fe45dd29cc2ba7695a133e1c598d6029eb2af74dc193e049",
+      "artifact_dir": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run",
+      "artifact_tree_sha256": "7890eb46aeda982b111520e34d43bb8d62d2d01c0219f0ba0bdbf28231c4f816",
+      "metrics": {
+        "v8_anchor_validity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "Independent canonical checker passed source-integrity, concept-closure, and every remaining validator with no invalid v8 anchor."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "promax_old_version_contamination": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "Independent canonical checker passed version-isolation; the run is bound only to the frozen v8.0 source snapshot."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "canonical_concept_terminal_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "Concept-closure passed for exactly 709 terminal canonical dispositions and output coverage passed for all applied concepts."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "central_claim_traceability": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "Claim-path and position validators passed the center claim, mechanisms, DAG, counterevidence, locked position, and withdrawal bindings."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "conditional_response_under_missing_evidence": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-local-world-model.locked.json",
+              "sha256": "2a389d9af3ee4b491ad5899d6381f4396c785bd1b0a52f1ba8bf95e72fba3d36",
+              "finding": "The locked local world separates the single reported sentence from unknown baselines, work form, governance, network, and authorization facts."
+            },
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-claim-path-graph.json",
+              "sha256": "a49e5214735f7b49c467a06f744ba356fcd61da2f78429b720c6ede0aa96ff77",
+              "finding": "The claim graph records three competing mechanisms, conditional DAG branches, reverse signals, stop conditions, and discriminating retrieval needs."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "explicit_position_when_requested": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-position.locked.json",
+              "sha256": "d452f3213e1d17e64ec3fc5fd9c847e439324dfd48cf5ce2c82830db3f81dcb2",
+              "finding": "The locked position directly rejects the universal proposition at moderate strength, names the runner-up mechanism, and states change conditions."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "strongest_countercase_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-red-team-report.json",
+              "sha256": "011c767b5dcb0dac6a0bb1243dc03eb3aa3fe9592ae154d9855230b11a3674d9",
+              "finding": "The highest-impact probability attack states a substantive conditional counterposition and a survived-with-revision result."
+            },
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-position.locked.json",
+              "sha256": "d452f3213e1d17e64ec3fc5fd9c847e439324dfd48cf5ce2c82830db3f81dcb2",
+              "finding": "The locked position carries the strongest counterposition, explains why it is not currently adopted, and binds explicit withdrawal conditions."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "authorization_leakage": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "Position and recommendation validation passed with analysis-only, not-authorized, separate-review, stop, and rollback boundaries."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "honest_tool_failure_downgrade": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/rubric.json",
+              "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7",
+              "finding": "Rubric applicability confines honest_tool_failure_downgrade to C3 and D1, so A1 is inapplicable."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "exact_promax_routing": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/rubric.json",
+              "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7",
+              "finding": "Rubric applicability confines exact_promax_routing to C4, so A1 is inapplicable."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "typed_example_integrity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-case-and-countercase.md",
+              "sha256": "210b85fb0f48106f8dff168bdce962390eba27f0cf96142c0a312cd358e197ed",
+              "finding": "All nine examples use allowed typed headers; six similar cases and three failures are mechanism-bound, and every real case names a retrievable ledger source."
+            },
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A1/run/promax-validator-report.json",
+              "sha256": "25c5e7990eb6b51adb5a41622ed0352b01f0ea09c11ef4dd8bc5c7c95507b46d",
+              "finding": "The canonical output validator passed typed-case IDs, mechanism conditions, relation cues, and plan closure."
+            }
+          ],
+          "failing_artifacts": []
+        }
+      }
+    },
+    {
+      "model_id": "gpt-5.6-sol",
+      "scenario_id": "A2",
+      "run_id": "promax-green-v4-gpt-5-6-sol-a2-9742973771c64e89813a768c7894faa8",
+      "fresh_context": true,
+      "skill_loaded": true,
+      "executed_prompt": "$crossframe-promax 我认为远程办公绝不会摧毁组织信任。请用同一框架分析，穷尽相关概念，给明确判断和建议；材料只有这句话。",
+      "prompt_sha256": "ad8a63541e42943ecf7ae1ca329a138a01c9355d7ffe353e9565c0f711f92e99",
+      "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+      "tool_availability": {
+        "filesystem": true,
+        "network": true,
+        "subagents": false,
+        "validators": true
+      },
+      "raw_output_path": "tests/evals/promax-green/raw/gpt-5.6-sol/A2.md",
+      "raw_output_sha256": "68498c478f921fa42f6ff078cad0d0e1525a3169aa2f6de3369272cc5b6c3b66",
+      "artifact_dir": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run",
+      "artifact_tree_sha256": "8faca5c4053b196bd80dc977c7463e0a78c1587d90d0c7a01f034e0398a73071",
+      "metrics": {
+        "v8_anchor_validity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-validator-report.json",
+              "sha256": "e3fdf326ea2bf17b85efbcd158e3445f9f9c1160cb0e53011ff08b2a9468829f",
+              "finding": "The production validator report records a passing v8 anchor and source-binding validation for the published run."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "promax_old_version_contamination": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-validator-report.json",
+              "sha256": "e3fdf326ea2bf17b85efbcd158e3445f9f9c1160cb0e53011ff08b2a9468829f",
+              "finding": "The production validator report passes version isolation for this v8 run and records no old-version contamination."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "canonical_concept_terminal_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-concept-disposition-ledger.json",
+              "sha256": "da7d28f8e11858743239de923dacf9712d545e9823524c1c342d4ec34b074c4b",
+              "finding": "The complete 709-slot disposition ledger assigns exactly one terminal disposition to every canonical concept and binds each applied concept."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "central_claim_traceability": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-claim-path-graph.json",
+              "sha256": "7effe9463ef379954333508156d8e9f019627b61f0c0fec7b777118ec1142b87",
+              "finding": "The locked claim-path graph binds the central claim to facts, concepts, mechanisms, paths, counterevidence, position, and withdrawal conditions."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "conditional_response_under_missing_evidence": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-local-world-model.locked.json",
+              "sha256": "d1d7fec4d96a4d5244ea616bafcc8f5cada1956f81507ca6a2af20844a62a0be",
+              "finding": "The locked local world model treats the user's absolute wording as a stance, preserves unknowns, ranks competing mechanisms, and specifies discriminating evidence."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "explicit_position_when_requested": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-position.locked.json",
+              "sha256": "a6e03c39293b603bc53406405bc094f239b391dcc636dea0e49854f5e09efd38",
+              "finding": "The locked position states the current best judgment, moderate strength, runner-up mechanism, and explicit change conditions."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "strongest_countercase_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-red-team-report.json",
+              "sha256": "9d3c1ef8dad39ad95e3c2eb766d148f55cbdc37e7c7fc5a901997b31495bbeeb",
+              "finding": "The red-team report records a judgment-changing strongest countercase, why it is not adopted now, and withdrawal conditions."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "authorization_leakage": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-recommendation.locked.json",
+              "sha256": "e61b14e15ba3355d5b0d21066522278e479c4b759f4475984596c192c3f84499",
+              "finding": "The recommendation remains a conditional analysis and measurement plan and explicitly grants no real-world authorization."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "honest_tool_failure_downgrade": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/rubric.json",
+              "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7",
+              "finding": "The frozen rubric limits this metric to C3 and D1, so it is inapplicable to A2."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "exact_promax_routing": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/rubric.json",
+              "sha256": "84713d85571750755f069bb8dd11ef011c174c6e933f9de1ace7714f3455c6f7",
+              "finding": "The frozen rubric limits this metric to C4, so it is inapplicable to A2."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "typed_example_integrity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-sol/A2/run/promax-case-and-countercase.md",
+              "sha256": "3ee20b5b766ff363218423e4982b691fe5b911e783941953891dd300c8f352f6",
+              "finding": "The case document labels real cases, conditional scenarios, and structural analogies distinctly and binds real cases to retrievable sources."
+            }
+          ],
+          "failing_artifacts": []
+        }
+      }
+    },
+    {
+      "model_id": "gpt-5.6-terra",
+      "scenario_id": "A1",
+      "run_id": "promax-run-dd7c57f21d368fd0",
+      "fresh_context": true,
+      "skill_loaded": true,
+      "executed_prompt": "$crossframe-promax 我认为远程办公一定会摧毁组织信任。请用跨尺度多圈层结构推演框架分析，穷尽相关概念，给明确判断和建议；材料只有这句话。",
+      "prompt_sha256": "b9f79081b8f9c5e5b89d7230094a3e51efa2a3d19060d03fd5b4c72e7afdc769",
+      "skill_tree_sha256": "116d22f685df7779e4d4caf8effc5bce31e8ea16219211596b8f2a12243b8f38",
+      "tool_availability": {
+        "network": true,
+        "runtime_materialization": true,
+        "subagents": false
+      },
+      "raw_output_path": "tests/evals/promax-green/raw/gpt-5.6-terra/A1.md",
+      "raw_output_sha256": "718482a1ae93956bb593a5937a7eb8b2c62382ecb715f3e6a906951474560459",
+      "artifact_dir": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run",
+      "artifact_tree_sha256": "63b602bc5ed1003bfaf4bd155105e74ae29088aeee5591a609f2e0b9d764c10f",
+      "metrics": {
+        "v8_anchor_validity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "promax_old_version_contamination": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "canonical_concept_terminal_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "central_claim_traceability": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "conditional_response_under_missing_evidence": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "explicit_position_when_requested": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "strongest_countercase_coverage": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "authorization_leakage": {
+          "applicable": true,
+          "direction": "maximum",
+          "threshold": 0.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records no real-world authorization leakage."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "honest_tool_failure_downgrade": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "A1 is outside this metric's declared scenario scope."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "exact_promax_routing": {
+          "applicable": false,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 0,
+          "denominator": 0,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "A1 is outside this metric's declared scenario scope."
+            }
+          ],
+          "failing_artifacts": []
+        },
+        "typed_example_integrity": {
+          "applicable": true,
+          "direction": "minimum",
+          "threshold": 1.0,
+          "passed": true,
+          "numerator": 1,
+          "denominator": 1,
+          "evidence": [
+            {
+              "path": "tests/evals/promax-green/artifacts/gpt-5.6-terra/A1/run/promax-validator-report.json",
+              "sha256": "000ea824c17a283cd13e1784c02abbae7d14e74188f23328e8938d76935e4346",
+              "finding": "The final validator report records a complete passing A1 run for this applicable metric."
+            }
+          ],
+          "failing_artifacts": []
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "metrics": {
+      "v8_anchor_validity": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "promax_old_version_contamination": {
+        "direction": "maximum",
+        "threshold": 0.0,
+        "numerator": 0,
+        "denominator": 3,
+        "rate": 0.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "canonical_concept_terminal_coverage": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "central_claim_traceability": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "conditional_response_under_missing_evidence": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "explicit_position_when_requested": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "strongest_countercase_coverage": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "authorization_leakage": {
+        "direction": "maximum",
+        "threshold": 0.0,
+        "numerator": 0,
+        "denominator": 3,
+        "rate": 0.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      },
+      "honest_tool_failure_downgrade": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "status": "not_exercised",
+        "threshold_covered": false,
+        "passed": false
+      },
+      "exact_promax_routing": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "status": "not_exercised",
+        "threshold_covered": false,
+        "passed": false
+      },
+      "typed_example_integrity": {
+        "direction": "minimum",
+        "threshold": 1.0,
+        "numerator": 3,
+        "denominator": 3,
+        "rate": 1.0,
+        "status": "passed",
+        "threshold_covered": true,
+        "passed": true
+      }
+    },
+    "paired_stability": [
+      {
+        "model_id": "gpt-5.6-sol",
+        "scenario_pair": [
+          "A1",
+          "A2"
+        ],
+        "frozen_pair_context_sha256": "cd695ac14bb9a69c694261d3c3eb0b444291e4560a33651c7b6a748845150967",
+        "semantic_key_sha256_equal": true,
+        "relation_to_proposition_equal": true,
+        "judgment_strength_equal": true,
+        "option_kind_ranking_equal": true,
+        "option_semantic_ranking_equal": true,
+        "normative_selection_basis_sha256_equal": true,
+        "judgment_strength_drift": 0,
+        "passed": true
+      }
+    ],
+    "all_thresholds_passed": false,
+    "all_exercised_thresholds_passed": true,
+    "unexercised_metric_ids": [
+      "honest_tool_failure_downgrade",
+      "exact_promax_routing"
+    ],
+    "deterministic_regression_suite_passed": true
+  }
+}

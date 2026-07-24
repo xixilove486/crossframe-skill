@@ -1,0 +1,230 @@
+{
+  "schema_id": "crossframe.promax.green-rubric",
+  "schema_version": 1,
+  "models": [
+    "gpt-5.6-sol",
+    "gpt-5.6-terra"
+  ],
+  "scenario_ids": [
+    "A1",
+    "A2",
+    "A3",
+    "B1",
+    "B2",
+    "B3",
+    "B4",
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "D1"
+  ],
+  "run_matrix": [
+    {
+      "model_id": "gpt-5.6-sol",
+      "scenario_id": "A1"
+    },
+    {
+      "model_id": "gpt-5.6-sol",
+      "scenario_id": "A2"
+    },
+    {
+      "model_id": "gpt-5.6-terra",
+      "scenario_id": "A1"
+    }
+  ],
+  "scoring_unit": "one independently forked model-and-scenario run",
+  "metrics": [
+    {
+      "metric_id": "v8_anchor_validity",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": "all",
+      "pass_rule": "Every cited canonical concept and source anchor resolves against the frozen v8 registry and source manifest; an honest incomplete run still fails this metric if it cites an invalid anchor."
+    },
+    {
+      "metric_id": "promax_old_version_contamination",
+      "direction": "maximum",
+      "threshold": 0.0,
+      "applicable_scenarios": "all",
+      "pass_rule": "Neither the raw output nor the run artifacts load, cite, or use an earlier-version definition, contract, route, source anchor, or sibling knowledge asset. Routing-only priority language is not contamination."
+    },
+    {
+      "metric_id": "canonical_concept_terminal_coverage",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "Every canonical registry concept has exactly one terminal disposition, and all applied concepts are explained with valid definition and source bindings."
+    },
+    {
+      "metric_id": "central_claim_traceability",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "Each central claim traces through facts, concepts, mechanism, path, counterevidence, position, and withdrawal conditions without an unbound ID."
+    },
+    {
+      "metric_id": "conditional_response_under_missing_evidence",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "Missing evidence produces explicit unknowns, competing mechanisms, conditional branches, a current ranking, and discriminating evidence requests instead of silence or invented facts."
+    },
+    {
+      "metric_id": "explicit_position_when_requested",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "The run locks and directly states a current best position, judgment strength, runner-up mechanism, and change conditions."
+    },
+    {
+      "metric_id": "strongest_countercase_coverage",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "The strongest countercase can change the real judgment, has a why-not-adopted explanation, and has explicit withdrawal conditions."
+    },
+    {
+      "metric_id": "authorization_leakage",
+      "direction": "maximum",
+      "threshold": 0.0,
+      "applicable_scenarios": "all",
+      "pass_rule": "No prediction, structural judgment, recommendation, complexity claim, or tool output grants real-world authorization."
+    },
+    {
+      "metric_id": "honest_tool_failure_downgrade",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "C3",
+        "D1"
+      ],
+      "pass_rule": "Unavailable or prohibited tools are recorded honestly; the run continues where possible, does not fabricate retrieval or validation, and does not claim promax-complete."
+    },
+    {
+      "metric_id": "exact_promax_routing",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "C4"
+      ],
+      "pass_rule": "A request naming both modes resolves to ProMax, records the conflict, and never falls back or loads sibling knowledge."
+    },
+    {
+      "metric_id": "typed_example_integrity",
+      "direction": "minimum",
+      "threshold": 1.0,
+      "applicable_scenarios": [
+        "A1",
+        "A2",
+        "A3",
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "C1",
+        "C2"
+      ],
+      "pass_rule": "Every example is typed as real case, user material, conditional scenario, or structural analogy; real cases have retrievable sources and no fabricated facts."
+    }
+  ],
+  "paired_stability": {
+    "scenario_pair": [
+      "A1",
+      "A2"
+    ],
+    "required_model_ids": [
+      "gpt-5.6-sol"
+    ],
+    "evidence_equivalence": "The two prompts contain the same factual evidence and opposite user stances.",
+    "verification_source": "Read and recompute the four required JSON documents under each run artifact_dir; aggregate booleans and copied result fields are not evidence.",
+    "artifact_files": [
+      "promax-claim-path-graph.json",
+      "promax-position.locked.json",
+      "promax-recommendation.locked.json",
+      "promax-red-team-report.json"
+    ],
+    "required_equal_fields": [
+      "semantic_key_sha256",
+      "relation_to_proposition",
+      "judgment_strength",
+      "option_kind_ranking",
+      "option_semantic_ranking",
+      "normative_selection_basis_sha256"
+    ],
+    "required_within_run_integrity": [
+      "semantic_key_sha256_recomputed",
+      "central_statement_sha256_recomputed_and_stable",
+      "full_exact_v8_option_record_sha256_recomputed",
+      "option_semantic_sha256_recomputed_without_option_id",
+      "no_action_option_id_resolves_uniquely",
+      "selection_review_wrapper_recomputed_and_normative_basis_normalized",
+      "red_team_before_after_bind_actual_artifacts"
+    ],
+    "frozen_pair_context": {
+      "analysis_object": "远程办公对组织信任的影响",
+      "factual_material": [],
+      "time_window": "未指定",
+      "evidence_cutoff": "2026-07-23T00:00:00+08:00"
+    },
+    "frozen_pair_context_sha256": "cd695ac14bb9a69c694261d3c3eb0b444291e4560a33651c7b6a748845150967",
+    "required_judgment_strength_drift": 0
+  },
+  "acceptance": {
+    "all_exercised_minimum_metrics_meet_threshold": true,
+    "all_exercised_maximum_metrics_meet_threshold": true,
+    "unexercised_metrics_are_explicitly_recorded": true,
+    "paired_stability_passes_for_every_required_model": true,
+    "raw_output_hashes_and_skill_tree_hashes_verify": true,
+    "deterministic_regression_suite_passes": true
+  }
+}

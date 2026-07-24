@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-validator-report.schema.json",
+  "title": "CrossFrame ProMax replay-resistant validator report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "run_nonce",
+    "request_sha256",
+    "source_snapshot_sha256",
+    "phase_chain_head_sha256",
+    "manifest_sha256",
+    "validator_set_sha256",
+    "validation_attempt",
+    "current_artifact_hashes",
+    "checks",
+    "overall_status",
+    "completion_status",
+    "validated_at",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.validator-report"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "run_nonce": {"$ref": "promax-common.schema.json#/$defs/runNonce"},
+    "request_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "phase_chain_head_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "manifest_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "validator_set_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "validation_attempt": {"type": "integer", "minimum": 1},
+    "current_artifact_hashes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/artifactHash"}
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "overall_status": {"enum": ["pass", "fail", "blocked"]},
+    "completion_status": {
+      "oneOf": [
+        {"$ref": "promax-common.schema.json#/$defs/mode"},
+        {"type": "string", "pattern": "^promax-artifact-incomplete:[^\\r\\n\\u2028\\u2029]+(?![\\s\\S])"}
+      ]
+    },
+    "validated_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"},
+    "report_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"completion_status": {"const": "promax-complete"}}, "required": ["completion_status"]},
+      "then": {"properties": {"overall_status": {"const": "pass"}}}
+    },
+    {
+      "if": {"properties": {"overall_status": {"const": "pass"}}, "required": ["overall_status"]},
+      "then": {
+        "properties": {
+          "checks": {
+            "not": {
+              "contains": {
+                "properties": {"status": {"enum": ["fail", "blocked"]}},
+                "required": ["status"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"overall_status": {"const": "fail"}}, "required": ["overall_status"]},
+      "then": {
+        "properties": {
+          "checks": {
+            "contains": {
+              "properties": {"status": {"const": "fail"}},
+              "required": ["status"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"overall_status": {"const": "blocked"}}, "required": ["overall_status"]},
+      "then": {
+        "properties": {
+          "checks": {
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {"status": {"const": "blocked"}},
+                  "required": ["status"]
+                }
+              },
+              {
+                "not": {
+                  "contains": {
+                    "properties": {"status": {"const": "fail"}},
+                    "required": ["status"]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["validator_id", "status", "checked_artifact_paths", "failure_codes"],
+      "properties": {
+        "validator_id": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "status": {"enum": ["pass", "fail", "blocked"]},
+        "checked_artifact_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/relativePath"}
+        },
+        "failure_codes": {"$ref": "promax-common.schema.json#/$defs/stringArray"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "pass"}}, "required": ["status"]},
+          "then": {"properties": {"failure_codes": {"maxItems": 0}}},
+          "else": {"properties": {"failure_codes": {"minItems": 1}}}
+        }
+      ]
+    }
+  }
+}

@@ -17,6 +17,8 @@ For review, dialogue, casebook, history research, post-completion inquiry, publi
 
 For `crossframe-max`, maximum CrossFrame mode, exhaustive structural projection, full-scale world-model interpretation, or no word-limit complete explanation, read `skills/crossframe-max/SKILL.md`. This is an independent named-only mode; do not route it through the suite `2+1` selector or ordinary article-type selector.
 
+CrossFrame ProMax is a v8-only, exact-name only independent skill. Read `skills/crossframe-promax/SKILL.md` only for `crossframe-promax`, `CrossFrame ProMax`, `$crossframe-promax`, or `/crossframe-promax`. If both Max and ProMax are named, ProMax wins; generic maximality remains Max; suite never auto-upgrades; ProMax uses its own audit with no review chain and never falls back to Max.
+
 After a completed suite workflow has produced diagnosis, article, and review, any substantive follow-up without an explicit new-task/exit or pure acknowledgment/thanks signal should use `skills/crossframe-inquiry/SKILL.md` by default. Pure acknowledgments or endings such as "谢谢", "好的", "明白了", or "先这样" should only close lightly. The inquiry layer may retrieve 1-3 relevant sibling skills for question design, counterexamples, transfer conditions, and risk boundaries, but it must not output formal sibling judgments.
 
 Read order:
