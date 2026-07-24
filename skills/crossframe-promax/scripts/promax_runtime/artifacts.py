@@ -546,6 +546,7 @@ def validate_role_records(
             raise ValueError(f"role record {index} has an invalid status")
         if run_contract.get("mode") == "promax-complete" and record["status"] != "completed":
             raise ValueError("promax-complete requires all roles to complete")
+        attested_refs: dict[str, list[dict[str, object]]] | None = None
         if planned.get("execution_mode") == "multi-agent-isolated":
             agent_id = record.get("agent_id")
             if not isinstance(agent_id, str) or len(agent_id.strip()) < 3:
@@ -572,23 +573,42 @@ def validate_role_records(
             completed_at = attestation.get("completed_at")
             if not isinstance(completed_at, str) or not completed_at.strip():
                 raise ValueError(f"role record {index} lacks an attested completion time")
-            attested_refs: dict[str, list[dict[str, object]]] = {}
+            attested_refs = {}
             for field in ("observed_input_artifacts", "produced_output_artifacts"):
                 values = attestation.get(field)
-                if not isinstance(values, list) or len(values) != 1:
-                    raise ValueError(f"role record {index}.{field} must contain one artifact")
-                path, digest, media_type = _validate_attestation_artifact_ref(
-                    values[0],
-                    field=f"role_records[{index - 1}].execution_attestation.{field}[0]",
-                )
-                if path in known_artifacts and known_artifacts[path] != digest:
+                if not isinstance(values, list) or not values:
                     raise ValueError(
-                        f"role record {index} execution attestation does not bind "
-                        f"published artifact bytes: {path}"
+                        f"role record {index}.{field} must contain artifacts"
                     )
-                attested_refs[field] = [
-                    {"path": path, "sha256": digest, "media_type": media_type}
-                ]
+                normalized_attested: list[dict[str, object]] = []
+                seen_attested: set[tuple[str, str, str]] = set()
+                for attested_index, value in enumerate(values):
+                    path, digest, media_type = _validate_attestation_artifact_ref(
+                        value,
+                        field=(
+                            f"role_records[{index - 1}].execution_attestation."
+                            f"{field}[{attested_index}]"
+                        ),
+                    )
+                    identity = (path, digest, media_type)
+                    if identity in seen_attested:
+                        raise ValueError(
+                            f"role record {index}.{field} contains duplicates"
+                        )
+                    seen_attested.add(identity)
+                    if path in known_artifacts and known_artifacts[path] != digest:
+                        raise ValueError(
+                            f"role record {index} execution attestation does not bind "
+                            f"published artifact bytes: {path}"
+                        )
+                    normalized_attested.append(
+                        {
+                            "path": path,
+                            "sha256": digest,
+                            "media_type": media_type,
+                        }
+                    )
+                attested_refs[field] = normalized_attested
             claim = {
                 "run_id": run_contract["run_id"],
                 "request_sha256": run_contract["request_sha256"],
@@ -634,6 +654,25 @@ def validate_role_records(
         outputs = {
             (path, digest) for path, digest, _ in parsed["output_artifacts"]
         }
+        if attested_refs is not None:
+            attested_observed = {
+                (str(item["path"]), str(item["sha256"]), str(item["media_type"]))
+                for item in attested_refs["observed_input_artifacts"]
+            }
+            attested_produced = {
+                (str(item["path"]), str(item["sha256"]), str(item["media_type"]))
+                for item in attested_refs["produced_output_artifacts"]
+            }
+            if attested_observed != set(parsed["observed_input_artifacts"]):
+                raise ValueError(
+                    f"role record {index} attested observed inputs differ from "
+                    "its role record"
+                )
+            if attested_produced != set(parsed["output_artifacts"]):
+                raise ValueError(
+                    f"role record {index} attested produced outputs differ from "
+                    "its role record"
+                )
         if not observed.issubset(declared):
             raise ValueError(
                 f"role record {index} observed an artifact not declared in its input set"

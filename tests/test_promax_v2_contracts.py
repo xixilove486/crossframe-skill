@@ -21,6 +21,7 @@ from promax_runtime.artifacts import (  # noqa: E402
     initialize_run,
     validate_role_records,
 )
+from promax_runtime.jsonio import sha256_json  # noqa: E402
 from promax_runtime.schemas import validate_instance  # noqa: E402
 
 
@@ -265,6 +266,151 @@ class ProMaxV2RunContractTests(unittest.TestCase):
                 invalid_records,
                 invalid_known_artifacts,
                 artifact_records=invalid_artifacts,
+            )
+
+    def test_isolated_prose_auditor_attests_all_three_current_inputs(self) -> None:
+        capabilities = build_capability_disclosure(
+            subagents_available=True,
+            max_parallelism=6,
+        )
+        contract = initialize_run(
+            ROOT,
+            "请明确调用 CrossFrame ProMax。",
+            mode="promax-complete",
+            capabilities=capabilities,
+            created_at="2026-07-25T00:00:00Z",
+            run_id="promax-v2-multi-input-attestation",
+        )["run_contract"]
+        bindings = (
+            (("input/world.json", "P3"), ("output/concepts.json", "P4")),
+            (("input/claims.json", "P5"), ("output/retrieval.json", "P6")),
+            (("output/retrieval.json", "P6"), ("output/red-team.json", "P7")),
+            (("output/red-team.json", "P7"), ("output/position.json", "P8")),
+            (("input/plan.json", "P9"), ("output/essay.md", "P10")),
+            (
+                (
+                    ("output/essay.md", "P10"),
+                    ("output/position.json", "P8"),
+                    ("input/plan.json", "P9"),
+                ),
+                ("output/prose-review.json", "P10"),
+            ),
+        )
+        known: dict[str, str] = {}
+        artifacts: dict[str, dict[str, object]] = {}
+
+        def artifact_ref(path: str) -> dict[str, str]:
+            digest = known.setdefault(
+                path,
+                f"{len(known) + 1:064x}",
+            )
+            return {
+                "path": path,
+                "sha256": digest,
+                "media_type": (
+                    "text/markdown" if path.endswith(".md") else "application/json"
+                ),
+            }
+
+        records: list[dict[str, object]] = []
+        for index, (raw_inputs, output_binding) in enumerate(bindings, start=1):
+            normalized_inputs = (
+                raw_inputs if index == 6 else (raw_inputs,)
+            )
+            input_refs = []
+            for path, phase in normalized_inputs:
+                ref = artifact_ref(path)
+                input_refs.append(ref)
+                artifacts.setdefault(
+                    path,
+                    {
+                        **ref,
+                        "generating_phase": phase,
+                        "input_artifact_sha256s": [],
+                        "status": "current",
+                    },
+                )
+            output_path, output_phase = output_binding
+            output_ref = artifact_ref(output_path)
+            artifacts[output_path] = {
+                **output_ref,
+                "generating_phase": output_phase,
+                "input_artifact_sha256s": [
+                    ref["sha256"] for ref in input_refs
+                ],
+                "status": "current",
+            }
+            completed_at = f"2026-07-25T00:0{index}:00Z"
+            claim = {
+                "run_id": contract["run_id"],
+                "request_sha256": contract["request_sha256"],
+                "source_snapshot_sha256": contract["source_snapshot_sha256"],
+                "role_id": ROLE_IDS[index - 1],
+                "sequence": index,
+                "agent_id": f"isolated-agent-{index}",
+                "completed_at": completed_at,
+                "observed_input_artifacts": input_refs,
+                "produced_output_artifacts": [output_ref],
+            }
+            records.append(
+                {
+                    **contract["role_plan"][index - 1],
+                    "input_artifacts": input_refs,
+                    "observed_input_artifacts": copy.deepcopy(input_refs),
+                    "output_artifacts": [output_ref],
+                    "agent_id": f"isolated-agent-{index}",
+                    "execution_attestation": {
+                        "run_id": contract["run_id"],
+                        "request_sha256": contract["request_sha256"],
+                        "source_snapshot_sha256": contract[
+                            "source_snapshot_sha256"
+                        ],
+                        "completed_at": completed_at,
+                        "observed_input_artifacts": copy.deepcopy(input_refs),
+                        "produced_output_artifacts": [copy.deepcopy(output_ref)],
+                        "claim_sha256": sha256_json(claim),
+                    },
+                    "status": "completed",
+                }
+            )
+
+        validated = validate_role_records(
+            contract,
+            records,
+            known,
+            artifact_records=list(artifacts.values()),
+        )
+        self.assertEqual(
+            len(validated[-1]["execution_attestation"]["observed_input_artifacts"]),
+            3,
+        )
+
+        incomplete = copy.deepcopy(records)
+        incomplete[-1]["execution_attestation"]["observed_input_artifacts"].pop()
+        incomplete_attestation = incomplete[-1]["execution_attestation"]
+        incomplete_attestation["claim_sha256"] = sha256_json(
+            {
+                "run_id": contract["run_id"],
+                "request_sha256": contract["request_sha256"],
+                "source_snapshot_sha256": contract["source_snapshot_sha256"],
+                "role_id": incomplete[-1]["role_id"],
+                "sequence": incomplete[-1]["sequence"],
+                "agent_id": incomplete[-1]["agent_id"],
+                "completed_at": incomplete_attestation["completed_at"],
+                "observed_input_artifacts": incomplete_attestation[
+                    "observed_input_artifacts"
+                ],
+                "produced_output_artifacts": incomplete_attestation[
+                    "produced_output_artifacts"
+                ],
+            }
+        )
+        with self.assertRaisesRegex(ValueError, "attested observed inputs"):
+            validate_role_records(
+                contract,
+                incomplete,
+                known,
+                artifact_records=list(artifacts.values()),
             )
 
 
