@@ -37,6 +37,17 @@ PROMAX_EXACT_TRIGGER_NAMES = (
     "$crossframe-promax",
     "/crossframe-promax",
 )
+PROMAX_101_REQUIRED_PATHS = (
+    "protocols/promax-prose-protocol.md",
+    "references/promax-house-voice.md",
+    "references/prose-routing-map.md",
+    "references/prose-techniques/index.md",
+    "schemas/promax-output-plan.schema.json",
+    "schemas/promax-prose-review.schema.json",
+    "scripts/promax_runtime/prose.py",
+    "templates/promax-output-plan-output.md",
+    "templates/promax-prose-review-output.md",
+)
 
 PROMAX_CANONICAL_SKILL_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_./-])skills/crossframe-promax/SKILL\.md"
@@ -407,6 +418,7 @@ def check_crossframe_promax_skill(root: Path, label: str) -> None:
         "scripts/crossframe_promax_runtime.py",
         "scripts/promax_runtime/materialization.py",
         "templates/promax-artifact-manifest-output.md",
+        *PROMAX_101_REQUIRED_PATHS,
     ]
     missing = [relative for relative in required_paths if not (promax / relative).is_file()]
     require(not missing, f"{label}: crossframe-promax required files missing: {', '.join(missing)}")

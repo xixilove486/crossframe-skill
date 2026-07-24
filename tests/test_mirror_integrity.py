@@ -56,6 +56,27 @@ class MirrorIntegrityTests(unittest.TestCase):
         self.assertNotIn("crossframe-promax", integrity.SIBLING_CLAIM_BRIDGE_SKILLS)
         integrity.check_crossframe_promax_skill(ROOT / "skills", "test")
 
+    def test_integrity_inventory_requires_all_promax_101_prose_assets(self) -> None:
+        expected = {
+            "protocols/promax-prose-protocol.md",
+            "references/promax-house-voice.md",
+            "references/prose-routing-map.md",
+            "references/prose-techniques/index.md",
+            "schemas/promax-output-plan.schema.json",
+            "schemas/promax-prose-review.schema.json",
+            "scripts/promax_runtime/prose.py",
+            "templates/promax-output-plan-output.md",
+            "templates/promax-prose-review-output.md",
+        }
+        self.assertTrue(
+            expected <= set(integrity.PROMAX_101_REQUIRED_PATHS)
+        )
+        for relative_path in expected:
+            with self.subTest(relative_path=relative_path):
+                self.assertTrue(
+                    (ROOT / "skills/crossframe-promax" / relative_path).is_file()
+                )
+
     def test_same_tree_detects_same_metadata_different_content(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             left = Path(td) / "left"
