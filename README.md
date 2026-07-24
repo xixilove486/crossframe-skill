@@ -15,10 +15,8 @@
 ![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-2f81f7?style=flat-square&labelColor=0d1117&color=2f81f7)
 ![Runtime](https://img.shields.io/badge/runtime-independent-58a6ff?style=flat-square&labelColor=0d1117&color=58a6ff)
 ![Python](https://img.shields.io/badge/Python-3.11-79c0ff?style=flat-square&labelColor=0d1117&color=79c0ff)
-![Trigger](https://img.shields.io/badge/trigger-exact--name_only-a5d6ff?style=flat-square&labelColor=0d1117&color=a5d6ff)
-![Validation](https://img.shields.io/badge/validation-artifact--first-1f6feb?style=flat-square&labelColor=0d1117&color=1f6feb)
-![Framework](https://img.shields.io/badge/framework-CrossFrame_v5.1.7-e4ddff?style=flat-square&labelColor=fffaff&color=e4ddff)
-![Workflow](https://img.shields.io/badge/workflow-diagnosis_%E2%86%92_writing_%E2%86%92_review_%E2%86%92_inquiry-d9f2df?style=flat-square&labelColor=fbfffb&color=d9f2df)
+![Trigger](https://img.shields.io/badge/trigger-exact--name_only-d29922?style=flat-square&labelColor=0d1117&color=d29922)
+![Validation](https://img.shields.io/badge/validation-artifact--first-2ea69b?style=flat-square&labelColor=0d1117&color=2ea69b)
 ![License](https://img.shields.io/badge/license-MIT-f8efcf?style=flat-square&labelColor=fffdf6&color=f8efcf)
 
 <p align="center">
@@ -92,7 +90,7 @@ ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独
 | **命题与路径** | 建立中心命题、竞争机制、路径 DAG、条件预测、切换条件与撤回条件 | 结论绑定可检验路径，不以修辞强度代替机制解释 |
 | **真实检索** | 按五向检索搜寻案例、支持证据、反例和边界条件，并将支持与反例分开登记 | 有网络时外部校准；断网时诚实降档，不伪造来源或检索完成态 |
 | **自我攻击** | 构造最强反方，检查概念误用、立场稳定性与证据截止 | 让反例真正有机会改写、降档或推翻初始判断 |
-| **明确裁决** | 在攻击后锁定立场，比较六类行动，给出主方案、备选、停止条件与回滚路径 | 说明选择什么、为什么、何时不再坚持，而不是把答案留在模棱两可中 |
+| **明确裁决** | 攻击后始终锁定立场；只有用户明确要求建议时，才比较六类行动并给出主方案、备选、停止条件与回滚路径 | 未要求建议时只完成明确判断，recommendation 闭合为 `{"status":"not_requested"}`，不自行制造方案 |
 | **可验证交付** | 物化 dossier、concept atlas、cases、essay 与 manifest，再交给 fresh validator 和 phase repair | 最终文本不能自我认证；发布状态由独立校验报告决定 |
 
 <a id="model-flavor"></a>
@@ -128,6 +126,11 @@ ProMax 仅在用户明确使用以下四种名称之一时触发：`crossframe-p
 
 <a id="what"></a>
 ## 它是什么
+
+**以下徽章描述 CrossFrame Skill Suite 主线，不代表上方 ProMax 的 v8 runtime 或独立审计链。**
+
+![Suite Framework](https://img.shields.io/badge/framework-CrossFrame_v5.1.7-e4ddff?style=flat-square&labelColor=fffaff&color=e4ddff)
+![Suite Workflow](https://img.shields.io/badge/workflow-diagnosis_%E2%86%92_writing_%E2%86%92_review_%E2%86%92_inquiry-d9f2df?style=flat-square&labelColor=fbfffb&color=d9f2df)
 
 CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成文 skills。
 
