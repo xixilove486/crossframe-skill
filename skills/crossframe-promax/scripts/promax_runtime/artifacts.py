@@ -654,7 +654,10 @@ def validate_role_records(
         outputs = {
             (path, digest) for path, digest, _ in parsed["output_artifacts"]
         }
-        if attested_refs is not None:
+        if (
+            attested_refs is not None
+            and record["role_id"] == "prose_fidelity_auditor"
+        ):
             attested_observed = {
                 (str(item["path"]), str(item["sha256"]), str(item["media_type"]))
                 for item in attested_refs["observed_input_artifacts"]
