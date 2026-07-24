@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REFERENCES = ROOT / "skills" / "crossframe-promax" / "references"
+SKILL_ROOT = ROOT / "skills" / "crossframe-promax"
+REFERENCES = SKILL_ROOT / "references"
 TECHNIQUES = REFERENCES / "prose-techniques"
 
 EXPECTED_TECHNIQUE_IDS = {
@@ -126,9 +127,61 @@ def parse_route_blocks(text: str) -> list[tuple[str, str, list[str], list[str]]]
 
 class ProMaxProseAssetTests(unittest.TestCase):
     def test_library_has_exactly_the_fifty_required_independent_cards(self) -> None:
-        cards = sorted(TECHNIQUES.glob("*.md"))
+        cards = sorted(
+            path for path in TECHNIQUES.glob("*.md") if path.name != "index.md"
+        )
         self.assertEqual(EXPECTED_TECHNIQUE_IDS, {card.stem for card in cards})
         self.assertEqual(50, len(cards))
+
+    def test_index_maps_every_technique_id_to_one_existing_relative_card_path(
+        self,
+    ) -> None:
+        text = read(TECHNIQUES / "index.md")
+        rows = re.findall(
+            r"(?m)^\|\s*`([a-z0-9-]+)`\s*\|\s*`([^`]+\.md)`\s*\|$",
+            text,
+        )
+        self.assertEqual(50, len(rows))
+        self.assertEqual(50, len({technique_id for technique_id, _ in rows}))
+        self.assertEqual(50, len({relative_path for _, relative_path in rows}))
+        self.assertEqual(
+            {
+                technique_id: f"{technique_id}.md"
+                for technique_id in EXPECTED_TECHNIQUE_IDS
+            },
+            dict(rows),
+        )
+        for technique_id, relative_path in rows:
+            with self.subTest(technique_id=technique_id):
+                path = Path(relative_path)
+                self.assertFalse(path.is_absolute())
+                self.assertEqual(path.name, relative_path)
+                self.assertTrue((TECHNIQUES / path).is_file())
+
+    def test_every_referenced_prose_asset_path_exists(self) -> None:
+        referenced: set[str] = set()
+        for source in (
+            SKILL_ROOT / "SKILL.md",
+            SKILL_ROOT / "protocols/promax-prose-protocol.md",
+        ):
+            referenced.update(
+                re.findall(
+                    r"`((?:protocols|references)/[^`]*(?:prose|house-voice)[^`]*\.md)`",
+                    read(source),
+                )
+            )
+        self.assertTrue(
+            {
+                "protocols/promax-prose-protocol.md",
+                "references/promax-house-voice.md",
+                "references/prose-routing-map.md",
+                "references/prose-techniques/index.md",
+            }
+            <= referenced
+        )
+        for relative_path in sorted(referenced):
+            with self.subTest(relative_path=relative_path):
+                self.assertTrue((SKILL_ROOT / relative_path).is_file())
 
     def test_every_card_has_complete_actionable_contract_and_p8_boundary(self) -> None:
         for technique_id in sorted(EXPECTED_TECHNIQUE_IDS):
@@ -198,6 +251,24 @@ class ProMaxProseAssetTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, text)
         self.assertIn(P8_BOUNDARY, text)
+
+    def test_house_voice_is_independent_from_host_model_flavor(self) -> None:
+        text = read(REFERENCES / "promax-house-voice.md")
+        for required in (
+            "## 宿主模型风味独立性",
+            "宿主默认",
+            "先赞同",
+            "先反对",
+            "清单化",
+            "客服式缓和",
+            "反驳表演",
+            "模型惯用节奏",
+            "判断只服从 P8 锁",
+            "表达只服从 ProMax house voice",
+            "不能仅靠禁止模型套话",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
 
     def test_new_prose_assets_are_self_contained_and_version_clean(self) -> None:
         asset_paths = sorted(TECHNIQUES.glob("*.md")) + [

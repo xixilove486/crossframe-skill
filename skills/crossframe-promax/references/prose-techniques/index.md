@@ -1,0 +1,56 @@
+# ProMax 正文技法索引
+
+本索引只负责把 `technique_id` 定位到同目录技法卡。路径均相对于本索引所在目录；选卡规则见正文技法路由，具体用法与边界以对应卡片为准。
+
+| technique_id | relative_path |
+| --- | --- |
+| `analogical-reasoning` | `analogical-reasoning.md` |
+| `ancient-modern-global` | `ancient-modern-global.md` |
+| `clouds-moon` | `clouds-moon.md` |
+| `coincidence-structure` | `coincidence-structure.md` |
+| `direct-emotion` | `direct-emotion.md` |
+| `double-bridge` | `double-bridge.md` |
+| `event-association` | `event-association.md` |
+| `feint-attack` | `feint-attack.md` |
+| `final-reveal` | `final-reveal.md` |
+| `fine-carving` | `fine-carving.md` |
+| `finishing-touch` | `finishing-touch.md` |
+| `fixed-point-changing-scenes` | `fixed-point-changing-scenes.md` |
+| `form-by-object` | `form-by-object.md` |
+| `guest-host-contrast` | `guest-host-contrast.md` |
+| `hide-before-reveal` | `hide-before-reveal.md` |
+| `language-momentum` | `language-momentum.md` |
+| `layered-argument` | `layered-argument.md` |
+| `less-is-more` | `less-is-more.md` |
+| `life-from-dead` | `life-from-dead.md` |
+| `meaning-beyond-words` | `meaning-beyond-words.md` |
+| `motion-for-stillness` | `motion-for-stillness.md` |
+| `moving-viewpoint` | `moving-viewpoint.md` |
+| `multi-edge-extension` | `multi-edge-extension.md` |
+| `narration-commentary` | `narration-commentary.md` |
+| `object-reason` | `object-reason.md` |
+| `one-stone-many-birds` | `one-stone-many-birds.md` |
+| `one-word-spine` | `one-word-spine.md` |
+| `personified-object` | `personified-object.md` |
+| `point-spirit` | `point-spirit.md` |
+| `point-surface` | `point-surface.md` |
+| `positive-negative-contrast` | `positive-negative-contrast.md` |
+| `praise-blame-interlace` | `praise-blame-interlace.md` |
+| `raise-high-drop-heavy` | `raise-high-drop-heavy.md` |
+| `release-to-capture` | `release-to-capture.md` |
+| `remove-foundation` | `remove-foundation.md` |
+| `retreat-to-advance` | `retreat-to-advance.md` |
+| `same-different` | `same-different.md` |
+| `scene-emotion` | `scene-emotion.md` |
+| `small-water-waves` | `small-water-waves.md` |
+| `sparse-outline` | `sparse-outline.md` |
+| `split-wood-reasoning` | `split-wood-reasoning.md` |
+| `stars-moon` | `stars-moon.md` |
+| `stream-consciousness` | `stream-consciousness.md` |
+| `surprise-victory` | `surprise-victory.md` |
+| `suspense` | `suspense.md` |
+| `symbolic-meaning` | `symbolic-meaning.md` |
+| `thread-beads` | `thread-beads.md` |
+| `vertical-narration` | `vertical-narration.md` |
+| `virtual-to-real` | `virtual-to-real.md` |
+| `winding-path` | `winding-path.md` |
