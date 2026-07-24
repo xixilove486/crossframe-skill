@@ -799,6 +799,26 @@ def check_public_release_docs(repo: Path, label: str) -> None:
     ]:
         require(retired_demo_marker not in public_page_text, f"{label}: public page still has sensitive landing demo marker: {retired_demo_marker}")
 
+    readme_path = repo / "README.md"
+    require(readme_path.exists(), f"{label}: missing public doc: README.md")
+    readme_text = read(readme_path)
+    for marker in [
+        "CROSSFRAME · V8 STRUCTURAL REASONING RUNTIME",
+        "可运行、可审计、可修复的重型 AI 结构推演系统",
+        "ChatGPT 5.6 Sol（Ultra）",
+        "共创模型不是运行依赖",
+        "3,980",
+        "3,863 个段落",
+        "117 张表",
+        "709 个概念",
+        "P0–P11",
+        "五向真实检索",
+        "如何抑制模型自身风味",
+        "未要求建议时只完成判断",
+        "17,000,000 token",
+    ]:
+        require(marker in readme_text, f"{label}: README.md missing ProMax dossier marker: {marker}")
+
     required_docs = {
         "README.md": ["16 个 `crossframe-*` skills", "crossframe-max", "crossframe-promax", "局部世界", "安全边界先行", "source_id -> claim_id", "docs/QUICKSTART.md", "framework-CrossFrame_v5.1.7", "review_%E2%86%92_inquiry", "https://xi-kari.github.io/crossframe-skill/", "网页介绍", "install-codex.sh", "validate_claim_ledger_schema_fixtures.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "v6 世界观前置 meta-runtime", "skill_design", "route-ledger gate", "max-artifact-run", "max-blocked/progress", "max-validation-failed:<profile>:<first-error-type>", "mark_artifact_incomplete", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py", "brief-visible", "standard-visible"],
         "CHANGELOG.md": ["v5.1.7", "v5.1.6", "v5.1.5", "v5.1.4", "v5.1.3", "site/", "GitHub Pages", "v5.0.2", "crossframe-history", "crossframe-inquiry", "crossframe-promax", "source_id", "max-validator-report.json", "max-repair-plan.json"],

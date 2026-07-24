@@ -5,6 +5,7 @@ Thumbs.db
 __pycache__/
 .pytest_cache/
 .venv/
+.worktrees/
 node_modules/
 outputs/
 work/
