@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import re
 from collections.abc import Iterable, Mapping, Sequence
 
 from .jsonio import sha256_json
@@ -527,11 +528,53 @@ def _validate_excerpt_array(
 ) -> list[str]:
     excerpts = _text_ids(value, field=field, allow_empty=allow_empty)
     for excerpt in excerpts:
+        substantive_length = len(
+            re.findall(r"[A-Za-z0-9\u3400-\u9fff]", excerpt)
+        )
+        if substantive_length < 8 or len(excerpt) > 240:
+            raise ValueError(
+                f"{field} must use a substantive short evidence_excerpt"
+            )
         if excerpt not in essay:
             raise ValueError(
                 f"{field} contains an evidence_excerpt not found verbatim in essay"
             )
+        if essay.count(excerpt) != 1:
+            raise ValueError(
+                f"{field} contains an ambiguous repeated evidence_excerpt"
+            )
     return excerpts
+
+
+def _sentence_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    start = 0
+    for match in re.finditer(r"[。！？!?]+|(?:\r?\n)+", text):
+        end = match.end()
+        if text[start:end].strip():
+            spans.append((start, end))
+        start = end
+    if text[start:].strip():
+        spans.append((start, len(text)))
+    return spans
+
+
+def _excerpt_sentence_regions(
+    essay: str,
+    excerpt: str,
+    *,
+    sentence_spans: Sequence[tuple[int, int]],
+) -> tuple[int, ...]:
+    excerpt_start = essay.find(excerpt)
+    excerpt_end = excerpt_start + len(excerpt)
+    regions = tuple(
+        index
+        for index, (sentence_start, sentence_end) in enumerate(sentence_spans)
+        if sentence_start < excerpt_end and sentence_end > excerpt_start
+    )
+    if not regions:
+        raise ValueError("evidence_excerpt does not bind a sentence region")
+    return regions
 
 
 def validate_prose_review(
@@ -675,6 +718,8 @@ def validate_prose_review(
         )
     statuses: list[str] = []
     passing_excerpt_sets: list[tuple[str, tuple[str, ...]]] = []
+    passing_region_sets: list[tuple[str, tuple[int, ...]]] = []
+    sentence_spans = _sentence_spans(essay)
     for dimension_id in PROSE_REVIEW_DIMENSION_IDS:
         dimension = dimensions[dimension_id]
         if not isinstance(dimension, Mapping):
@@ -705,6 +750,20 @@ def validate_prose_review(
             passing_excerpt_sets.append(
                 (dimension_id, tuple(sorted(dimension_excerpts)))
             )
+            dimension_regions = tuple(
+                sorted(
+                    {
+                        region
+                        for excerpt in dimension_excerpts
+                        for region in _excerpt_sentence_regions(
+                            essay,
+                            excerpt,
+                            sentence_spans=sentence_spans,
+                        )
+                    }
+                )
+            )
+            passing_region_sets.append((dimension_id, dimension_regions))
         repair_target = dimension.get("repair_target")
         if status == "pass" and repair_target is not None:
             raise ValueError(
@@ -735,6 +794,23 @@ def validate_prose_review(
     if len(excerpt_use) < minimum_distinct:
         raise ValueError(
             "passing prose review dimensions need more distinct evidence_excerpts"
+        )
+    distinct_region_sets = {
+        regions for _, regions in passing_region_sets
+    }
+    if len(distinct_region_sets) < minimum_distinct:
+        raise ValueError(
+            "passing prose review dimensions need evidence_excerpts from more "
+            "distinct sentence regions"
+        )
+    region_use: dict[int, int] = {}
+    for _, regions in passing_region_sets:
+        for region in regions:
+            region_use[region] = region_use.get(region, 0) + 1
+    if region_use and max(region_use.values()) > 2:
+        raise ValueError(
+            "one essay sentence region cannot support more than two passing "
+            "prose review dimensions"
         )
     expected_overall = "pass" if all(item == "pass" for item in statuses) else "fail"
     if review.get("overall_status") != expected_overall:

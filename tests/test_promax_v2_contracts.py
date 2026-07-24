@@ -521,6 +521,29 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             validate_instance("promax-output-plan.schema.json", wrong_route)
 
+        duplicate_auxiliary = copy.deepcopy(plan)
+        duplicate_auxiliary["reader_projection"]["selected_techniques"].extend(
+            [
+                {
+                    "technique_id": "release-to-capture",
+                    "tier": "auxiliary",
+                    "paragraph_action": "先呈现已锁定的最强反方。",
+                    "section_ids": ["SECTION-1"],
+                },
+                {
+                    "technique_id": "release-to-capture",
+                    "tier": "auxiliary",
+                    "paragraph_action": "再回到已锁定的中心判断。",
+                    "section_ids": ["SECTION-1"],
+                },
+            ]
+        )
+        with self.assertRaises(ValidationError):
+            validate_instance(
+                "promax-output-plan.schema.json",
+                duplicate_auxiliary,
+            )
+
         plan["sections"][0].pop("mechanism_ids")
         plan["sections"][0].pop("path_node_ids")
         validate_instance("promax-output-plan.schema.json", plan)

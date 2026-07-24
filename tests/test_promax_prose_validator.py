@@ -568,6 +568,30 @@ class ProMaxProseReviewTests(unittest.TestCase):
         ):
             self.validate_review(candidate)
 
+    def test_review_rejects_distinct_fragments_cut_from_one_sentence(self) -> None:
+        candidate = prose_review()
+        fragments = (
+            "现实入口",
+            "入口是试验",
+            "试验成本",
+            "成本正在",
+            "正在被转嫁",
+            "被转嫁给",
+            "转嫁给无法",
+            "给无法退出",
+            "无法退出的",
+            "退出的人",
+            "现实入口是",
+        )
+        for dimension, fragment in zip(candidate["dimensions"].values(), fragments):
+            dimension["evidence_excerpts"] = [fragment]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "excerpt|sentence|region|substantive|distinct",
+        ):
+            self.validate_review(candidate)
+
 
 if __name__ == "__main__":
     unittest.main()
