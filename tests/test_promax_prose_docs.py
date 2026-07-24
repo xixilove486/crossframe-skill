@@ -80,6 +80,14 @@ class ProMaxProseDocumentationTests(unittest.TestCase):
         self.assertIn("prose_fidelity_auditor", text)
         self.assertIn("不作为公开交付链接", text)
 
+    def test_recommendation_machine_closure_stays_out_of_reader_essay(self) -> None:
+        text = read("templates/promax-recommendation-output.md")
+        self.assertNotIn("essay 都必须逐字披露", text)
+        self.assertNotIn("essay 必须按首次出现顺序表达完整 ranking", text)
+        self.assertNotIn("逐项携带十九字段记录的全部实质语义", text)
+        self.assertIn("dossier", text)
+        self.assertIn("reader_projection", text)
+
 
 if __name__ == "__main__":
     unittest.main()
