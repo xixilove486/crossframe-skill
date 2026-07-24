@@ -10,6 +10,8 @@
 
 由 **CrossFrame 作者与 ChatGPT 5.6 Sol（Ultra）** 共同设计、实现、攻击与验证。
 
+<p><sub>CrossFrame ProMax 属于更广泛的 CrossFrame Skill Suite 家族，同时是 v8-only、exact-name only 的独立 runtime；它不取代 Suite、Max 与其他专项 skills。</sub></p>
+
 <br>
 
 ![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-2f81f7?style=flat-square&labelColor=0d1117&color=2f81f7)
@@ -20,6 +22,8 @@
 ![License](https://img.shields.io/badge/license-MIT-f8efcf?style=flat-square&labelColor=fffdf6&color=f8efcf)
 
 <p align="center">
+  <a href="skills/crossframe-promax/SKILL.md"><strong>CrossFrame ProMax skill</strong></a>
+  ·
   <a href="https://xi-kari.github.io/crossframe-skill/"><strong>网页介绍</strong></a>
   ·
   <a href="https://github.com/xi-kari/crossframe-skill/releases"><strong>下载 Release</strong></a>
@@ -80,7 +84,7 @@ request → v8 full-source → concept closure → local world model
 ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独立运行时：先冻结问题与 v8 源快照，再构造概念闭合、局部世界、命题路径和检索工件；初稿必须经过反方攻击与立场锁定，最终 dossier 与 essay 还要由 fresh validator 独立验收。若失败，系统依据 `affected_phase` 只重置受影响阶段及其下游产物，再进行定向修复，不靠补几个关键词伪装完成。
 
 <a id="promax-capabilities"></a>
-## ProMax 实现了什么
+## ProMax 完整能力
 
 | 能力 | 运行约束 | 可审计结果 |
 | --- | --- | --- |
