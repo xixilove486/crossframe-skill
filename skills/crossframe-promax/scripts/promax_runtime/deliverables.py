@@ -11,6 +11,10 @@ from .position import (
     validate_position_lock,
     validate_recommendation_semantics,
 )
+from .prose import (
+    validate_prose_review as validate_prose_review,
+    validate_reader_projection,
+)
 from .validation import validate_bound_document
 
 
@@ -103,7 +107,7 @@ _SEMANTIC_RELATION_CUES = (
     "inaction",
 )
 _MACHINE_LEDGER_LINE_RE = re.compile(
-    r"^(?:[-*+]\s*)?[A-Za-z_][A-Za-z0-9_.-]*\s*[:：=|]\s*\S"
+    r"^(?:[-*+]\s*)?[A-Za-z_][A-Za-z0-9_.-]*\s*[:：=]\s*\S"
 )
 _IDENTIFIER_LEDGER_LINE_RE = re.compile(
     r"^(?:[-*+]\s*)?(?:V8-[A-Z0-9._-]+|CLAIM-[A-Z0-9._-]+|"
@@ -562,6 +566,248 @@ def _validate_concept_semantics(
         if output_sections != expected_sections:
             raise ValueError(f"concept {concept_id} output sections disagree with the locked plan")
     return sorted(str(item) for item in applied_ids)
+
+
+_READER_MACHINE_IDENTIFIER_RE = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:V8-CANON|CLAIM|OPTION)-[A-Za-z0-9._-]+"
+    r"(?![A-Za-z0-9_.-])"
+)
+_READER_RAW_KEY_VALUE_RE = re.compile(
+    r"^(?:[-*+]\s*)?[A-Za-z_][A-Za-z0-9_.-]*\s*[:：=]\s*\S",
+    re.MULTILINE,
+)
+_READER_RUN_SCAFFOLDING_MARKERS = ("在本题中", "本轮中", "本运行中")
+_LOCK_METADATA_FIELDS = frozenset(
+    {
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "source_snapshot_sha256",
+        "locked_at",
+        "position_sha256",
+        "option_record_hashes",
+        "option_semantic_ranking",
+    }
+)
+
+
+def _semantic_lock_leaves(value: object, *, key: str | None = None) -> list[str]:
+    if key in _LOCK_METADATA_FIELDS or (key is not None and key.endswith("_sha256")):
+        return []
+    if isinstance(value, Mapping):
+        result: list[str] = []
+        for child_key, child in value.items():
+            result.extend(_semantic_lock_leaves(child, key=str(child_key)))
+        return result
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        result = []
+        for child in value:
+            result.extend(_semantic_lock_leaves(child))
+        return result
+    return [value] if isinstance(value, str) and value.strip() else []
+
+
+def _validate_v2_dossier_lock(
+    document: Mapping[str, object],
+    *,
+    dossier: str,
+    artifact: str,
+) -> None:
+    missing = [
+        value
+        for value in dict.fromkeys(_semantic_lock_leaves(document))
+        if value not in dossier
+    ]
+    if missing:
+        raise ValueError(
+            f"dossier omits exact {artifact} semantics: {missing[0]}"
+        )
+
+
+def validate_v2_reader_documents(
+    *,
+    reader_projection: Mapping[str, object],
+    concept_registry: Mapping[str, object],
+    dispositions: Sequence[Mapping[str, object]],
+    atlas: str,
+    essay: str,
+    dossier: str,
+    position: Mapping[str, object],
+    recommendation: Mapping[str, object],
+    recommendation_required: bool,
+) -> dict[str, object]:
+    """Validate v2 reader prose without changing the legacy v1 bundle path."""
+
+    for value, field in (
+        (atlas, "atlas"),
+        (essay, "essay"),
+        (dossier, "dossier"),
+    ):
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be text")
+    if _READER_MACHINE_IDENTIFIER_RE.search(essay) is not None:
+        raise ValueError("v2 essay contains a forbidden machine identifier")
+    if _READER_RAW_KEY_VALUE_RE.search(essay) is not None:
+        raise ValueError("v2 essay contains a forbidden raw key/value ledger")
+    scaffolding_count = sum(
+        essay.count(marker) for marker in _READER_RUN_SCAFFOLDING_MARKERS
+    )
+    if scaffolding_count > 2:
+        raise ValueError(
+            "v2 essay repeats run-scaffolding phrases more than twice"
+        )
+
+    registry = _registry_records(concept_registry)
+    applied = [item for item in dispositions if item.get("status") == "applied"]
+    applied_ids: list[str] = []
+    for disposition in applied:
+        concept_id = disposition.get("concept_id")
+        if not isinstance(concept_id, str) or not concept_id:
+            raise ValueError("applied concept disposition has no concept_id")
+        if concept_id in applied_ids:
+            raise ValueError(f"applied concept disposition repeats {concept_id}")
+        applied_ids.append(concept_id)
+
+    beat_records = _mapping_items(
+        reader_projection.get("reader_beats"),
+        field="reader_projection.reader_beats",
+    )
+    technique_records = _mapping_items(
+        reader_projection.get("selected_techniques"),
+        field="reader_projection.selected_techniques",
+    )
+    validate_reader_projection(
+        reader_projection,
+        applied_concept_ids=applied_ids,
+        section_ids={
+            str(section_id)
+            for record in (*beat_records, *technique_records)
+            for section_id in record.get("section_ids", [])
+            if isinstance(section_id, str)
+        },
+        claim_ids={
+            str(claim_id)
+            for record in beat_records
+            for claim_id in record.get("claim_ids", [])
+            if isinstance(claim_id, str)
+        }
+        | {str(reader_projection.get("thesis_claim_id"))},
+        mechanism_ids={
+            str(mechanism_id)
+            for record in beat_records
+            for mechanism_id in record.get("mechanism_ids", [])
+            if isinstance(mechanism_id, str)
+        },
+        evidence_refs={
+            str(evidence_ref)
+            for record in beat_records
+            for evidence_ref in record.get("evidence_refs", [])
+            if isinstance(evidence_ref, str)
+        },
+    )
+    core_ids = set(
+        _text_items(
+            reader_projection.get("core_concept_ids"),
+            field="reader_projection.core_concept_ids",
+        )
+    )
+    atlas_only_ids = set(
+        _text_items(
+            reader_projection.get("atlas_only_concept_ids"),
+            field="reader_projection.atlas_only_concept_ids",
+            allow_empty=True,
+        )
+    )
+
+    for disposition in applied:
+        concept_id = str(disposition["concept_id"])
+        record = registry.get(concept_id)
+        if record is None:
+            raise ValueError(f"applied concept is absent from registry: {concept_id}")
+        name = record.get("authoritative_name_zh")
+        definition = record.get("definition")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"registry concept {concept_id} has no authoritative name")
+        if not isinstance(definition, str) or not definition.strip():
+            raise ValueError(f"registry concept {concept_id} has no definition")
+        section = _concept_section(atlas, concept_id=concept_id, name=name)
+        if name not in section:
+            raise ValueError(
+                f"concept atlas omits authoritative name for {concept_id}"
+            )
+        if definition not in section:
+            raise ValueError(f"concept atlas omits definition for {concept_id}")
+        rationale = disposition.get("rationale")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise ValueError(f"applied concept {concept_id} has no role rationale")
+        if not _contains_semantic_phrase(section, rationale):
+            raise ValueError(
+                f"concept atlas omits current role for {concept_id}"
+            )
+        misuses = _text_items(
+            disposition.get("misuses_excluded"),
+            field=f"concept disposition {concept_id}.misuses_excluded",
+            allow_empty=True,
+        )
+        if not all(misuse in section for misuse in misuses):
+            raise ValueError(f"concept atlas omits misuse boundary for {concept_id}")
+        neighbors = _text_items(
+            disposition.get("required_neighbor_ids"),
+            field=f"concept disposition {concept_id}.required_neighbor_ids",
+            allow_empty=True,
+        )
+        for neighbor_id in neighbors:
+            neighbor = registry.get(neighbor_id)
+            if neighbor is None:
+                raise ValueError(
+                    f"concept {concept_id} names unknown neighbor {neighbor_id}"
+                )
+            neighbor_name = neighbor.get("authoritative_name_zh")
+            if neighbor_id not in section and (
+                not isinstance(neighbor_name, str) or neighbor_name not in section
+            ):
+                raise ValueError(
+                    f"concept atlas omits neighbor semantics for {concept_id}"
+                )
+
+    for concept_id, record in registry.items():
+        name = record.get("authoritative_name_zh")
+        if not isinstance(name, str) or not name.strip() or name not in essay:
+            continue
+        if concept_id in atlas_only_ids:
+            raise ValueError(
+                f"v2 essay names atlas-only concept {concept_id}"
+            )
+        if concept_id not in core_ids:
+            raise ValueError(
+                f"v2 essay names non-core concept {concept_id}"
+            )
+    for concept_id in core_ids:
+        record = registry.get(concept_id)
+        if record is None:
+            raise ValueError(f"core concept is absent from registry: {concept_id}")
+        name = record.get("authoritative_name_zh")
+        if not isinstance(name, str) or name not in essay:
+            raise ValueError(
+                f"v2 essay omits authoritative name for core concept {concept_id}"
+            )
+
+    _validate_v2_dossier_lock(position, dossier=dossier, artifact="position")
+    if recommendation_required:
+        _validate_v2_dossier_lock(
+            recommendation,
+            dossier=dossier,
+            artifact="recommendation",
+        )
+    elif recommendation != {"status": "not_requested"}:
+        raise ValueError(
+            "non-requested v2 recommendation artifact is not exactly closed"
+        )
+    return {
+        "status": "valid",
+        "core_concept_ids": sorted(core_ids),
+        "atlas_only_concept_ids": sorted(atlas_only_ids),
+    }
 
 
 def _parse_case_records(case_document: str) -> list[dict[str, str]]:
