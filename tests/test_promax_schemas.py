@@ -56,6 +56,7 @@ EXPECTED_RUNTIME_SCHEMAS = (
     "promax-output-plan.schema.json",
     "promax-phase-event.schema.json",
     "promax-position.schema.json",
+    "promax-prose-review.schema.json",
     "promax-read-event.schema.json",
     "promax-recommendation.schema.json",
     "promax-red-team-report.schema.json",
@@ -91,6 +92,7 @@ MODEL_AUTHORED_SCHEMAS = (
     "promax-position.schema.json",
     "promax-recommendation.schema.json",
     "promax-output-plan.schema.json",
+    "promax-prose-review.schema.json",
     "promax-repair-plan.schema.json",
 )
 HIDDEN_THOUGHT_FIELD_NAMES = (
@@ -899,6 +901,50 @@ def output_plan() -> dict[str, Any]:
     }
 
 
+def prose_review() -> dict[str, Any]:
+    dimensions = (
+        "reality_entry",
+        "argument_dependency",
+        "v8_concept_fidelity",
+        "evidence_binding",
+        "strongest_counterposition",
+        "fair_comparison",
+        "position_recommendation_consistency",
+        "withdrawal_action_boundary",
+        "house_voice",
+        "model_flavor_independence",
+        "audit_leakage",
+    )
+    return {
+        "schema_id": "crossframe.promax.v8.prose-review",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "source_snapshot_sha256": SOURCE_SNAPSHOT_SHA256,
+        "essay_sha256": HASH_A,
+        "position_sha256": HASH_B,
+        "output_plan_sha256": HASH_C,
+        "article_type": "neutral-analysis",
+        "technique_ids": ["TECHNIQUE-1", "TECHNIQUE-2", "TECHNIQUE-3"],
+        "required_beat_mappings": [
+            {
+                "beat_id": "BEAT-1",
+                "section_ids": ["SECTION-1"],
+                "evidence_excerpts": ["现实关系已经进入正文。"],
+            }
+        ],
+        "dimensions": {
+            dimension: {
+                "status": "pass",
+                "evidence_excerpts": ["现实关系已经进入正文。"],
+                "repair_target": None,
+            }
+            for dimension in dimensions
+        },
+        "overall_status": "pass",
+        "reviewed_at": STAMP,
+    }
+
+
 def continuation_ledger() -> dict[str, Any]:
     return {
         "schema_id": "crossframe.promax.v8.continuation-ledger",
@@ -1027,6 +1073,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "promax-output-plan.schema.json": output_plan(),
         "promax-phase-event.schema.json": phase_event(),
         "promax-position.schema.json": position(),
+        "promax-prose-review.schema.json": prose_review(),
         "promax-read-event.schema.json": read_event(),
         "promax-recommendation.schema.json": recommendation(),
         "promax-red-team-report.schema.json": red_team_report(),
@@ -1864,6 +1911,16 @@ class ProMaxRuntimeSchemaTests(unittest.TestCase):
                 "required_artifacts",
                 "unexpanded_branch_ids",
                 "coverage_complete",
+            },
+            "promax-prose-review.schema.json": {
+                "essay_sha256",
+                "position_sha256",
+                "output_plan_sha256",
+                "article_type",
+                "technique_ids",
+                "required_beat_mappings",
+                "dimensions",
+                "overall_status",
             },
             "promax-repair-plan.schema.json": {
                 "failed_report_sha256",
