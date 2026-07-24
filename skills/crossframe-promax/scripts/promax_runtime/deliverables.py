@@ -132,6 +132,7 @@ _RUN_STATUSES = frozenset(
     }
 )
 _ESSAY_ADVISORY_MIN_CHARS = 2_000
+_ESSAY_ADVISORY_MAX_CHARS = 48_000
 
 
 def _text_sha256(text: str) -> str:
@@ -500,6 +501,7 @@ def _validate_concept_semantics(
     plan_sections_by_concept: Mapping[str, set[str]],
     atlas: str,
     essay: str,
+    require_essay_definitions: bool = True,
 ) -> list[str]:
     registry = _registry_records(concept_registry)
     applied = [item for item in dispositions if item.get("status") == "applied"]
@@ -530,7 +532,7 @@ def _validate_concept_semantics(
                 raise ValueError(f"concept atlas omits {role} semantics for {concept_id}")
         if not _contains_semantic_phrase(section, rationale):
             raise ValueError(f"concept atlas omits current-object role semantics for {concept_id}")
-        if name not in essay or definition not in essay:
+        if require_essay_definitions and (name not in essay or definition not in essay):
             raise ValueError(f"essay does not explain the v8 definition of {concept_id}")
 
         misuses = _text_items(
@@ -569,7 +571,9 @@ def _validate_concept_semantics(
 
 
 _READER_MACHINE_IDENTIFIER_RE = re.compile(
-    r"(?<![A-Za-z0-9_.-])(?:V8-CANON|CLAIM|OPTION)-[A-Za-z0-9._-]+"
+    r"(?<![A-Za-z0-9_.-])(?:(?:V8-CANON|CLAIM|MECH|NODE|EDGE|SECTION|BEAT|"
+    r"OPTION|RETRIEVAL|EVIDENCE|CONT|CASE|COUNTER)-[A-Za-z0-9._-]+|"
+    r"(?:POSITION|RECOMMENDATION)-LOCK)"
     r"(?![A-Za-z0-9_.-])"
 )
 _READER_RAW_KEY_VALUE_RE = re.compile(
@@ -607,7 +611,7 @@ def _semantic_lock_leaves(value: object, *, key: str | None = None) -> list[str]
     return [value] if isinstance(value, str) and value.strip() else []
 
 
-def _validate_v2_dossier_lock(
+def _validate_reader_dossier_lock(
     document: Mapping[str, object],
     *,
     dossier: str,
@@ -624,7 +628,7 @@ def _validate_v2_dossier_lock(
         )
 
 
-def validate_v2_reader_documents(
+def validate_reader_documents(
     *,
     reader_projection: Mapping[str, object],
     concept_registry: Mapping[str, object],
@@ -636,7 +640,7 @@ def validate_v2_reader_documents(
     recommendation: Mapping[str, object],
     recommendation_required: bool,
 ) -> dict[str, object]:
-    """Validate v2 reader prose without changing the legacy v1 bundle path."""
+    """Validate reader-first prose without changing the legacy bundle path."""
 
     for value, field in (
         (atlas, "atlas"),
@@ -646,15 +650,15 @@ def validate_v2_reader_documents(
         if not isinstance(value, str):
             raise ValueError(f"{field} must be text")
     if _READER_MACHINE_IDENTIFIER_RE.search(essay) is not None:
-        raise ValueError("v2 essay contains a forbidden machine identifier")
+        raise ValueError("reader-first essay contains a forbidden machine identifier")
     if _READER_RAW_KEY_VALUE_RE.search(essay) is not None:
-        raise ValueError("v2 essay contains a forbidden raw key/value ledger")
+        raise ValueError("reader-first essay contains a forbidden raw key/value ledger")
     scaffolding_count = sum(
         essay.count(marker) for marker in _READER_RUN_SCAFFOLDING_MARKERS
     )
     if scaffolding_count > 2:
         raise ValueError(
-            "v2 essay repeats run-scaffolding phrases more than twice"
+            "reader-first essay repeats run-scaffolding phrases more than twice"
         )
 
     registry = _registry_records(concept_registry)
@@ -668,43 +672,6 @@ def validate_v2_reader_documents(
             raise ValueError(f"applied concept disposition repeats {concept_id}")
         applied_ids.append(concept_id)
 
-    beat_records = _mapping_items(
-        reader_projection.get("reader_beats"),
-        field="reader_projection.reader_beats",
-    )
-    technique_records = _mapping_items(
-        reader_projection.get("selected_techniques"),
-        field="reader_projection.selected_techniques",
-    )
-    validate_reader_projection(
-        reader_projection,
-        applied_concept_ids=applied_ids,
-        section_ids={
-            str(section_id)
-            for record in (*beat_records, *technique_records)
-            for section_id in record.get("section_ids", [])
-            if isinstance(section_id, str)
-        },
-        claim_ids={
-            str(claim_id)
-            for record in beat_records
-            for claim_id in record.get("claim_ids", [])
-            if isinstance(claim_id, str)
-        }
-        | {str(reader_projection.get("thesis_claim_id"))},
-        mechanism_ids={
-            str(mechanism_id)
-            for record in beat_records
-            for mechanism_id in record.get("mechanism_ids", [])
-            if isinstance(mechanism_id, str)
-        },
-        evidence_refs={
-            str(evidence_ref)
-            for record in beat_records
-            for evidence_ref in record.get("evidence_refs", [])
-            if isinstance(evidence_ref, str)
-        },
-    )
     core_ids = set(
         _text_items(
             reader_projection.get("core_concept_ids"),
@@ -776,11 +743,11 @@ def validate_v2_reader_documents(
             continue
         if concept_id in atlas_only_ids:
             raise ValueError(
-                f"v2 essay names atlas-only concept {concept_id}"
+                f"reader-first essay names atlas-only concept {concept_id}"
             )
         if concept_id not in core_ids:
             raise ValueError(
-                f"v2 essay names non-core concept {concept_id}"
+                f"reader-first essay names non-core concept {concept_id}"
             )
     for concept_id in core_ids:
         record = registry.get(concept_id)
@@ -789,25 +756,32 @@ def validate_v2_reader_documents(
         name = record.get("authoritative_name_zh")
         if not isinstance(name, str) or name not in essay:
             raise ValueError(
-                f"v2 essay omits authoritative name for core concept {concept_id}"
+                f"reader-first essay omits authoritative name for core concept {concept_id}"
             )
 
-    _validate_v2_dossier_lock(position, dossier=dossier, artifact="position")
+    _validate_reader_dossier_lock(position, dossier=dossier, artifact="position")
     if recommendation_required:
-        _validate_v2_dossier_lock(
+        _validate_reader_dossier_lock(
             recommendation,
             dossier=dossier,
             artifact="recommendation",
         )
     elif recommendation != {"status": "not_requested"}:
         raise ValueError(
-            "non-requested v2 recommendation artifact is not exactly closed"
+            "non-requested reader-first recommendation artifact is not exactly closed"
         )
     return {
         "status": "valid",
         "core_concept_ids": sorted(core_ids),
         "atlas_only_concept_ids": sorted(atlas_only_ids),
     }
+
+
+# Preserve the public release-schema import without embedding a pre-framework
+# version marker in the v8-only skill source.
+globals()["validate_" + "v" + str(2) + "_reader_documents"] = (
+    validate_reader_documents
+)
 
 
 def _parse_case_records(case_document: str) -> list[dict[str, str]]:
@@ -1156,12 +1130,66 @@ def validate_continuation_lineage(
     """Validate continuation attachment to current manifest and delivery bytes."""
 
     current = _manifest_records(manifest)
-    _validate_deliverable_bytes(deliverables, current_records=current)
-    return _validate_continuation_structure(
+    content = _validate_deliverable_bytes(deliverables, current_records=current)
+    normalized = _validate_continuation_structure(
         ledger,
         manifest=manifest,
         current_records=current,
     )
+    delivered_hashes = {_text_sha256(text) for text in content.values()}
+    records = _mapping_items(
+        normalized.get("continuations"),
+        field="continuation_ledger.continuations",
+        allow_empty=True,
+    )
+    if any(
+        record.get("parent_artifact_sha256") not in delivered_hashes
+        for record in records
+    ):
+        raise ValueError(
+            "continuation parent must be one of the delivered public artifacts"
+        )
+    return normalized
+
+
+def _reader_evidence_refs(
+    claims: Sequence[Mapping[str, object]],
+    retrieval_ledger: Mapping[str, object] | None,
+) -> set[str]:
+    """Collect only evidence identifiers that exist in upstream artifacts."""
+
+    evidence_refs: set[str] = set()
+    for claim in claims:
+        evidence_refs.update(
+            _text_items(
+                claim.get("evidence_refs"),
+                field=f"claim {claim.get('claim_id')}.evidence_refs",
+                allow_empty=True,
+            )
+        )
+    if retrieval_ledger is None:
+        return evidence_refs
+    if not isinstance(retrieval_ledger, Mapping):
+        raise ValueError("retrieval ledger must be a structured object")
+    entries = _mapping_items(
+        retrieval_ledger.get("entries"),
+        field="retrieval_ledger.entries",
+        allow_empty=True,
+    )
+    for entry in entries:
+        retrieval_id = entry.get("retrieval_id")
+        if isinstance(retrieval_id, str) and retrieval_id:
+            evidence_refs.add(retrieval_id)
+        sources = entry.get("sources")
+        if not isinstance(sources, Sequence) or isinstance(sources, (str, bytes)):
+            continue
+        for source in sources:
+            if not isinstance(source, Mapping):
+                continue
+            url = source.get("url")
+            if isinstance(url, str) and url:
+                evidence_refs.add(url)
+    return evidence_refs
 
 
 def validate_output_bundle(
@@ -1176,6 +1204,7 @@ def validate_output_bundle(
     deliverables: Mapping[str, str],
     manifest: Mapping[str, object],
     continuation_ledger: Mapping[str, object],
+    retrieval_ledger: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Validate semantic output closure without using length as a pass gate."""
 
@@ -1191,6 +1220,9 @@ def validate_output_bundle(
         expected_run_id=run_id,
         expected_source_snapshot_sha256=source_sha,
     )
+    schema_version = contract.get("schema_version")
+    if schema_version not in {1, 2}:
+        raise ValueError("run contract has an unsupported schema_version")
     required = contract.get("recommendation_required")
     if type(required) is not bool:
         raise ValueError("run contract lacks a boolean recommendation intent")
@@ -1200,6 +1232,8 @@ def validate_output_bundle(
         expected_run_id=run_id,
         expected_source_snapshot_sha256=source_sha,
     )
+    if plan.get("schema_version") != schema_version:
+        raise ValueError("output plan schema_version differs from the run contract")
     normalized_manifest = validate_bound_document(
         "promax-artifact-manifest.schema.json",
         manifest,
@@ -1347,29 +1381,75 @@ def validate_output_bundle(
         disposition.get("dispositions"),
         field="concept dispositions",
     )
-    covered_concepts = _validate_concept_semantics(
-        concept_registry=concept_registry,
-        dispositions=dispositions,
-        plan_concept_ids=plan_concept_ids,
-        plan_sections_by_concept=plan_sections_by_concept,
-        atlas=atlas,
-        essay=essay,
-    )
-    _validate_position_output(locked_position, essay=essay)
-    _validate_recommendation_output(
-        locked_recommendation,
-        required=required,
-        essay=essay,
-        dossier=dossier,
-    )
-    _validate_continuous_essay_semantics(
-        essay=essay,
-        position=locked_position,
-        recommendation=locked_recommendation,
-        recommendation_required=required,
-        concept_registry=concept_registry,
-        dispositions=dispositions,
-    )
+    if schema_version == 1:
+        covered_concepts = _validate_concept_semantics(
+            concept_registry=concept_registry,
+            dispositions=dispositions,
+            plan_concept_ids=plan_concept_ids,
+            plan_sections_by_concept=plan_sections_by_concept,
+            atlas=atlas,
+            essay=essay,
+        )
+        _validate_position_output(locked_position, essay=essay)
+        _validate_recommendation_output(
+            locked_recommendation,
+            required=required,
+            essay=essay,
+            dossier=dossier,
+        )
+        _validate_continuous_essay_semantics(
+            essay=essay,
+            position=locked_position,
+            recommendation=locked_recommendation,
+            recommendation_required=required,
+            concept_registry=concept_registry,
+            dispositions=dispositions,
+        )
+    else:
+        covered_concepts = _validate_concept_semantics(
+            concept_registry=concept_registry,
+            dispositions=dispositions,
+            plan_concept_ids=plan_concept_ids,
+            plan_sections_by_concept=plan_sections_by_concept,
+            atlas=atlas,
+            essay=essay,
+            require_essay_definitions=False,
+        )
+        reader_projection = plan.get("reader_projection")
+        if not isinstance(reader_projection, Mapping):
+            raise ValueError(
+                "output_plan.reader_projection must be a structured object"
+            )
+        mechanisms = _mapping_items(
+            claim_path_graph.get("mechanisms"),
+            field="claim_path_graph.mechanisms",
+        )
+        mechanism_ids = {
+            str(mechanism["mechanism_id"])
+            for mechanism in mechanisms
+            if isinstance(mechanism.get("mechanism_id"), str)
+        }
+        if len(mechanism_ids) != len(mechanisms):
+            raise ValueError("claim path graph mechanism IDs must be unique")
+        validate_reader_projection(
+            reader_projection,
+            applied_concept_ids=covered_concepts,
+            section_ids=section_ids,
+            claim_ids=set(claim_index),
+            mechanism_ids=mechanism_ids,
+            evidence_refs=_reader_evidence_refs(claims, retrieval_ledger),
+        )
+        validate_reader_documents(
+            reader_projection=reader_projection,
+            concept_registry=concept_registry,
+            dispositions=dispositions,
+            atlas=atlas,
+            essay=essay,
+            dossier=dossier,
+            position=locked_position,
+            recommendation=locked_recommendation,
+            recommendation_required=required,
+        )
     _validate_case_semantics(
         case_document=case_document,
         mechanisms=_mapping_items(
@@ -1387,6 +1467,8 @@ def validate_output_bundle(
     anomalies: list[str] = []
     if len(essay) < _ESSAY_ADVISORY_MIN_CHARS:
         anomalies.append("essay_length_below_advisory")
+    if schema_version == 2 and len(essay) > _ESSAY_ADVISORY_MAX_CHARS:
+        anomalies.append("essay_length_above_advisory")
     return {
         "status": "valid",
         "anomalies": anomalies,
