@@ -14,7 +14,7 @@
 
 <br>
 
-![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-2f81f7?style=flat-square&labelColor=0d1117&color=2f81f7)
+![ProMax](https://img.shields.io/badge/ProMax-1.0.1%20%7C%20v8.0-2f81f7?style=flat-square&labelColor=0d1117&color=2f81f7)
 ![Runtime](https://img.shields.io/badge/runtime-independent-58a6ff?style=flat-square&labelColor=0d1117&color=58a6ff)
 ![Python](https://img.shields.io/badge/Python-3.11-79c0ff?style=flat-square&labelColor=0d1117&color=79c0ff)
 ![Trigger](https://img.shields.io/badge/trigger-exact--name_only-d29922?style=flat-square&labelColor=0d1117&color=d29922)
@@ -78,10 +78,11 @@
 ```text
 request → v8 full-source → concept closure → local world model
         → claim-path → retrieval → red-team → position lock
-        → dossier + essay → validator → phase-aware repair
+        → reader projection → dossier + atlas + cases + essay
+        → prose review → validator → phase-aware repair
 ```
 
-ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独立运行时：先冻结问题与 v8 源快照，再构造概念闭合、局部世界、命题路径和检索工件；初稿必须经过反方攻击与立场锁定，最终 dossier 与 essay 还要由 fresh validator 独立验收。若失败，系统依据 `affected_phase` 只重置受影响阶段及其下游产物，再进行定向修复，不靠补几个关键词伪装完成。
+ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独立运行时：先冻结问题与 v8 源快照，再构造概念闭合、局部世界、命题路径和检索工件；初稿必须经过反方攻击与立场锁定，随后由 reader projection 把审计闭包投影成普通读者能够进入的文章。六个角色中的最后一个只审校当前正文，生成绑定 essay 与 P8/P9 锁的内部 prose review。若失败，系统依据 `affected_phase` 只重置受影响阶段及其下游产物，再进行定向修复，不靠补几个关键词伪装完成。
 
 <a id="promax-capabilities"></a>
 ## ProMax 完整能力
@@ -95,18 +96,19 @@ ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独
 | **真实检索** | 按五向检索搜寻案例、支持证据、反例和边界条件，并将支持与反例分开登记 | 有网络时外部校准；断网时诚实降档，不伪造来源或检索完成态 |
 | **自我攻击** | 构造最强反方，检查概念误用、立场稳定性与证据截止 | 让反例真正有机会改写、降档或推翻初始判断 |
 | **明确裁决** | 攻击后始终锁定立场；只有用户明确要求建议时，才比较六类行动并给出主方案、备选、停止条件与回滚路径 | 未要求建议时只完成明确判断，recommendation 闭合为 `{"status":"not_requested"}`，不自行制造方案 |
-| **可验证交付** | 物化 dossier、concept atlas、cases、essay 与 manifest，再交给 fresh validator 和 phase repair | 最终文本不能自我认证；发布状态由独立校验报告决定 |
+| **可验证交付** | 物化 dossier、concept atlas、cases、纯读者 essay、内部 prose review 与 manifest，再交给 fresh validator 和 phase repair | 四份公开产物共同承担完整性；正文不再转储审计台账，发布状态仍由独立校验报告决定 |
 
 <a id="model-flavor"></a>
 ## 如何抑制模型自身风味
 
-不同 AI 有不同的训练偏好：有的倾向顺从，有的先反驳，有的习惯列举却不裁决。ProMax 不假设能抹去这些差异，而是用五道结构约束限制它们对判断的支配：
+不同 AI 有不同的训练偏好：有的倾向顺从，有的先反驳，有的习惯列举却不裁决。ProMax 不假设能抹去这些差异，而是用六道结构约束限制它们对判断与表达的支配：
 
 1. **v8 定义优先。** 框架原文与概念契约覆盖模型预训练中碰巧同名的概念，禁止用熟悉词义替代 CrossFrame 的独特定义。
 2. **冻结关键工件。** 请求、源快照、证据边界、命题和阶段产物被显式登记，防止推演中悄悄改题、换证据或移动判断标准。
 3. **检索与 red-team 攻击草稿。** 真实案例检索和最强反方不是装饰性章节，而是可以迫使初稿改写、降档或撤回的独立步骤，不能只顺着用户说。
 4. **position lock 强制裁决。** 模型在攻击后必须给出明确立场与判断撤回条件；只有用户明确要求建议时，才比较备选并登记停止与回滚条件。未要求建议时只完成判断，recommendation 为 `{"status":"not_requested"}`；不能用“各有道理”逃避判断。
-5. **fresh validator 与阶段修复。** 新鲜校验进程依据工件而非文风验收；失败后按阶段修复，防止流畅文字给自己盖章。
+5. **固定成文声口与读者投影。** ProMax 内置 50 张独立技法卡和九种体裁路由，每次只选 3 张核心卡与至多 2 张辅助卡。正文从现实关系进入，按机制与同维比较推进，保留最强反方、明确立场、撤回条件和行动边界；既不自动迎合，也不为显得独立而自动反对。
+6. **独立 prose review 与阶段修复。** 第六角色逐项审查现实入口、论证依赖、v8 概念保真、证据绑定、反方、公平比较、判断一致性、撤回边界、固定声口、宿主模型风味和审计泄漏；fresh validator 只接受绑定当前字节的审校结果，失败后回到 P10 或其真实根因阶段。
 
 这些约束不会让不同模型的措辞、节奏和全部判断变得字面完全相同，但它要求每个模型都通过同一套结构契约与审计闸；差异必须暴露在证据、路径、反例和撤回条件中，而不能藏在模型习惯里。
 
