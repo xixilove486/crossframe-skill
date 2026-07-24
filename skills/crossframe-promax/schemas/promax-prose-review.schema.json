@@ -33,7 +33,7 @@
       "minItems": 3,
       "maxItems": 5,
       "uniqueItems": true,
-      "items": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+      "items": {"$ref": "promax-output-plan.schema.json#/$defs/techniqueId"}
     },
     "required_beat_mappings": {
       "type": "array",

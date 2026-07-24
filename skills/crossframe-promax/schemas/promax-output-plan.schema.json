@@ -132,12 +132,66 @@
         "neutral-analysis"
       ]
     },
+    "techniqueId": {
+      "enum": [
+        "analogical-reasoning",
+        "ancient-modern-global",
+        "clouds-moon",
+        "coincidence-structure",
+        "direct-emotion",
+        "double-bridge",
+        "event-association",
+        "feint-attack",
+        "final-reveal",
+        "fine-carving",
+        "finishing-touch",
+        "fixed-point-changing-scenes",
+        "form-by-object",
+        "guest-host-contrast",
+        "hide-before-reveal",
+        "language-momentum",
+        "layered-argument",
+        "less-is-more",
+        "life-from-dead",
+        "meaning-beyond-words",
+        "motion-for-stillness",
+        "moving-viewpoint",
+        "multi-edge-extension",
+        "narration-commentary",
+        "object-reason",
+        "one-stone-many-birds",
+        "one-word-spine",
+        "personified-object",
+        "point-spirit",
+        "point-surface",
+        "positive-negative-contrast",
+        "praise-blame-interlace",
+        "raise-high-drop-heavy",
+        "release-to-capture",
+        "remove-foundation",
+        "retreat-to-advance",
+        "same-different",
+        "scene-emotion",
+        "small-water-waves",
+        "sparse-outline",
+        "split-wood-reasoning",
+        "stars-moon",
+        "stream-consciousness",
+        "surprise-victory",
+        "suspense",
+        "symbolic-meaning",
+        "thread-beads",
+        "vertical-narration",
+        "virtual-to-real",
+        "winding-path"
+      ]
+    },
     "technique": {
       "type": "object",
       "additionalProperties": false,
       "required": ["technique_id", "tier", "paragraph_action", "section_ids"],
       "properties": {
-        "technique_id": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "technique_id": {"$ref": "#/$defs/techniqueId"},
         "tier": {"enum": ["core", "auxiliary"]},
         "paragraph_action": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
         "section_ids": {
@@ -170,6 +224,168 @@
           },
           "minContains": 0,
           "maxContains": 2
+        }
+      ]
+    },
+    "replySelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "direct-emotion"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "winding-path"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "less-is-more"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["analogical-reasoning", "retreat-to-advance", "scene-emotion", "feint-attack", "hide-before-reveal", "sparse-outline"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "publicCommentarySelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "event-association"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "layered-argument"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "positive-negative-contrast"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["ancient-modern-global", "language-momentum", "guest-host-contrast", "point-surface", "praise-blame-interlace", "finishing-touch"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "conceptExplanationSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "analogical-reasoning"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "split-wood-reasoning"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "virtual-to-real"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["double-bridge", "form-by-object", "object-reason", "one-word-spine", "symbolic-meaning", "personified-object"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "organizationReviewSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "vertical-narration"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "fixed-point-changing-scenes"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "moving-viewpoint"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["clouds-moon", "life-from-dead", "motion-for-stillness", "praise-blame-interlace", "form-by-object"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "caseAnalysisSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "narration-commentary"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "fine-carving"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "point-surface"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["coincidence-structure", "point-spirit", "scene-emotion", "suspense", "guest-host-contrast"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "debateRefutationSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "feint-attack"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "positive-negative-contrast"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "release-to-capture"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["raise-high-drop-heavy", "retreat-to-advance", "same-different", "one-stone-many-birds", "remove-foundation"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "readingSynthesisSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "thread-beads"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "one-word-spine"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "narration-commentary"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["final-reveal", "meaning-beyond-words", "stars-moon", "stream-consciousness", "symbolic-meaning"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "trendDeductionSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "small-water-waves"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "multi-edge-extension"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "ancient-modern-global"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["coincidence-structure", "event-association", "motion-for-stillness", "surprise-victory", "fixed-point-changing-scenes"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
+        }
+      ]
+    },
+    "neutralAnalysisSelection": {
+      "allOf": [
+        {"$ref": "#/$defs/selectedTechniques"},
+        {
+          "prefixItems": [
+            {"properties": {"technique_id": {"const": "layered-argument"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "same-different"}, "tier": {"const": "core"}}},
+            {"properties": {"technique_id": {"const": "one-stone-many-birds"}, "tier": {"const": "core"}}}
+          ],
+          "items": {
+            "properties": {
+              "technique_id": {"enum": ["release-to-capture", "point-surface", "less-is-more", "multi-edge-extension", "virtual-to-real"]},
+              "tier": {"const": "auxiliary"}
+            }
+          }
         }
       ]
     },
@@ -227,7 +443,67 @@
           "uniqueItems": true,
           "items": {"$ref": "#/$defs/readerBeat"}
         }
-      }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "article_type": {"const": "reply"},
+                "selected_techniques": {"$ref": "#/$defs/replySelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "public-commentary"},
+                "selected_techniques": {"$ref": "#/$defs/publicCommentarySelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "concept-explanation"},
+                "selected_techniques": {"$ref": "#/$defs/conceptExplanationSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "organization-review"},
+                "selected_techniques": {"$ref": "#/$defs/organizationReviewSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "case-analysis"},
+                "selected_techniques": {"$ref": "#/$defs/caseAnalysisSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "debate-refutation"},
+                "selected_techniques": {"$ref": "#/$defs/debateRefutationSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "reading-synthesis"},
+                "selected_techniques": {"$ref": "#/$defs/readingSynthesisSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "trend-deduction"},
+                "selected_techniques": {"$ref": "#/$defs/trendDeductionSelection"}
+              }
+            },
+            {
+              "properties": {
+                "article_type": {"const": "neutral-analysis"},
+                "selected_techniques": {"$ref": "#/$defs/neutralAnalysisSelection"}
+              }
+            }
+          ]
+        }
+      ]
     }
   }
 }

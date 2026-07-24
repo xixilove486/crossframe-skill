@@ -924,7 +924,11 @@ def prose_review() -> dict[str, Any]:
         "position_sha256": HASH_B,
         "output_plan_sha256": HASH_C,
         "article_type": "neutral-analysis",
-        "technique_ids": ["TECHNIQUE-1", "TECHNIQUE-2", "TECHNIQUE-3"],
+        "technique_ids": [
+            "layered-argument",
+            "same-different",
+            "one-stone-many-birds",
+        ],
         "required_beat_mappings": [
             {
                 "beat_id": "BEAT-1",

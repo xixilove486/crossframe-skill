@@ -47,25 +47,25 @@ def reader_projection() -> dict[str, object]:
         "atlas_only_concept_ids": ["V8-CANON-BOUNDARY"],
         "selected_techniques": [
             {
-                "technique_id": "TECH-ENTRY",
+                "technique_id": "event-association",
                 "tier": "core",
                 "paragraph_action": "从现实矛盾进入",
                 "section_ids": ["SEC-1"],
             },
             {
-                "technique_id": "TECH-LADDER",
+                "technique_id": "layered-argument",
                 "tier": "core",
                 "paragraph_action": "按机制依赖递进",
                 "section_ids": ["SEC-1", "SEC-2"],
             },
             {
-                "technique_id": "TECH-COUNTER",
+                "technique_id": "positive-negative-contrast",
                 "tier": "core",
                 "paragraph_action": "重建最强反方",
                 "section_ids": ["SEC-2"],
             },
             {
-                "technique_id": "TECH-ENDING",
+                "technique_id": "finishing-touch",
                 "tier": "auxiliary",
                 "paragraph_action": "回到现实责任",
                 "section_ids": ["SEC-2"],
@@ -80,7 +80,7 @@ def reader_projection() -> dict[str, object]:
                 "mechanism_ids": ["MECH-1"],
                 "evidence_refs": ["EVID-1"],
                 "core_concept_ids": ["V8-CANON-OBJECT"],
-                "technique_ids": ["TECH-ENTRY", "TECH-LADDER"],
+                "technique_ids": ["event-association", "layered-argument"],
             },
             {
                 "beat_id": "BEAT-BOUNDARY",
@@ -90,7 +90,10 @@ def reader_projection() -> dict[str, object]:
                 "mechanism_ids": ["MECH-2"],
                 "evidence_refs": ["EVID-2"],
                 "core_concept_ids": ["V8-CANON-OBJECT"],
-                "technique_ids": ["TECH-COUNTER", "TECH-ENDING"],
+                "technique_ids": [
+                    "positive-negative-contrast",
+                    "finishing-touch",
+                ],
             },
         ],
     }
@@ -256,10 +259,10 @@ def prose_review() -> dict[str, object]:
         "output_plan_sha256": sha256_json(current_plan),
         "article_type": "public-commentary",
         "technique_ids": [
-            "TECH-ENTRY",
-            "TECH-LADDER",
-            "TECH-COUNTER",
-            "TECH-ENDING",
+            "event-association",
+            "layered-argument",
+            "positive-negative-contrast",
+            "finishing-touch",
         ],
         "required_beat_mappings": [
             {
@@ -276,10 +279,25 @@ def prose_review() -> dict[str, object]:
         "dimensions": {
             dimension_id: {
                 "status": "pass",
-                "evidence_excerpts": [excerpt],
+                "evidence_excerpts": [dimension_excerpt],
                 "repair_target": None,
             }
-            for dimension_id in DIMENSION_IDS
+            for dimension_id, dimension_excerpt in zip(
+                DIMENSION_IDS,
+                (
+                    "现实入口是试验成本正在被转嫁给无法退出的人。",
+                    "当前应先做可撤回的小范围试验。对象边界这个区分让我们看到，收益与代价并没有落在同一批人身上。现有证据支持先验证机制。",
+                    "对象边界这个区分让我们看到，收益与代价并没有落在同一批人身上。",
+                    "现有证据支持先验证机制。",
+                    "最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，就应停止并退出当前路径。",
+                    "若成本已经不可逆，就应停止并退出当前路径。",
+                    "当前应先做可撤回的小范围试验。",
+                    "一旦损害不可逆就撤回。",
+                    "最后的问题不是怎样证明自己判断正确，而是谁承担下一次验证的代价。",
+                    "当前仍有可执行的停止条件，一旦损害不可逆就撤回。",
+                    "这里只允许准备，不构成现实授权。",
+                ),
+            )
         },
         "overall_status": "pass",
         "reviewed_at": "2026-07-25T08:00:00Z",
@@ -330,6 +348,33 @@ class ProMaxReaderProjectionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "three core"):
             validate_reader_projection(candidate, **projection_context())
+
+    def test_projection_rejects_unknown_and_wrong_genre_techniques(self) -> None:
+        unknown = reader_projection()
+        unknown["selected_techniques"][0]["technique_id"] = "TECH-UNKNOWN"
+        unknown["reader_beats"][0]["technique_ids"][0] = "TECH-UNKNOWN"
+        wrong_genre = reader_projection()
+        wrong_genre["selected_techniques"] = [
+            {
+                "technique_id": technique_id,
+                "tier": "core",
+                "paragraph_action": "保持既有判断，只调整读者进入顺序。",
+                "section_ids": ["SEC-1"],
+            }
+            for technique_id in (
+                "analogical-reasoning",
+                "split-wood-reasoning",
+                "virtual-to-real",
+            )
+        ]
+
+        for candidate in (unknown, wrong_genre):
+            with self.subTest(candidate=candidate["selected_techniques"][0]):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "technique|route|article_type",
+                ):
+                    validate_reader_projection(candidate, **projection_context())
 
 
 class ProMaxReaderDocumentTests(unittest.TestCase):
@@ -510,6 +555,18 @@ class ProMaxProseReviewTests(unittest.TestCase):
                     "evidence_excerpt|reader beat",
                 ):
                     self.validate_review(candidate)
+
+    def test_review_rejects_one_excerpt_claimed_for_every_dimension(self) -> None:
+        candidate = prose_review()
+        excerpt = "现实入口是试验成本正在被转嫁给无法退出的人。"
+        for dimension in candidate["dimensions"].values():
+            dimension["evidence_excerpts"] = [excerpt]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "excerpt|dimension|reuse|distinct",
+        ):
+            self.validate_review(candidate)
 
 
 if __name__ == "__main__":

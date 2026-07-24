@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -9,6 +11,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "crossframe-promax"
 REFERENCES = SKILL_ROOT / "references"
 TECHNIQUES = REFERENCES / "prose-techniques"
+SCRIPTS = SKILL_ROOT / "scripts"
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from promax_runtime.prose import (  # noqa: E402
+    PROSE_TECHNIQUE_IDS,
+    PROSE_TECHNIQUE_ROUTES,
+)
 
 EXPECTED_TECHNIQUE_IDS = {
     "analogical-reasoning",
@@ -195,6 +205,9 @@ class ProMaxProseAssetTests(unittest.TestCase):
     def test_cards_are_independently_authored_instead_of_one_repeated_shell(self) -> None:
         definitions: set[str] = set()
         paragraph_actions: set[str] = set()
+        problems: set[str] = set()
+        operation_cores: set[str] = set()
+        misuse_risks: set[str] = set()
         for technique_id in sorted(EXPECTED_TECHNIQUE_IDS):
             text = read(TECHNIQUES / f"{technique_id}.md")
             definition = re.search(
@@ -207,8 +220,22 @@ class ProMaxProseAssetTests(unittest.TestCase):
             self.assertIsNotNone(paragraph_action)
             definitions.add(definition.group(1).strip())
             paragraph_actions.add(paragraph_action.group(1).strip())
+            for heading, destination in (
+                ("解决问题", problems),
+                ("操作步骤", operation_cores),
+                ("误用风险", misuse_risks),
+            ):
+                section = re.search(
+                    rf"(?ms)^## {heading}\s+(.+?)(?=^## )",
+                    text,
+                )
+                self.assertIsNotNone(section)
+                destination.add(section.group(1).strip())
         self.assertEqual(50, len(definitions))
         self.assertGreaterEqual(len(paragraph_actions), 45)
+        self.assertEqual(50, len(problems))
+        self.assertEqual(50, len(operation_cores))
+        self.assertEqual(50, len(misuse_risks))
 
     def test_routing_uses_nine_genres_and_small_bounded_route_sets(self) -> None:
         text = read(REFERENCES / "prose-routing-map.md")
@@ -221,6 +248,7 @@ class ProMaxProseAssetTests(unittest.TestCase):
         self.assertIn("core 与 auxiliary 合计不得超过 5 张", text)
 
         routed: set[str] = set()
+        parsed_routes: dict[str, dict[str, object]] = {}
         for route_id, genre, core, candidates in routes:
             with self.subTest(route_id=route_id, genre=genre):
                 self.assertEqual(3, len(core))
@@ -230,7 +258,39 @@ class ProMaxProseAssetTests(unittest.TestCase):
                 self.assertTrue(set(core + candidates) <= EXPECTED_TECHNIQUE_IDS)
                 routed.update(core)
                 routed.update(candidates)
+                parsed_routes[genre] = {
+                    "core": tuple(core),
+                    "auxiliary": frozenset(candidates),
+                }
         self.assertEqual(EXPECTED_TECHNIQUE_IDS, routed)
+        self.assertEqual(EXPECTED_TECHNIQUE_IDS, set(PROSE_TECHNIQUE_IDS))
+        self.assertEqual(parsed_routes, PROSE_TECHNIQUE_ROUTES)
+
+    def test_mandatory_routes_never_require_p9_to_revise_p8(self) -> None:
+        routed_core_ids = {
+            technique_id
+            for route in PROSE_TECHNIQUE_ROUTES.values()
+            for technique_id in route["core"]
+        }
+        self.assertNotIn("retreat-to-advance", routed_core_ids)
+        self.assertNotIn("remove-foundation", routed_core_ids)
+        self.assertIn(
+            "不得在 P9 新增撤回、缩小命题或改写判断强度",
+            read(TECHNIQUES / "retreat-to-advance.md"),
+        )
+        self.assertIn(
+            "不得在 P9 据此调整强度",
+            read(TECHNIQUES / "remove-foundation.md"),
+        )
+
+    def test_output_plan_schema_freezes_the_same_fifty_card_inventory(self) -> None:
+        schema = json.loads(
+            read(SKILL_ROOT / "schemas/promax-output-plan.schema.json")
+        )
+        self.assertEqual(
+            EXPECTED_TECHNIQUE_IDS,
+            set(schema["$defs"]["techniqueId"]["enum"]),
+        )
 
     def test_house_voice_defines_reader_facing_judgment_and_safety_boundaries(self) -> None:
         text = read(REFERENCES / "promax-house-voice.md")

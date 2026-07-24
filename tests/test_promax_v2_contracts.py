@@ -22,6 +22,7 @@ from promax_runtime.artifacts import (  # noqa: E402
     validate_role_records,
 )
 from promax_runtime.jsonio import sha256_json  # noqa: E402
+from promax_runtime.prose import PROSE_TECHNIQUE_ROUTES  # noqa: E402
 from promax_runtime.schemas import validate_instance  # noqa: E402
 
 
@@ -443,27 +444,21 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                 "atlas_only_concept_ids": ["V8-CANON-AUXILIARY"],
                 "selected_techniques": [
                     {
-                        "technique_id": "TECHNIQUE-REALITY-ENTRY",
+                        "technique_id": "narration-commentary",
                         "tier": "core",
                         "paragraph_action": "从现实冲突切入。",
                         "section_ids": ["SECTION-1"],
                     },
                     {
-                        "technique_id": "TECHNIQUE-MECHANISM-LADDER",
+                        "technique_id": "fine-carving",
                         "tier": "core",
                         "paragraph_action": "逐层展开机制依赖。",
                         "section_ids": ["SECTION-1"],
                     },
                     {
-                        "technique_id": "TECHNIQUE-RESIDUE",
+                        "technique_id": "point-surface",
                         "tier": "core",
                         "paragraph_action": "以可继续思考的余味收束。",
-                        "section_ids": ["SECTION-1"],
-                    },
-                    {
-                        "technique_id": "TECHNIQUE-CONTRAST",
-                        "tier": "auxiliary",
-                        "paragraph_action": "压缩同维正反比较。",
                         "section_ids": ["SECTION-1"],
                     },
                 ],
@@ -476,7 +471,7 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                         "mechanism_ids": ["MECHANISM-1"],
                         "evidence_refs": ["EVIDENCE-1"],
                         "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
-                        "technique_ids": ["TECHNIQUE-REALITY-ENTRY"],
+                        "technique_ids": ["narration-commentary"],
                     }
                 ],
             },
@@ -507,7 +502,24 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
         for article_type in article_types:
             with self.subTest(article_type=article_type):
                 plan["reader_projection"]["article_type"] = article_type
+                plan["reader_projection"]["selected_techniques"] = [
+                    {
+                        "technique_id": technique_id,
+                        "tier": "core",
+                        "paragraph_action": "只重排已锁定材料。",
+                        "section_ids": ["SECTION-1"],
+                    }
+                    for technique_id in PROSE_TECHNIQUE_ROUTES[article_type]["core"]
+                ]
+                plan["reader_projection"]["reader_beats"][0]["technique_ids"] = [
+                    PROSE_TECHNIQUE_ROUTES[article_type]["core"][0]
+                ]
                 validate_instance("promax-output-plan.schema.json", plan)
+
+        wrong_route = copy.deepcopy(plan)
+        wrong_route["reader_projection"]["article_type"] = "reply"
+        with self.assertRaises(ValidationError):
+            validate_instance("promax-output-plan.schema.json", wrong_route)
 
         plan["sections"][0].pop("mechanism_ids")
         plan["sections"][0].pop("path_node_ids")
@@ -561,9 +573,9 @@ class ProMaxProseReviewSchemaTests(unittest.TestCase):
             "output_plan_sha256": "c" * 64,
             "article_type": "case-analysis",
             "technique_ids": [
-                "TECHNIQUE-REALITY-ENTRY",
-                "TECHNIQUE-MECHANISM-LADDER",
-                "TECHNIQUE-RESIDUE",
+                "narration-commentary",
+                "fine-carving",
+                "point-surface",
             ],
             "required_beat_mappings": [
                 {

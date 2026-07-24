@@ -5,6 +5,7 @@
 ## 单次选择规则
 
 - 每个 `genre_id` 只有一条主路由，主路由恰有 3 张 `core` 卡。
+- `selected_techniques` 先按本表顺序记录 3 张 core，再记录 0–2 张 auxiliary；顺序也是契约的一部分。
 - `auxiliary_candidates` 是候选池，不是一次性装载清单。
 - 单次 P9 选择必须使用该路由的 3 张 core；auxiliary 只能选 0–2 张。
 - core 与 auxiliary 合计不得超过 5 张。若候选卡解决不了当前读者问题，宁可不用辅助卡，也不为凑数套技法。
@@ -14,8 +15,8 @@
 ## 路由：reply-main
 
 - genre_id：`reply`
-- core：`direct-emotion`、`winding-path`、`retreat-to-advance`
-- auxiliary_candidates：`analogical-reasoning`、`less-is-more`、`scene-emotion`、`feint-attack`、`hide-before-reveal`、`sparse-outline`
+- core：`direct-emotion`、`winding-path`、`less-is-more`
+- auxiliary_candidates：`analogical-reasoning`、`retreat-to-advance`、`scene-emotion`、`feint-attack`、`hide-before-reveal`、`sparse-outline`
 - 选择提示：回应先确认对方真正关心的现实关系，再给当前判断；若分歧来自概念误解选类比，若来自证据边界选退界，若需要降低对抗感选曲径。
 
 ## 路由：public-commentary-main
@@ -49,8 +50,8 @@
 ## 路由：debate-refutation-main
 
 - genre_id：`debate-refutation`
-- core：`feint-attack`、`remove-foundation`、`release-to-capture`
-- auxiliary_candidates：`raise-high-drop-heavy`、`retreat-to-advance`、`same-different`、`one-stone-many-birds`、`positive-negative-contrast`
+- core：`feint-attack`、`positive-negative-contrast`、`release-to-capture`
+- auxiliary_candidates：`raise-high-drop-heavy`、`retreat-to-advance`、`same-different`、`one-stone-many-birds`、`remove-foundation`
 - 选择提示：反驳先给对方最强版本，再检验承重前提；能撤回的过宽主张应主动撤回，不用语势或讥讽替代证据。
 
 ## 路由：reading-synthesis-main

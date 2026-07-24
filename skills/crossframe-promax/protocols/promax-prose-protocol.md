@@ -19,7 +19,7 @@ P9 在原有 package coverage 之外冻结 `reader_projection`：
 - `thesis_claim_id`：正文中心命题。
 - `core_concept_ids`：真正改变中心判断、机制竞争、反方或建议的 applied concepts。
 - `atlas_only_concept_ids`：其余 applied concepts。
-- `selected_techniques`：恰三个核心技法，按需零至两个辅助技法；总数不得超过五个。
+- `selected_techniques`：严格使用该 `article_type` 的路由，先按路由顺序记录恰三个核心技法，再按需记录零至两个候选辅助技法；总数不得超过五个，ID 必须来自内置 50 卡索引。
 - `reader_beats`：按信息依赖登记入口、中心命题、机制、证据或案例、同维比较、最强反方、明确立场、撤回、行动边界和结尾。
 
 `core_concept_ids` 与 `atlas_only_concept_ids` 必须互斥，并集必须等于全部 applied concepts。所有 applied concepts 的权威定义、邻接关系与误用边界仍由 atlas 精确闭合；正文只承担核心概念的读者转译。
@@ -91,7 +91,7 @@ P9 在原有 package coverage 之外冻结 `reader_projection`：
 - 宿主模型风味独立性；
 - 审计泄漏。
 
-每个通过判断都要给出正文中的实际短摘。review 必须绑定当前 essay、position 与 output plan 的 SHA-256；陈旧散列、正文中不存在的短摘、漏掉 reader beat 或维度自相矛盾都视为失败。
+每个通过判断都要给出与该维度相关的正文实际短摘。不同维度不得拿同一句现实入口充当万能证明：通过维度的摘录集合必须可区分，任一摘录最多服务两个维度，且至少三分之二的通过维度具有不同摘录。宿主模型风味与审计泄漏属于全文性质，审校者必须检查 essay hash 所绑定的全文；短摘只记录代表性检查锚点，不能代替全文检查。review 必须绑定当前 essay、position 与 output plan 的 SHA-256；陈旧散列、正文中不存在的短摘、漏掉 reader beat 或维度自相矛盾都视为失败。
 
 ## 表达闸
 

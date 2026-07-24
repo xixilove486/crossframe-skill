@@ -20,6 +20,149 @@ ARTICLE_TYPES = frozenset(
         "neutral-analysis",
     }
 )
+PROSE_TECHNIQUE_ROUTES = {
+    "reply": {
+        "core": ("direct-emotion", "winding-path", "less-is-more"),
+        "auxiliary": frozenset(
+            {
+                "analogical-reasoning",
+                "retreat-to-advance",
+                "scene-emotion",
+                "feint-attack",
+                "hide-before-reveal",
+                "sparse-outline",
+            }
+        ),
+    },
+    "public-commentary": {
+        "core": (
+            "event-association",
+            "layered-argument",
+            "positive-negative-contrast",
+        ),
+        "auxiliary": frozenset(
+            {
+                "ancient-modern-global",
+                "language-momentum",
+                "guest-host-contrast",
+                "point-surface",
+                "praise-blame-interlace",
+                "finishing-touch",
+            }
+        ),
+    },
+    "concept-explanation": {
+        "core": (
+            "analogical-reasoning",
+            "split-wood-reasoning",
+            "virtual-to-real",
+        ),
+        "auxiliary": frozenset(
+            {
+                "double-bridge",
+                "form-by-object",
+                "object-reason",
+                "one-word-spine",
+                "symbolic-meaning",
+                "personified-object",
+            }
+        ),
+    },
+    "organization-review": {
+        "core": (
+            "vertical-narration",
+            "fixed-point-changing-scenes",
+            "moving-viewpoint",
+        ),
+        "auxiliary": frozenset(
+            {
+                "clouds-moon",
+                "life-from-dead",
+                "motion-for-stillness",
+                "praise-blame-interlace",
+                "form-by-object",
+            }
+        ),
+    },
+    "case-analysis": {
+        "core": ("narration-commentary", "fine-carving", "point-surface"),
+        "auxiliary": frozenset(
+            {
+                "coincidence-structure",
+                "point-spirit",
+                "scene-emotion",
+                "suspense",
+                "guest-host-contrast",
+            }
+        ),
+    },
+    "debate-refutation": {
+        "core": (
+            "feint-attack",
+            "positive-negative-contrast",
+            "release-to-capture",
+        ),
+        "auxiliary": frozenset(
+            {
+                "raise-high-drop-heavy",
+                "retreat-to-advance",
+                "same-different",
+                "one-stone-many-birds",
+                "remove-foundation",
+            }
+        ),
+    },
+    "reading-synthesis": {
+        "core": ("thread-beads", "one-word-spine", "narration-commentary"),
+        "auxiliary": frozenset(
+            {
+                "final-reveal",
+                "meaning-beyond-words",
+                "stars-moon",
+                "stream-consciousness",
+                "symbolic-meaning",
+            }
+        ),
+    },
+    "trend-deduction": {
+        "core": (
+            "small-water-waves",
+            "multi-edge-extension",
+            "ancient-modern-global",
+        ),
+        "auxiliary": frozenset(
+            {
+                "coincidence-structure",
+                "event-association",
+                "motion-for-stillness",
+                "surprise-victory",
+                "fixed-point-changing-scenes",
+            }
+        ),
+    },
+    "neutral-analysis": {
+        "core": (
+            "layered-argument",
+            "same-different",
+            "one-stone-many-birds",
+        ),
+        "auxiliary": frozenset(
+            {
+                "release-to-capture",
+                "point-surface",
+                "less-is-more",
+                "multi-edge-extension",
+                "virtual-to-real",
+            }
+        ),
+    },
+}
+PROSE_TECHNIQUE_IDS = frozenset(
+    technique_id
+    for route in PROSE_TECHNIQUE_ROUTES.values()
+    for tier in ("core", "auxiliary")
+    for technique_id in route[tier]
+)
 PROSE_REVIEW_DIMENSION_IDS = (
     "reality_entry",
     "argument_dependency",
@@ -268,6 +411,31 @@ def validate_reader_projection(
         raise ValueError(
             "reader_projection may select at most two auxiliary techniques"
         )
+    route = PROSE_TECHNIQUE_ROUTES[article_type]
+    expected_core = list(route["core"])
+    selected_core = [
+        technique_id
+        for technique_id, tier in zip(technique_ids, tiers)
+        if tier == "core"
+    ]
+    if selected_core != expected_core:
+        raise ValueError(
+            "reader_projection core techniques do not match the ordered "
+            f"article_type route: expected {expected_core}"
+        )
+    if tiers[:3] != ["core", "core", "core"] or any(
+        tier != "auxiliary" for tier in tiers[3:]
+    ):
+        raise ValueError(
+            "reader_projection must list its three routed core techniques "
+            "before auxiliary techniques"
+        )
+    unknown_auxiliary = set(technique_ids[3:]) - set(route["auxiliary"])
+    if unknown_auxiliary:
+        raise ValueError(
+            "reader_projection auxiliary techniques are outside the "
+            f"article_type route: {sorted(unknown_auxiliary)}"
+        )
 
     beats = _mapping_array(
         reader_projection.get("reader_beats"),
@@ -506,6 +674,7 @@ def validate_prose_review(
             "prose review must contain exactly the eleven prose-review dimensions"
         )
     statuses: list[str] = []
+    passing_excerpt_sets: list[tuple[str, tuple[str, ...]]] = []
     for dimension_id in PROSE_REVIEW_DIMENSION_IDS:
         dimension = dimensions[dimension_id]
         if not isinstance(dimension, Mapping):
@@ -526,12 +695,16 @@ def validate_prose_review(
                 f"prose review dimension {dimension_id}.status must be pass or fail"
             )
         statuses.append(status)
-        _validate_excerpt_array(
+        dimension_excerpts = _validate_excerpt_array(
             dimension.get("evidence_excerpts"),
             essay=essay,
             field=f"prose review dimension {dimension_id}.evidence_excerpts",
             allow_empty=status == "fail",
         )
+        if status == "pass":
+            passing_excerpt_sets.append(
+                (dimension_id, tuple(sorted(dimension_excerpts)))
+            )
         repair_target = dimension.get("repair_target")
         if status == "pass" and repair_target is not None:
             raise ValueError(
@@ -543,6 +716,26 @@ def validate_prose_review(
             raise ValueError(
                 f"failing prose review dimension {dimension_id} needs a repair_target"
             )
+    excerpt_signatures = [signature for _, signature in passing_excerpt_sets]
+    if len(excerpt_signatures) != len(set(excerpt_signatures)):
+        raise ValueError(
+            "passing prose review dimensions need distinct evidence_excerpt "
+            "mappings instead of a reused generic proof"
+        )
+    excerpt_use: dict[str, int] = {}
+    for _, excerpts in passing_excerpt_sets:
+        for excerpt in excerpts:
+            excerpt_use[excerpt] = excerpt_use.get(excerpt, 0) + 1
+    if excerpt_use and max(excerpt_use.values()) > 2:
+        raise ValueError(
+            "one evidence_excerpt cannot be reused across more than two "
+            "prose review dimensions"
+        )
+    minimum_distinct = (len(passing_excerpt_sets) * 2 + 2) // 3
+    if len(excerpt_use) < minimum_distinct:
+        raise ValueError(
+            "passing prose review dimensions need more distinct evidence_excerpts"
+        )
     expected_overall = "pass" if all(item == "pass" for item in statuses) else "fail"
     if review.get("overall_status") != expected_overall:
         raise ValueError(
@@ -554,6 +747,8 @@ def validate_prose_review(
 
 __all__ = (
     "ARTICLE_TYPES",
+    "PROSE_TECHNIQUE_IDS",
+    "PROSE_TECHNIQUE_ROUTES",
     "PROSE_REVIEW_DIMENSION_IDS",
     "validate_prose_review",
     "validate_reader_projection",
