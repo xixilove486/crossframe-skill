@@ -59,6 +59,7 @@ class ProMaxProseDocumentationTests(unittest.TestCase):
 
     def test_runtime_routes_reader_projection_and_prose_review(self) -> None:
         runtime = read("protocols/promax-runtime-protocol.md")
+        prose = read("protocols/promax-prose-protocol.md")
         routing = read("references/runtime-routing-map.md")
         repair = read("protocols/promax-repair-loop-protocol.md")
         for text in (runtime, routing):
@@ -67,6 +68,7 @@ class ProMaxProseDocumentationTests(unittest.TestCase):
             self.assertIn("prose_fidelity_auditor", text)
             self.assertIn("自动选择", text)
         self.assertIn("正文表达或声口失败", repair)
+        self.assertIn("宿主模型风味独立性", prose)
         self.assertIn("P10", repair)
         self.assertIn("体裁、读者节拍或技法映射失败", repair)
         self.assertIn("P9", repair)

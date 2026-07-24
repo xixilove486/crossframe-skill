@@ -88,6 +88,7 @@ P9 在原有 package coverage 之外冻结 `reader_projection`：
 - 立场与建议一致性；
 - 撤回与行动边界；
 - 固定声口；
+- 宿主模型风味独立性；
 - 审计泄漏。
 
 每个通过判断都要给出正文中的实际短摘。review 必须绑定当前 essay、position 与 output plan 的 SHA-256；陈旧散列、正文中不存在的短摘、漏掉 reader beat 或维度自相矛盾都视为失败。
