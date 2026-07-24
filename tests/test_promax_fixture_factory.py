@@ -383,7 +383,9 @@ class ProMaxFixtureFactoryTests(unittest.TestCase):
         essay = deliverables["promax-essay.md"]
         for machine_prefix in ("V8-CANON", "CLAIM-", "OPTION-"):
             self.assertNotIn(machine_prefix, essay)
-        self.assertIn("bounded transfer mechanism", essay)
+        first_prose_paragraph = essay.split("\n\n")[1]
+        self.assertNotIn("bounded transfer mechanism", first_prose_paragraph)
+        self.assertIn("转移机制是当前较强的条件解释", essay)
 
         disposition = fixture_factory.build_concept_disposition(
             ROOT,

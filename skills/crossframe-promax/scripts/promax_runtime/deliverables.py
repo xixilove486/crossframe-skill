@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
-from typing import Mapping, Sequence
+from typing import Iterable, Mapping, Sequence
 
 from .jsonio import sha256_json
 from .paths import validate_relative_artifact_path
@@ -576,11 +576,205 @@ _READER_MACHINE_IDENTIFIER_RE = re.compile(
     r"(?:POSITION|RECOMMENDATION)-LOCK)"
     r"(?![A-Za-z0-9_.-])"
 )
+_READER_MACHINE_KEY_PATTERN = (
+    r"(?:"
+    r"schema_id|schema_version|framework_version|skill_release|run_id|run_nonce|"
+    r"request_sha256|source_snapshot_sha256|manifest_sha256|essay_sha256|"
+    r"position_sha256|output_plan_sha256|claim_id|concept_id|mechanism_id|"
+    r"option_id|section_id|beat_id|retrieval_id|evidence_ref|evidence_refs|"
+    r"validator_id|validation_attempt|overall_status|repair_target|"
+    r"position|judgment_strength|preferred_option_id|second_option_id"
+    r")"
+)
 _READER_RAW_KEY_VALUE_RE = re.compile(
-    r"^(?:[-*+]\s*)?[A-Za-z_][A-Za-z0-9_.-]*\s*[:：=]\s*\S",
-    re.MULTILINE,
+    rf"(?:"
+    rf"^[ \t]*(?:>[ \t]*)?(?:[-*+][ \t]*)?(?:[{{\[,][ \t]*)?"
+    rf"[\"']?{_READER_MACHINE_KEY_PATTERN}[\"']?[ \t]*[:：=][ \t]*\S|"
+    rf"[\"']{_READER_MACHINE_KEY_PATTERN}[\"'][ \t]*:[ \t]*\S"
+    rf")",
+    re.IGNORECASE | re.MULTILINE,
 )
 _READER_RUN_SCAFFOLDING_MARKERS = ("在本题中", "本轮中", "本运行中")
+_PUBLIC_READER_ARTIFACTS = frozenset(
+    {
+        "promax-dossier.md",
+        "promax-concept-atlas.md",
+        "promax-case-and-countercase.md",
+        "promax-essay.md",
+    }
+)
+_READER_CONTROL_PLANE_RE = re.compile(
+    r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])|"
+    r"\bcrossframe-promax-artifact-checker/\d+\b|"
+    r"\bpromax-(?:prose-review|run-contract|output-plan|artifact-manifest)\.json\b",
+    re.IGNORECASE,
+)
+_AUDIT_DIMENSION_LABELS = (
+    "现实入口",
+    "证据绑定",
+    "最强反方",
+    "公平比较",
+    "固定声口",
+    "泄漏检查",
+    "模型风味",
+    "审校维度",
+)
+_CORE_FIDELITY_CONTRADICTION_RE = re.compile(
+    r"(?:意味着|等同于|就是|一经命名就|无需证据|无须证据|不需要证据)"
+    r"[^。！？!?]{0,36}(?:永远固定|永久固定|永久不变|直接证明|自动证明|"
+    r"必然为真|常识补齐)|"
+    r"任何[^。！？!?]{0,20}(?:都可|都能|均可|均能)[^。！？!?]{0,12}"
+    r"(?:直接证明|自动证明|填满|补齐)",
+)
+_CORE_FIDELITY_DISMISSAL_RE = re.compile(
+    r"(?:只是|仅是|不过是)[^。！？!?]{0,16}(?:装饰|口号|摆设)|"
+    r"(?:任意|随意)[^。！？!?]{0,16}(?:决定|定义|改写)|"
+    r"谁[^。！？!?]{0,10}(?:大|强|响)[^。！？!?]{0,10}谁"
+    r"[^。！？!?]{0,12}(?:决定|定义)|"
+    r"(?:永久|静态|固定)[^。！？!?]{0,5}(?:标签|身份)",
+)
+_COUNTER_DISMISSAL_RE = re.compile(
+    r"(?:反方|反对意见|异议)[^。！？!?]{0,18}"
+    r"(?:不值一提|根本不存在|并不存在)|"
+    r"(?:没有任何|不存在任何)[^。！？!?]{0,18}(?:观点|意见|异议)"
+    r"[^。！？!?]{0,12}(?:构成|足以成为)[^。！？!?]{0,6}(?:反方|异议)|"
+    r"(?:反方|反对意见|异议)[^。！？!?]{0,18}"
+    r"(?:无需|无须|不需要|不必)[^。！？!?]{0,12}"
+    r"(?:成立条件|证据|检验|回应|撤回路径)|"
+    r"(?:无需|无须|不需要|不必)[^。！？!?]{0,12}"
+    r"(?:撤回路径|回应反方|反方成立|成立条件)",
+)
+_NUMERIC_CLAIM_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"\d+(?:\.\d+)?%|\d+\.\d+|\d{2,}|"
+    r"\d(?=\s*(?:人|名|例|起|件|次|倍|项|条|天|日|月|年|小时|分钟|秒|"
+    r"元|万元|亿元|吨|克|千克|公里|米|厘米|级|层|种|类|个|票|席|家|"
+    r"所|只|头|匹|成))"
+    r")(?![A-Za-z0-9])"
+)
+_HYPOTHETICAL_NUMBER_CUES = (
+    "假设",
+    "假定",
+    "假想",
+    "例如",
+    "举例",
+    "示意",
+    "设为",
+    "若为",
+    "如果是",
+    "区间",
+)
+_COUNTER_STRENGTH_CUES = (
+    "最强的反对",
+    "最强反方",
+    "最有力的反对",
+    "最有力的异议",
+    "真正有力的反方",
+    "strongest counter",
+    "strongest objection",
+)
+_WITHDRAWAL_CUES = (
+    "撤回",
+    "收回判断",
+    "改判",
+    "降低判断",
+    "降级判断",
+    "停止支持",
+    "withdraw",
+)
+_ACTION_BOUNDARY_CUES = (
+    "不构成现实授权",
+    "不授权现实行动",
+    "不是现实授权",
+    "不是把分析误写成现实授权",
+    "不能代替现实决定",
+    "另行授权",
+    "separate authorization",
+    "no action is authorized",
+)
+_FAIR_COMPARISON_CUES = (
+    "同一组",
+    "同一标准",
+    "同一尺度",
+    "同一维度",
+    "相同标准",
+    "相同尺度",
+    "相同条件",
+    "公平比较",
+    "对照",
+    "相比",
+)
+_OPTION_KIND_READER_CUES = {
+    "maintain_status_quo": ("维持现状", "保持现状", "不改变", "status quo"),
+    "active_action": ("直接行动", "积极行动", "扩大行动", "介入", "active"),
+    "delayed_action": ("延后", "暂缓", "延期", "等待", "delay"),
+    "probe_action": ("探查", "试点", "试行", "小范围", "probe"),
+    "exit_or_transfer": ("退出", "转移", "移交", "exit", "transfer"),
+    "no_action": ("不行动", "不采取行动", "放弃行动", "no action"),
+}
+_SUPPORT_POSITION_CUES = (
+    "支持",
+    "赞成",
+    "应当",
+    "应该",
+    "更合理",
+    "最合理",
+    "较强",
+    "倾向",
+    "成立",
+    "favor",
+    "support",
+)
+_REJECT_POSITION_CUES = (
+    "反对",
+    "不支持",
+    "不赞成",
+    "不成立",
+    "最不合理",
+    "恰恰相反",
+    "reject",
+    "oppose",
+)
+_JUDGMENT_CUES = (
+    "我的判断",
+    "中心判断",
+    "结论是",
+    "当前应",
+    "当前较强",
+    "当前更",
+    "最合理解释",
+    "不成立",
+    "应当",
+    "不应当",
+    "支持",
+    "反对",
+    "主张",
+)
+_EVIDENCE_CUES = (
+    "证据",
+    "材料",
+    "来源",
+    "观察",
+    "数据",
+    "事实",
+    "显示",
+    "研究",
+)
+_GENERIC_READER_ANCHOR_TERMS = frozenset(
+    {
+        "结构",
+        "关系",
+        "条件",
+        "问题",
+        "当前",
+        "对象",
+        "概念",
+        "机制",
+        "状态",
+        "行动",
+        "证据",
+    }
+)
 _LOCK_METADATA_FIELDS = frozenset(
     {
         "schema_id",
@@ -628,6 +822,476 @@ def _validate_reader_dossier_lock(
         )
 
 
+def _reader_prose_paragraphs(essay: str) -> list[str]:
+    paragraphs: list[str] = []
+    for block in re.split(r"(?:\r\n?|\n)[ \t]*(?:\r\n?|\n)+", essay):
+        lines = [
+            line.strip()
+            for line in block.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if lines:
+            paragraphs.append(" ".join(lines))
+    return paragraphs
+
+
+def _reject_reader_control_plane_leakage(essay: str) -> None:
+    if _READER_CONTROL_PLANE_RE.search(essay) is not None:
+        raise ValueError(
+            "reader-first essay contains a forbidden control-plane marker"
+        )
+    for paragraph in _reader_prose_paragraphs(essay):
+        dimension_hits = sum(
+            label in paragraph for label in _AUDIT_DIMENSION_LABELS
+        )
+        if (
+            dimension_hits >= 4
+            or (
+                ("审校记录" in paragraph or "审校报告" in paragraph)
+                and ("通过" in paragraph or "pass" in paragraph.casefold())
+            )
+        ):
+            raise ValueError(
+                "reader-first essay leaks prose-review audit scaffolding"
+            )
+
+
+def _validate_reader_entry(
+    *,
+    essay: str,
+    registry: Mapping[str, Mapping[str, object]],
+    core_ids: set[str],
+    framework_terms: Iterable[str] = (),
+) -> list[str]:
+    paragraphs = _reader_prose_paragraphs(essay)
+    if not paragraphs:
+        raise ValueError("reader-first essay has no reader prose paragraph")
+    first = paragraphs[0]
+    if len(re.findall(r"[A-Za-z0-9\u3400-\u9fff]", first)) < 12:
+        raise ValueError("reader-first essay reality entry is not substantive")
+    forbidden_terms = {
+        "CrossFrame",
+        "ProMax",
+        "v8",
+        "V8",
+        "机制",
+        "mechanism",
+        "framework",
+    }
+    forbidden_terms.update(term for term in framework_terms if term)
+    forbidden_terms.update(
+        str(registry[concept_id].get("authoritative_name_zh", ""))
+        for concept_id in core_ids
+        if concept_id in registry
+    )
+    if any(term and term in first for term in forbidden_terms):
+        raise ValueError(
+            "reader-first essay first paragraph must use a reality entry "
+            "before framework terminology"
+        )
+    return paragraphs
+
+
+def _validate_core_concept_translation(
+    *,
+    paragraphs: Sequence[str],
+    registry: Mapping[str, Mapping[str, object]],
+    core_ids: set[str],
+    reader_projection: Mapping[str, object],
+) -> None:
+    bindings = _mapping_items(
+        reader_projection.get("core_concept_bindings"),
+        field="reader_projection.core_concept_bindings",
+    )
+    bindings_by_id = {
+        str(binding.get("concept_id")): binding
+        for binding in bindings
+    }
+    if set(bindings_by_id) != core_ids or len(bindings_by_id) != len(bindings):
+        raise ValueError(
+            "reader_projection core_concept_bindings do not exactly close "
+            "the core concepts"
+        )
+    for concept_id in core_ids:
+        record = registry[concept_id]
+        name = str(record.get("authoritative_name_zh", ""))
+        scoped = [paragraph for paragraph in paragraphs if name in paragraph]
+        if not scoped:
+            raise ValueError(
+                f"reader-first essay omits authoritative name for core concept {concept_id}"
+            )
+        joined = "\n".join(scoped)
+        contradiction_matches = [
+            match
+            for pattern in (
+                _CORE_FIDELITY_CONTRADICTION_RE,
+                _CORE_FIDELITY_DISMISSAL_RE,
+            )
+            for match in pattern.finditer(joined)
+            if not _contains_any(
+                joined[max(0, match.start() - 8) : match.start()],
+                ("不", "非", "拒绝", "避免", "不能", "并非"),
+            )
+        ]
+        if contradiction_matches:
+            raise ValueError(
+                f"reader-first essay contradicts the v8 meaning of core concept "
+                f"{concept_id}"
+            )
+        anchor_terms = _text_items(
+            bindings_by_id[concept_id].get("reader_anchor_terms"),
+            field=(
+                f"reader_projection core concept {concept_id}.reader_anchor_terms"
+            ),
+        )
+        if not 2 <= len(anchor_terms) <= 4:
+            raise ValueError(
+                f"reader_projection core concept {concept_id} needs two to four "
+                "reader anchor terms"
+            )
+        source_support_items = {
+            str(record.get("definition", "")),
+            *(
+                _text_items(
+                    record.get("allowed_inferences"),
+                    field=f"registry {concept_id}.allowed_inferences",
+                    allow_empty=True,
+                )
+                if isinstance(record.get("allowed_inferences"), Sequence)
+                and not isinstance(
+                    record.get("allowed_inferences"),
+                    (str, bytes),
+                )
+                else []
+            ),
+        }
+        source_text = "\n".join(source_support_items)
+        source_support_spans = _text_items(
+            bindings_by_id[concept_id].get("source_support_spans"),
+            field=(
+                f"reader_projection core concept {concept_id}.source_support_spans"
+            ),
+        )
+        if not 1 <= len(source_support_spans) <= 3 or any(
+            span not in source_support_items for span in source_support_spans
+        ):
+            raise ValueError(
+                f"reader_projection core concept {concept_id} has a support span "
+                "outside its v8 definition or allowed inferences"
+            )
+        misuse_source_items = {
+            *(
+                    _text_items(
+                        record.get("forbidden_substitutions_or_generalizations"),
+                        field=f"registry {concept_id}.forbidden substitutions",
+                        allow_empty=True,
+                    )
+                    if isinstance(
+                        record.get("forbidden_substitutions_or_generalizations"),
+                        Sequence,
+                    )
+                    and not isinstance(
+                        record.get("forbidden_substitutions_or_generalizations"),
+                        (str, bytes),
+                    )
+                    else []
+                ),
+            *(
+                    _text_items(
+                        record.get("common_misuses"),
+                        field=f"registry {concept_id}.common misuses",
+                        allow_empty=True,
+                    )
+                    if isinstance(record.get("common_misuses"), Sequence)
+                    and not isinstance(
+                        record.get("common_misuses"),
+                        (str, bytes),
+                    )
+                    else []
+                ),
+        }
+        source_misuse_spans = _text_items(
+            bindings_by_id[concept_id].get("source_misuse_spans"),
+            field=(
+                f"reader_projection core concept {concept_id}.source_misuse_spans"
+            ),
+            allow_empty=True,
+        )
+        if any(span not in misuse_source_items for span in source_misuse_spans):
+            raise ValueError(
+                f"reader_projection core concept {concept_id} has a misuse span "
+                "outside its v8 misuse boundaries"
+            )
+        reader_explanation = bindings_by_id[concept_id].get(
+            "reader_explanation"
+        )
+        if (
+            not isinstance(reader_explanation, str)
+            or not reader_explanation.strip()
+            or reader_explanation not in joined
+            or name not in reader_explanation
+        ):
+            raise ValueError(
+                f"reader-first essay does not carry the locked natural explanation "
+                f"for core concept {concept_id}"
+            )
+        for anchor in anchor_terms:
+            if anchor in _GENERIC_READER_ANCHOR_TERMS:
+                raise ValueError(
+                    f"reader_projection core concept {concept_id} uses a generic "
+                    f"reader anchor term: {anchor}"
+                )
+            if anchor not in source_text:
+                raise ValueError(
+                    f"reader_projection core concept {concept_id} anchor is not "
+                    f"source-extractive: {anchor}"
+                )
+            if anchor not in reader_explanation:
+                raise ValueError(
+                    f"reader-first essay core concept {concept_id} omits source "
+                    f"anchor term from its locked explanation: {anchor}"
+                )
+        if not any(
+            _contains_semantic_relation_cue(paragraph)
+            or _contains_any(
+                paragraph,
+                (
+                    "让我们",
+                    "区分",
+                    "说明",
+                    "揭示",
+                    "显示",
+                    "意味着",
+                    "关系",
+                    "后果",
+                    "代价",
+                ),
+            )
+            for paragraph in scoped
+        ):
+            raise ValueError(
+                f"reader-first essay core concept {concept_id} is named without "
+                "a reality relation or consequence"
+            )
+
+
+def _validate_reader_argument_closure(
+    *,
+    essay: str,
+    recommendation_required: bool,
+) -> None:
+    folded = essay.casefold()
+    if not any(cue.casefold() in folded for cue in _JUDGMENT_CUES):
+        raise ValueError(
+            "reader-first essay does not expose a recoverable center judgment"
+        )
+    if not any(cue.casefold() in folded for cue in _COUNTER_STRENGTH_CUES):
+        raise ValueError(
+            "reader-first essay does not reconstruct the strongest counterposition"
+        )
+    if _COUNTER_DISMISSAL_RE.search(essay) is not None:
+        raise ValueError(
+            "reader-first essay dismisses the counterposition or withdrawal path"
+        )
+    if not any(cue.casefold() in folded for cue in _WITHDRAWAL_CUES):
+        raise ValueError(
+            "reader-first essay does not state a recoverable withdrawal condition"
+        )
+    if not any(cue.casefold() in folded for cue in _ACTION_BOUNDARY_CUES):
+        raise ValueError(
+            "reader-first essay does not state its action ceiling"
+        )
+    if not any(cue.casefold() in folded for cue in _FAIR_COMPARISON_CUES):
+        raise ValueError(
+            "reader-first essay does not compare alternatives on the same dimension"
+        )
+    if recommendation_required:
+        preferred_cues = ("首选", "优先", "更稳妥", "先做", "先以", "先从")
+        second_cues = ("次选", "第二", "再根据", "再决定", "切换", "退出", "退回")
+        if not any(cue in essay for cue in preferred_cues) or not any(
+            cue in essay for cue in second_cues
+        ):
+            raise ValueError(
+                "reader-first essay does not expose both preferred and runner-up "
+                "recommendation paths"
+            )
+
+
+def _validate_stance_projection(
+    *,
+    reader_projection: Mapping[str, object],
+    essay: str,
+    position: Mapping[str, object],
+    recommendation: Mapping[str, object],
+    recommendation_required: bool,
+) -> None:
+    stance = reader_projection.get("stance_projection")
+    if not isinstance(stance, Mapping):
+        raise ValueError("reader_projection has no locked stance projection")
+    if reader_projection.get("thesis_claim_id") != position.get("central_claim_id"):
+        raise ValueError("reader thesis claim differs from the P8 central claim")
+    if stance.get("relation_to_proposition") != position.get(
+        "relation_to_proposition"
+    ):
+        raise ValueError("reader stance projection differs from the P8 relation")
+    if stance.get("judgment_strength") != position.get("judgment_strength"):
+        raise ValueError("reader stance projection differs from P8 judgment strength")
+    center_thesis = stance.get("center_thesis_text")
+    withdrawal_text = stance.get("withdrawal_text")
+    action_ceiling_text = stance.get("action_ceiling_text")
+    for field, value in (
+        ("center_thesis_text", center_thesis),
+        ("withdrawal_text", withdrawal_text),
+        ("action_ceiling_text", action_ceiling_text),
+    ):
+        if not isinstance(value, str) or not value.strip() or value not in essay:
+            raise ValueError(
+                f"reader stance projection {field} is absent from the essay"
+            )
+    folded_thesis = str(center_thesis).casefold()
+    relation = stance.get("relation_to_proposition")
+    if relation == "supports":
+        if not _contains_any(folded_thesis, _SUPPORT_POSITION_CUES) or _contains_any(
+            folded_thesis,
+            _REJECT_POSITION_CUES,
+        ):
+            raise ValueError("reader center thesis reverses the supporting P8 stance")
+    elif relation == "rejects":
+        if not _contains_any(folded_thesis, _REJECT_POSITION_CUES):
+            raise ValueError("reader center thesis omits the rejecting P8 stance")
+    elif relation == "mixed" and not _contains_any(
+        folded_thesis,
+        ("一方面", "另一方面", "但", "同时", "mixed"),
+    ):
+        raise ValueError("reader center thesis does not expose the mixed P8 stance")
+    elif relation == "indeterminate" and not _contains_any(
+        folded_thesis,
+        ("无法判断", "不足以判断", "尚不能", "不确定", "indeterminate"),
+    ):
+        raise ValueError(
+            "reader center thesis does not expose the indeterminate P8 stance"
+        )
+    if not _contains_any(str(withdrawal_text), _WITHDRAWAL_CUES):
+        raise ValueError("reader stance withdrawal_text has no withdrawal condition")
+    if not _contains_any(str(action_ceiling_text), _ACTION_BOUNDARY_CUES):
+        raise ValueError("reader stance action_ceiling_text has no action ceiling")
+
+    option_fields = (
+        "preferred_option_id",
+        "preferred_option_kind",
+        "preferred_option_text",
+        "second_option_id",
+        "second_option_kind",
+        "second_option_text",
+    )
+    if not recommendation_required:
+        if any(stance.get(field) is not None for field in option_fields):
+            raise ValueError(
+                "reader stance projection fabricates a recommendation path"
+            )
+        return
+    if not isinstance(recommendation, Mapping) or recommendation.get("status") == "not_requested":
+        raise ValueError("reader stance projection requires a locked recommendation")
+    options = _mapping_items(recommendation.get("options"), field="recommendation.options")
+    options_by_id = {
+        str(option.get("option_id")): option
+        for option in options
+        if isinstance(option.get("option_id"), str)
+    }
+    for prefix, ranking_cues in (
+        ("preferred", ("首选", "优先", "先做", "先以", "更稳妥")),
+        ("second", ("次选", "第二", "再根据", "再决定", "随后", "切换")),
+    ):
+        option_id = stance.get(f"{prefix}_option_id")
+        option_kind = stance.get(f"{prefix}_option_kind")
+        option_text = stance.get(f"{prefix}_option_text")
+        expected_id = recommendation.get(f"{prefix}_option_id")
+        if option_id != expected_id:
+            raise ValueError(
+                f"reader stance {prefix} option differs from the P8 recommendation"
+            )
+        option = options_by_id.get(str(option_id))
+        if option is None or option_kind != option.get("option_kind"):
+            raise ValueError(
+                f"reader stance {prefix} option kind differs from the P8 recommendation"
+            )
+        if not isinstance(option_text, str) or option_text not in essay:
+            raise ValueError(
+                f"reader stance {prefix} option text is absent from the essay"
+            )
+        if not _contains_any(option_text, ranking_cues):
+            raise ValueError(
+                f"reader stance {prefix} option text omits its ranking role"
+            )
+        kind_cues = _OPTION_KIND_READER_CUES[str(option_kind)]
+        if not _contains_any(option_text.casefold(), kind_cues):
+            raise ValueError(
+                f"reader stance {prefix} option text does not identify its option kind"
+            )
+
+
+def _numeric_claim_tokens(text: str) -> set[str]:
+    return {
+        match.group(0).replace(",", "")
+        for match in _NUMERIC_CLAIM_RE.finditer(text)
+    }
+
+
+def _mask_nonclaim_numeric_surfaces(text: str) -> str:
+    masked = text
+    patterns = (
+        re.compile(
+            r"https?://[^\s)\]}>，。；！？、]+",
+            re.IGNORECASE,
+        ),
+        re.compile(r"\[(?:\^)?\d+\]"),
+        re.compile(r"(?m)^(\s*)\d+[.)、]\s+"),
+    )
+    for pattern in patterns:
+        masked = pattern.sub(
+            lambda match: " " * len(match.group(0)),
+            masked,
+        )
+    return masked
+
+
+def _number_is_explicitly_hypothetical(
+    essay: str,
+    *,
+    start: int,
+) -> bool:
+    boundary = max(
+        essay.rfind(marker, 0, start)
+        for marker in ("。", "！", "？", "!", "?", "\n")
+    )
+    context = essay[boundary + 1 : start]
+    return any(cue in context for cue in _HYPOTHETICAL_NUMBER_CUES)
+
+
+def _validate_numeric_provenance(
+    *,
+    essay: str,
+    upstream_documents: Sequence[object],
+) -> None:
+    upstream_text = "\n".join(
+        leaf
+        for document in upstream_documents
+        for leaf in _string_leaves(document)
+    )
+    allowed = _numeric_claim_tokens(upstream_text)
+    visible_claim_surface = _mask_nonclaim_numeric_surfaces(essay)
+    for match in _NUMERIC_CLAIM_RE.finditer(visible_claim_surface):
+        token = match.group(0).replace(",", "")
+        if token in allowed or _number_is_explicitly_hypothetical(
+            essay,
+            start=match.start(),
+        ):
+            continue
+        raise ValueError(
+            f"reader-first essay contains unsupported numeric claim: {match.group(0)}"
+        )
+
+
 def validate_reader_documents(
     *,
     reader_projection: Mapping[str, object],
@@ -639,6 +1303,8 @@ def validate_reader_documents(
     position: Mapping[str, object],
     recommendation: Mapping[str, object],
     recommendation_required: bool,
+    claim_path_graph: Mapping[str, object] | None = None,
+    retrieval_ledger: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Validate reader-first prose without changing the legacy bundle path."""
 
@@ -653,6 +1319,7 @@ def validate_reader_documents(
         raise ValueError("reader-first essay contains a forbidden machine identifier")
     if _READER_RAW_KEY_VALUE_RE.search(essay) is not None:
         raise ValueError("reader-first essay contains a forbidden raw key/value ledger")
+    _reject_reader_control_plane_leakage(essay)
     scaffolding_count = sum(
         essay.count(marker) for marker in _READER_RUN_SCAFFOLDING_MARKERS
     )
@@ -684,6 +1351,33 @@ def validate_reader_documents(
             field="reader_projection.atlas_only_concept_ids",
             allow_empty=True,
         )
+    )
+    first_paragraph_framework_terms: set[str] = set()
+    for concept_id in core_ids:
+        record = registry.get(concept_id, {})
+        wire_tokens = record.get("authoritative_wire_tokens")
+        if isinstance(wire_tokens, Sequence) and not isinstance(
+            wire_tokens,
+            (str, bytes),
+        ):
+            first_paragraph_framework_terms.update(
+                token
+                for token in wire_tokens
+                if isinstance(token, str) and token.strip()
+            )
+    if claim_path_graph is not None:
+        for mechanism in _mapping_items(
+            claim_path_graph.get("mechanisms"),
+            field="claim_path_graph.mechanisms",
+        ):
+            label = mechanism.get("label")
+            if isinstance(label, str) and label.strip():
+                first_paragraph_framework_terms.add(label.strip())
+    paragraphs = _validate_reader_entry(
+        essay=essay,
+        registry=registry,
+        core_ids=core_ids,
+        framework_terms=first_paragraph_framework_terms,
     )
 
     for disposition in applied:
@@ -757,6 +1451,56 @@ def validate_reader_documents(
         if not isinstance(name, str) or name not in essay:
             raise ValueError(
                 f"reader-first essay omits authoritative name for core concept {concept_id}"
+            )
+    _validate_core_concept_translation(
+        paragraphs=paragraphs,
+        registry=registry,
+        core_ids=core_ids,
+        reader_projection=reader_projection,
+    )
+    _validate_stance_projection(
+        reader_projection=reader_projection,
+        essay=essay,
+        position=position,
+        recommendation=recommendation,
+        recommendation_required=recommendation_required,
+    )
+    _validate_reader_argument_closure(
+        essay=essay,
+        recommendation_required=recommendation_required,
+    )
+    if claim_path_graph is not None:
+        applied_records = [
+            registry[concept_id]
+            for concept_id in applied_ids
+            if concept_id in registry
+        ]
+        _validate_numeric_provenance(
+            essay=essay,
+            upstream_documents=(
+                position,
+                recommendation,
+                claim_path_graph,
+                retrieval_ledger or {},
+                applied_records,
+                applied,
+            ),
+        )
+        claims = _mapping_items(
+            claim_path_graph.get("claims"),
+            field="claim_path_graph.claims",
+        )
+        if any(
+            _text_items(
+                claim.get("evidence_refs"),
+                field=f"claim {claim.get('claim_id')}.evidence_refs",
+                allow_empty=True,
+            )
+            for claim in claims
+        ) and not any(cue in essay for cue in _EVIDENCE_CUES):
+            raise ValueError(
+                "reader-first essay does not expose the evidence boundary "
+                "for its major claim"
             )
 
     _validate_reader_dossier_lock(position, dossier=dossier, artifact="position")
@@ -1286,6 +2030,10 @@ def validate_output_bundle(
     required_artifacts = set(
         _text_items(plan.get("required_artifacts"), field="output_plan.required_artifacts")
     )
+    if schema_version == 2 and required_artifacts != _PUBLIC_READER_ARTIFACTS:
+        raise ValueError(
+            "current output plan must expose exactly the four public reader artifacts"
+        )
     if not required_artifacts.issubset(content) or not required_artifacts.issubset(current):
         raise ValueError("locked output plan required artifacts are not all current and delivered")
     sections = _mapping_items(plan.get("sections"), field="output_plan.sections")
@@ -1360,11 +2108,20 @@ def validate_output_bundle(
 
     claims = _mapping_items(claim_path_graph.get("claims"), field="claim_path_graph.claims")
     claim_index: dict[str, Mapping[str, object]] = {}
+    claim_evidence_index: dict[str, set[str]] = {}
     for claim in claims:
         claim_id = claim.get("claim_id")
         if not isinstance(claim_id, str) or claim_id in claim_index:
             raise ValueError("claim path graph claim IDs must be unique")
         claim_index[claim_id] = claim
+        if schema_version == 2:
+            claim_evidence_index[claim_id] = set(
+                _text_items(
+                    claim.get("evidence_refs"),
+                    field=f"claim {claim_id}.evidence_refs",
+                    allow_empty=True,
+                )
+            )
     if set(claim_index) != plan_claim_ids:
         raise ValueError("locked output plan and claim graph are not bidirectionally closed")
 
@@ -1431,6 +2188,16 @@ def validate_output_bundle(
         }
         if len(mechanism_ids) != len(mechanisms):
             raise ValueError("claim path graph mechanism IDs must be unique")
+        mechanism_claim_index = {
+            str(mechanism["mechanism_id"]): set(
+                _text_items(
+                    mechanism.get("claim_ids"),
+                    field=f"mechanism {mechanism.get('mechanism_id')}.claim_ids",
+                    allow_empty=True,
+                )
+            )
+            for mechanism in mechanisms
+        }
         validate_reader_projection(
             reader_projection,
             applied_concept_ids=covered_concepts,
@@ -1438,6 +2205,9 @@ def validate_output_bundle(
             claim_ids=set(claim_index),
             mechanism_ids=mechanism_ids,
             evidence_refs=_reader_evidence_refs(claims, retrieval_ledger),
+            required_evidence_refs=set().union(*claim_evidence_index.values()),
+            claim_evidence_refs=claim_evidence_index,
+            mechanism_claim_ids=mechanism_claim_index,
         )
         validate_reader_documents(
             reader_projection=reader_projection,
@@ -1449,6 +2219,8 @@ def validate_output_bundle(
             position=locked_position,
             recommendation=locked_recommendation,
             recommendation_required=required,
+            claim_path_graph=claim_path_graph,
+            retrieval_ledger=retrieval_ledger,
         )
     _validate_case_semantics(
         case_document=case_document,
@@ -1473,6 +2245,10 @@ def validate_output_bundle(
         "status": "valid",
         "anomalies": anomalies,
         "covered_concept_ids": covered_concepts,
+        "public_artifact_paths": _text_items(
+            plan.get("required_artifacts"),
+            field="output_plan.required_artifacts",
+        ),
         "manifest_sha256": normalized_manifest["manifest_sha256"],
         "position_sha256": sha256_json(locked_position),
         "output_plan_sha256": sha256_json(plan),
@@ -1580,12 +2356,32 @@ def validate_final_chat(
     links = _text_items(payload.get("artifact_links"), field="final_chat.artifact_links")
     if len(set(links)) != len(links):
         raise ValueError("final chat artifact links must be unique")
+    validated_public_paths = validated_output.get("public_artifact_paths")
+    if validated_public_paths is None:
+        expected_public_paths = _PUBLIC_READER_ARTIFACTS
+    else:
+        expected_public_paths = set(
+            _text_items(
+                validated_public_paths,
+                field="validated_output.public_artifact_paths",
+            )
+        )
+    if expected_public_paths != _PUBLIC_READER_ARTIFACTS:
+        raise ValueError(
+            "validated output public artifacts must be exactly the four "
+            "CrossFrame ProMax reader deliverables"
+        )
+    if set(links) != expected_public_paths or len(links) != len(
+        expected_public_paths
+    ):
+        raise ValueError(
+            "final chat artifact links must be exactly the four public "
+            "reader deliverables; internal prose review is forbidden"
+        )
     for path in links:
         validate_relative_artifact_path(path)
         if path not in current:
             raise ValueError(f"final chat links a stale or unknown artifact: {path}")
-    if "promax-essay.md" not in links:
-        raise ValueError("final chat must link the independent complete essay")
 
     normalized_ledger = _validate_continuation_structure(
         continuation_ledger,

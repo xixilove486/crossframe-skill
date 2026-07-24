@@ -239,11 +239,11 @@ class ProMaxV2AuthoringContractTests(unittest.TestCase):
         )
         self.assertEqual(
             authoring["template_map"]["promax-output-plan.locked.json"],
-            "templates/promax-output-plan-v1-output.md",
+            "templates/promax-output-plan-legacy-output.md",
         )
         legacy_template = (
             ROOT
-            / "skills/crossframe-promax/templates/promax-output-plan-v1-output.md"
+            / "skills/crossframe-promax/templates/promax-output-plan-legacy-output.md"
         ).read_text(encoding="utf-8")
         self.assertIn("`schema_version=1`", legacy_template)
         self.assertNotIn("reader_projection", legacy_template)
@@ -455,6 +455,31 @@ class ProMaxV2LineageTests(unittest.TestCase):
                     essay=essay,
                 )
 
+    def test_review_action_mappings_must_exactly_match_p9_order_and_membership(
+        self,
+    ) -> None:
+        for case in ("missing", "out_of_order", "duplicate"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp_dir:
+                authoring_dir = Path(temp_dir)
+                contract, essay = v2_semantic_authoring(authoring_dir)
+                review = load_json(authoring_dir / "promax-prose-review.json")
+                mappings = review["required_beat_mappings"]
+                if case == "missing":
+                    mappings[-1]["action_ids"].pop()
+                elif case == "out_of_order":
+                    mappings[0]["action_ids"].reverse()
+                else:
+                    mappings[-1]["action_ids"][-1] = mappings[0]["action_ids"][0]
+                write_json(authoring_dir / "promax-prose-review.json", review)
+
+                with self.assertRaisesRegex(ValueError, "action mapping differs from P9"):
+                    _load_semantic_json(
+                        authoring_dir,
+                        contract,
+                        generated_at="2026-07-25T11:08:00Z",
+                        essay=essay,
+                    )
+
 
 class ProMaxV2TemplateTests(unittest.TestCase):
     def test_output_plan_template_requires_reader_projection_contract(self) -> None:
@@ -471,8 +496,19 @@ class ProMaxV2TemplateTests(unittest.TestCase):
             "thesis_claim_id",
             "core_concept_ids",
             "atlas_only_concept_ids",
+            "core_concept_bindings",
+            "reader_anchor_terms",
             "selected_techniques",
             "reader_beats",
+            "action_ids",
+            "reality_entry",
+            "center_thesis",
+            "mechanism_progression",
+            "same_dimension_comparison",
+            "strongest_counterposition",
+            "explicit_position",
+            "withdrawal_action_boundary",
+            "resonant_close",
         ):
             self.assertIn(field, text)
         self.assertIn("固定顺序", text)
@@ -490,6 +526,7 @@ class ProMaxV2TemplateTests(unittest.TestCase):
             "position_sha256",
             "output_plan_sha256",
             "required_beat_mappings",
+            "action_ids",
             "evidence_excerpts",
             "reviewed_at",
             "reality_entry",

@@ -61,6 +61,37 @@ def v2_bundle() -> dict[str, object]:
         "thesis_claim_id": "CLAIM-CENTRAL",
         "core_concept_ids": ["V8-CANON-OBJECT"],
         "atlas_only_concept_ids": ["V8-CANON-BOUNDARY"],
+        "stance_projection": {
+            "relation_to_proposition": "supports",
+            "judgment_strength": "moderate",
+            "center_thesis_text": (
+                "当前结构最符合机制甲。对象边界要求先说明分析关系与排除范围，"
+                "再问清楚谁被纳入判断、谁承担代价；在现有材料下，"
+                "这足以支持一个可以撤回的小范围判断。"
+            ),
+            "preferred_option_id": "OPTION-PROBE",
+            "preferred_option_kind": "probe_action",
+            "preferred_option_text": "首选是先做可撤回的探查",
+            "second_option_id": "OPTION-ACTIVE",
+            "second_option_kind": "active_action",
+            "second_option_text": "次选是有限介入",
+            "withdrawal_text": "如果新的材料证明成本已经不可逆，就应停止并撤回",
+            "action_ceiling_text": "而不是把分析误写成现实授权",
+        },
+        "core_concept_bindings": [
+            {
+                "concept_id": "V8-CANON-OBJECT",
+                "reader_anchor_terms": ["分析关系", "排除范围"],
+                "source_support_spans": [
+                    "对象由被分析关系与排除范围共同界定。"
+                ],
+                "source_misuse_spans": [],
+                "reader_explanation": (
+                    "对象边界要求先说明分析关系与排除范围，"
+                    "再问清楚谁被纳入判断、谁承担代价"
+                ),
+            }
+        ],
         "selected_techniques": [
             {
                 "technique_id": "event-association",
@@ -90,14 +121,63 @@ def v2_bundle() -> dict[str, object]:
         "reader_beats": [
             {
                 "beat_id": "BEAT-ENTRY",
-                "function": "现实入口、中心命题与撤回边界。",
+                "function": "现实入口与中心命题。",
+                "action_ids": ["reality_entry", "center_thesis"],
                 "section_ids": ["SECTION-1"],
                 "claim_ids": ["CLAIM-CENTRAL"],
                 "mechanism_ids": ["MECH-1"],
                 "evidence_refs": ["EVIDENCE-1"],
                 "core_concept_ids": ["V8-CANON-OBJECT"],
-                "technique_ids": ["event-association", "layered-argument"],
-            }
+                "technique_ids": [
+                    "event-association",
+                    "layered-argument",
+                ],
+            },
+            {
+                "beat_id": "BEAT-MECHANISM",
+                "function": "机制递进与同维正反比较。",
+                "action_ids": [
+                    "mechanism_progression",
+                    "same_dimension_comparison",
+                ],
+                "section_ids": ["SECTION-1"],
+                "claim_ids": ["CLAIM-CENTRAL"],
+                "mechanism_ids": ["MECH-1", "MECH-2"],
+                "evidence_refs": ["EVIDENCE-1"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": [
+                    "layered-argument",
+                    "positive-negative-contrast",
+                ],
+            },
+            {
+                "beat_id": "BEAT-COUNTER",
+                "function": "最强反方与明确立场。",
+                "action_ids": [
+                    "strongest_counterposition",
+                    "explicit_position",
+                ],
+                "section_ids": ["SECTION-1"],
+                "claim_ids": ["CLAIM-CENTRAL"],
+                "mechanism_ids": ["MECH-2"],
+                "evidence_refs": ["EVIDENCE-1"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": ["positive-negative-contrast"],
+            },
+            {
+                "beat_id": "BEAT-CLOSE",
+                "function": "撤回条件、行动边界与余味结尾。",
+                "action_ids": [
+                    "withdrawal_action_boundary",
+                    "resonant_close",
+                ],
+                "section_ids": ["SECTION-1"],
+                "claim_ids": ["CLAIM-CENTRAL"],
+                "mechanism_ids": ["MECH-2"],
+                "evidence_refs": ["EVIDENCE-1"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": ["finishing-touch"],
+            },
         ],
     }
     bundle["claim_path_graph"]["claims"][0]["evidence_refs"] = ["EVIDENCE-1"]
@@ -114,7 +194,9 @@ def v2_bundle() -> dict[str, object]:
 
 现实中的冲突不是术语不够多，而是试验收益与退出成本落在不同的人身上。APP-INS | 这句自然表达保留了问题的摩擦。
 
-当前结构最符合机制甲。对象边界让我们先问清楚谁被纳入判断、谁承担代价；在现有材料下，这足以支持一个可以撤回的小范围判断。
+当前结构最符合机制甲。对象边界要求先说明分析关系与排除范围，再问清楚谁被纳入判断、谁承担代价；在现有材料下，这足以支持一个可以撤回的小范围判断。
+
+把机制甲与竞争解释放在同一组证据、风险和可逆性尺度上比较，首选是先做可撤回的探查；若探查不足，次选是有限介入。
 
 最强的反对意见是试验本身会扩大既有损害。如果新的材料证明成本已经不可逆，就应停止并撤回，而不是把分析误写成现实授权。
 
@@ -415,6 +497,26 @@ class ProMaxV2CanonicalCheckerTests(unittest.TestCase):
         self.assertNotIn(
             "promax-prose-review.json",
             result["final_chat_projection"]["artifact_links"],
+        )
+
+    def test_internal_review_cannot_be_linked_as_a_fifth_public_artifact(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir) / "run"
+            self.materialize(workspace)
+            final_chat_path = workspace / "promax-final-chat.json"
+            final_chat = json.loads(final_chat_path.read_text(encoding="utf-8"))
+            final_chat["artifact_links"].append("promax-prose-review.json")
+            _write_json(final_chat_path, final_chat)
+
+            result = self.validate(workspace)
+
+        self.assertEqual(result["overall_status"], "fail")
+        self.assertIsNone(result["final_chat_projection"])
+        self.assertIn(
+            "promax-final-chat.json",
+            {failure["artifact"] for failure in result["failures"]},
         )
 
     def test_missing_review_is_a_p10_prose_failure(self) -> None:

@@ -15,8 +15,8 @@
 | `P6` | 完成五向检索和连续两轮无实质新增的饱和记录 | `promax-retrieval-ledger.json` |
 | `P7` | 完成十二类攻击、最强反方和成对立场稳定性检查 | `promax-red-team-report.json` |
 | `P8` | 在攻击后冻结立场、行动上限和建议分支 | `promax-position.locked.json`、`promax-recommendation.locked.json` |
-| `P9` | 把全部 applied 概念、claims、案例、反例和判断映射到交付章节 | `promax-output-plan.locked.json` |
-| `P10` | 生成完整交付，清点当前字节并绑定续跑 | 四份长文、`promax-continuation-index.md`、manifest、continuation ledger |
+| `P9` | 完成 package coverage，自动选择体裁、核心概念、reader beats 与最多五张技法 | `promax-output-plan.locked.json` 的 `reader_projection` |
+| `P10` | 生成四份公开长文，完成独立成文审校，清点当前字节并绑定续跑 | 四份长文、`promax-prose-review.json`、`promax-continuation-index.md`、manifest、continuation ledger |
 | `P11` | 运行完整验证集；失败时建立最早受影响阶段的局部修复 | validator report；失败时另有 repair plan |
 
 ## 生成权限
@@ -43,10 +43,12 @@
 2. 每一阶段只读取 run contract 允许的冻结输入；角色交换协议固定为 `structured-artifacts-only`。
 3. `P4` 的 applied 概念集合必须与 `P9` 的 concept IDs 双向相等。
 4. `P5` 的全部 claim IDs 必须与 `P9` 双向相等；案例 ID、反例 ID 和判断 ID 也必须闭合。
-5. `P8` position 必须晚于 `P7`，recommendation 必须晚于 position，并绑定 position 的规范 JSON 散列。
-6. `P10` manifest 只登记当前分析工件；run contract、manifest 自身、continuation ledger、phase events、validator report、repair plan 和 final chat 不进入其 current inventory。
-7. continuation 必须绑定当前 manifest 和一个当前 `P10` 父工件；待交付路径不得已是 current artifact。
-8. 任一上游工件改变后，旧 manifest、旧 validator report 和其下游冻结工件立即失效。
+5. `P9` 自动选择 article type、固定 house voice、恰三个核心技法和零至两个辅助技法；`core_concept_ids` 与 `atlas_only_concept_ids` 互斥且完整覆盖 applied concepts。
+6. `P8` position 必须晚于 `P7`，recommendation 必须晚于 position，并绑定 position 的规范 JSON 散列。
+7. `P10` 的 `prose_fidelity_auditor` 自动选择从不参与立场形成，只审校 writer 已生成的 reader-facing essay；review 必须绑定当前 P8/P9 和 essay 字节。
+8. `P10` manifest 只登记当前分析工件；run contract、manifest 自身、continuation ledger、phase events、validator report、repair plan 和 final chat 不进入其 current inventory。
+9. continuation 必须绑定当前 manifest 和一个当前 `P10` 父工件；待交付路径不得已是 current artifact。
+10. 任一上游工件改变后，旧 prose review、旧 manifest、旧 validator report 和其下游冻结工件立即失效。
 
 ## 可执行入口
 

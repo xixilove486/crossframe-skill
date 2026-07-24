@@ -412,7 +412,7 @@ def _authoring_contract(
     }
     if _contract_schema_version(contract) == 1:
         template_map["promax-output-plan.locked.json"] = (
-            "templates/promax-output-plan-v1-output.md"
+            "templates/promax-output-plan-legacy-output.md"
         )
     else:
         template_map[PROSE_REVIEW_ARTIFACT] = (

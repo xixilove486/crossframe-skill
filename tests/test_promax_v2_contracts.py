@@ -22,12 +22,25 @@ from promax_runtime.artifacts import (  # noqa: E402
     validate_role_records,
 )
 from promax_runtime.jsonio import sha256_json  # noqa: E402
-from promax_runtime.prose import PROSE_TECHNIQUE_ROUTES  # noqa: E402
+from promax_runtime.prose import (  # noqa: E402
+    PROSE_TECHNIQUE_ROUTES,
+    validate_reader_projection,
+)
 from promax_runtime.schemas import validate_instance  # noqa: E402
 
 
 SOURCE_SHA256 = (
     "3186805a3e46e1b16948a4e51d08e7693a8e0dd04aa6b4604e796266d649936c"
+)
+READER_ACTION_IDS = (
+    "reality_entry",
+    "center_thesis",
+    "mechanism_progression",
+    "same_dimension_comparison",
+    "strongest_counterposition",
+    "explicit_position",
+    "withdrawal_action_boundary",
+    "resonant_close",
 )
 
 
@@ -442,6 +455,32 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                 "thesis_claim_id": "CLAIM-THESIS",
                 "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
                 "atlas_only_concept_ids": ["V8-CANON-AUXILIARY"],
+                "stance_projection": {
+                    "relation_to_proposition": "supports",
+                    "judgment_strength": "moderate",
+                    "center_thesis_text": "The evidence supports the thesis.",
+                    "preferred_option_id": None,
+                    "preferred_option_kind": None,
+                    "preferred_option_text": None,
+                    "second_option_id": None,
+                    "second_option_kind": None,
+                    "second_option_text": None,
+                    "withdrawal_text": "Withdraw if boundary evidence changes.",
+                    "action_ceiling_text": "This analysis does not authorize action.",
+                },
+                "core_concept_bindings": [
+                    {
+                        "concept_id": "V8-CANON-OBJECT-BOUNDARY",
+                        "reader_anchor_terms": ["object boundary", "decision scope"],
+                        "source_support_spans": [
+                            "object boundary and decision scope are jointly constrained"
+                        ],
+                        "source_misuse_spans": [],
+                        "reader_explanation": (
+                            "Object boundary and decision scope determine who bears the cost."
+                        ),
+                    }
+                ],
                 "selected_techniques": [
                     {
                         "technique_id": "narration-commentary",
@@ -465,6 +504,7 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                 "reader_beats": [
                     {
                         "beat_id": "BEAT-1",
+                        "action_ids": ["reality_entry", "center_thesis"],
                         "function": "建立现实问题与中心命题的依赖。",
                         "section_ids": ["SECTION-1"],
                         "claim_ids": ["CLAIM-THESIS"],
@@ -472,7 +512,49 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                         "evidence_refs": ["EVIDENCE-1"],
                         "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
                         "technique_ids": ["narration-commentary"],
-                    }
+                    },
+                    {
+                        "beat_id": "BEAT-2",
+                        "function": "Build mechanism and compare on one dimension.",
+                        "action_ids": [
+                            "mechanism_progression",
+                            "same_dimension_comparison",
+                        ],
+                        "section_ids": ["SECTION-1"],
+                        "claim_ids": ["CLAIM-THESIS"],
+                        "mechanism_ids": ["MECHANISM-1"],
+                        "evidence_refs": ["EVIDENCE-1"],
+                        "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
+                        "technique_ids": ["fine-carving"],
+                    },
+                    {
+                        "beat_id": "BEAT-3",
+                        "function": "Meet the strongest objection and state a position.",
+                        "action_ids": [
+                            "strongest_counterposition",
+                            "explicit_position",
+                        ],
+                        "section_ids": ["SECTION-1"],
+                        "claim_ids": ["CLAIM-THESIS"],
+                        "mechanism_ids": ["MECHANISM-1"],
+                        "evidence_refs": ["EVIDENCE-1"],
+                        "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
+                        "technique_ids": ["point-surface"],
+                    },
+                    {
+                        "beat_id": "BEAT-4",
+                        "function": "Set withdrawal boundaries and leave a resonant close.",
+                        "action_ids": [
+                            "withdrawal_action_boundary",
+                            "resonant_close",
+                        ],
+                        "section_ids": ["SECTION-1"],
+                        "claim_ids": ["CLAIM-THESIS"],
+                        "mechanism_ids": ["MECHANISM-1"],
+                        "evidence_refs": ["EVIDENCE-1"],
+                        "core_concept_ids": ["V8-CANON-OBJECT-BOUNDARY"],
+                        "technique_ids": ["point-surface"],
+                    },
                 ],
             },
             "required_artifacts": [
@@ -487,6 +569,43 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
         }
 
         validate_instance("promax-output-plan.schema.json", plan)
+
+        fifth_public_artifact = copy.deepcopy(plan)
+        fifth_public_artifact["required_artifacts"].append(
+            "promax-reader-appendix.md"
+        )
+        with self.assertRaises(ValidationError):
+            validate_instance(
+                "promax-output-plan.schema.json",
+                fifth_public_artifact,
+            )
+
+        def validate_projection(candidate: dict[str, object]) -> None:
+            validate_reader_projection(
+                candidate["reader_projection"],
+                applied_concept_ids=(
+                    "V8-CANON-OBJECT-BOUNDARY",
+                    "V8-CANON-AUXILIARY",
+                ),
+                section_ids=("SECTION-1",),
+                claim_ids=("CLAIM-THESIS",),
+                mechanism_ids=("MECHANISM-1",),
+                evidence_refs=("EVIDENCE-1",),
+            )
+
+        validate_projection(plan)
+
+        split_beats = copy.deepcopy(plan)
+        split_reader_beats = []
+        for beat in plan["reader_projection"]["reader_beats"]:
+            for action_id in beat["action_ids"]:
+                split_beat = copy.deepcopy(beat)
+                split_beat["beat_id"] = f"BEAT-SPLIT-{len(split_reader_beats) + 1}"
+                split_beat["action_ids"] = [action_id]
+                split_reader_beats.append(split_beat)
+        split_beats["reader_projection"]["reader_beats"] = split_reader_beats
+        validate_instance("promax-output-plan.schema.json", split_beats)
+        validate_projection(split_beats)
 
         article_types = (
             "reply",
@@ -511,9 +630,11 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
                     }
                     for technique_id in PROSE_TECHNIQUE_ROUTES[article_type]["core"]
                 ]
-                plan["reader_projection"]["reader_beats"][0]["technique_ids"] = [
-                    PROSE_TECHNIQUE_ROUTES[article_type]["core"][0]
-                ]
+                route_core = PROSE_TECHNIQUE_ROUTES[article_type]["core"]
+                for index, beat in enumerate(
+                    plan["reader_projection"]["reader_beats"]
+                ):
+                    beat["technique_ids"] = [route_core[min(index, 2)]]
                 validate_instance("promax-output-plan.schema.json", plan)
 
         wrong_route = copy.deepcopy(plan)
@@ -552,6 +673,36 @@ class ProMaxV2OutputPlanTests(unittest.TestCase):
         too_few_core["reader_projection"]["selected_techniques"].pop(2)
         with self.assertRaises(ValidationError):
             validate_instance("promax-output-plan.schema.json", too_few_core)
+
+        invalid_anchor = copy.deepcopy(plan)
+        invalid_anchor["reader_projection"]["core_concept_bindings"][0][
+            "reader_anchor_terms"
+        ][0] = "--"
+        with self.assertRaises(ValidationError):
+            validate_instance("promax-output-plan.schema.json", invalid_anchor)
+
+        invalid_action_sequences = []
+        missing_action = copy.deepcopy(plan)
+        missing_action["reader_projection"]["reader_beats"][-1][
+            "action_ids"
+        ].pop()
+        invalid_action_sequences.append(("missing", missing_action))
+
+        out_of_order = copy.deepcopy(plan)
+        out_of_order["reader_projection"]["reader_beats"][0]["action_ids"].reverse()
+        invalid_action_sequences.append(("out_of_order", out_of_order))
+
+        duplicate_action = copy.deepcopy(plan)
+        duplicate_action["reader_projection"]["reader_beats"][-1]["action_ids"][
+            -1
+        ] = READER_ACTION_IDS[0]
+        invalid_action_sequences.append(("duplicate", duplicate_action))
+
+        for case, candidate in invalid_action_sequences:
+            with self.subTest(action_sequence=case):
+                validate_instance("promax-output-plan.schema.json", candidate)
+                with self.assertRaisesRegex(ValueError, "fixed reader action sequence"):
+                    validate_projection(candidate)
 
     def test_legacy_output_plan_shape_remains_valid(self) -> None:
         legacy_path = (
@@ -602,10 +753,16 @@ class ProMaxProseReviewSchemaTests(unittest.TestCase):
             ],
             "required_beat_mappings": [
                 {
-                    "beat_id": "BEAT-1",
+                    "beat_id": f"BEAT-{index + 1}",
+                    "action_ids": list(
+                        READER_ACTION_IDS[index * 2 : index * 2 + 2]
+                    ),
                     "section_ids": ["SECTION-1"],
-                    "evidence_excerpts": ["现实冲突已经迫使判断进入下一步。"],
+                    "evidence_excerpts": [
+                        f"Reader beat {index + 1} is recoverable from the essay."
+                    ],
                 }
+                for index in range(4)
             ],
             "dimensions": {
                 dimension_id: {
@@ -620,6 +777,31 @@ class ProMaxProseReviewSchemaTests(unittest.TestCase):
         }
 
         validate_instance("promax-prose-review.schema.json", review)
+
+        invalid_local_actions = []
+        missing_action_field = copy.deepcopy(review)
+        missing_action_field["required_beat_mappings"][0].pop("action_ids")
+        invalid_local_actions.append(("missing_field", missing_action_field))
+
+        too_many_actions = copy.deepcopy(review)
+        too_many_actions["required_beat_mappings"][0]["action_ids"] = [
+            "reality_entry",
+            "center_thesis",
+            "mechanism_progression",
+        ]
+        invalid_local_actions.append(("too_many", too_many_actions))
+
+        duplicate_local_action = copy.deepcopy(review)
+        duplicate_local_action["required_beat_mappings"][0]["action_ids"] = [
+            "reality_entry",
+            "reality_entry",
+        ]
+        invalid_local_actions.append(("duplicate", duplicate_local_action))
+
+        for case, candidate in invalid_local_actions:
+            with self.subTest(local_action_contract=case):
+                with self.assertRaises(ValidationError):
+                    validate_instance("promax-prose-review.schema.json", candidate)
 
         inconsistent = copy.deepcopy(review)
         inconsistent["dimensions"]["reality_entry"] = {

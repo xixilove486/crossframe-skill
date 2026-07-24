@@ -107,7 +107,7 @@ python skills/crossframe-promax/scripts/crossframe_promax_runtime.py materialize
 | `P6` | 完成五向真实检索或诚实记录能力缺口 | `promax-retrieval-ledger.json` |
 | `P7` | 完成最强反方、误用攻击和正反立场稳定性检查 | `promax-red-team-report.json` |
 | `P8` | 在攻击后冻结判断、行动上限和建议排序 | `promax-position.locked.json`, `promax-recommendation.locked.json` |
-| `P9` | 完成 package coverage，并自动冻结体裁、读者节拍、核心概念与最多五张技法 | `promax-output-plan.locked.json` |
+| `P9` | 完成 package coverage，并自动冻结体裁、P8 自然立场投影、固定八动作 reader beats、核心概念 v8 来源/解释锁与最多五张技法 | `promax-output-plan.locked.json` |
 | `P10` | 生成四份公开长文，完成独立成文审校，再生成 manifest 与续跑控制面 | dossier、atlas、case/countercase、essay、prose review、continuation、manifest |
 | `P11` | 运行验证器；失败时只重置最早受影响阶段及下游 | `promax-validator-report.json`，失败时另有 `promax-repair-plan.json` |
 
@@ -132,9 +132,9 @@ python skills/crossframe-promax/scripts/crossframe_promax_runtime.py materialize
 - `promax-artifact-manifest.json`
 - `promax-continuation-ledger.json`
 
-`promax-essay.md` 必须是连续、可读、有明确立场的完整中文正文，不能是台账转储或 dossier 摘要。第一段先写现实，不用框架术语；正文只转译真正改变判断的核心概念，全部 applied concepts 的权威定义、邻接关系和误用边界由 atlas 精确闭合。P9 自动选择九种体裁之一、固定 ProMax 声口，并为三个核心技法和至多两个辅助技法分配段落动作；正文不设总字数上限，以 reader beats 与论证闭合为止。每个主要机制至少提供两个显式标型的相似例子和一个反例或失效例子；例子类型只能按模板登记为真实案例、用户材料例子、条件情景或结构类比。真实案例不足时如实降档，不得伪造。
+`promax-essay.md` 必须是连续、可读、有明确立场的完整中文正文，不能是台账转储或 dossier 摘要。第一段先写现实，不用框架术语；正文只转译真正改变判断的核心概念，全部 applied concepts 的权威定义、邻接关系和误用边界由 atlas 精确闭合。P9 自动选择九种体裁之一、固定 ProMax 声口，并把现实入口、中心命题、机制递进、同维比较、最强反方、明确立场、撤回与行动边界、余味结尾八个动作按固定顺序分配给 reader beats；每个 beat 最多合并相邻两个动作。P9 还须逐项复制 P8 的判断关系、强度、首选与次选，并冻结进入正文的自然句；每个核心概念绑定完整 v8 支持原句、具体误用边界、2–4 个非通用锚词和一条将逐字进入正文的自然解释。P9 同时为三个核心技法和至多两个辅助技法分配段落动作；正文不设总字数上限，以 reader beats 与论证闭合为止。每个主要机制至少提供两个显式标型的相似例子和一个反例或失效例子；例子类型只能按模板登记为真实案例、用户材料例子、条件情景或结构类比。真实案例不足时如实降档，不得伪造。
 
-`promax-prose-review.json` 是第六角色生成的内部审校工件，必须绑定当前 essay、P8 position 与 P9 output plan 的真实散列，并用正文实际短摘覆盖全部审校维度和 reader beats。它进入 manifest 和验证集，但不作为第五份公开长文，也不进入最终公开工件链接。
+`promax-prose-review.json` 是第六角色生成的内部审校工件，必须绑定当前 essay、P8 position 与 P9 output plan 的真实散列，并逐 beat 原样映射 P9 的 `action_ids`，用正文实际短摘覆盖全部审校维度和 reader beats。beat 映射顺序与动作摘录在正文中的真实位置均不得倒退；概念、立场、反方和撤回维度必须绑定各自的 P9 自然锁。现实入口的摘录必须落在第一个正文段，余味结尾的摘录必须落在最后一个正文段，撤回边界摘录必须同时证明撤回条件和行动上限。它进入 manifest 和验证集，但不作为第五份公开长文，也不进入最终公开工件链接。
 
 用户要求判断时给出当前最佳判断、判断强度、次优解释、最强反证、为何暂不采纳、撤回条件和行动上限。用户要求建议时比较主动行动、延迟、试探、退出或转移、维持现状、不行动六类方案，明确首选、次选、切换条件、不行动成本、授权状态、停止条件和回滚条件。
 

@@ -7,11 +7,13 @@
 - 在 ProMax 内独立内置 50 张版本无关的中文写作技法卡、九种自动体裁路由和固定 CrossFrame ProMax 声口；P9 每次只选择 3 张核心卡与 0–2 张辅助卡，不依赖 `crossframe-essay` 或其他 sibling skill。
 - 新增第六角色 `prose_fidelity_auditor` 与内部 `promax-prose-review.json`。审校绑定当前 essay、P8 position 和 P9 output plan，并覆盖 11 个维度，包括独立的宿主模型风味检查。
 - 新增 run-contract schema v2、output-plan schema v2、reader projection 与 prose validator；新运行显式记录 `skill_release=1.0.1`，框架来源仍固定为 v8.0。
+- reader projection 固定现实入口至余味结尾的八动作顺序，每个 beat 只承载一个或两个相邻动作；每个核心概念绑定 2–4 个逐字来自 v8 定义或允许推断的非通用读者锚词。
 
 ### Changed
 
 - 四份公开产物改为分工闭合：dossier 保存完整结构底稿与成文映射，concept atlas 精确闭合全部 applied concepts，case/countercase 保存完整案例类型，essay 只承担连续、自然、可复述的读者正文。
 - essay 不再逐字转储全部概念定义、position 字段、方案 ID 或十九字段记录；中心判断、机制、主要证据、最强反方、次选、撤回条件与行动上限改由 reader projection 从自然文章中恢复。
+- prose review 的 beat mapping 同步冻结 `action_ids`；现实入口摘录必须来自首个正文段，余味结尾摘录必须来自最后一个正文段，撤回边界摘录同时覆盖撤回条件与行动上限。
 - `APP-INS | ...` 不再被误判为机器台账；`V8-CANON-*`、`CLAIM-*`、`OPTION-*`、原始 key/value 与重复运行脚手架继续作为正文硬失败。
 
 ### Compatibility

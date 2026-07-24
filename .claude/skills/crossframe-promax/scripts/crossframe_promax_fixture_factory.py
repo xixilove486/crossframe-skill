@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from typing import Mapping, Sequence
@@ -18,6 +19,7 @@ from promax_runtime.artifacts import (
 )
 from promax_runtime.jsonio import canonical_json_bytes, load_json, sha256_json
 from promax_runtime.position import selection_review_basis_sha256
+from promax_runtime.prose import PROSE_REVIEW_DIMENSION_IDS
 from promax_runtime.schemas import validate_instance
 from promax_runtime.source_integrity import (
     V8_SOURCE_SNAPSHOT_SHA256,
@@ -37,6 +39,25 @@ FIXTURE_CLASSES = {"positive", "incomplete", "adversarial"}
 FIXTURE_CONCEPT_ID = "V8-CANON-ACTOR-STATE"
 CENTRAL_CLAIM_STATEMENT = (
     "A bounded transfer mechanism best explains the observed structural update."
+)
+FIXTURE_CORE_EXPLANATION = (
+    "A* 行动者候选状态不是永久身份标签；它只是在当前观察窗和证据边界内"
+    "保留未知项的一份候选描述。"
+)
+FIXTURE_CENTER_THESIS_TEXT = (
+    "如果对象边界稳定、转移通道先于下游变化出现，而且方向性信号持续，"
+    "那么转移机制是当前较强的条件解释。"
+)
+FIXTURE_PREFERRED_OPTION_TEXT = (
+    "在信息仍有限时，更稳妥的次序是先做可撤回的小范围探查，"
+    "再根据对象边界是否变化决定是否扩大行动。"
+)
+FIXTURE_SECOND_OPTION_TEXT = "再根据对象边界是否变化决定是否扩大行动。"
+FIXTURE_WITHDRAWAL_TEXT = (
+    "一旦边界变化得到确认，就应撤回当前判断，重新冻结对象，并把竞争解释提升为首要候选。"
+)
+FIXTURE_ACTION_CEILING_TEXT = (
+    "Analysis only; real-world action is not authorized and requires separate authorization."
 )
 STANCE_NEUTRAL_SEMANTIC_PAYLOAD = {
     "analysis_object": "Fixture analysis object",
@@ -71,6 +92,7 @@ VALIDATOR_VERSIONS = {
     "retrieval": "1.0.0",
     "position": "1.0.0",
     "output": "1.0.0",
+    "prose": "1.0.0",
     "manifest": "1.0.0",
     "state-machine": "1.0.0",
     "continuation": "1.0.0",
@@ -449,7 +471,10 @@ def build_claim_path_graph(
                 "claim_id": central_claim_id,
                 "statement": CENTRAL_CLAIM_STATEMENT,
                 "claim_type": "mechanistic",
-                "evidence_refs": ["EVIDENCE-FIXTURE-1"],
+                "evidence_refs": [
+                    "EVIDENCE-FIXTURE-1",
+                    "EVIDENCE-FIXTURE-2",
+                ],
                 "concept_ids": list(concept_ids),
                 "confidence": "medium",
                 "authorization_ceiling": "Diagnostic comparison only; no action is authorized.",
@@ -906,17 +931,33 @@ def build_output_plan(
     counterexample_ids = [
         f"EX-M{mechanism}-F1" for mechanism in range(1, 4)
     ]
+    section_id = "SECTION-CONCEPTS"
+    core_concept_ids = list(concept_ids[:1])
+    atlas_only_concept_ids = list(concept_ids[1:])
+    fixture_anchor_terms = {
+        FIXTURE_CONCEPT_ID: ["观察窗", "未知项"],
+    }
+    if any(
+        concept_id not in fixture_anchor_terms
+        for concept_id in core_concept_ids
+    ):
+        raise ValueError(
+            "fixture output plan needs explicit source-extractive reader anchors "
+            "for every core concept"
+        )
     return {
         "schema_id": "crossframe.promax.v8.output-plan",
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "source_snapshot_sha256": V8_SOURCE_SNAPSHOT_SHA256,
         "sections": [
             {
-                "section_id": "SECTION-CONCEPTS",
+                "section_id": section_id,
                 "title": "中心判断、v8 概念、机制、案例与反例",
                 "concept_ids": list(concept_ids),
                 "claim_ids": [central_claim_id],
+                "mechanism_ids": ["MECH-1", "MECH-2", "MECH-3"],
+                "path_node_ids": ["NODE-START", "NODE-OUTCOME"],
                 "example_ids": example_ids,
                 "counterexample_ids": counterexample_ids,
                 "judgment_ids": ["POSITION-LOCK", "RECOMMENDATION-LOCK"],
@@ -928,6 +969,127 @@ def build_output_plan(
                 ],
             }
         ],
+            "reader_projection": {
+                "article_type": "public-commentary",
+                "house_voice_id": "crossframe-promax",
+                "thesis_claim_id": central_claim_id,
+                "stance_projection": {
+                    "relation_to_proposition": "supports",
+                    "judgment_strength": "moderate",
+                    "center_thesis_text": FIXTURE_CENTER_THESIS_TEXT,
+                    "preferred_option_id": "OPTION-PROBE",
+                    "preferred_option_kind": "probe_action",
+                    "preferred_option_text": FIXTURE_PREFERRED_OPTION_TEXT,
+                    "second_option_id": "OPTION-ACTIVE",
+                    "second_option_kind": "active_action",
+                    "second_option_text": FIXTURE_SECOND_OPTION_TEXT,
+                    "withdrawal_text": FIXTURE_WITHDRAWAL_TEXT,
+                    "action_ceiling_text": FIXTURE_ACTION_CEILING_TEXT,
+                },
+                "core_concept_ids": core_concept_ids,
+            "atlas_only_concept_ids": atlas_only_concept_ids,
+            "core_concept_bindings": [
+                    {
+                        "concept_id": concept_id,
+                        "reader_anchor_terms": fixture_anchor_terms[concept_id],
+                        "source_support_spans": [
+                            "星号表示这仍是一份候选状态描述。"
+                        ],
+                        "source_misuse_spans": [
+                            "行动者的名字、职业、社会身份或一次行为都不能自动填满其状态。"
+                        ],
+                        "reader_explanation": FIXTURE_CORE_EXPLANATION,
+                    }
+                for concept_id in core_concept_ids
+            ],
+            "selected_techniques": [
+                {
+                    "technique_id": "event-association",
+                    "tier": "core",
+                    "paragraph_action": "由现实事件进入其背后的成本与承担关系",
+                    "section_ids": [section_id],
+                },
+                {
+                    "technique_id": "layered-argument",
+                    "tier": "core",
+                    "paragraph_action": "把事实、机制、反方、判断与行动边界分层推进",
+                    "section_ids": [section_id],
+                },
+                {
+                    "technique_id": "positive-negative-contrast",
+                    "tier": "core",
+                    "paragraph_action": "在同一标准下对照中心解释与竞争解释",
+                    "section_ids": [section_id],
+                },
+            ],
+            "reader_beats": [
+                {
+                    "beat_id": "BEAT-REALITY-ENTRY",
+                    "function": "现实入口与中心命题",
+                    "action_ids": [
+                        "reality_entry",
+                        "center_thesis",
+                    ],
+                    "section_ids": [section_id],
+                    "claim_ids": [central_claim_id],
+                    "mechanism_ids": ["MECH-1"],
+                    "evidence_refs": ["EVIDENCE-FIXTURE-1"],
+                    "core_concept_ids": core_concept_ids,
+                    "technique_ids": [
+                        "event-association",
+                        "layered-argument",
+                    ],
+                },
+                {
+                    "beat_id": "BEAT-COMPARISON",
+                    "function": "机制递进与竞争解释的同维比较",
+                    "action_ids": [
+                        "mechanism_progression",
+                        "same_dimension_comparison",
+                    ],
+                    "section_ids": [section_id],
+                    "claim_ids": [central_claim_id],
+                    "mechanism_ids": ["MECH-1", "MECH-2", "MECH-3"],
+                    "evidence_refs": [
+                        "EVIDENCE-FIXTURE-1",
+                        "EVIDENCE-FIXTURE-2",
+                    ],
+                    "core_concept_ids": core_concept_ids,
+                    "technique_ids": [
+                        "layered-argument",
+                        "positive-negative-contrast",
+                    ],
+                },
+                {
+                    "beat_id": "BEAT-COUNTER-POSITION",
+                    "function": "最强反方与明确立场",
+                    "action_ids": [
+                        "strongest_counterposition",
+                        "explicit_position",
+                    ],
+                    "section_ids": [section_id],
+                    "claim_ids": [central_claim_id],
+                    "mechanism_ids": ["MECH-2"],
+                    "evidence_refs": ["EVIDENCE-FIXTURE-2"],
+                    "core_concept_ids": core_concept_ids,
+                    "technique_ids": ["positive-negative-contrast"],
+                },
+                {
+                    "beat_id": "BEAT-BOUNDARY-CLOSE",
+                    "function": "撤回条件、行动边界与余味结尾",
+                    "action_ids": [
+                        "withdrawal_action_boundary",
+                        "resonant_close",
+                    ],
+                    "section_ids": [section_id],
+                    "claim_ids": [central_claim_id],
+                    "mechanism_ids": ["MECH-2"],
+                    "evidence_refs": ["EVIDENCE-FIXTURE-2"],
+                    "core_concept_ids": core_concept_ids,
+                    "technique_ids": ["positive-negative-contrast"],
+                },
+            ],
+        },
         "required_artifacts": [
             "promax-dossier.md",
             "promax-concept-atlas.md",
@@ -965,6 +1127,7 @@ def build_deliverables(
     repo: Path | str,
     *,
     concept_id: str = FIXTURE_CONCEPT_ID,
+    position: Mapping[str, object] | None = None,
     recommendation: Mapping[str, object] | None = None,
 ) -> dict[str, str]:
     concept = _canonical_concept(repo, concept_id)
@@ -1029,30 +1192,29 @@ def build_deliverables(
     cases = "\n".join(case_sections)
 
     claim = CENTRAL_CLAIM_STATEMENT
-    if recommendation is None:
-        recommendation_options = _build_recommendation_options()
-        recommendation_dimensions = [*LOW_INFORMATION_EVALUATION_DIMENSIONS]
-        selection_review = _build_selection_review_wrapper(
-            option_ids=[
-                str(option["option_id"]) for option in recommendation_options
-            ],
-            evaluation_dimensions=recommendation_dimensions,
-            preferred_option_id="OPTION-PROBE",
-            reviewed_at="2026-07-23T01:15:00Z",
+    if position is None:
+        position = build_position_lock(
+            run_id="promax-fixture-deliverable",
+            locked_at="2026-07-23T01:10:00Z",
         )
-    else:
-        raw_options = recommendation.get("options")
-        raw_selection_review = recommendation.get("selection_review_wrapper")
-        if not isinstance(raw_options, list) or not all(
-            isinstance(option, Mapping) for option in raw_options
-        ):
-            raise ValueError("fixture recommendation options are malformed")
-        if not isinstance(raw_selection_review, Mapping):
-            raise ValueError("fixture recommendation selection review is malformed")
-        recommendation_options = [
-            copy.deepcopy(dict(option)) for option in raw_options
-        ]
-        selection_review = copy.deepcopy(dict(raw_selection_review))
+    if recommendation is None:
+        recommendation = build_recommendation_lock(
+            position,
+            run_id="promax-fixture-deliverable",
+            locked_at="2026-07-23T01:20:00Z",
+        )
+    raw_options = recommendation.get("options")
+    raw_selection_review = recommendation.get("selection_review_wrapper")
+    if not isinstance(raw_options, list) or not all(
+        isinstance(option, Mapping) for option in raw_options
+    ):
+        raise ValueError("fixture recommendation options are malformed")
+    if not isinstance(raw_selection_review, Mapping):
+        raise ValueError("fixture recommendation selection review is malformed")
+    recommendation_options = [
+        copy.deepcopy(dict(option)) for option in raw_options
+    ]
+    selection_review = copy.deepcopy(dict(raw_selection_review))
     eligibility_line = (
         "declared_low_information_house_policy_eligibility: "
         "case_specific_facts_present=false; "
@@ -1079,46 +1241,7 @@ def build_deliverables(
             str(selection_review["proportionality"]["status"]),
         ]
     )
-    essay_selection_line = "；".join(
-        dict.fromkeys(_string_leaves(selection_review))
-    )
     option_descriptions = [str(option["description"]) for option in recommendation_options]
-    option_detail_lines: list[str] = []
-    for option in recommendation_options:
-        option_detail_lines.append(
-            "；".join(
-                [
-                    f"{option['option_id']} — {option['description']}",
-                    f"option_kind={option['option_kind']}",
-                    *[
-                        f"{field}=" + "、".join(str(item) for item in option[field])
-                        for field in (
-                            "forecast_refs",
-                            "normative_premise_refs",
-                            "affected_position_refs",
-                            "rights_floor_refs",
-                            "expected_paths",
-                            "cross_circle_spillovers",
-                            "stop_conditions",
-                            "rollback_and_remedy",
-                        )
-                    ],
-                    *[
-                        f"{field}={option[field]}"
-                        for field in (
-                            "worst_acceptable_outcome",
-                            "distribution_of_costs_and_benefits",
-                            "information_value",
-                            "lock_in_risk",
-                            "reversibility",
-                            "resource_cost",
-                            "authorized_actor_ref",
-                            "authorization_record_ref",
-                        )
-                    ],
-                ]
-            )
-        )
     dossier = "\n".join(
         [
             "# CrossFrame ProMax v8 推演档案",
@@ -1140,44 +1263,40 @@ def build_deliverables(
             f"规范选择审查包装层：{dossier_selection_line}。",
             eligibility_line,
             "",
+            "## P8 立场锁完整语义",
+            *dict.fromkeys(_string_leaves(position)),
+            "",
+            "## P8 建议锁完整语义",
+            *dict.fromkeys(_string_leaves(recommendation)),
+            "",
         ]
     )
     essay = "\n".join(
         [
-            "# CrossFrame ProMax v8 完整推演",
+            "# 转移发生时，谁在承担变化",
             "",
-            "## 明确判断",
-            f"VERDICT[supports] {CENTRAL_CLAIM_STATEMENT} Current evidence favors the bounded transfer mechanism.",
-            "判断强度：moderate。",
-            "The bounded transfer mechanism is the leading conditional explanation.",
-            "Retain the claim only where temporal order and transfer evidence are observed.",
-            "Reduce judgment strength and refreeze the object if its boundary changes.",
-            "Competing mechanism 2 becomes the runner-up when the object boundary changes.",
+            "一个变化沿着接口传到下游时，最容易被忽略的往往不是结果，而是变化究竟从哪里开始、由谁承受。"
+            "眼前真正需要辨认的是：这条变化是否稳定存在，又有哪些人承担了验证错误的代价。",
             "",
-            "## v8 概念解释",
-            f"{name}：{definition}",
-            f"本轮对象角色：{rationale}",
-            "它只提供登记与尺度可追踪性的结构接口，不能把概念命名当作更高层条件已经成立。",
+            f"{FIXTURE_CORE_EXPLANATION}"
+            "在这里，bounded transfer mechanism 指的是边界明确、方向可检验的有界转移路径。"
+            f"{FIXTURE_CENTER_THESIS_TEXT}"
+            "但这仍是一种需要继续受证据约束的判断，不是给对象贴上的永久标签。",
             "",
-            "## 最强反驳、修正与撤回",
-            "The object boundary may be unstable.",
-            "Current evidence does not show that the registered boundary has changed.",
-            "If The object boundary may be unstable. is confirmed, withdraw the current judgment.",
-            "Analysis only; real-world action is not authorized and requires separate authorization.",
+            "同一组现象也可能来自选择效应、边界漂移或第三种竞争机制。三种解释必须在相同时间顺序、"
+            "相同反向信号和相同失效条件下比较；只挑对自己有利的案例，不足以证明转移发生。",
             "",
-            "## 建议排序",
-            "评价维度：structural explanatory power、reversibility、risk。",
-            *option_detail_lines,
-            "ranking_policy=promax_low_information_house_policy_not_v8。",
-            "PROMAX-HOUSE-POLICY-NOT-V8：本轮仅因低信息条件采用 ProMax 保守排序，它不是 v8 概念、规范前提或 v8 自动结论；ranking_evidence_refs=[]。",
-            f"selection_review_wrapper 完整公开语义：{essay_selection_line}。",
-            eligibility_line,
-            "O1=complete；O2=complete；O3=in_review；O4=not_started。",
-            "完整排序：OPTION-PROBE、OPTION-ACTIVE、OPTION-STATUS-QUO、OPTION-DELAYED、OPTION-EXIT、OPTION-NO-ACTION。",
-            "首选 OPTION-PROBE；次选 OPTION-ACTIVE。",
-            "Switch to OPTION-ACTIVE when the object boundary changes.",
-            "Inaction continues to accumulate opportunity cost",
-            "conditional_recommendation_only",
+            "最强的反对意见是：对象边界本身可能不稳定，所谓转移只是重新划分对象后的视觉效果。"
+            "当前材料尚未显示边界已经改变，所以这个反方还不足以取代中心解释。"
+            "因此我的判断仍是：在现有边界与证据条件下，转移解释比竞争解释更合理。"
+            f"{FIXTURE_WITHDRAWAL_TEXT}",
+            "",
+            f"{FIXTURE_PREFERRED_OPTION_TEXT}"
+            "维持现状、延后、退出和不行动都必须放在同一组解释力、可逆性与风险尺度上比较。"
+            "不行动也会累积机会成本，但这并不把分析变成授权。",
+            "",
+            f"{FIXTURE_ACTION_CEILING_TEXT}"
+            "判断的价值不在于证明自己永远正确，而在于让承担验证代价的人能够看见停止、撤回与补救的入口。",
             "",
         ]
     )
@@ -1186,6 +1305,203 @@ def build_deliverables(
         "promax-concept-atlas.md": atlas,
         "promax-case-and-countercase.md": cases,
         "promax-essay.md": essay,
+    }
+
+
+def build_prose_review(
+    *,
+    run_id: str,
+    reviewed_at: str,
+    essay: str,
+    position: Mapping[str, object],
+    output_plan: Mapping[str, object],
+) -> dict[str, object]:
+    projection = output_plan.get("reader_projection")
+    if not isinstance(projection, Mapping):
+        raise ValueError("fixture prose review requires a reader_projection")
+    techniques = projection.get("selected_techniques")
+    beats = projection.get("reader_beats")
+    if not isinstance(techniques, list) or not all(
+        isinstance(item, Mapping) for item in techniques
+    ):
+        raise ValueError("fixture prose techniques are malformed")
+    if not isinstance(beats, list) or not all(
+        isinstance(item, Mapping) for item in beats
+    ):
+        raise ValueError("fixture prose reader beats are malformed")
+    excerpts = [
+        line.strip()
+        for line in essay.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not excerpts:
+        raise ValueError("fixture essay lacks reviewable prose")
+    sentence_excerpts = [
+        sentence.strip()
+        for paragraph in excerpts
+        for sentence in re.split(r"(?<=[。！？.!?])", paragraph)
+        if sentence.strip()
+    ]
+    def bounded_unique_excerpt(candidate: str) -> str:
+        normalized = candidate.strip()
+        if (
+            8 <= len(re.findall(r"\w", normalized))
+            and len(normalized) <= 240
+            and essay.count(normalized) == 1
+        ):
+            return normalized
+        for width in (240, 200, 160, 120, 80, 40, 20):
+            fallback = essay[:width].strip()
+            if (
+                8 <= len(re.findall(r"\w", fallback))
+                and len(fallback) <= 240
+                and essay.count(fallback) == 1
+            ):
+                return fallback
+        raise ValueError("fixture essay lacks a bounded unique review excerpt")
+
+    action_cues = {
+        "reality_entry": ("一个变化沿着接口",),
+        "center_thesis": ("当前较强的条件解释",),
+        "mechanism_progression": ("转移机制是当前较强",),
+        "same_dimension_comparison": ("相同时间顺序", "同一组现象"),
+        "strongest_counterposition": ("最强的反对意见",),
+        "explicit_position": ("因此我的判断", "不足以取代中心解释"),
+        "withdrawal_action_boundary": ("应撤回当前判断",),
+        "resonant_close": ("判断的价值不在于",),
+    }
+
+    def action_excerpts(action_id: str) -> list[str]:
+        cue_groups = [action_cues[action_id]]
+        if action_id == "withdrawal_action_boundary":
+            cue_groups.append(("Analysis only", "不授权", "现实授权"))
+        selected: list[str] = []
+        for cues in cue_groups:
+            for sentence in sentence_excerpts:
+                if any(cue in sentence for cue in cues):
+                    selected.append(bounded_unique_excerpt(sentence))
+                    break
+        return selected or [bounded_unique_excerpt(sentence_excerpts[0])]
+
+    def sentence_with(*cues: str) -> str:
+        for sentence in sentence_excerpts:
+            if all(cue in sentence for cue in cues):
+                return bounded_unique_excerpt(sentence)
+        return bounded_unique_excerpt(sentence_excerpts[0])
+
+    stance = projection.get("stance_projection")
+    bindings = projection.get("core_concept_bindings")
+    if not isinstance(stance, Mapping) or not isinstance(bindings, list):
+        raise ValueError("fixture reader projection lacks prose locks")
+    core_excerpts = [
+        bounded_unique_excerpt(str(binding["reader_explanation"]))
+        if str(binding["reader_explanation"]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for binding in bindings
+        if isinstance(binding, Mapping)
+    ]
+    position_excerpts = [
+        bounded_unique_excerpt(str(stance[field]))
+        if isinstance(stance.get(field), str) and str(stance[field]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for field in (
+            "center_thesis_text",
+            "preferred_option_text",
+            "second_option_text",
+        )
+    ]
+    withdrawal_excerpts = [
+        bounded_unique_excerpt(str(stance[field]))
+        if isinstance(stance.get(field), str) and str(stance[field]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for field in ("withdrawal_text", "action_ceiling_text")
+    ]
+    dimension_excerpts = {
+        "reality_entry": [sentence_with("一个变化沿着接口")],
+        "argument_dependency": [sentence_with("如果对象边界稳定")],
+        "v8_concept_fidelity": core_excerpts,
+        "evidence_binding": [sentence_with("证据约束")],
+        "strongest_counterposition": [sentence_with("最强的反对意见")],
+        "fair_comparison": [sentence_with("同一组现象")],
+        "position_recommendation_consistency": position_excerpts,
+        "withdrawal_action_boundary": withdrawal_excerpts,
+        "house_voice": [sentence_with("判断的价值")],
+        "model_flavor_independence": [sentence_with("这个反方")],
+        "audit_leakage": [sentence_with("不行动也会累积机会成本")],
+    }
+    if set(dimension_excerpts) != set(PROSE_REVIEW_DIMENSION_IDS):
+        raise ValueError("fixture prose review dimension mapping is incomplete")
+    required_locked_texts = [
+        *[
+            str(binding["reader_explanation"])
+            for binding in bindings
+            if isinstance(binding, Mapping)
+        ],
+        *[
+            str(stance[field])
+            for field in (
+                "center_thesis_text",
+                "preferred_option_text",
+                "second_option_text",
+                "withdrawal_text",
+                "action_ceiling_text",
+            )
+            if isinstance(stance.get(field), str)
+        ],
+    ]
+    prose_passes = (
+        len(sentence_excerpts) >= 12
+        and all(text in essay for text in required_locked_texts)
+        and re.search(
+            r"\b(?:V8-CANON|CLAIM|OPTION|MECH|BEAT|SECTION)-",
+            essay,
+        )
+        is None
+    )
+
+    return {
+        "schema_id": "crossframe.promax.v8.prose-review",
+        "schema_version": 1,
+        "run_id": run_id,
+        "source_snapshot_sha256": V8_SOURCE_SNAPSHOT_SHA256,
+        "essay_sha256": hashlib.sha256(essay.encode("utf-8")).hexdigest(),
+        "position_sha256": sha256_json(dict(position)),
+        "output_plan_sha256": sha256_json(dict(output_plan)),
+        "article_type": projection["article_type"],
+        "technique_ids": [
+            str(technique["technique_id"]) for technique in techniques
+        ],
+        "required_beat_mappings": [
+            {
+                "beat_id": beat["beat_id"],
+                "action_ids": list(beat["action_ids"]),
+                "section_ids": list(beat["section_ids"]),
+                "evidence_excerpts": list(
+                    dict.fromkeys(
+                        excerpt
+                        for action_id in beat["action_ids"]
+                        for excerpt in action_excerpts(str(action_id))
+                    )
+                ),
+            }
+            for beat in beats
+        ],
+        "dimensions": {
+            dimension_id: {
+                "status": "pass" if prose_passes else "fail",
+                "evidence_excerpts": (
+                    dimension_excerpts[dimension_id] if prose_passes else []
+                ),
+                "repair_target": (
+                    None
+                    if prose_passes
+                    else f"Rewrite prose to supply evidence for {dimension_id}."
+                ),
+            }
+            for dimension_id in PROSE_REVIEW_DIMENSION_IDS
+        },
+        "overall_status": "pass" if prose_passes else "fail",
+        "reviewed_at": reviewed_at,
     }
 
 
@@ -1339,6 +1655,7 @@ def _materialize_into(
         "position": "2026-07-23T01:20:00Z",
         "recommendation": "2026-07-23T01:30:00Z",
         "plan": "2026-07-23T01:40:00Z",
+        "review": "2026-07-23T01:50:00Z",
         "manifest": "2026-07-23T02:00:00Z",
         "continuation": "2026-07-23T02:10:00Z",
     }
@@ -1399,7 +1716,11 @@ def _materialize_into(
         locked_at=stamps["recommendation"],
     )
     output_plan = build_output_plan(run_id=run_id, locked_at=stamps["plan"])
-    deliverables = build_deliverables(repo, recommendation=recommendation)
+    deliverables = build_deliverables(
+        repo,
+        position=position,
+        recommendation=recommendation,
+    )
 
     _apply_pre_manifest_mutation(
         mutation if isinstance(mutation, str) else None,
@@ -1412,6 +1733,14 @@ def _materialize_into(
         recommendation=recommendation,
         deliverables=deliverables,
     )
+    prose_review = build_prose_review(
+        run_id=run_id,
+        reviewed_at=stamps["review"],
+        essay=deliverables["promax-essay.md"],
+        position=position,
+        output_plan=output_plan,
+    )
+    validate_instance("promax-prose-review.schema.json", prose_review)
 
     worldview = (
         "# CrossFrame ProMax v8 世界观胶囊\n\n"
@@ -1434,6 +1763,7 @@ def _materialize_into(
         "promax-position.locked.json": position,
         "promax-recommendation.locked.json": recommendation,
         "promax-output-plan.locked.json": output_plan,
+        "promax-prose-review.json": prose_review,
     }
     digests: dict[str, str] = {
         path: _write_json(stage, path, value) for path, value in values.items()
@@ -1561,6 +1891,7 @@ def _materialize_into(
                     "promax-case-and-countercase.md",
                     "promax-essay.md",
                     "promax-continuation-index.md",
+                    "promax-prose-review.json",
                 )
             },
         ),
@@ -1659,29 +1990,52 @@ def _materialize_into(
             "input_artifact_sha256s": [digests["promax-output-plan.locked.json"]],
             "status": "current",
         }
+    metadata["promax-prose-review.json"] = {
+        "generating_phase": "P10",
+        "input_artifact_sha256s": [
+            digests["promax-essay.md"],
+            digests["promax-position.locked.json"],
+            digests["promax-output-plan.locked.json"],
+        ],
+        "status": "current",
+    }
     inventory = inventory_artifacts(stage, metadata)
     role_bindings = (
         (
-            "promax-local-world-model.locked.json",
-            "promax-concept-disposition-ledger.json",
+            ("promax-local-world-model.locked.json",),
+            ("promax-concept-disposition-ledger.json",),
         ),
-        ("promax-claim-path-graph.json", "promax-retrieval-ledger.json"),
-        ("promax-retrieval-ledger.json", "promax-red-team-report.json"),
-        ("promax-red-team-report.json", "promax-position.locked.json"),
-        ("promax-output-plan.locked.json", "promax-essay.md"),
+        (("promax-claim-path-graph.json",), ("promax-retrieval-ledger.json",)),
+        (("promax-retrieval-ledger.json",), ("promax-red-team-report.json",)),
+        (("promax-red-team-report.json",), ("promax-position.locked.json",)),
+        (("promax-output-plan.locked.json",), ("promax-essay.md",)),
+        (
+            (
+                "promax-essay.md",
+                "promax-position.locked.json",
+                "promax-output-plan.locked.json",
+            ),
+            ("promax-prose-review.json",),
+        ),
     )
     role_records: list[dict[str, object]] = []
-    for plan, (input_path, output_path) in zip(
+    for plan, (input_paths, output_paths) in zip(
         run_contract["role_plan"], role_bindings
     ):
-        input_ref = _artifact_ref(input_path, digests[input_path])
-        output_ref = _artifact_ref(output_path, digests[output_path])
+        input_refs = [
+            _artifact_ref(input_path, digests[input_path])
+            for input_path in input_paths
+        ]
+        output_refs = [
+            _artifact_ref(output_path, digests[output_path])
+            for output_path in output_paths
+        ]
         role_records.append(
             {
                 **copy.deepcopy(plan),
-                "input_artifacts": [input_ref],
-                "observed_input_artifacts": [copy.deepcopy(input_ref)],
-                "output_artifacts": [output_ref],
+                "input_artifacts": input_refs,
+                "observed_input_artifacts": copy.deepcopy(input_refs),
+                "output_artifacts": output_refs,
                 "status": "completed",
             }
         )

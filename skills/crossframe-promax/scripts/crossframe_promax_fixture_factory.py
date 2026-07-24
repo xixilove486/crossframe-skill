@@ -40,6 +40,25 @@ FIXTURE_CONCEPT_ID = "V8-CANON-ACTOR-STATE"
 CENTRAL_CLAIM_STATEMENT = (
     "A bounded transfer mechanism best explains the observed structural update."
 )
+FIXTURE_CORE_EXPLANATION = (
+    "A* 行动者候选状态不是永久身份标签；它只是在当前观察窗和证据边界内"
+    "保留未知项的一份候选描述。"
+)
+FIXTURE_CENTER_THESIS_TEXT = (
+    "如果对象边界稳定、转移通道先于下游变化出现，而且方向性信号持续，"
+    "那么转移机制是当前较强的条件解释。"
+)
+FIXTURE_PREFERRED_OPTION_TEXT = (
+    "在信息仍有限时，更稳妥的次序是先做可撤回的小范围探查，"
+    "再根据对象边界是否变化决定是否扩大行动。"
+)
+FIXTURE_SECOND_OPTION_TEXT = "再根据对象边界是否变化决定是否扩大行动。"
+FIXTURE_WITHDRAWAL_TEXT = (
+    "一旦边界变化得到确认，就应撤回当前判断，重新冻结对象，并把竞争解释提升为首要候选。"
+)
+FIXTURE_ACTION_CEILING_TEXT = (
+    "Analysis only; real-world action is not authorized and requires separate authorization."
+)
 STANCE_NEUTRAL_SEMANTIC_PAYLOAD = {
     "analysis_object": "Fixture analysis object",
     "proposition_under_test": CENTRAL_CLAIM_STATEMENT,
@@ -915,6 +934,17 @@ def build_output_plan(
     section_id = "SECTION-CONCEPTS"
     core_concept_ids = list(concept_ids[:1])
     atlas_only_concept_ids = list(concept_ids[1:])
+    fixture_anchor_terms = {
+        FIXTURE_CONCEPT_ID: ["观察窗", "未知项"],
+    }
+    if any(
+        concept_id not in fixture_anchor_terms
+        for concept_id in core_concept_ids
+    ):
+        raise ValueError(
+            "fixture output plan needs explicit source-extractive reader anchors "
+            "for every core concept"
+        )
     return {
         "schema_id": "crossframe.promax.v8.output-plan",
         "schema_version": 2,
@@ -939,12 +969,39 @@ def build_output_plan(
                 ],
             }
         ],
-        "reader_projection": {
-            "article_type": "public-commentary",
-            "house_voice_id": "crossframe-promax",
-            "thesis_claim_id": central_claim_id,
-            "core_concept_ids": core_concept_ids,
+            "reader_projection": {
+                "article_type": "public-commentary",
+                "house_voice_id": "crossframe-promax",
+                "thesis_claim_id": central_claim_id,
+                "stance_projection": {
+                    "relation_to_proposition": "supports",
+                    "judgment_strength": "moderate",
+                    "center_thesis_text": FIXTURE_CENTER_THESIS_TEXT,
+                    "preferred_option_id": "OPTION-PROBE",
+                    "preferred_option_kind": "probe_action",
+                    "preferred_option_text": FIXTURE_PREFERRED_OPTION_TEXT,
+                    "second_option_id": "OPTION-ACTIVE",
+                    "second_option_kind": "active_action",
+                    "second_option_text": FIXTURE_SECOND_OPTION_TEXT,
+                    "withdrawal_text": FIXTURE_WITHDRAWAL_TEXT,
+                    "action_ceiling_text": FIXTURE_ACTION_CEILING_TEXT,
+                },
+                "core_concept_ids": core_concept_ids,
             "atlas_only_concept_ids": atlas_only_concept_ids,
+            "core_concept_bindings": [
+                    {
+                        "concept_id": concept_id,
+                        "reader_anchor_terms": fixture_anchor_terms[concept_id],
+                        "source_support_spans": [
+                            "星号表示这仍是一份候选状态描述。"
+                        ],
+                        "source_misuse_spans": [
+                            "行动者的名字、职业、社会身份或一次行为都不能自动填满其状态。"
+                        ],
+                        "reader_explanation": FIXTURE_CORE_EXPLANATION,
+                    }
+                for concept_id in core_concept_ids
+            ],
             "selected_techniques": [
                 {
                     "technique_id": "event-association",
@@ -969,6 +1026,10 @@ def build_output_plan(
                 {
                     "beat_id": "BEAT-REALITY-ENTRY",
                     "function": "现实入口与中心命题",
+                    "action_ids": [
+                        "reality_entry",
+                        "center_thesis",
+                    ],
                     "section_ids": [section_id],
                     "claim_ids": [central_claim_id],
                     "mechanism_ids": ["MECH-1"],
@@ -981,7 +1042,11 @@ def build_output_plan(
                 },
                 {
                     "beat_id": "BEAT-COMPARISON",
-                    "function": "竞争机制的同维比较与证据边界",
+                    "function": "机制递进与竞争解释的同维比较",
+                    "action_ids": [
+                        "mechanism_progression",
+                        "same_dimension_comparison",
+                    ],
                     "section_ids": [section_id],
                     "claim_ids": [central_claim_id],
                     "mechanism_ids": ["MECH-1", "MECH-2", "MECH-3"],
@@ -996,8 +1061,26 @@ def build_output_plan(
                     ],
                 },
                 {
-                    "beat_id": "BEAT-COUNTER-BOUNDARY",
-                    "function": "最强反方、撤回条件与行动边界",
+                    "beat_id": "BEAT-COUNTER-POSITION",
+                    "function": "最强反方与明确立场",
+                    "action_ids": [
+                        "strongest_counterposition",
+                        "explicit_position",
+                    ],
+                    "section_ids": [section_id],
+                    "claim_ids": [central_claim_id],
+                    "mechanism_ids": ["MECH-2"],
+                    "evidence_refs": ["EVIDENCE-FIXTURE-2"],
+                    "core_concept_ids": core_concept_ids,
+                    "technique_ids": ["positive-negative-contrast"],
+                },
+                {
+                    "beat_id": "BEAT-BOUNDARY-CLOSE",
+                    "function": "撤回条件、行动边界与余味结尾",
+                    "action_ids": [
+                        "withdrawal_action_boundary",
+                        "resonant_close",
+                    ],
                     "section_ids": [section_id],
                     "claim_ids": [central_claim_id],
                     "mechanism_ids": ["MECH-2"],
@@ -1193,25 +1276,26 @@ def build_deliverables(
             "# 转移发生时，谁在承担变化",
             "",
             "一个变化沿着接口传到下游时，最容易被忽略的往往不是结果，而是变化究竟从哪里开始、由谁承受。"
-            "这正是 bounded transfer mechanism 值得检验的现实入口：它可能解释方向性的更新，"
-            "却不能因为听起来连贯就自动成为事实。",
+            "眼前真正需要辨认的是：这条变化是否稳定存在，又有哪些人承担了验证错误的代价。",
             "",
-            f"{name}提醒我们先区分行动者是如何被登记的，以及这种登记是否真的覆盖了变化中的承担者。"
-            "如果对象边界稳定、转移通道先于下游变化出现，而且方向性信号持续，那么转移机制是当前较强的条件解释。"
+            f"{FIXTURE_CORE_EXPLANATION}"
+            "在这里，bounded transfer mechanism 指的是边界明确、方向可检验的有界转移路径。"
+            f"{FIXTURE_CENTER_THESIS_TEXT}"
             "但这仍是一种需要继续受证据约束的判断，不是给对象贴上的永久标签。",
             "",
             "同一组现象也可能来自选择效应、边界漂移或第三种竞争机制。三种解释必须在相同时间顺序、"
             "相同反向信号和相同失效条件下比较；只挑对自己有利的案例，不足以证明转移发生。",
             "",
             "最强的反对意见是：对象边界本身可能不稳定，所谓转移只是重新划分对象后的视觉效果。"
-            "当前材料尚未显示边界已经改变，所以这个反方还不足以取代中心解释；一旦边界变化得到确认，"
-            "就应撤回当前判断，重新冻结对象，并把竞争解释提升为首要候选。",
+            "当前材料尚未显示边界已经改变，所以这个反方还不足以取代中心解释。"
+            "因此我的判断仍是：在现有边界与证据条件下，转移解释比竞争解释更合理。"
+            f"{FIXTURE_WITHDRAWAL_TEXT}",
             "",
-            "在信息仍有限时，更稳妥的次序是先做可撤回的小范围探查，再根据对象边界是否变化决定是否扩大行动。"
+            f"{FIXTURE_PREFERRED_OPTION_TEXT}"
             "维持现状、延后、退出和不行动都必须放在同一组解释力、可逆性与风险尺度上比较。"
             "不行动也会累积机会成本，但这并不把分析变成授权。",
             "",
-            "Analysis only; real-world action is not authorized and requires separate authorization."
+            f"{FIXTURE_ACTION_CEILING_TEXT}"
             "判断的价值不在于证明自己永远正确，而在于让承担验证代价的人能够看见停止、撤回与补救的入口。",
             "",
         ]
@@ -1258,27 +1342,6 @@ def build_prose_review(
         for sentence in re.split(r"(?<=[。！？.!?])", paragraph)
         if sentence.strip()
     ]
-    dimension_excerpt_indexes = {
-        "reality_entry": 0,
-        "argument_dependency": 3,
-        "v8_concept_fidelity": 2,
-        "evidence_binding": 6,
-        "strongest_counterposition": 7,
-        "fair_comparison": 10,
-        "position_recommendation_consistency": 9,
-        "withdrawal_action_boundary": 8,
-        "house_voice": 13,
-        "model_flavor_independence": 4,
-        "audit_leakage": 11,
-    }
-    if set(dimension_excerpt_indexes) != set(PROSE_REVIEW_DIMENSION_IDS):
-        raise ValueError(
-            "fixture prose review dimension mapping is incomplete"
-        )
-    prose_passes = len(sentence_excerpts) > max(
-        dimension_excerpt_indexes.values()
-    )
-
     def bounded_unique_excerpt(candidate: str) -> str:
         normalized = candidate.strip()
         if (
@@ -1297,6 +1360,105 @@ def build_prose_review(
                 return fallback
         raise ValueError("fixture essay lacks a bounded unique review excerpt")
 
+    action_cues = {
+        "reality_entry": ("一个变化沿着接口",),
+        "center_thesis": ("当前较强的条件解释",),
+        "mechanism_progression": ("转移机制是当前较强",),
+        "same_dimension_comparison": ("相同时间顺序", "同一组现象"),
+        "strongest_counterposition": ("最强的反对意见",),
+        "explicit_position": ("因此我的判断", "不足以取代中心解释"),
+        "withdrawal_action_boundary": ("应撤回当前判断",),
+        "resonant_close": ("判断的价值不在于",),
+    }
+
+    def action_excerpts(action_id: str) -> list[str]:
+        cue_groups = [action_cues[action_id]]
+        if action_id == "withdrawal_action_boundary":
+            cue_groups.append(("Analysis only", "不授权", "现实授权"))
+        selected: list[str] = []
+        for cues in cue_groups:
+            for sentence in sentence_excerpts:
+                if any(cue in sentence for cue in cues):
+                    selected.append(bounded_unique_excerpt(sentence))
+                    break
+        return selected or [bounded_unique_excerpt(sentence_excerpts[0])]
+
+    def sentence_with(*cues: str) -> str:
+        for sentence in sentence_excerpts:
+            if all(cue in sentence for cue in cues):
+                return bounded_unique_excerpt(sentence)
+        return bounded_unique_excerpt(sentence_excerpts[0])
+
+    stance = projection.get("stance_projection")
+    bindings = projection.get("core_concept_bindings")
+    if not isinstance(stance, Mapping) or not isinstance(bindings, list):
+        raise ValueError("fixture reader projection lacks prose locks")
+    core_excerpts = [
+        bounded_unique_excerpt(str(binding["reader_explanation"]))
+        if str(binding["reader_explanation"]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for binding in bindings
+        if isinstance(binding, Mapping)
+    ]
+    position_excerpts = [
+        bounded_unique_excerpt(str(stance[field]))
+        if isinstance(stance.get(field), str) and str(stance[field]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for field in (
+            "center_thesis_text",
+            "preferred_option_text",
+            "second_option_text",
+        )
+    ]
+    withdrawal_excerpts = [
+        bounded_unique_excerpt(str(stance[field]))
+        if isinstance(stance.get(field), str) and str(stance[field]) in essay
+        else bounded_unique_excerpt(sentence_excerpts[0])
+        for field in ("withdrawal_text", "action_ceiling_text")
+    ]
+    dimension_excerpts = {
+        "reality_entry": [sentence_with("一个变化沿着接口")],
+        "argument_dependency": [sentence_with("如果对象边界稳定")],
+        "v8_concept_fidelity": core_excerpts,
+        "evidence_binding": [sentence_with("证据约束")],
+        "strongest_counterposition": [sentence_with("最强的反对意见")],
+        "fair_comparison": [sentence_with("同一组现象")],
+        "position_recommendation_consistency": position_excerpts,
+        "withdrawal_action_boundary": withdrawal_excerpts,
+        "house_voice": [sentence_with("判断的价值")],
+        "model_flavor_independence": [sentence_with("这个反方")],
+        "audit_leakage": [sentence_with("不行动也会累积机会成本")],
+    }
+    if set(dimension_excerpts) != set(PROSE_REVIEW_DIMENSION_IDS):
+        raise ValueError("fixture prose review dimension mapping is incomplete")
+    required_locked_texts = [
+        *[
+            str(binding["reader_explanation"])
+            for binding in bindings
+            if isinstance(binding, Mapping)
+        ],
+        *[
+            str(stance[field])
+            for field in (
+                "center_thesis_text",
+                "preferred_option_text",
+                "second_option_text",
+                "withdrawal_text",
+                "action_ceiling_text",
+            )
+            if isinstance(stance.get(field), str)
+        ],
+    ]
+    prose_passes = (
+        len(sentence_excerpts) >= 12
+        and all(text in essay for text in required_locked_texts)
+        and re.search(
+            r"\b(?:V8-CANON|CLAIM|OPTION|MECH|BEAT|SECTION)-",
+            essay,
+        )
+        is None
+    )
+
     return {
         "schema_id": "crossframe.promax.v8.prose-review",
         "schema_version": 1,
@@ -1312,22 +1474,23 @@ def build_prose_review(
         "required_beat_mappings": [
             {
                 "beat_id": beat["beat_id"],
+                "action_ids": list(beat["action_ids"]),
                 "section_ids": list(beat["section_ids"]),
-                "evidence_excerpts": [
-                    bounded_unique_excerpt(
-                        sentence_excerpts[index % len(sentence_excerpts)]
+                "evidence_excerpts": list(
+                    dict.fromkeys(
+                        excerpt
+                        for action_id in beat["action_ids"]
+                        for excerpt in action_excerpts(str(action_id))
                     )
-                ],
+                ),
             }
-            for index, beat in enumerate(beats)
+            for beat in beats
         ],
         "dimensions": {
             dimension_id: {
                 "status": "pass" if prose_passes else "fail",
                 "evidence_excerpts": (
-                    [sentence_excerpts[dimension_excerpt_indexes[dimension_id]]]
-                    if prose_passes
-                    else []
+                    dimension_excerpts[dimension_id] if prose_passes else []
                 ),
                 "repair_target": (
                     None

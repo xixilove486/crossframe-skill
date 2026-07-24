@@ -5,7 +5,7 @@
 Schema：`promax-artifact-manifest.schema.json`
 生成权：确定性运行时
 
-禁止模型手算散列或直接编写该文件。先对安全、稳定、非链接的实际文件运行 `inventory_artifacts()`，再把结果与当前 run contract、phase chain head、五个 role records 传给 `build_artifact_manifest()`。
+禁止模型手算散列或直接编写该文件。先对安全、稳定、非链接的实际文件运行 `inventory_artifacts()`，再把结果与当前 run contract、phase chain head、六个 role records 传给 `build_artifact_manifest()`。
 
 ## 根字段
 
@@ -34,14 +34,17 @@ Schema：`promax-artifact-manifest.schema.json`
 - `promax-concept-atlas.md`
 - `promax-case-and-countercase.md`
 - `promax-essay.md`
+- `promax-prose-review.json`
 - `promax-continuation-index.md`
 
 Run contract、manifest 自身、continuation ledger、phase events、validator report、repair plan 和 final chat 不得作为 current inventory 输入。
 
-## 五角色记录
+`promax-prose-review.json` 是内部成文审校工件，进入 current inventory 与验证集，但不作为公开交付链接。
 
-`role_records` 必须按 run contract 顺序精确登记五个角色。每条只含 `role_id`、`sequence`、`execution_mode`、`exchange_protocol`、`input_artifacts`、`observed_input_artifacts`、`output_artifacts`、`status`；exchange protocol 固定为 `structured-artifacts-only`，status 只能是 `completed`、`blocked`、`invalidated`。
+## 六角色记录
 
-完成角色必须实际观察已声明输入；输出不能与自身输入相同，也不能读取同序或未来角色输出。五个角色的输出生成阶段依次为 `P4`、`P6`、`P7`、`P8`、`P10`，每个输出的 input lineage 必须等于该角色 observed input hashes。
+`role_records` 必须按 run contract 顺序精确登记六个角色。每条只含 `role_id`、`sequence`、`execution_mode`、`exchange_protocol`、`input_artifacts`、`observed_input_artifacts`、`output_artifacts`、`status`；exchange protocol 固定为 `structured-artifacts-only`，status 只能是 `completed`、`blocked`、`invalidated`。
+
+完成角色必须实际观察已声明输入；输出不能与自身输入相同，也不能读取同序或未来角色输出。六个角色的输出生成阶段依次为 `P4`、`P6`、`P7`、`P8`、`P10`、`P10`；最后的 `prose_fidelity_auditor` 读取当前 essay 与 P8/P9 锁，只输出绑定散列的 prose review。每个输出的 input lineage 必须等于该角色 observed input hashes。
 
 生成后立即过 schema、角色隔离、文件字节、closed inventory 与自散列校验。任何 current 字节变化都要求重新 inventory 和生成新 manifest。

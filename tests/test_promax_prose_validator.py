@@ -46,6 +46,33 @@ def reader_projection() -> dict[str, object]:
         "thesis_claim_id": "CLAIM-THESIS",
         "core_concept_ids": ["V8-CANON-OBJECT"],
         "atlas_only_concept_ids": ["V8-CANON-BOUNDARY"],
+        "stance_projection": {
+            "relation_to_proposition": "supports",
+            "judgment_strength": "moderate",
+            "center_thesis_text": "现有证据支持先验证机制。",
+            "preferred_option_id": "OPTION-PROBE",
+            "preferred_option_kind": "probe_action",
+            "preferred_option_text": "当前应先做可撤回的小范围试验。",
+            "second_option_id": "OPTION-EXIT",
+            "second_option_kind": "exit_or_transfer",
+            "second_option_text": "若成本已经不可逆，次选是停止并退出当前路径。",
+            "withdrawal_text": "一旦损害不可逆就撤回。",
+            "action_ceiling_text": "这里只允许准备，不构成现实授权。",
+        },
+        "core_concept_bindings": [
+            {
+                "concept_id": "V8-CANON-OBJECT",
+                "reader_anchor_terms": ["分析关系", "排除范围"],
+                "source_support_spans": [
+                    "对象由被分析关系与排除范围共同界定。"
+                ],
+                "source_misuse_spans": [],
+                "reader_explanation": (
+                    "对象边界要求先说明分析关系与排除范围，"
+                    "这个区分让我们看到，收益与代价并没有落在同一批人身上。"
+                ),
+            }
+        ],
         "selected_techniques": [
             {
                 "technique_id": "event-association",
@@ -76,6 +103,7 @@ def reader_projection() -> dict[str, object]:
             {
                 "beat_id": "BEAT-ENTRY",
                 "function": "现实入口与中心命题",
+                "action_ids": ["reality_entry", "center_thesis"],
                 "section_ids": ["SEC-1"],
                 "claim_ids": ["CLAIM-THESIS"],
                 "mechanism_ids": ["MECH-1"],
@@ -84,15 +112,49 @@ def reader_projection() -> dict[str, object]:
                 "technique_ids": ["event-association", "layered-argument"],
             },
             {
+                "beat_id": "BEAT-MECHANISM",
+                "function": "机制递进与同维比较",
+                "action_ids": [
+                    "mechanism_progression",
+                    "same_dimension_comparison",
+                ],
+                "section_ids": ["SEC-1", "SEC-2"],
+                "claim_ids": ["CLAIM-THESIS"],
+                "mechanism_ids": ["MECH-1", "MECH-2"],
+                "evidence_refs": ["EVID-1", "EVID-2"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": [
+                    "layered-argument",
+                    "positive-negative-contrast",
+                ],
+            },
+            {
+                "beat_id": "BEAT-COUNTER",
+                "function": "最强反方与明确立场",
+                "action_ids": [
+                    "strongest_counterposition",
+                    "explicit_position",
+                ],
+                "section_ids": ["SEC-2"],
+                "claim_ids": ["CLAIM-COUNTER"],
+                "mechanism_ids": ["MECH-2"],
+                "evidence_refs": ["EVID-2"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": ["positive-negative-contrast"],
+            },
+            {
                 "beat_id": "BEAT-BOUNDARY",
-                "function": "最强反方、撤回与行动边界",
+                "function": "撤回条件、行动边界与余味结尾",
+                "action_ids": [
+                    "withdrawal_action_boundary",
+                    "resonant_close",
+                ],
                 "section_ids": ["SEC-2"],
                 "claim_ids": ["CLAIM-COUNTER"],
                 "mechanism_ids": ["MECH-2"],
                 "evidence_refs": ["EVID-2"],
                 "core_concept_ids": ["V8-CANON-OBJECT"],
                 "technique_ids": [
-                    "positive-negative-contrast",
                     "finishing-touch",
                 ],
             },
@@ -170,6 +232,8 @@ def position() -> dict[str, object]:
     return {
         "run_id": RUN_ID,
         "source_snapshot_sha256": SOURCE_SHA,
+        "central_claim_id": "CLAIM-THESIS",
+        "relation_to_proposition": "supports",
         "position": "当前应先做可撤回的小范围试验。",
         "judgment_strength": "moderate",
         "primary_reasons": ["现有证据支持先验证机制。"],
@@ -193,10 +257,12 @@ def recommendation() -> dict[str, object]:
         "options": [
             {
                 "option_id": "OPTION-PROBE",
+                "option_kind": "probe_action",
                 "description": "先做可撤回的小范围试验。",
             },
             {
                 "option_id": "OPTION-EXIT",
+                "option_kind": "exit_or_transfer",
                 "description": "停止并退出当前路径。",
             },
         ],
@@ -206,9 +272,11 @@ def recommendation() -> dict[str, object]:
 def essay() -> str:
     return """现实入口是试验成本正在被转嫁给无法退出的人。
 
-当前应先做可撤回的小范围试验。对象边界这个区分让我们看到，收益与代价并没有落在同一批人身上。现有证据支持先验证机制。
+当前应先做可撤回的小范围试验。对象边界要求先说明分析关系与排除范围，这个区分让我们看到，收益与代价并没有落在同一批人身上。现有证据支持先验证机制。
 
-最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，就应停止并退出当前路径。当前仍有可执行的停止条件，一旦损害不可逆就撤回。这里只允许准备，不构成现实授权。
+机制试验与停止路径应放在同一组证据、风险和可逆性尺度上比较。因为试验可能改变对象，结论只能随停止条件逐步推进。
+
+最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，次选是停止并退出当前路径。所以我的明确立场仍是先做可撤回的小范围试验。当前仍有可执行的停止条件，一旦损害不可逆就撤回。这里只允许准备，不构成现实授权。
 
 最后的问题不是怎样证明自己判断正确，而是谁承担下一次验证的代价。
 """
@@ -250,7 +318,7 @@ def prose_review() -> dict[str, object]:
     current_position = position()
     current_plan = output_plan()
     excerpt = "现实入口是试验成本正在被转嫁给无法退出的人。"
-    return {
+    review = {
         "schema_id": "crossframe.promax.v8.prose-review",
         "schema_version": 1,
         "run_id": RUN_ID,
@@ -268,13 +336,49 @@ def prose_review() -> dict[str, object]:
         "required_beat_mappings": [
             {
                 "beat_id": "BEAT-ENTRY",
+                "action_ids": ["reality_entry", "center_thesis"],
                 "section_ids": ["SEC-1"],
-                "evidence_excerpts": [excerpt],
+                "evidence_excerpts": [
+                    excerpt,
+                    "当前应先做可撤回的小范围试验。",
+                ],
+            },
+            {
+                "beat_id": "BEAT-MECHANISM",
+                "action_ids": [
+                    "mechanism_progression",
+                    "same_dimension_comparison",
+                ],
+                "section_ids": ["SEC-1", "SEC-2"],
+                "evidence_excerpts": [
+                    "现有证据支持先验证机制。",
+                    "机制试验与停止路径应放在同一组证据、风险和可逆性尺度上比较。",
+                ],
+            },
+            {
+                "beat_id": "BEAT-COUNTER",
+                "action_ids": [
+                    "strongest_counterposition",
+                    "explicit_position",
+                ],
+                "section_ids": ["SEC-2"],
+                "evidence_excerpts": [
+                    "最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，次选是停止并退出当前路径。",
+                    "所以我的明确立场仍是先做可撤回的小范围试验。",
+                ],
             },
             {
                 "beat_id": "BEAT-BOUNDARY",
+                "action_ids": [
+                    "withdrawal_action_boundary",
+                    "resonant_close",
+                ],
                 "section_ids": ["SEC-2"],
-                "evidence_excerpts": ["一旦损害不可逆就撤回。"],
+                "evidence_excerpts": [
+                    "一旦损害不可逆就撤回。",
+                    "这里只允许准备，不构成现实授权。",
+                    "最后的问题不是怎样证明自己判断正确，而是谁承担下一次验证的代价。",
+                ],
             },
         ],
         "dimensions": {
@@ -287,13 +391,13 @@ def prose_review() -> dict[str, object]:
                 DIMENSION_IDS,
                 (
                     "现实入口是试验成本正在被转嫁给无法退出的人。",
-                    "当前应先做可撤回的小范围试验。对象边界这个区分让我们看到，收益与代价并没有落在同一批人身上。现有证据支持先验证机制。",
-                    "对象边界这个区分让我们看到，收益与代价并没有落在同一批人身上。",
+                    "因为试验可能改变对象，结论只能随停止条件逐步推进。",
+                    "对象边界要求先说明分析关系与排除范围，这个区分让我们看到，收益与代价并没有落在同一批人身上。",
                     "现有证据支持先验证机制。",
-                    "最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，就应停止并退出当前路径。",
-                    "若成本已经不可逆，就应停止并退出当前路径。",
-                    "当前应先做可撤回的小范围试验。",
-                    "一旦损害不可逆就撤回。",
+                    "最强的反对意见是试验本身可能扩大既有损害；若成本已经不可逆，次选是停止并退出当前路径。",
+                    "机制试验与停止路径应放在同一组证据、风险和可逆性尺度上比较。",
+                    "当前应先做可撤回的小范围试验。若成本已经不可逆，次选是停止并退出当前路径。",
+                    "一旦损害不可逆就撤回。这里只允许准备，不构成现实授权。",
                     "最后的问题不是怎样证明自己判断正确，而是谁承担下一次验证的代价。",
                     "当前仍有可执行的停止条件，一旦损害不可逆就撤回。",
                     "这里只允许准备，不构成现实授权。",
@@ -303,6 +407,73 @@ def prose_review() -> dict[str, object]:
         "overall_status": "pass",
         "reviewed_at": "2026-07-25T08:00:00Z",
     }
+    review["dimensions"]["position_recommendation_consistency"][
+        "evidence_excerpts"
+    ] = [
+        "现有证据支持先验证机制。",
+        "当前应先做可撤回的小范围试验。",
+        "若成本已经不可逆，次选是停止并退出当前路径。",
+    ]
+    review["dimensions"]["withdrawal_action_boundary"][
+        "evidence_excerpts"
+    ] = [
+        "一旦损害不可逆就撤回。",
+        "这里只允许准备，不构成现实授权。",
+    ]
+    return review
+
+
+def sentence_region_review_fixture(
+    separator: str,
+) -> tuple[str, dict[str, object], dict[str, object]]:
+    fragments = (
+        "现实入口展示成本正在转移",
+        "我的判断是当前应先试验，因为条件变化会导致结论变化",
+        "对象边界要求先说明分析关系与排除范围，因为机制会改变承担代价",
+        "现有证据支持这一判断",
+        "两种方案必须在同一评价维度上比较",
+        "最强反方指出试验可能扩大损害",
+        "我的明确立场支持当前判断，首选小范围探查，次选退出",
+        "一旦损害扩大就撤回，且分析不构成现实授权",
+        "判断边界要求说明谁承担代价",
+        "固定声口仍会承认反方条件",
+        "最后的问题提醒承担验证代价，正文没有机器台账",
+    )
+    synthetic_essay = separator.join(fragments) + "。"
+    synthetic_plan = output_plan()
+    projection = synthetic_plan["reader_projection"]
+    projection["core_concept_bindings"][0]["reader_explanation"] = fragments[2]
+    projection["stance_projection"].update(
+        {
+            "center_thesis_text": "我的明确立场支持当前判断",
+            "preferred_option_text": "首选小范围探查",
+            "second_option_text": "次选退出",
+            "withdrawal_text": "一旦损害扩大就撤回",
+            "action_ceiling_text": "分析不构成现实授权",
+        }
+    )
+
+    review = prose_review()
+    review["essay_sha256"] = hashlib.sha256(
+        synthetic_essay.encode("utf-8")
+    ).hexdigest()
+    review["output_plan_sha256"] = sha256_json(synthetic_plan)
+    for mapping, indexes in zip(
+        review["required_beat_mappings"],
+        ((0, 1), (2, 4), (5, 6), (7, 10)),
+        strict=True,
+    ):
+        mapping["evidence_excerpts"] = [fragments[index] for index in indexes]
+    dimension_indexes = (0, 1, 2, 3, 5, 4, 6, 7, 8, 9, 10)
+    for dimension_id, index in zip(
+        DIMENSION_IDS,
+        dimension_indexes,
+        strict=True,
+    ):
+        review["dimensions"][dimension_id]["evidence_excerpts"] = [
+            fragments[index]
+        ]
+    return synthetic_essay, review, synthetic_plan
 
 
 class ProMaxReaderProjectionTests(unittest.TestCase):
@@ -377,6 +548,25 @@ class ProMaxReaderProjectionTests(unittest.TestCase):
                 ):
                     validate_reader_projection(candidate, **projection_context())
 
+    def test_reader_actions_are_complete_ordered_unique_and_bounded_per_beat(
+        self,
+    ) -> None:
+        missing = reader_projection()
+        missing["reader_beats"][-1]["action_ids"].pop()
+        reordered = reader_projection()
+        reordered["reader_beats"][0]["action_ids"].reverse()
+        swallowed = reader_projection()
+        swallowed["reader_beats"][0]["action_ids"] = [
+            "reality_entry",
+            "center_thesis",
+            "mechanism_progression",
+        ]
+
+        for candidate in (missing, reordered, swallowed):
+            with self.subTest(candidate=candidate["reader_beats"]):
+                with self.assertRaisesRegex(ValueError, "action_ids|reader action"):
+                    validate_reader_projection(candidate, **projection_context())
+
 
 class ProMaxReaderDocumentTests(unittest.TestCase):
     def validate_documents(
@@ -385,9 +575,12 @@ class ProMaxReaderDocumentTests(unittest.TestCase):
         essay_text: str | None = None,
         atlas_text: str | None = None,
         dossier_text: str | None = None,
+        projection: dict[str, object] | None = None,
     ) -> dict[str, object]:
         return validate_v2_reader_documents(
-            reader_projection=reader_projection(),
+            reader_projection=(
+                reader_projection() if projection is None else projection
+            ),
             concept_registry=concept_registry(),
             dispositions=dispositions(),
             atlas=atlas() if atlas_text is None else atlas_text,
@@ -444,6 +637,52 @@ class ProMaxReaderDocumentTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "atlas-only"):
             self.validate_documents(essay_text=candidate)
+
+    def test_core_reader_anchors_are_source_extractive_specific_and_visible(
+        self,
+    ) -> None:
+        outside_source = reader_projection()
+        outside_source["core_concept_bindings"][0]["reader_anchor_terms"] = [
+            "分析关系",
+            "凭空词语",
+        ]
+        generic = reader_projection()
+        generic["core_concept_bindings"][0]["reader_anchor_terms"] = [
+            "对象",
+            "排除范围",
+        ]
+        missing_from_essay = essay().replace("排除范围", "纳入边界")
+
+        with self.assertRaisesRegex(ValueError, "source-extractive"):
+            self.validate_documents(projection=outside_source)
+        with self.assertRaisesRegex(ValueError, "generic"):
+            self.validate_documents(projection=generic)
+        with self.assertRaisesRegex(
+            ValueError,
+            "anchor term|locked natural explanation",
+        ):
+            self.validate_documents(essay_text=missing_from_essay)
+
+    def test_negated_unconditional_concept_misuse_is_not_a_false_positive(
+        self,
+    ) -> None:
+        candidate = essay().replace(
+            "这个区分让我们看到",
+            "这并不意味着对象一经命名就永远固定；这个区分让我们看到",
+        )
+        projection = reader_projection()
+        projection["core_concept_bindings"][0]["reader_explanation"] = (
+            "对象边界要求先说明分析关系与排除范围，"
+            "这并不意味着对象一经命名就永远固定；"
+            "这个区分让我们看到，收益与代价并没有落在同一批人身上。"
+        )
+
+        result = self.validate_documents(
+            essay_text=candidate,
+            projection=projection,
+        )
+
+        self.assertEqual(result["status"], "valid")
 
     def test_atlas_must_close_every_applied_definition(self) -> None:
         candidate = atlas().replace("边界约束说明对象何时需要重新冻结。", "")
@@ -565,9 +804,60 @@ class ProMaxProseReviewTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             ValueError,
-            "excerpt|dimension|reuse|distinct",
+            "argument_dependency|relation|excerpt|dimension|reuse|distinct",
         ):
             self.validate_review(candidate)
+
+    def test_review_rejects_dimension_excerpts_rotated_to_unrelated_dimensions(
+        self,
+    ) -> None:
+        candidate = prose_review()
+        excerpts = [
+            copy.deepcopy(candidate["dimensions"][dimension_id]["evidence_excerpts"])
+            for dimension_id in DIMENSION_IDS
+        ]
+        rotated = excerpts[1:] + excerpts[:1]
+        for dimension_id, evidence_excerpts in zip(
+            DIMENSION_IDS,
+            rotated,
+            strict=True,
+        ):
+            candidate["dimensions"][dimension_id][
+                "evidence_excerpts"
+            ] = evidence_excerpts
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "reality_entry|dimension|evidence|semantic",
+        ):
+            self.validate_review(candidate)
+
+    def test_review_rejects_reader_actions_mapped_out_of_essay_order(self) -> None:
+        paragraphs = essay().strip().split("\n\n")
+        self.assertEqual(len(paragraphs), 5)
+        reordered = "\n\n".join(
+            [
+                paragraphs[0],
+                paragraphs[3],
+                paragraphs[1],
+                paragraphs[2],
+                paragraphs[4],
+            ]
+        ) + "\n"
+        candidate = prose_review()
+        candidate["essay_sha256"] = hashlib.sha256(
+            reordered.encode("utf-8")
+        ).hexdigest()
+
+        with self.assertRaisesRegex(ValueError, "action|order|reader beat"):
+            validate_prose_review(
+                candidate,
+                essay=reordered,
+                position=position(),
+                output_plan=output_plan(),
+                run_id=RUN_ID,
+                source_snapshot_sha256=SOURCE_SHA,
+            )
 
     def test_review_rejects_distinct_fragments_cut_from_one_sentence(self) -> None:
         candidate = prose_review()
@@ -594,32 +884,9 @@ class ProMaxProseReviewTests(unittest.TestCase):
             self.validate_review(candidate)
 
     def test_review_does_not_treat_markdown_soft_breaks_as_new_sentences(self) -> None:
-        fragments = (
-            "现实入口展示成本开始转移",
-            "中心命题说明当前判断方向",
-            "机制递进解释结果如何生成",
-            "证据绑定限制结论能够多强",
-            "最强反方指出试验可能扩损",
-            "公平比较保持同一评价维度",
-            "明确立场没有躲进模糊措辞",
-            "撤回条件规定何时停止推进",
-            "行动边界拒绝制造现实授权",
-            "固定声口不迎合也不唱反调",
-            "全文检查确认没有审计泄漏",
+        soft_break_essay, candidate, synthetic_plan = (
+            sentence_region_review_fixture("\n")
         )
-        soft_break_essay = "\n".join(fragments) + "。"
-        candidate = prose_review()
-        candidate["essay_sha256"] = hashlib.sha256(
-            soft_break_essay.encode("utf-8")
-        ).hexdigest()
-        candidate["required_beat_mappings"][0]["evidence_excerpts"] = [
-            fragments[0]
-        ]
-        candidate["required_beat_mappings"][1]["evidence_excerpts"] = [
-            fragments[-1]
-        ]
-        for dimension, fragment in zip(candidate["dimensions"].values(), fragments):
-            dimension["evidence_excerpts"] = [fragment]
 
         with self.assertRaisesRegex(
             ValueError,
@@ -629,10 +896,30 @@ class ProMaxProseReviewTests(unittest.TestCase):
                 candidate,
                 essay=soft_break_essay,
                 position=position(),
-                output_plan=output_plan(),
+                output_plan=synthetic_plan,
                 run_id=RUN_ID,
                 source_snapshot_sha256=SOURCE_SHA,
             )
+
+    def test_ascii_periods_and_all_commonmark_line_endings_split_sentence_regions(
+        self,
+    ) -> None:
+        for separator in (". ", "\r\r"):
+            with self.subTest(separator=repr(separator)):
+                sentence_essay, candidate, synthetic_plan = (
+                    sentence_region_review_fixture(separator)
+                )
+
+                result = validate_prose_review(
+                    candidate,
+                    essay=sentence_essay,
+                    position=position(),
+                    output_plan=synthetic_plan,
+                    run_id=RUN_ID,
+                    source_snapshot_sha256=SOURCE_SHA,
+                )
+
+                self.assertEqual(result["overall_status"], "pass")
 
     def test_excerpt_uniqueness_detects_overlapping_occurrences(self) -> None:
         excerpt = "甲乙丙丁甲乙丙丁"

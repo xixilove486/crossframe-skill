@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,37 @@ from tests.test_promax_v2_checker import (  # noqa: E402
     _rewrite_review_and_bind_manifest,
     v2_bundle,
 )
+
+
+def _materialize_with_fresh_review(
+    workspace: Path,
+    transform,
+) -> dict[str, object]:
+    original = fixture_factory.build_deliverables
+
+    def tampered(*args, **kwargs):
+        deliverables = original(*args, **kwargs)
+        deliverables["promax-essay.md"] = transform(
+            deliverables["promax-essay.md"]
+        )
+        return deliverables
+
+    with mock.patch.object(
+        fixture_factory,
+        "build_deliverables",
+        side_effect=tampered,
+    ):
+        fixture_factory.materialize_fixture(
+            ROOT,
+            scenario_id="valid-complete",
+            output=workspace,
+        )
+    return checker.validate_workspace(
+        workspace,
+        repo=ROOT,
+        final_chat=True,
+        allow_test_fixture=True,
+    )
 
 
 class ProMaxAdversarialReaderProseTests(unittest.TestCase):
@@ -115,8 +147,280 @@ class ProMaxAdversarialReaderProseTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "valid")
 
+    def test_app_ins_colon_sentence_is_not_a_machine_field(self) -> None:
+        bundle = v2_bundle()
+        bundle["deliverables"]["promax-essay.md"] += (
+            "\n\nAPP-INS：制度与公共治理这个术语提醒我们追问责任链。\n"
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        result = validate_output_bundle(**bundle)
+
+        self.assertEqual(result["status"], "valid")
+
+    def test_control_plane_hashes_and_validator_markers_never_enter_reader_copy(
+        self,
+    ) -> None:
+        for marker in (
+            "a" * 64,
+            "crossframe-promax-artifact-checker/1",
+        ):
+            bundle = v2_bundle()
+            bundle["deliverables"]["promax-essay.md"] += (
+                f"\n\n这一段泄漏了内部控制标记 {marker}。\n"
+            )
+            legacy.refresh_delivery_bindings(bundle)
+            with self.subTest(marker=marker):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "control-plane|machine identifier",
+                ):
+                    validate_output_bundle(**bundle)
+
+    def test_reader_beats_must_close_claim_mechanism_evidence_and_prose_roles(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        beat = bundle["output_plan"]["reader_projection"]["reader_beats"][0]
+        beat["function"] = "结尾。"
+        for field in (
+            "mechanism_ids",
+            "evidence_refs",
+            "core_concept_ids",
+            "technique_ids",
+        ):
+            beat[field] = []
+
+        with self.assertRaisesRegex(ValueError, "reader beat|coverage|close"):
+            validate_output_bundle(**bundle)
+
+    def test_numeric_claims_require_upstream_provenance_or_explicit_hypothesis(
+        self,
+    ) -> None:
+        sourced = v2_bundle()
+        sourced["retrieval_ledger"]["entries"][0]["finding"] = (
+            "来源记录的成功率为 87.3%。"
+        )
+        sourced["deliverables"]["promax-essay.md"] += (
+            "\n\n来源记录的成功率为 87.3%，因此该数字只支撑有限判断。\n"
+        )
+        legacy.refresh_delivery_bindings(sourced)
+
+        hypothetical = v2_bundle()
+        hypothetical["deliverables"]["promax-essay.md"] += (
+            "\n\n假设成功率为 87.3%，结论仍需接受退出条件约束。\n"
+        )
+        legacy.refresh_delivery_bindings(hypothetical)
+
+        for bundle in (sourced, hypothetical):
+            with self.subTest(essay=bundle["deliverables"]["promax-essay.md"][-80:]):
+                result = validate_output_bundle(**bundle)
+                self.assertEqual(result["status"], "valid")
+
+    def test_urls_footnotes_and_list_ordinals_are_not_numeric_claims(self) -> None:
+        bundle = v2_bundle()
+        bundle["deliverables"]["promax-essay.md"] += (
+            "\n\n1. 参考资料[12]可见于 https://example.org/report/2024，"
+            "这里没有把编号当成事实比例。\n"
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        result = validate_output_bundle(**bundle)
+
+        self.assertEqual(result["status"], "valid")
+
+    def test_quoted_or_indented_json_ledgers_cannot_enter_reader_prose(self) -> None:
+        bundle = v2_bundle()
+        bundle["deliverables"]["promax-essay.md"] += (
+            '\n\n{\n  "position": "内部立场字段",\n'
+            '  "judgment_strength": "high",\n'
+            '  "repair_target": "P10"\n}\n'
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "key/value|control-plane|ledger"):
+            validate_output_bundle(**bundle)
+
+    def test_url_mask_stops_before_chinese_punctuation_and_numeric_claims(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        bundle["deliverables"]["promax-essay.md"] += (
+            "\n\n资料见 https://example.org/report/2024，"
+            "成功率已经精确达到87.3%。\n"
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "unsupported numeric claim"):
+            validate_output_bundle(**bundle)
+
+    def test_single_digit_counts_and_multipliers_need_numeric_provenance(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        bundle["deliverables"]["promax-essay.md"] += (
+            "\n\n没有任何来源，但这里断言已有9人死亡，而且风险扩大了9倍。\n"
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "unsupported numeric claim"):
+            validate_output_bundle(**bundle)
+
+    def test_source_anchors_cannot_rescue_a_wrong_core_concept_definition(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        essay = bundle["deliverables"]["promax-essay.md"]
+        original = (
+            "对象边界要求先说明分析关系与排除范围，"
+            "再问清楚谁被纳入判断、谁承担代价；"
+        )
+        replacement = (
+            "对象边界说明分析关系与排除范围都只是装饰，"
+            "真正边界完全由段落字数决定，这会导致现实后果；"
+        )
+        self.assertIn(original, essay)
+        bundle["deliverables"]["promax-essay.md"] = essay.replace(
+            original,
+            replacement,
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "concept|v8|meaning"):
+            validate_output_bundle(**bundle)
+
+    def test_reader_prose_cannot_reverse_the_locked_position_and_recommendation(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        essay = bundle["deliverables"]["promax-essay.md"]
+        self.assertIn("当前结构最符合机制甲。", essay)
+        bundle["deliverables"]["promax-essay.md"] = essay.replace(
+            "当前结构最符合机制甲。",
+            "我的判断是：当前结构最不符合机制甲，"
+            "首选应永久禁止一切试验，次选也是维持禁令。",
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "stance|position|recommendation|judgment",
+        ):
+            validate_output_bundle(**bundle)
+
+    def test_declaring_that_no_counterposition_exists_is_not_a_strongest_counter(
+        self,
+    ) -> None:
+        bundle = v2_bundle()
+        essay = bundle["deliverables"]["promax-essay.md"]
+        original = "最强的反对意见是试验本身会扩大既有损害。"
+        replacement = (
+            "最强的反对意见根本不存在，没有任何观点足以构成反方。"
+        )
+        self.assertIn(original, essay)
+        bundle["deliverables"]["promax-essay.md"] = essay.replace(
+            original,
+            replacement,
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "counter|反方"):
+            validate_output_bundle(**bundle)
+
+    def test_first_reader_paragraph_rejects_internal_mechanism_labels(self) -> None:
+        bundle = v2_bundle()
+        essay = bundle["deliverables"]["promax-essay.md"]
+        original = "现实中的冲突不是术语不够多，"
+        replacement = "现实中的冲突已经被框架机制甲预先命名，"
+        self.assertIn(original, essay)
+        bundle["deliverables"]["promax-essay.md"] = essay.replace(
+            original,
+            replacement,
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        with self.assertRaisesRegex(ValueError, "first paragraph|framework terminology"):
+            validate_output_bundle(**bundle)
+
+    def test_fair_counterwording_is_not_misread_as_counter_dismissal(self) -> None:
+        bundle = v2_bundle()
+        essay = bundle["deliverables"]["promax-essay.md"]
+        original = "最强的反对意见是试验本身会扩大既有损害。"
+        self.assertIn(original, essay)
+        bundle["deliverables"]["promax-essay.md"] = essay.replace(
+            original,
+            "最强反方不需要被立即否定；" + original,
+        )
+        legacy.refresh_delivery_bindings(bundle)
+
+        result = validate_output_bundle(**bundle)
+
+        self.assertEqual(result["status"], "valid")
+
 
 class ProMaxAdversarialReviewTests(unittest.TestCase):
+    def test_fresh_forged_review_cannot_rescue_semantically_invalid_prose(
+        self,
+    ) -> None:
+        def audit_body_over_48k(essay: str) -> str:
+            paragraph = (
+                "\n\n审校记录说明，这一段只是在逐项声称文章已经通过现实入口、"
+                "证据绑定、最强反方、公平比较、固定声口和泄漏检查，"
+                "却没有继续向读者展开问题本身。"
+            )
+            return essay + paragraph * (50_000 // len(paragraph) + 10)
+
+        def wrong_core_concept(essay: str) -> str:
+            old = (
+                "A* 行动者候选状态不是永久身份标签；"
+                "它只是在当前观察窗和证据边界内保留未知项的一份候选描述。"
+            )
+            new = (
+                "A* 行动者候选状态意味着对象一经命名就永远固定，"
+                "任何变化都可直接证明转移机制为真。"
+            )
+            self.assertIn(old, essay)
+            return essay.replace(old, new)
+
+        def unsupported_precise_number(essay: str) -> str:
+            return essay + (
+                "\n\n没有任何上游来源支持，"
+                "但这里断言成功率已经精确达到 87.3%。"
+            )
+
+        def remove_strongest_counterposition(essay: str) -> str:
+            old = (
+                "最强的反对意见是：对象边界本身可能不稳定，"
+                "所谓转移只是重新划分对象后的视觉效果。"
+            )
+            new = (
+                "所有反对意见都不值一提。"
+                "反方无需获得成立条件。"
+                "当前结论也不需要任何撤回路径。"
+            )
+            self.assertIn(old, essay)
+            return essay.replace(old, new)
+
+        for transform in (
+            audit_body_over_48k,
+            wrong_core_concept,
+            unsupported_precise_number,
+            remove_strongest_counterposition,
+        ):
+            with self.subTest(transform=transform.__name__):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    workspace = Path(temp_dir) / "run"
+                    result = _materialize_with_fresh_review(
+                        workspace,
+                        transform,
+                    )
+
+                self.assertEqual(
+                    result["overall_status"],
+                    "fail",
+                    result["diagnostics"],
+                )
+
     def test_semantic_review_rejects_unsupported_numbers_and_missing_countercase(
         self,
     ) -> None:

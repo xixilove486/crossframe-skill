@@ -124,6 +124,8 @@ repair plan 必须符合 `promax-repair-plan.schema.json`，并包含：
 | position、recommendation 或授权泄漏 | `P8` |
 | output plan 覆盖错误 | `P9` |
 | 长文语义、typed example、manifest 或 continuation 错误 | `P10` |
+| 体裁、读者节拍或技法映射失败 | `P9` |
+| 正文表达或声口失败 | `P10` |
 | validator report 重放或最终聊天错误 | `P11` |
 
 具体 failure 的 `affected_phase` 优先于本表。本表只帮助理解，不覆盖 checker 输出。
@@ -165,8 +167,8 @@ repair plan 必须符合 `promax-repair-plan.schema.json`，并包含：
 
 ### P9-P10
 
-- P9：重新映射全部 applied concepts、claims、mechanisms、paths、examples、countercases、position 与 recommendation。
-- P10：只重写受影响章节，但重新运行四份长文的整体语义检查；更新 typed examples、continuation index、manifest 与 continuation ledger。
+- P9：重新映射全部 applied concepts、claims、mechanisms、paths、examples、countercases、position 与 recommendation；若根因属于成文计划，同时重选 article type、reader beats、核心概念与技法分工。
+- P10：只重写受影响章节，但重新运行四份长文的整体语义检查与独立 prose review；更新 typed examples、continuation index、manifest 与 continuation ledger。
 
 每个重跑阶段通过 `seal_phase_event` 与 `append_phase_event` 生成新的活动 hash。不要把旧 event hash 复制到新事件。
 
