@@ -410,7 +410,11 @@ def _authoring_contract(
         "promax-essay.md": "templates/promax-essay-output.md",
         "promax-continuation-index.md": "templates/promax-continuation-index-output.md",
     }
-    if _contract_schema_version(contract) == 2:
+    if _contract_schema_version(contract) == 1:
+        template_map["promax-output-plan.locked.json"] = (
+            "templates/promax-output-plan-v1-output.md"
+        )
+    else:
         template_map[PROSE_REVIEW_ARTIFACT] = (
             "templates/promax-prose-review-output.md"
         )

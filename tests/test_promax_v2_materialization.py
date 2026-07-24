@@ -170,6 +170,10 @@ class ProMaxV2AuthoringContractTests(unittest.TestCase):
             )
 
             _validate_authoring_contract(authoring, run_contract)
+            self.assertEqual(
+                authoring["template_map"]["promax-output-plan.locked.json"],
+                "templates/promax-output-plan-output.md",
+            )
 
     def test_v2_prepare_requires_review_and_scaffolds_three_input_auditor(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -233,6 +237,16 @@ class ProMaxV2AuthoringContractTests(unittest.TestCase):
             "promax-prose-review.json",
             authoring["template_map"],
         )
+        self.assertEqual(
+            authoring["template_map"]["promax-output-plan.locked.json"],
+            "templates/promax-output-plan-v1-output.md",
+        )
+        legacy_template = (
+            ROOT
+            / "skills/crossframe-promax/templates/promax-output-plan-v1-output.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("`schema_version=1`", legacy_template)
+        self.assertNotIn("reader_projection", legacy_template)
         self.assertEqual(len(attestations["roles"]), 5)
         self.assertEqual(
             attestations["roles"][-1]["input_artifact_paths"],
