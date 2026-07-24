@@ -1,17 +1,23 @@
 <div align="center">
 
-# CrossFrame Skill Suite
+<p><strong>CROSSFRAME · V8 STRUCTURAL REASONING RUNTIME</strong></p>
 
-### 给 AI 装上的中文结构思考系统：诊断、推演、成文、审查与追问
+# CrossFrame ProMax
 
-**先拆清事实、证据、尺度、责任与机制，再输出普通读者能读懂的中文判断、答复、案例、备忘录或完整文章。**
+### 可运行、可审计、可修复的重型 AI 结构推演系统
+
+**它不是简单“让模型多想一会儿”的提示词，而是把 v8 全源知识、结构推演、真实检索、反方攻击、明确裁决、完整长文与机器验证锁进同一条独立 runtime。**
+
+由 **CrossFrame 作者与 ChatGPT 5.6 Sol（Ultra）** 共同设计、实现、攻击与验证。
 
 <br>
 
-![Language](https://img.shields.io/badge/language-%E4%B8%AD%E6%96%87%E8%BE%93%E5%87%BA-f3d7e6?style=flat-square&labelColor=fff7fb&color=f3d7e6)
-![Trigger](https://img.shields.io/badge/trigger-explicit_only-d8ebff?style=flat-square&labelColor=fafcff&color=d8ebff)
+![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-2f81f7?style=flat-square&labelColor=0d1117&color=2f81f7)
+![Runtime](https://img.shields.io/badge/runtime-independent-58a6ff?style=flat-square&labelColor=0d1117&color=58a6ff)
+![Python](https://img.shields.io/badge/Python-3.11-79c0ff?style=flat-square&labelColor=0d1117&color=79c0ff)
+![Trigger](https://img.shields.io/badge/trigger-exact--name_only-a5d6ff?style=flat-square&labelColor=0d1117&color=a5d6ff)
+![Validation](https://img.shields.io/badge/validation-artifact--first-1f6feb?style=flat-square&labelColor=0d1117&color=1f6feb)
 ![Framework](https://img.shields.io/badge/framework-CrossFrame_v5.1.7-e4ddff?style=flat-square&labelColor=fffaff&color=e4ddff)
-![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-eadcff?style=flat-square&labelColor=fffaff&color=eadcff)
 ![Workflow](https://img.shields.io/badge/workflow-diagnosis_%E2%86%92_writing_%E2%86%92_review_%E2%86%92_inquiry-d9f2df?style=flat-square&labelColor=fbfffb&color=d9f2df)
 ![License](https://img.shields.io/badge/license-MIT-f8efcf?style=flat-square&labelColor=fffdf6&color=f8efcf)
 
@@ -22,17 +28,27 @@
 </p>
 
 <p align="center">
-  <a href="#what"><strong>它是什么</strong></a>
+  <a href="#promax-runtime"><strong>运行链</strong></a>
+  ·
+  <a href="#promax-capabilities"><strong>ProMax 能力</strong></a>
+  ·
+  <a href="#model-flavor"><strong>模型风味</strong></a>
+  ·
+  <a href="#promax-conditions"><strong>依赖与消耗</strong></a>
   ·
   <a href="#quickstart"><strong>快速开始</strong></a>
   ·
-  <a href="#use-cases"><strong>适用场景</strong></a>
+  <a href="#what"><strong>Skills 家族</strong></a>
   ·
-  <a href="#closure"><strong>质量闭环</strong></a>
+  <a href="#use-cases"><strong>适用场景</strong></a>
   ·
   <a href="#workflow"><strong>工作流</strong></a>
   ·
   <a href="#max"><strong>Max 模式</strong></a>
+  ·
+  <a href="#promax"><strong>ProMax 模式</strong></a>
+  ·
+  <a href="#closure"><strong>质量闭环</strong></a>
   ·
   <a href="#skills"><strong>Skill 地图</strong></a>
   ·
@@ -40,6 +56,73 @@
 </p>
 
 </div>
+
+<table>
+<tr>
+<td align="center"><strong>3,980</strong><br>全源读取事件<br><sub>3,863 个段落 + 117 张表</sub></td>
+<td align="center"><strong>709 个概念</strong><br>逐项处置<br><sub>定义、邻接、误用边界</sub></td>
+<td align="center"><strong>P0–P11</strong><br>阶段状态机<br><sub>冻结、验证、定向修复</sub></td>
+<td align="center"><strong>五向真实检索</strong><br>案例校准<br><sub>支持、反例、边界条件</sub></td>
+</tr>
+</table>
+
+> **共创边界：** ChatGPT 5.6 Sol（Ultra）参与了 ProMax skill 的架构设计、实现、攻击测试与验证；CrossFrame v8 的框架定义仍以作者提供的 v8 原始材料为权威。共创模型不是运行依赖，其他具备文件、Python 与可选网络能力的 Agent 型 AI 也可以调用。
+
+---
+
+<a id="promax-runtime"></a>
+## 一条可验证的 ProMax 运行链
+
+```text
+request → v8 full-source → concept closure → local world model
+        → claim-path → retrieval → red-team → position lock
+        → dossier + essay → validator → phase-aware repair
+```
+
+ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独立运行时：先冻结问题与 v8 源快照，再构造概念闭合、局部世界、命题路径和检索工件；初稿必须经过反方攻击与立场锁定，最终 dossier 与 essay 还要由 fresh validator 独立验收。若失败，系统依据 `affected_phase` 只重置受影响阶段及其下游产物，再进行定向修复，不靠补几个关键词伪装完成。
+
+<a id="promax-capabilities"></a>
+## ProMax 实现了什么
+
+| 能力 | 运行约束 | 可审计结果 |
+| --- | --- | --- |
+| **v8 全源加载** | 固定源快照；读取 **3,863 个段落、117 张表** | 每次读取形成 read event 与 hash，证明实际加载范围 |
+| **概念闭合** | 对 **709 个概念**逐项登记定义、邻接概念、误用边界和与当前请求相关的理由 | 概念不能只被“提到”，必须说明如何进入或退出本次推演 |
+| **局部世界建模** | 显式建模对象、行动者、圈层、尺度、双通道、时钟、事件、证据与未知项 | 分离已知、推断和待证部分，阻止把单一视角冒充全局 |
+| **命题与路径** | 建立中心命题、竞争机制、路径 DAG、条件预测、切换条件与撤回条件 | 结论绑定可检验路径，不以修辞强度代替机制解释 |
+| **真实检索** | 按五向检索搜寻案例、支持证据、反例和边界条件，并将支持与反例分开登记 | 有网络时外部校准；断网时诚实降档，不伪造来源或检索完成态 |
+| **自我攻击** | 构造最强反方，检查概念误用、立场稳定性与证据截止 | 让反例真正有机会改写、降档或推翻初始判断 |
+| **明确裁决** | 在攻击后锁定立场，比较六类行动，给出主方案、备选、停止条件与回滚路径 | 说明选择什么、为什么、何时不再坚持，而不是把答案留在模棱两可中 |
+| **可验证交付** | 物化 dossier、concept atlas、cases、essay 与 manifest，再交给 fresh validator 和 phase repair | 最终文本不能自我认证；发布状态由独立校验报告决定 |
+
+<a id="model-flavor"></a>
+## 如何抑制模型自身风味
+
+不同 AI 有不同的训练偏好：有的倾向顺从，有的先反驳，有的习惯列举却不裁决。ProMax 不假设能抹去这些差异，而是用五道结构约束限制它们对判断的支配：
+
+1. **v8 定义优先。** 框架原文与概念契约覆盖模型预训练中碰巧同名的概念，禁止用熟悉词义替代 CrossFrame 的独特定义。
+2. **冻结关键工件。** 请求、源快照、证据边界、命题和阶段产物被显式登记，防止推演中悄悄改题、换证据或移动判断标准。
+3. **检索与 red-team 攻击草稿。** 真实案例检索和最强反方不是装饰性章节，而是可以迫使初稿改写、降档或撤回的独立步骤，不能只顺着用户说。
+4. **position lock 强制裁决。** 模型必须在攻击后给出明确立场、比较备选，并登记撤回、停止与回滚条件；不能用“各有道理”逃避判断。
+5. **fresh validator 与阶段修复。** 新鲜校验进程依据工件而非文风验收；失败后按阶段修复，防止流畅文字给自己盖章。
+
+这些约束不会让不同模型的措辞、节奏和全部判断变得字面完全相同，但它要求每个模型都通过同一套结构契约与审计闸；差异必须暴露在证据、路径、反例和撤回条件中，而不能藏在模型习惯里。
+
+<a id="promax-conditions"></a>
+## 运行条件、消耗与触发边界
+
+| 项目 | 要求 |
+| --- | --- |
+| Python | **Python 3.11**（仓库 CI 基准） |
+| 生产依赖 | `jsonschema` |
+| 仓库验证 | `pytest`、`PyYAML` |
+| 宿主能力 | 读取 skill 文件、执行 Python、写入独立 artifact 目录 |
+| 网络 | 外部真实案例检索的可选能力；无网络时必须显式降档 |
+| v8 材料 | 全源快照随 skill 携带，运行时不依赖原始 Word 文件 |
+
+ProMax 仅在用户明确使用以下四种名称之一时触发：`crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax`。仅说“最大算力”“全尺度”或“穷尽推演”不构成 ProMax 点名，泛化最大化请求仍由 Max；suite 不得自动升级。若 Max 与 ProMax 同时出现，ProMax 优先；一旦进入 ProMax，也不得降级回 Max。
+
+> **消耗警告：** 完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、建议比较、长文物化与验证修复，可能消耗数百万至数千万 token。用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 **17,000,000 token**；它不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。
 
 ---
 
@@ -50,13 +133,7 @@ CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成�
 
 它适合处理那些不能只靠“给建议”“写一段评论”“简单总结”解决的问题：关系、团队、组织、制度、公共争议、历史材料、命题辩论、读者来信、研究笔记，以及需要写成完整中文文章的复杂议题。
 
-当前仓库包含 16 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
-
-CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 [`skills/crossframe-promax/SKILL.md`](skills/crossframe-promax/SKILL.md)。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
-
-ProMax 运行环境以 **Python 3.11** 为 CI 基准，生产运行依赖 `jsonschema`；完整仓库校验另需 `pytest` 与 `PyYAML`。宿主还需要允许读取 skill 文件、执行 Python 并写入独立 artifact 目录；外部真实案例检索需要网络能力。v8 全源快照已随 skill 携带，运行时不依赖原始 Word 文件。
-
-> **消耗警告：** ProMax 不是普通长回答模式。完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、建议比较、长文物化与验证修复，可能消耗数百万至数千万 token。用户实测 DeepSeek V4 Pro 完整运行一轮约消耗 **17,000,000 token**；这是单次实测，不是所有模型的固定值。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑和成本上限。
+当前仓库包含 16 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。[`crossframe-promax`](skills/crossframe-promax/SKILL.md) 则是上文展示的 v8-only、exact-name only 独立旗舰 runtime，与 Max 的 v6 运行时相互隔离。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
 
 安全边界先行：
 
