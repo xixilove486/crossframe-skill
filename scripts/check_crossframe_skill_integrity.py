@@ -814,6 +814,7 @@ def check_public_release_docs(repo: Path, label: str) -> None:
         "P0–P11",
         "五向真实检索",
         "如何抑制模型自身风味",
+        "未要求建议时只完成判断",
         "17,000,000 token",
     ]:
         require(marker in readme_text, f"{label}: README.md missing ProMax dossier marker: {marker}")

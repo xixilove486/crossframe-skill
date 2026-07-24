@@ -105,7 +105,7 @@ ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独
 1. **v8 定义优先。** 框架原文与概念契约覆盖模型预训练中碰巧同名的概念，禁止用熟悉词义替代 CrossFrame 的独特定义。
 2. **冻结关键工件。** 请求、源快照、证据边界、命题和阶段产物被显式登记，防止推演中悄悄改题、换证据或移动判断标准。
 3. **检索与 red-team 攻击草稿。** 真实案例检索和最强反方不是装饰性章节，而是可以迫使初稿改写、降档或撤回的独立步骤，不能只顺着用户说。
-4. **position lock 强制裁决。** 模型必须在攻击后给出明确立场、比较备选，并登记撤回、停止与回滚条件；不能用“各有道理”逃避判断。
+4. **position lock 强制裁决。** 模型在攻击后必须给出明确立场与判断撤回条件；只有用户明确要求建议时，才比较备选并登记停止与回滚条件。未要求建议时只完成判断，recommendation 为 `{"status":"not_requested"}`；不能用“各有道理”逃避判断。
 5. **fresh validator 与阶段修复。** 新鲜校验进程依据工件而非文风验收；失败后按阶段修复，防止流畅文字给自己盖章。
 
 这些约束不会让不同模型的措辞、节奏和全部判断变得字面完全相同，但它要求每个模型都通过同一套结构契约与审计闸；差异必须暴露在证据、路径、反例和撤回条件中，而不能藏在模型习惯里。
@@ -124,7 +124,7 @@ ProMax 不是一次性 prompt。它是有状态、有工件、有验证闸的独
 
 ProMax 仅在用户明确使用以下四种名称之一时触发：`crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax`。仅说“最大算力”“全尺度”或“穷尽推演”不构成 ProMax 点名，泛化最大化请求仍由 Max；suite 不得自动升级。若 Max 与 ProMax 同时出现，ProMax 优先；一旦进入 ProMax，也不得降级回 Max。
 
-> **消耗警告：** 完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、建议比较、长文物化与验证修复，可能消耗数百万至数千万 token。用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 **17,000,000 token**；它不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。
+> **消耗警告：** 基础完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、长文物化与验证修复；仅在用户明确要求建议时，才额外执行建议比较。完整运行可能消耗数百万至数千万 token。用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 **17,000,000 token**；它不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。
 
 ---
 
@@ -136,9 +136,7 @@ ProMax 仅在用户明确使用以下四种名称之一时触发：`crossframe-p
 ![Suite Framework](https://img.shields.io/badge/framework-CrossFrame_v5.1.7-e4ddff?style=flat-square&labelColor=fffaff&color=e4ddff)
 ![Suite Workflow](https://img.shields.io/badge/workflow-diagnosis_%E2%86%92_writing_%E2%86%92_review_%E2%86%92_inquiry-d9f2df?style=flat-square&labelColor=fbfffb&color=d9f2df)
 
-CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成文 skills。
-
-它适合处理那些不能只靠“给建议”“写一段评论”“简单总结”解决的问题：关系、团队、组织、制度、公共争议、历史材料、命题辩论、读者来信、研究笔记，以及需要写成完整中文文章的复杂议题。
+CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成文 skills，适合处理那些不能只靠“给建议”“写一段评论”“简单总结”解决的问题：关系、团队、组织、制度、公共争议、历史材料、命题辩论、读者来信、研究笔记，以及需要写成完整中文文章的复杂议题。
 
 当前仓库包含 16 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。[`crossframe-promax`](skills/crossframe-promax/SKILL.md) 则是上文展示的 v8-only、exact-name only 独立旗舰 runtime，与 Max 的 v6 运行时相互隔离。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
 
