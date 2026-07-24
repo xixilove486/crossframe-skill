@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 from contextlib import contextmanager
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -15,11 +14,11 @@ import unicodedata
 from .artifacts import build_artifact_manifest, inventory_artifacts
 from .jsonio import canonical_json_bytes, load_json_bytes, sha256_json
 from .position import selection_review_basis_sha256
+from .prose import validate_prose_review
 from .safe_files import read_stable_regular_file
 from .schemas import validate_instance
 from .source_integrity import (
     V8_CONTROL_ASSET_SHA256,
-    V8_SOURCE_SNAPSHOT_SHA256,
     build_read_events,
     build_source_snapshot,
     sha256_file,
@@ -39,6 +38,7 @@ AUTHORING_CONTRACT_ARTIFACT = "promax-authoring-contract.json"
 CONCEPT_DECISIONS_ARTIFACT = "promax-concept-decisions.json"
 ROLE_ATTESTATIONS_ARTIFACT = "promax-role-attestations.json"
 MATERIALIZATION_RESULT_ARTIFACT = "promax-materialization-result.json"
+PROSE_REVIEW_ARTIFACT = "promax-prose-review.json"
 
 SEMANTIC_JSON_ARTIFACTS = (
     "promax-local-world-model.locked.json",
@@ -62,19 +62,30 @@ REQUIRED_SEMANTIC_ARTIFACTS = (
     *SEMANTIC_JSON_ARTIFACTS,
     *SEMANTIC_TEXT_ARTIFACTS,
 )
-_ROLE_BINDINGS = (
-    ("promax-local-world-model.locked.json", "promax-concept-disposition-ledger.json"),
-    ("promax-claim-path-graph.json", "promax-retrieval-ledger.json"),
-    ("promax-retrieval-ledger.json", "promax-red-team-report.json"),
-    ("promax-red-team-report.json", "promax-position.locked.json"),
-    ("promax-output-plan.locked.json", "promax-essay.md"),
+_ROLE_BINDINGS_SCHEMA_1 = (
+    (
+        ("promax-local-world-model.locked.json",),
+        ("promax-concept-disposition-ledger.json",),
+    ),
+    (("promax-claim-path-graph.json",), ("promax-retrieval-ledger.json",)),
+    (("promax-retrieval-ledger.json",), ("promax-red-team-report.json",)),
+    (("promax-red-team-report.json",), ("promax-position.locked.json",)),
+    (("promax-output-plan.locked.json",), ("promax-essay.md",)),
 )
-_ROLE_ATTESTATION_BINDINGS = (
-    ("promax-worldview-capsule.locked.md", CONCEPT_DECISIONS_ARTIFACT),
-    ("promax-claim-path-graph.json", "promax-retrieval-ledger.json"),
-    ("promax-retrieval-ledger.json", "promax-red-team-report.json"),
-    ("promax-red-team-report.json", "promax-position.locked.json"),
-    ("promax-output-plan.locked.json", "promax-essay.md"),
+_ROLE_ATTESTATION_BINDINGS_SCHEMA_1 = (
+    (("promax-worldview-capsule.locked.md",), (CONCEPT_DECISIONS_ARTIFACT,)),
+    (("promax-claim-path-graph.json",), ("promax-retrieval-ledger.json",)),
+    (("promax-retrieval-ledger.json",), ("promax-red-team-report.json",)),
+    (("promax-red-team-report.json",), ("promax-position.locked.json",)),
+    (("promax-output-plan.locked.json",), ("promax-essay.md",)),
+)
+_PROSE_REVIEW_ROLE_BINDING = (
+    (
+        "promax-essay.md",
+        "promax-position.locked.json",
+        "promax-output-plan.locked.json",
+    ),
+    (PROSE_REVIEW_ARTIFACT,),
 )
 
 _TEST_FIXTURE_RUN_ID_RE = re.compile(r"^promax-fixture(?:-|$)", re.IGNORECASE)
@@ -137,8 +148,64 @@ _SEMANTIC_BINDINGS = {
 }
 
 
+def _semantic_binding_spec(
+    artifact: str,
+    contract: Mapping[str, object],
+) -> dict[str, object]:
+    if artifact == PROSE_REVIEW_ARTIFACT:
+        return {
+            "schema_id": "crossframe.promax.v8.prose-review",
+            "schema_version": 1,
+            "timestamp_field": "reviewed_at",
+            "schema": "promax-prose-review.schema.json",
+        }
+    try:
+        spec = copy.deepcopy(_SEMANTIC_BINDINGS[artifact])
+    except KeyError as error:
+        raise MaterializationError(
+            f"unsupported semantic artifact binding:{artifact}"
+        ) from error
+    if artifact == "promax-output-plan.locked.json":
+        spec["schema_version"] = _contract_schema_version(contract)
+    return spec
+
+
 class MaterializationError(ValueError):
     """Raised when production materialization cannot preserve its hard gates."""
+
+
+def _contract_schema_version(contract: Mapping[str, object]) -> int:
+    version = contract.get("schema_version")
+    if version not in {1, 2}:
+        raise MaterializationError("run contract uses an unsupported schema version")
+    return int(version)
+
+
+def _semantic_json_artifacts(
+    contract: Mapping[str, object],
+) -> tuple[str, ...]:
+    if _contract_schema_version(contract) == 2:
+        return (*SEMANTIC_JSON_ARTIFACTS, PROSE_REVIEW_ARTIFACT)
+    return SEMANTIC_JSON_ARTIFACTS
+
+
+def _role_bindings(
+    contract: Mapping[str, object],
+    *,
+    attestation: bool,
+) -> tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]:
+    if _contract_schema_version(contract) == 2:
+        base = (
+            _ROLE_ATTESTATION_BINDINGS_SCHEMA_1
+            if attestation
+            else _ROLE_BINDINGS_SCHEMA_1
+        )
+        return (*base, _PROSE_REVIEW_ROLE_BINDING)
+    return (
+        _ROLE_ATTESTATION_BINDINGS_SCHEMA_1
+        if attestation
+        else _ROLE_BINDINGS_SCHEMA_1
+    )
 
 
 def _trusted_directory(path: Path | str, *, label: str) -> Path:
@@ -343,9 +410,13 @@ def _authoring_contract(
         "promax-essay.md": "templates/promax-essay-output.md",
         "promax-continuation-index.md": "templates/promax-continuation-index-output.md",
     }
+    if _contract_schema_version(contract) == 2:
+        template_map[PROSE_REVIEW_ARTIFACT] = (
+            "templates/promax-prose-review-output.md"
+        )
     return {
         "schema_id": "crossframe.promax.v8.authoring-contract",
-        "schema_version": 1,
+        "schema_version": _contract_schema_version(contract),
         "run_id": contract["run_id"],
         "request_sha256": contract["request_sha256"],
         "source_snapshot_sha256": contract["source_snapshot_sha256"],
@@ -359,17 +430,23 @@ def _authoring_contract(
 
 
 def _required_semantic_artifacts(contract: Mapping[str, object]) -> tuple[str, ...]:
+    required = (
+        CONCEPT_DECISIONS_ARTIFACT,
+        *_semantic_json_artifacts(contract),
+        *SEMANTIC_TEXT_ARTIFACTS,
+    )
     if contract.get("orchestration_mode") == "multi-agent-isolated":
-        return (*REQUIRED_SEMANTIC_ARTIFACTS, ROLE_ATTESTATIONS_ARTIFACT)
-    return REQUIRED_SEMANTIC_ARTIFACTS
+        return (*required, ROLE_ATTESTATIONS_ARTIFACT)
+    return required
 
 
 def _role_attestation_scaffold(contract: Mapping[str, object]) -> dict[str, object]:
     plan = contract.get("role_plan")
-    if not isinstance(plan, list) or len(plan) != len(_ROLE_BINDINGS):
-        raise MaterializationError("run contract lacks the frozen five-role plan")
+    bindings = _role_bindings(contract, attestation=True)
+    if not isinstance(plan, list) or len(plan) != len(bindings):
+        raise MaterializationError("run contract lacks the required frozen role plan")
     roles: list[dict[str, object]] = []
-    for planned, (input_path, output_path) in zip(plan, _ROLE_ATTESTATION_BINDINGS):
+    for planned, (input_paths, output_paths) in zip(plan, bindings):
         if not isinstance(planned, Mapping):
             raise MaterializationError("frozen role plan entry is not structured")
         roles.append(
@@ -379,8 +456,8 @@ def _role_attestation_scaffold(contract: Mapping[str, object]) -> dict[str, obje
                 "execution_mode": planned["execution_mode"],
                 "exchange_protocol": planned["exchange_protocol"],
                 "agent_id": None,
-                "input_artifact_paths": [input_path],
-                "output_artifact_paths": [output_path],
+                "input_artifact_paths": list(input_paths),
+                "output_artifact_paths": list(output_paths),
                 "observed_input_artifacts": [],
                 "produced_output_artifacts": [],
                 "completed_at": None,
@@ -571,7 +648,7 @@ def _validate_authoring_contract(
         raise MaterializationError("authoring_contract_open_or_incomplete")
     if document.get("schema_id") != "crossframe.promax.v8.authoring-contract":
         raise MaterializationError("authoring_contract_schema_mismatch")
-    if document.get("schema_version") != 1:
+    if document.get("schema_version") != _contract_schema_version(contract):
         raise MaterializationError("authoring_contract_version_mismatch")
     for field in ("run_id", "request_sha256", "source_snapshot_sha256"):
         if document.get(field) != contract.get(field):
@@ -586,6 +663,15 @@ def _validate_authoring_contract(
         raise MaterializationError("authoring_contract_semantic_owner_mismatch")
     if document.get("control_plane_owner") != "promax-runtime":
         raise MaterializationError("authoring_contract_control_owner_mismatch")
+    prepared_at = document.get("prepared_at")
+    if not isinstance(prepared_at, str) or not prepared_at.strip():
+        raise MaterializationError("authoring_contract_prepared_at_missing")
+    expected_template_map = _authoring_contract(
+        contract,
+        prepared_at=prepared_at,
+    )["template_map"]
+    if document.get("template_map") != expected_template_map:
+        raise MaterializationError("authoring_contract_template_map_mismatch")
 
 
 def _normalized_keyword(value: object) -> str:
@@ -873,8 +959,10 @@ def _load_semantic_json(
     contract: Mapping[str, object],
     *,
     generated_at: str,
+    essay: str | None = None,
 ) -> dict[str, dict[str, object]]:
-    loaded = {name: _read_object(authoring, name) for name in SEMANTIC_JSON_ARTIFACTS}
+    artifact_names = _semantic_json_artifacts(contract)
+    loaded = {name: _read_object(authoring, name) for name in artifact_names}
     normalized: dict[str, dict[str, object]] = {}
     for artifact in SEMANTIC_JSON_ARTIFACTS:
         document = loaded[artifact]
@@ -885,7 +973,7 @@ def _load_semantic_json(
                 raise MaterializationError("required recommendation cannot be not_requested")
             normalized[artifact] = document
             continue
-        spec = _SEMANTIC_BINDINGS[artifact]
+        spec = _semantic_binding_spec(artifact, contract)
         fixed = {
             "schema_id": spec["schema_id"],
             "schema_version": spec["schema_version"],
@@ -912,8 +1000,46 @@ def _load_semantic_json(
         )
         normalized["promax-recommendation.locked.json"] = recommendation
     _bind_stability_control_fields(normalized, contract)
-    for artifact, document in normalized.items():
-        validate_instance(str(_SEMANTIC_BINDINGS[artifact]["schema"]), document)
+    for artifact in SEMANTIC_JSON_ARTIFACTS:
+        validate_instance(
+            str(_semantic_binding_spec(artifact, contract)["schema"]),
+            normalized[artifact],
+        )
+    if _contract_schema_version(contract) == 2:
+        if not isinstance(essay, str):
+            raise MaterializationError(
+                "current-contract semantic review requires the current essay"
+            )
+        review_spec = _semantic_binding_spec(PROSE_REVIEW_ARTIFACT, contract)
+        review_fixed = {
+            "schema_id": review_spec["schema_id"],
+            "schema_version": review_spec["schema_version"],
+            "run_id": contract["run_id"],
+            "source_snapshot_sha256": contract["source_snapshot_sha256"],
+            "essay_sha256": hashlib.sha256(essay.encode("utf-8")).hexdigest(),
+            "position_sha256": sha256_json(position),
+            "output_plan_sha256": sha256_json(
+                normalized["promax-output-plan.locked.json"]
+            ),
+        }
+        timestamp_field = str(review_spec["timestamp_field"])
+        if timestamp_field not in loaded[PROSE_REVIEW_ARTIFACT]:
+            review_fixed[timestamp_field] = generated_at
+        review = _bind_fixed_fields(
+            loaded[PROSE_REVIEW_ARTIFACT],
+            fixed=review_fixed,
+            artifact=PROSE_REVIEW_ARTIFACT,
+        )
+        validate_instance(str(review_spec["schema"]), review)
+        validate_prose_review(
+            review,
+            essay=essay,
+            position=position,
+            output_plan=normalized["promax-output-plan.locked.json"],
+            run_id=str(contract["run_id"]),
+            source_snapshot_sha256=str(contract["source_snapshot_sha256"]),
+        )
+        normalized[PROSE_REVIEW_ARTIFACT] = review
     return normalized
 
 
@@ -1129,8 +1255,10 @@ def _role_records(
     authoring: Path,
 ) -> list[dict[str, object]]:
     plan = contract.get("role_plan")
-    if not isinstance(plan, list) or len(plan) != len(_ROLE_BINDINGS):
-        raise MaterializationError("run contract lacks the frozen five-role plan")
+    bindings = _role_bindings(contract, attestation=False)
+    attestation_bindings = _role_bindings(contract, attestation=True)
+    if not isinstance(plan, list) or len(plan) != len(bindings):
+        raise MaterializationError("run contract lacks the required frozen role plan")
     attestations_by_role: dict[str, dict[str, object]] = {}
     if contract.get("orchestration_mode") == "multi-agent-isolated":
         attestation = _read_object(authoring, ROLE_ATTESTATIONS_ARTIFACT)
@@ -1152,8 +1280,10 @@ def _role_records(
             if attestation.get(field) != contract.get(field):
                 raise MaterializationError(f"role_attestations_binding_mismatch:{field}")
         raw_roles = attestation.get("roles")
-        if not isinstance(raw_roles, list) or len(raw_roles) != len(_ROLE_BINDINGS):
-            raise MaterializationError("role_attestations_require_exactly_five_roles")
+        if not isinstance(raw_roles, list) or len(raw_roles) != len(
+            attestation_bindings
+        ):
+            raise MaterializationError("role_attestations_role_count_mismatch")
         expected_role_keys = {
             "role_id",
             "sequence",
@@ -1170,7 +1300,7 @@ def _role_records(
         agent_ids: list[str] = []
         for planned, binding, raw_role in zip(
             plan,
-            _ROLE_ATTESTATION_BINDINGS,
+            attestation_bindings,
             raw_roles,
         ):
             if not isinstance(planned, Mapping) or not isinstance(raw_role, Mapping):
@@ -1185,10 +1315,10 @@ def _role_records(
             ):
                 if raw_role.get(field) != planned.get(field):
                     raise MaterializationError(f"role attestation changes frozen {field}")
-            input_path, output_path = binding
-            if raw_role.get("input_artifact_paths") != [input_path]:
+            input_paths, output_paths = binding
+            if raw_role.get("input_artifact_paths") != list(input_paths):
                 raise MaterializationError("role attestation input path mismatch")
-            if raw_role.get("output_artifact_paths") != [output_path]:
+            if raw_role.get("output_artifact_paths") != list(output_paths):
                 raise MaterializationError("role attestation output path mismatch")
             if raw_role.get("status") != "completed":
                 raise MaterializationError("strict multi-agent role must be completed")
@@ -1197,30 +1327,44 @@ def _role_records(
                 raise MaterializationError("multi-agent role lacks an execution identity")
             observed = raw_role.get("observed_input_artifacts")
             produced = raw_role.get("produced_output_artifacts")
-            if not isinstance(observed, list) or len(observed) != 1:
-                raise MaterializationError("role attestation requires one observed input hash")
-            if not isinstance(produced, list) or len(produced) != 1:
-                raise MaterializationError("role attestation requires one produced output hash")
-            observed_ref = _validate_attested_artifact_ref(
-                observed[0],
-                expected_path=input_path,
-                authoring=authoring,
-            )
-            produced_ref = _validate_attested_artifact_ref(
-                produced[0],
-                expected_path=output_path,
-                authoring=authoring,
-            )
-            for label, artifact_ref in (
-                ("input", observed_ref),
-                ("output", produced_ref),
+            if not isinstance(observed, list) or len(observed) != len(input_paths):
+                raise MaterializationError(
+                    "role attestation observed input count mismatch"
+                )
+            if not isinstance(produced, list) or len(produced) != len(output_paths):
+                raise MaterializationError(
+                    "role attestation produced output count mismatch"
+                )
+            observed_refs = [
+                _validate_attested_artifact_ref(
+                    raw_ref,
+                    expected_path=input_path,
+                    authoring=authoring,
+                )
+                for raw_ref, input_path in zip(observed, input_paths)
+            ]
+            produced_refs = [
+                _validate_attested_artifact_ref(
+                    raw_ref,
+                    expected_path=output_path,
+                    authoring=authoring,
+                )
+                for raw_ref, output_path in zip(produced, output_paths)
+            ]
+            for label, artifact_refs in (
+                ("input", observed_refs),
+                ("output", produced_refs),
             ):
-                path = str(artifact_ref["path"])
-                if path in digests and artifact_ref["sha256"] != digests[path]:
-                    raise MaterializationError(
-                        "role attestation does not bind canonical staged bytes:"
-                        f"{label}:{path}"
-                    )
+                for artifact_ref in artifact_refs:
+                    path = str(artifact_ref["path"])
+                    if (
+                        path in digests
+                        and artifact_ref["sha256"] != digests[path]
+                    ):
+                        raise MaterializationError(
+                            "role attestation does not bind canonical staged bytes:"
+                            f"{label}:{path}"
+                        )
             completed_at = raw_role.get("completed_at")
             if not isinstance(completed_at, str) or not completed_at.strip():
                 raise MaterializationError("role attestation lacks a completion timestamp")
@@ -1234,8 +1378,8 @@ def _role_records(
                 "sequence": raw_role["sequence"],
                 "agent_id": normalized_agent_id,
                 "completed_at": completed_at.strip(),
-                "observed_input_artifacts": [observed_ref],
-                "produced_output_artifacts": [produced_ref],
+                "observed_input_artifacts": observed_refs,
+                "produced_output_artifacts": produced_refs,
             }
             attestations_by_role[str(raw_role["role_id"])] = {
                 "agent_id": normalized_agent_id,
@@ -1250,22 +1394,30 @@ def _role_records(
                 },
             }
         if len(set(agent_ids)) != len(agent_ids):
-            raise MaterializationError("multi-agent roles require five unique execution identities")
+            raise MaterializationError(
+                "multi-agent roles require unique execution identities"
+            )
     elif contract.get("orchestration_mode") != "single-agent-separated":
         raise MaterializationError("unsupported frozen orchestration mode")
     records: list[dict[str, object]] = []
-    for planned, (input_path, output_path) in zip(plan, _ROLE_BINDINGS):
+    for planned, (input_paths, output_paths) in zip(plan, bindings):
         if not isinstance(planned, Mapping):
             raise MaterializationError("frozen role plan entry is not structured")
         attested = attestations_by_role.get(str(planned.get("role_id")))
         if attestations_by_role and attested is None:
             raise MaterializationError("frozen role lacks a matching attestation")
-        input_ref = _artifact_ref(input_path, digests[input_path])
+        input_refs = [
+            _artifact_ref(input_path, digests[input_path])
+            for input_path in input_paths
+        ]
         record = {
             **copy.deepcopy(dict(planned)),
-            "input_artifacts": [input_ref],
-            "observed_input_artifacts": [copy.deepcopy(input_ref)],
-            "output_artifacts": [_artifact_ref(output_path, digests[output_path])],
+            "input_artifacts": input_refs,
+            "observed_input_artifacts": copy.deepcopy(input_refs),
+            "output_artifacts": [
+                _artifact_ref(output_path, digests[output_path])
+                for output_path in output_paths
+            ],
             "status": "completed",
         }
         if attested is not None:
@@ -1274,7 +1426,10 @@ def _role_records(
     return records
 
 
-def _metadata(digests: Mapping[str, str]) -> dict[str, dict[str, object]]:
+def _metadata(
+    digests: Mapping[str, str],
+    contract: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
     metadata: dict[str, dict[str, object]] = {
         "promax-source-snapshot.json": {
             "generating_phase": "P0",
@@ -1347,11 +1502,24 @@ def _metadata(digests: Mapping[str, str]) -> dict[str, dict[str, object]]:
             "input_artifact_sha256s": [digests["promax-output-plan.locked.json"]],
             "status": "current",
         }
+    if _contract_schema_version(contract) == 2:
+        metadata[PROSE_REVIEW_ARTIFACT] = {
+            "generating_phase": "P10",
+            "input_artifact_sha256s": [
+                digests["promax-essay.md"],
+                digests["promax-position.locked.json"],
+                digests["promax-output-plan.locked.json"],
+            ],
+            "status": "current",
+        }
     return metadata
 
 
-def _phase_specs(digests: Mapping[str, str]) -> tuple[tuple[str, dict[str, str], dict[str, str]], ...]:
-    return (
+def _phase_specs(
+    digests: Mapping[str, str],
+    contract: Mapping[str, object],
+) -> tuple[tuple[str, dict[str, str], dict[str, str]], ...]:
+    specs = (
         (
             "P2",
             {"promax-read-events.jsonl": digests["promax-read-events.jsonl"]},
@@ -1441,6 +1609,17 @@ def _phase_specs(digests: Mapping[str, str]) -> tuple[tuple[str, dict[str, str],
             },
         ),
     )
+    if _contract_schema_version(contract) == 2:
+        phase_id, inputs, outputs = specs[-1]
+        specs = (
+            *specs[:-1],
+            (
+                phase_id,
+                inputs,
+                {**outputs, PROSE_REVIEW_ARTIFACT: digests[PROSE_REVIEW_ARTIFACT]},
+            ),
+        )
+    return specs
 
 
 _PUBLISH_JOURNAL = "publish-journal.json"
@@ -1733,12 +1912,13 @@ def _materialize_run_locked(
         decisions,
         request_text=request_text,
     )
+    texts = _load_semantic_text(authoring_root)
     documents = _load_semantic_json(
         authoring_root,
         contract,
         generated_at=generated_at,
+        essay=texts["promax-essay.md"],
     )
-    texts = _load_semantic_text(authoring_root)
     _validate_cross_artifact_request_binding(documents, texts, keywords=keywords)
 
     stage = Path(
@@ -1770,7 +1950,7 @@ def _materialize_run_locked(
             stage / "promax-concept-disposition-ledger.json",
             concept_ledger,
         )
-        for artifact in SEMANTIC_JSON_ARTIFACTS:
+        for artifact in _semantic_json_artifacts(contract):
             if artifact == "promax-local-world-model.locked.json":
                 continue
             digests[artifact] = _write_json(stage / artifact, documents[artifact])
@@ -1788,7 +1968,7 @@ def _materialize_run_locked(
             _jsonl_bytes(events),
         )
         current_state = validate_phase_history(events, expected_binding=_binding_from_contract(contract))
-        for phase_id, inputs, outputs in _phase_specs(digests):
+        for phase_id, inputs, outputs in _phase_specs(digests, contract):
             event = seal_phase_event(
                 current_state,
                 phase_id,
@@ -1803,7 +1983,7 @@ def _materialize_run_locked(
         if current_state.next_phase_id != "P11" or current_state.chain_head_sha256 is None:
             raise MaterializationError("phase_chain_did_not_close_through_p10")
 
-        metadata = _metadata(digests)
+        metadata = _metadata(digests, contract)
         inventory = inventory_artifacts(stage, metadata)
         role_records = _role_records(contract, digests, authoring=authoring_root)
         manifest = build_artifact_manifest(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import io
-import json
 from pathlib import Path
 import sys
 import tempfile
@@ -40,7 +39,6 @@ from promax_runtime.materialization import (
     materialize_run,
     prepare_run,
 )
-from promax_runtime.source_integrity import V8_SOURCE_SNAPSHOT_SHA256
 from promax_runtime.state_machine import (
     RunBinding,
     append_phase_event,
@@ -101,7 +99,7 @@ def init_run(
     if network:
         args.append("--network")
     if subagents:
-        args.extend(["--subagents", "--max-parallelism", "5"])
+        args.extend(["--subagents", "--max-parallelism", "6"])
     with redirect_stdout(io.StringIO()):
         status = crossframe_promax_runtime.main(args)
     if status != 0:
@@ -234,6 +232,7 @@ def populate_authoring(
 
     deliverables = fixture_factory.build_deliverables(
         ROOT,
+        position=position,
         recommendation=recommendation,
     )
     deliverables["promax-concept-atlas.md"] = deliverables[
@@ -260,6 +259,16 @@ def populate_authoring(
     }
     for name, value in texts.items():
         (authoring_dir / name).write_text(value, encoding="utf-8", newline="")
+    write_json(
+        authoring_dir / "promax-prose-review.json",
+        fixture_factory.build_prose_review(
+            run_id=run_id,
+            reviewed_at="2026-07-23T10:10:30Z",
+            essay=texts["promax-essay.md"],
+            position=position,
+            output_plan=output_plan,
+        ),
+    )
     attestation_path = authoring_dir / ROLE_ATTESTATIONS_ARTIFACT
     if attestation_path.exists():
         attestations = load_json(attestation_path)
@@ -267,8 +276,6 @@ def populate_authoring(
             record["agent_id"] = f"isolated-agent-{record['sequence']}"
             record["status"] = "completed"
             if "observed_input_artifacts" in record:
-                input_path = record["input_artifact_paths"][0]
-                output_path = record["output_artifact_paths"][0]
                 record["observed_input_artifacts"] = [
                     {
                         "path": input_path,
@@ -276,6 +283,7 @@ def populate_authoring(
                             (authoring_dir / input_path).read_bytes()
                         ).hexdigest(),
                     }
+                    for input_path in record["input_artifact_paths"]
                 ]
                 record["produced_output_artifacts"] = [
                     {
@@ -284,6 +292,7 @@ def populate_authoring(
                             (authoring_dir / output_path).read_bytes()
                         ).hexdigest(),
                     }
+                    for output_path in record["output_artifact_paths"]
                 ]
                 record["completed_at"] = "2026-07-23T10:10:30Z"
         write_json(attestation_path, attestations)
@@ -441,7 +450,7 @@ class ProMaxProductionMaterializerTests(unittest.TestCase):
         self.assertEqual(manifest["phase_chain_head_sha256"], events[-1]["event_sha256"])
         self.assertEqual(
             {item["path"] for item in manifest["artifacts"]},
-            checker._MANIFEST_CURRENT_ARTIFACTS,
+            checker._manifest_current_artifacts(contract["schema_version"]),
         )
         for item in manifest["artifacts"]:
             actual = hashlib.sha256((self.run_dir / item["path"]).read_bytes()).hexdigest()
@@ -895,7 +904,7 @@ class ProMaxProductionMaterializerTests(unittest.TestCase):
             self.assertEqual(tree_snapshot(run_dir), before)
             self.assertFalse(authoring_dir.exists())
 
-    def test_multi_agent_run_requires_and_records_five_unique_attestations(self) -> None:
+    def test_multi_agent_run_requires_and_records_six_unique_attestations(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             base = Path(temp_dir)
             run_dir, authoring_dir = prepare_valid_run(
@@ -907,10 +916,10 @@ class ProMaxProductionMaterializerTests(unittest.TestCase):
             self.assertTrue(attestation_path.is_file())
             populate_authoring(run_dir, authoring_dir)
             attestations = load_json(attestation_path)
-            self.assertEqual(len(attestations["roles"]), 5)
+            self.assertEqual(len(attestations["roles"]), 6)
             self.assertEqual(
                 len({item["agent_id"] for item in attestations["roles"]}),
-                5,
+                6,
             )
             result = materialize_run(
                 ROOT,
@@ -921,7 +930,7 @@ class ProMaxProductionMaterializerTests(unittest.TestCase):
             )
             self.assertIs(result["published"], True)
             manifest = load_json(run_dir / "promax-artifact-manifest.json")
-            self.assertEqual(len(manifest["role_records"]), 5)
+            self.assertEqual(len(manifest["role_records"]), 6)
             self.assertTrue(
                 all(
                     item["execution_mode"] == "multi-agent-isolated"
@@ -930,7 +939,7 @@ class ProMaxProductionMaterializerTests(unittest.TestCase):
             )
             self.assertEqual(
                 {item["agent_id"] for item in manifest["role_records"]},
-                {f"isolated-agent-{index}" for index in range(1, 6)},
+                {f"isolated-agent-{index}" for index in range(1, 7)},
             )
             self.assertTrue(
                 all(item["execution_attestation"] for item in manifest["role_records"])
