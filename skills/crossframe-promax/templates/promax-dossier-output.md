@@ -18,12 +18,14 @@ Dossier 是本轮推演的可审计总档案，不是最终 essay 的摘要，�
 8. `## Red-team 与修订`：逐类说明攻击、最强反方、结果、实际修订和成对立场稳定性；不能只列 attack IDs。
 9. `## 冻结立场`：完整携带 position、判断强度、主要理由、runner-up、最强反证、为何不采纳、撤回条件和 action ceiling。
 10. `## 方案比较`：仅在 recommendation 被请求时，逐项比较六类方案、评价维度、排序、首选、次选、切换、不行动后果、授权、停止与回滚。
-11. `## 未完成项与续跑`：列出 capability gaps、unknown_pending、unexpanded branches、待补真实事实和 continuation 入口；没有未完成项时说明验证所证明的闭包范围。
+11. `## 读者投影与写作技法`：记录 P9 自动选择的 article type、固定 house voice、核心/atlas-only 概念分工、reader beats、所选技法、负责段落、正文实际短摘、技法不能证明什么与越界处理。
+12. `## 未完成项与续跑`：列出 capability gaps、unknown_pending、unexpanded branches、待补真实事实和 continuation 入口；没有未完成项时说明验证所证明的闭包范围。
 
 ## 交叉绑定
 
 - 全部 claim statements 必须至少出现在 dossier 或 essay；中心 claim 两者都应直接表达。
-- Applied concepts 的精确定义与逐概念解释放在 atlas 和 essay，dossier 只汇总并链接 SECTION IDs。
+- 全部 applied concepts 的精确定义与逐概念解释放在 atlas；dossier 汇总并链接 SECTION IDs，essay 只转译真正改变读者判断的核心概念。
+- 读者投影必须能从 dossier 回指 P9，写作技法必须能回指 essay 的实际段落；技法不能新增事实、判断或授权。
 - 机制案例的全文放在 case/countercase；dossier 说明案例为何能或不能区分机制。
 - 建议未被请求时，dossier 不得生成方案 ID、首选或推荐语言。
 - 能力不可用、来源不足或未完成分支必须写成结构化不完整，不能伪装成严格完成。
