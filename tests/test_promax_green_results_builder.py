@@ -100,7 +100,9 @@ class ProMaxGreenResultsBuilderTests(unittest.TestCase):
 
     def setUp(self) -> None:
         self.builder = _load_builder()
-        self.temporary = tempfile.TemporaryDirectory(dir=ROOT / "work")
+        temporary_root = ROOT / "work"
+        temporary_root.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(dir=temporary_root)
         self.addCleanup(self.temporary.cleanup)
         self.eval_root = Path(self.temporary.name) / "promax-green"
         self.eval_root.mkdir()

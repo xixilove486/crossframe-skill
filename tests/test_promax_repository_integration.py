@@ -95,8 +95,8 @@ def run_git(*args: str, allowed_codes: tuple[int, ...] = (0,)) -> bytes:
     return result.stdout
 
 
-def base_tree_entries(base_commit: str) -> dict[str, tuple[str, str]]:
-    raw = run_git("ls-tree", "-r", "-z", base_commit)
+def commit_tree_entries(commit: str) -> dict[str, tuple[str, str]]:
+    raw = run_git("ls-tree", "-r", "-z", commit)
     entries: dict[str, tuple[str, str]] = {}
     for record in raw.split(b"\0"):
         if not record:
@@ -109,7 +109,7 @@ def base_tree_entries(base_commit: str) -> dict[str, tuple[str, str]]:
             blob_id = object_id.decode("ascii")
         except (UnicodeDecodeError, ValueError) as error:
             raise AssertionError(
-                f"could not parse git ls-tree record for {base_commit}: {record!r}"
+                f"could not parse git ls-tree record for {commit}: {record!r}"
             ) from error
         if object_type != b"blob":
             raise AssertionError(
@@ -119,7 +119,7 @@ def base_tree_entries(base_commit: str) -> dict[str, tuple[str, str]]:
             raise AssertionError(f"duplicate path in git ls-tree output: {path}")
         entries[path] = (mode, blob_id)
     if not entries:
-        raise AssertionError(f"git ls-tree returned no blobs for base commit {base_commit}")
+        raise AssertionError(f"git ls-tree returned no blobs for commit {commit}")
     return entries
 
 
@@ -141,7 +141,7 @@ def protected_surface_name(repo_path: str) -> str | None:
     return None
 
 
-def protected_base_surfaces(
+def protected_commit_surfaces(
     entries: dict[str, tuple[str, str]],
 ) -> dict[str, list[str]]:
     surfaces = {
@@ -182,15 +182,15 @@ def current_protected_surfaces() -> dict[str, set[str]]:
     return surfaces
 
 
-def base_surface_hash(
-    base_commit: str,
+def commit_surface_hash(
+    commit: str,
     entries: dict[str, tuple[str, str]],
     paths: list[str],
 ) -> str:
     digest = hashlib.sha256()
     for repo_path in paths:
         mode, _blob_id = entries[repo_path]
-        blob = run_git("show", f"{base_commit}:{repo_path}")
+        blob = run_git("show", f"{commit}:{repo_path}")
         digest.update(repo_path.encode("utf-8"))
         digest.update(b"\0")
         digest.update(mode.encode("ascii"))
@@ -200,12 +200,12 @@ def base_surface_hash(
     return digest.hexdigest()
 
 
-def assert_tracked_surface_unchanged(test: unittest.TestCase, paths: list[str]) -> None:
+def assert_tracked_surface_clean(test: unittest.TestCase, paths: list[str]) -> None:
     if not paths:
         raise AssertionError("protected Git surface unexpectedly has no base paths")
     try:
         result = subprocess.run(
-            ["git", "diff", "--quiet", BASE_COMMIT, "--", *paths],
+            ["git", "diff", "--quiet", "HEAD", "--", *paths],
             cwd=ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -221,10 +221,10 @@ def assert_tracked_surface_unchanged(test: unittest.TestCase, paths: list[str]) 
             f"git diff --quiet failed with exit code {result.returncode}: "
             f"{stderr or '<no stderr>'}"
         )
-    changed = run_git("diff", "--name-status", BASE_COMMIT, "--", *paths).decode(
+    changed = run_git("diff", "--name-status", "HEAD", "--", *paths).decode(
         "utf-8", errors="replace"
     )
-    test.fail(f"protected tracked paths differ from {BASE_COMMIT}:\n{changed.strip()}")
+    test.fail(f"protected tracked paths differ from HEAD:\n{changed.strip()}")
 
 
 def untracked_protected_paths() -> dict[str, set[str]]:
@@ -324,24 +324,24 @@ class ProMaxPreservationTests(unittest.TestCase):
             "SHA-256 over each base-commit blob in repository-relative POSIX path order: "
             "path_utf8 + NUL + git_mode_ascii + NUL + git_show_blob_bytes + NUL",
         )
-        entries = base_tree_entries(BASE_COMMIT)
-        base_surfaces = protected_base_surfaces(entries)
+        entries = commit_tree_entries("HEAD")
+        committed_surfaces = protected_commit_surfaces(entries)
         current_surfaces = current_protected_surfaces()
-        self.assertEqual(set(base_surfaces), set(manifest["surfaces"]))
+        self.assertEqual(set(committed_surfaces), set(manifest["surfaces"]))
         self.assertEqual(set(current_surfaces), set(manifest["surfaces"]))
 
         untracked = untracked_protected_paths()
         self.assertEqual(untracked, {}, f"untracked files added to protected Max surfaces: {untracked}")
-        for name, base_paths in base_surfaces.items():
+        for name, committed_paths in committed_surfaces.items():
             expected = manifest["surfaces"][name]
             with self.subTest(surface=name):
-                self.assertEqual(set(base_paths), current_surfaces[name])
-                self.assertEqual(len(base_paths), expected["file_count"])
+                self.assertEqual(set(committed_paths), current_surfaces[name])
+                self.assertEqual(len(committed_paths), expected["file_count"])
                 self.assertEqual(
-                    base_surface_hash(BASE_COMMIT, entries, base_paths),
+                    commit_surface_hash("HEAD", entries, committed_paths),
                     expected["tree_sha256"],
                 )
-                assert_tracked_surface_unchanged(self, base_paths)
+                assert_tracked_surface_clean(self, committed_paths)
 
     def test_max_workflow_job_matches_frozen_raw_text_and_hash(self) -> None:
         with self.assertRaisesRegex(AssertionError, "exactly one unindented jobs mapping"):
@@ -356,9 +356,6 @@ class ProMaxPreservationTests(unittest.TestCase):
         workflow_path = ROOT / job["workflow_path"]
         self.assertTrue(workflow_path.is_file(), workflow_path.as_posix())
         try:
-            baseline_text = run_git(
-                "show", f"{BASE_COMMIT}:{job['workflow_path']}"
-            ).decode("utf-8")
             current_text = workflow_path.read_text(encoding="utf-8")
         except OSError as error:
             raise AssertionError(
@@ -368,23 +365,13 @@ class ProMaxPreservationTests(unittest.TestCase):
             raise AssertionError(
                 f"workflow is not valid UTF-8: {workflow_path.as_posix()}"
             ) from error
-        baseline_job = assert_frozen_workflow_job(
-            self,
-            baseline_text,
-            job,
-            f"baseline {BASE_COMMIT}",
-        )
         current_job = assert_frozen_workflow_job(
             self,
             current_text,
             job,
             "current worktree",
         )
-        self.assertEqual(
-            current_job,
-            baseline_job,
-            "current Max workflow job differs from its baseline block",
-        )
+        self.assertEqual(current_job, job["raw_text"])
 
 
 class ProMaxRepositoryTargetTests(unittest.TestCase):
