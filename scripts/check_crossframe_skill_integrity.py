@@ -521,10 +521,17 @@ def check_repo_adapters(repo: Path, label: str) -> None:
         ".github/copilot-instructions.md",
         ".cursor/rules/crossframe.mdc",
         ".cursor/rules/crossframe-suite.mdc",
+        ".cursor/rules/crossframe-promax.mdc",
         ".continue/rules/crossframe.md",
+        ".continue/rules/crossframe-promax.md",
         ".clinerules/crossframe.md",
+        ".clinerules/crossframe-promax.md",
         ".roo/rules/crossframe.md",
+        ".roo/rules/crossframe-promax.md",
+        ".roo/skills/crossframe-promax/SKILL.md",
         ".windsurf/rules/crossframe.md",
+        ".windsurf/rules/crossframe-promax.md",
+        ".windsurf/skills/crossframe-promax/SKILL.md",
         "site/index.html",
     ]
     for rel in promax_policy_files:

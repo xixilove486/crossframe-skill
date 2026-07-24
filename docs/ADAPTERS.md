@@ -5,12 +5,12 @@
 | Codex | `skills/crossframe*/` | Windows 运行 `scripts/install-codex.ps1`，macOS / Linux 运行 `scripts/install-codex.sh`，安装后显式点名 `crossframe-suite` | 不被动触发 |
 | Claude Code | `.claude/skills/crossframe*/` + `.claude/commands/crossframe*.md` + `CLAUDE.md` | 使用 `/crossframe-suite`、`/crossframe-max`、`/crossframe-promax`、`/crossframe-essay`、`/crossframe-history`、`/crossframe-inquiry` | 仓库命令和全局命令可同步 |
 | Gemini CLI | `GEMINI.md` | 读取仓库级上下文后按 skill 路由 | 不要一次加载全部 skill |
-| Cursor | `.cursor/rules/crossframe*.mdc` | 规则只做入口提示，主体仍读 `skills/` | `alwaysApply: false` |
+| Cursor | `.cursor/rules/crossframe*.mdc` | ProMax 可由专用 `crossframe-promax.mdc` 精确点名进入，主体仍读 `skills/` | `alwaysApply: false` |
 | GitHub Copilot | `.github/copilot-instructions.md` | 仓库内文档分析和维护时使用 | 不能替代完整 skill 文件 |
-| Windsurf / Cascade | `.windsurf/rules/crossframe.md` | 手动点名 CrossFrame 后使用 | 不做自动常驻规则 |
-| Cline | `.clinerules/crossframe.md` | 项目规则入口 | 保持薄适配 |
-| Roo Code | `.roo/rules/crossframe.md` | Workspace rule | 保持 explicit-only |
-| Continue | `.continue/rules/crossframe.md` | Local rule | 只提示路由 |
+| Windsurf / Cascade | `.windsurf/skills/crossframe-promax/SKILL.md` + `.windsurf/rules/crossframe-promax.md` | 原生 skill 发现后仍只接受四种精确名称，主体回到 `skills/` | `model_decision`，不做自动常驻规则 |
+| Cline | `.clinerules/crossframe.md` + `crossframe-promax.md` | 精确点名 ProMax 时使用专用薄入口 | 保持薄适配 |
+| Roo Code | `.roo/skills/crossframe-promax/SKILL.md` + `.roo/rules/crossframe-promax.md` | 原生 skill 发现后仍只接受四种精确名称，主体回到 `skills/` | 保持 explicit-only |
+| Continue | `.continue/rules/crossframe.md` + `crossframe-promax.md` | 精确点名 ProMax 时使用专用 Local rule | 只提示路由 |
 | Aider | `CONVENTIONS.md` + `.aider.conf.yml` | 维护仓库时读取约定 | 不复制主体协议 |
 | 通用 agent | `AGENTS.md` | 第一个入口文件 | 仍需回到 `skills/` |
 | LLM 索引 | `llms.txt` | 机器可读入口 | 适合快速定位 |

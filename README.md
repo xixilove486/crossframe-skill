@@ -11,6 +11,7 @@
 ![Language](https://img.shields.io/badge/language-%E4%B8%AD%E6%96%87%E8%BE%93%E5%87%BA-f3d7e6?style=flat-square&labelColor=fff7fb&color=f3d7e6)
 ![Trigger](https://img.shields.io/badge/trigger-explicit_only-d8ebff?style=flat-square&labelColor=fafcff&color=d8ebff)
 ![Framework](https://img.shields.io/badge/framework-CrossFrame_v5.1.7-e4ddff?style=flat-square&labelColor=fffaff&color=e4ddff)
+![ProMax](https://img.shields.io/badge/ProMax-1.0.0%20%7C%20v8.0-eadcff?style=flat-square&labelColor=fffaff&color=eadcff)
 ![Workflow](https://img.shields.io/badge/workflow-diagnosis_%E2%86%92_writing_%E2%86%92_review_%E2%86%92_inquiry-d9f2df?style=flat-square&labelColor=fbfffb&color=d9f2df)
 ![License](https://img.shields.io/badge/license-MIT-f8efcf?style=flat-square&labelColor=fffdf6&color=f8efcf)
 
@@ -52,6 +53,10 @@ CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成�
 当前仓库包含 16 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
 
 CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 [`skills/crossframe-promax/SKILL.md`](skills/crossframe-promax/SKILL.md)。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+
+ProMax 运行环境以 **Python 3.11** 为 CI 基准，生产运行依赖 `jsonschema`；完整仓库校验另需 `pytest` 与 `PyYAML`。宿主还需要允许读取 skill 文件、执行 Python 并写入独立 artifact 目录；外部真实案例检索需要网络能力。v8 全源快照已随 skill 携带，运行时不依赖原始 Word 文件。
+
+> **消耗警告：** ProMax 不是普通长回答模式。完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、建议比较、长文物化与验证修复，可能消耗数百万至数千万 token。用户实测 DeepSeek V4 Pro 完整运行一轮约消耗 **17,000,000 token**；这是单次实测，不是所有模型的固定值。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑和成本上限。
 
 安全边界先行：
 
