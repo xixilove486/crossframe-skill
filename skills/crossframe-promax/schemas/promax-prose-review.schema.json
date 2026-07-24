@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/promax-prose-review.schema.json",
+  "title": "CrossFrame ProMax internal prose fidelity review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "run_id",
+    "source_snapshot_sha256",
+    "essay_sha256",
+    "position_sha256",
+    "output_plan_sha256",
+    "article_type",
+    "technique_ids",
+    "required_beat_mappings",
+    "dimensions",
+    "overall_status",
+    "reviewed_at"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.promax.v8.prose-review"},
+    "schema_version": {"const": 1},
+    "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
+    "source_snapshot_sha256": {"$ref": "promax-common.schema.json#/$defs/v8SnapshotSha256"},
+    "essay_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "position_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "output_plan_sha256": {"$ref": "promax-common.schema.json#/$defs/sha256"},
+    "article_type": {"$ref": "#/$defs/articleType"},
+    "technique_ids": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+    },
+    "required_beat_mappings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/beatMapping"}
+    },
+    "dimensions": {"$ref": "#/$defs/dimensions"},
+    "overall_status": {"enum": ["pass", "fail"]},
+    "reviewed_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"overall_status": {"const": "pass"}},
+        "required": ["overall_status"]
+      },
+      "then": {
+        "properties": {
+          "dimensions": {"$ref": "#/$defs/passingDimensions"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "articleType": {
+      "enum": [
+        "reply",
+        "public-commentary",
+        "concept-explanation",
+        "organization-review",
+        "case-analysis",
+        "debate-refutation",
+        "reading-synthesis",
+        "trend-deduction",
+        "neutral-analysis"
+      ]
+    },
+    "sectionId": {
+      "type": "string",
+      "pattern": "^SECTION-[A-Za-z0-9][A-Za-z0-9._-]*(?![\\s\\S])"
+    },
+    "beatMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat_id", "section_ids", "evidence_excerpts"],
+      "properties": {
+        "beat_id": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+        "section_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sectionId"}
+        },
+        "evidence_excerpts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+        }
+      }
+    },
+    "dimensionReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_excerpts", "repair_target"],
+      "properties": {
+        "status": {"enum": ["pass", "fail"]},
+        "evidence_excerpts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+        },
+        "repair_target": {
+          "oneOf": [
+            {"$ref": "promax-common.schema.json#/$defs/nonemptyString"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"status": {"const": "pass"}},
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "evidence_excerpts": {"minItems": 1},
+              "repair_target": {"type": "null"}
+            }
+          },
+          "else": {
+            "properties": {
+              "repair_target": {"$ref": "promax-common.schema.json#/$defs/nonemptyString"}
+            }
+          }
+        }
+      ]
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reality_entry",
+        "argument_dependency",
+        "v8_concept_fidelity",
+        "evidence_binding",
+        "strongest_counterposition",
+        "fair_comparison",
+        "position_recommendation_consistency",
+        "withdrawal_action_boundary",
+        "house_voice",
+        "model_flavor_independence",
+        "audit_leakage"
+      ],
+      "properties": {
+        "reality_entry": {"$ref": "#/$defs/dimensionReview"},
+        "argument_dependency": {"$ref": "#/$defs/dimensionReview"},
+        "v8_concept_fidelity": {"$ref": "#/$defs/dimensionReview"},
+        "evidence_binding": {"$ref": "#/$defs/dimensionReview"},
+        "strongest_counterposition": {"$ref": "#/$defs/dimensionReview"},
+        "fair_comparison": {"$ref": "#/$defs/dimensionReview"},
+        "position_recommendation_consistency": {"$ref": "#/$defs/dimensionReview"},
+        "withdrawal_action_boundary": {"$ref": "#/$defs/dimensionReview"},
+        "house_voice": {"$ref": "#/$defs/dimensionReview"},
+        "model_flavor_independence": {"$ref": "#/$defs/dimensionReview"},
+        "audit_leakage": {"$ref": "#/$defs/dimensionReview"}
+      }
+    },
+    "passedDimensionReview": {
+      "$ref": "#/$defs/dimensionReview",
+      "properties": {"status": {"const": "pass"}}
+    },
+    "passingDimensions": {
+      "$ref": "#/$defs/dimensions",
+      "properties": {
+        "reality_entry": {"$ref": "#/$defs/passedDimensionReview"},
+        "argument_dependency": {"$ref": "#/$defs/passedDimensionReview"},
+        "v8_concept_fidelity": {"$ref": "#/$defs/passedDimensionReview"},
+        "evidence_binding": {"$ref": "#/$defs/passedDimensionReview"},
+        "strongest_counterposition": {"$ref": "#/$defs/passedDimensionReview"},
+        "fair_comparison": {"$ref": "#/$defs/passedDimensionReview"},
+        "position_recommendation_consistency": {"$ref": "#/$defs/passedDimensionReview"},
+        "withdrawal_action_boundary": {"$ref": "#/$defs/passedDimensionReview"},
+        "house_voice": {"$ref": "#/$defs/passedDimensionReview"},
+        "model_flavor_independence": {"$ref": "#/$defs/passedDimensionReview"},
+        "audit_leakage": {"$ref": "#/$defs/passedDimensionReview"}
+      }
+    }
+  }
+}

@@ -24,6 +24,7 @@ ROLE_IDS = (
     "counterexample_auditor",
     "position_adjudicator",
     "longform_writer",
+    "prose_fidelity_auditor",
 )
 CANONICAL_VALIDATOR_IDS = (
     "schema",
@@ -34,12 +35,13 @@ CANONICAL_VALIDATOR_IDS = (
     "retrieval",
     "position",
     "output",
+    "prose",
     "manifest",
     "state-machine",
     "continuation",
 )
-_ROLE_INPUT_MAX_PHASE = ("P3", "P5", "P6", "P7", "P9")
-_ROLE_OUTPUT_PHASE = ("P4", "P6", "P7", "P8", "P10")
+_ROLE_INPUT_MAX_PHASE = ("P3", "P5", "P6", "P7", "P9", "P10")
+_ROLE_OUTPUT_PHASE = ("P4", "P6", "P7", "P8", "P10", "P10")
 ALLOWED_MODES = (
     "promax-artifact-run",
     "promax-complete",
@@ -151,7 +153,11 @@ def build_capability_disclosure(
     }
 
 
-def build_role_plan(capabilities: Mapping[str, object]) -> list[dict[str, object]]:
+def build_role_plan(
+    capabilities: Mapping[str, object],
+    *,
+    schema_version: int = 1,
+) -> list[dict[str, object]]:
     if not isinstance(capabilities, Mapping):
         raise ValueError("capabilities must be a structured object")
     subagents = capabilities.get("subagents")
@@ -176,6 +182,12 @@ def build_role_plan(capabilities: Mapping[str, object]) -> list[dict[str, object
                 "single-agent separation cannot claim isolated subagent execution"
             )
         execution_mode = "single-agent-separated"
+    if schema_version == 1:
+        role_ids = ROLE_IDS[:-1]
+    elif schema_version == 2:
+        role_ids = ROLE_IDS
+    else:
+        raise ValueError("schema_version must be 1 or 2")
     return [
         {
             "role_id": role_id,
@@ -183,7 +195,7 @@ def build_role_plan(capabilities: Mapping[str, object]) -> list[dict[str, object
             "execution_mode": execution_mode,
             "exchange_protocol": "structured-artifacts-only",
         }
-        for sequence, role_id in enumerate(ROLE_IDS, start=1)
+        for sequence, role_id in enumerate(role_ids, start=1)
     ]
 
 
@@ -281,7 +293,7 @@ def initialize_run(
     _validate_mode_capabilities(mode, normalized_blocker, capabilities)
     if not isinstance(created_at, str) or not created_at.strip():
         raise ValueError("created_at must be a non-empty timestamp")
-    role_plan = build_role_plan(capabilities)
+    role_plan = build_role_plan(capabilities, schema_version=2)
     execution_mode = role_plan[0]["execution_mode"]
     nonce = secrets.token_hex(32)
     effective_run_id = run_id or f"promax-run-{secrets.token_hex(8)}"
@@ -294,7 +306,8 @@ def initialize_run(
     )
     contract: dict[str, object] = {
         "schema_id": "crossframe.promax.v8.run-contract",
-        "schema_version": 1,
+        "schema_version": 2,
+        "skill_release": "1.0.1",
         "framework_version": "v8.0",
         "run_id": binding.run_id,
         "run_nonce": binding.run_nonce,
@@ -451,15 +464,30 @@ def validate_role_records(
             if artifact_path in artifact_details:
                 raise ValueError(f"duplicate current artifact metadata: {artifact_path}")
             artifact_details[artifact_path] = raw_artifact
+    schema_version = run_contract.get("schema_version")
+    if schema_version == 1:
+        expected_role_ids = ROLE_IDS[:-1]
+    elif schema_version == 2:
+        expected_role_ids = ROLE_IDS
+    else:
+        raise ValueError("run contract uses an unsupported schema version")
     plan = run_contract.get("role_plan")
-    if not isinstance(plan, list) or len(plan) != len(ROLE_IDS):
-        raise ValueError("run contract does not contain the five-role plan")
+    if (
+        not isinstance(plan, list)
+        or len(plan) != len(expected_role_ids)
+        or [
+            item.get("role_id") if isinstance(item, Mapping) else None
+            for item in plan
+        ]
+        != list(expected_role_ids)
+    ):
+        raise ValueError("run contract does not contain the required role plan")
     if not isinstance(role_records, Sequence) or isinstance(
         role_records, (str, bytes)
     ):
         raise ValueError("role_records must be an ordered structured sequence")
     if len(role_records) != len(plan):
-        raise ValueError("all five planned role records are required")
+        raise ValueError("all planned role records are required")
     normalized: list[dict[str, object]] = []
     output_owners: dict[str, int] = {}
     base_expected_keys = {
@@ -517,7 +545,7 @@ def validate_role_records(
         if record["status"] not in {"completed", "blocked", "invalidated"}:
             raise ValueError(f"role record {index} has an invalid status")
         if run_contract.get("mode") == "promax-complete" and record["status"] != "completed":
-            raise ValueError("promax-complete requires all five roles to complete")
+            raise ValueError("promax-complete requires all roles to complete")
         if planned.get("execution_mode") == "multi-agent-isolated":
             agent_id = record.get("agent_id")
             if not isinstance(agent_id, str) or len(agent_id.strip()) < 3:
