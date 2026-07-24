@@ -83,6 +83,6 @@ Schema：`promax-recommendation.schema.json`
 - `switch_conditions` 至少一项明确写出 `second_option_id` 与触发切换的证据、预测路径或早期信号。
 - `inaction_consequences` 非空，说明时间、机会、保护、外部性或路径锁定成本；不行动不是零成本基线。
 - 根 `authorization_status` 只能是 `conditional_recommendation_only`、`not_authorized` 或 `authorization_unknown`；分析不得自我授予现实行动权限。
-- 采用 house policy 时，dossier 与 essay 都必须逐字披露 `ranking_policy=promax_low_information_house_policy_not_v8`、`PROMAX-HOUSE-POLICY-NOT-V8`、`ranking_evidence_refs=[]`，并明确它不是 v8 概念、规范前提或 v8 自动结论。
+- 采用 house policy 时，dossier 必须逐字保存 `ranking_policy=promax_low_information_house_policy_not_v8`、`PROMAX-HOUSE-POLICY-NOT-V8`、`ranking_evidence_refs=[]`，并明确它不是 v8 概念、规范前提或 v8 自动结论。essay 只用自然语言说明当前排序来自低信息条件下的保守运行偏好，不转储 key/value、方案 ID 或机器字段。
 
-写盘后执行 `validate_recommendation_semantics()`。P7 的 `option_ranking_after` 必须与本 ranking 完全相同；P10 essay 必须按首次出现顺序表达完整 ranking，并逐项携带十九字段记录的全部实质语义。
+写盘后执行 `validate_recommendation_semantics()`。P7 的 `option_ranking_after` 必须与本 ranking 完全相同；P10 dossier 保存完整 ranking 与十九字段语义。P9 `reader_projection` 决定 essay 如何让读者从自然文章中恢复首选、次选、切换条件、不行动后果和授权上限，但正文不复制机器台账。

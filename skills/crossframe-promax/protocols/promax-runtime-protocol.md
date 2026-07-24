@@ -47,6 +47,8 @@
 - `position-ledger`
 - `recommendation-ledger`
 - `continuation-ledger`
+- `reader-projection`
+- `prose-review`
 
 ## 控制面与生成面
 
@@ -252,7 +254,7 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py 
 
 ## P9：output plan
 
-目标：在写正文前锁定交付责任。
+目标：在写正文前同时锁定 package coverage 与读者投影责任。
 
 执行：
 
@@ -260,7 +262,11 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py 
 2. 把每个 `applied` concept、中心 claim、主要机制、路径分叉、最强反证、position、recommendation 和 withdrawal condition 映射到明确章节。
 3. 登记全部 required artifacts。
 4. 未展开分支只允许出现在 continuation 计划中；严格完成要求 `unexpanded_branch_ids` 为空且 `coverage_complete=true`。
-5. 锁定后如需改变判断或概念处置，先 reset 对应上游阶段，不直接修改 output plan。
+5. 自动选择九种文章体裁之一，固定 `house_voice_id=crossframe-promax`；不展示选择器，不暂停等待用户。
+6. 把全部 applied concepts 分成互斥的 `core_concept_ids` 与 `atlas_only_concept_ids`。核心概念进入 reader-facing essay，其余概念只在 atlas 精确闭合。
+7. 从 prose route 自动选择恰三个核心技法和零至两个辅助技法，为每张卡绑定 section 与 paragraph action。
+8. 生成 `reader_projection`，按信息依赖登记现实入口、中心命题、机制递进、证据或案例、同维正反比较、最强反方、明确立场、撤回条件、行动边界和余味结尾。
+9. 锁定后如需改变判断或概念处置，先 reset 对应上游阶段，不直接修改 output plan。
 
 输出：`promax-output-plan.locked.json`。
 
@@ -275,8 +281,9 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py 
 1. `promax-dossier.md`：事实边界、结构图、claim/path、证据、攻击与判断依据。
 2. `promax-concept-atlas.md`：逐个解释 `applied` concept 的 v8 定义、当前作用、邻接关系、误用边界和来源。
 3. `promax-case-and-countercase.md`：为每个主要机制提供至少两个相似例子和一个失效/反例，使用 `typed-example` 类型标签。
-4. `promax-essay.md`：连续、可读、明确、有立场的完整中文正文；不得是 key/value 台账、marker ledger 或 dossier 摘要。
-5. `promax-continuation-index.md`：列出续跑顺序、入口与剩余分支；无续跑项时也提供闭合索引。
+4. `promax-essay.md`：连续、可读、明确、有立场的完整中文正文；按 reader projection 从现实入口推进，不得是 key/value 台账、marker ledger、逐概念目录或 dossier 摘要。
+5. `promax-prose-review.json`：由 `prose_fidelity_auditor` 独立检查现实入口、论证依赖、概念保真、证据、最强反方、公平比较、立场一致、撤回与行动边界、固定声口和审计泄漏。
+6. `promax-continuation-index.md`：列出续跑顺序、入口与剩余分支；无续跑项时也提供闭合索引。
 
 生成完成后：
 
@@ -285,7 +292,7 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py 
 3. 按 schema 生成 `continuation-ledger`，让 `parent_manifest_sha256` 精确绑定当前 manifest；写 `promax-continuation-ledger.json`。
 4. 任何工件改变后都重新生成 manifest，再重绑 continuation；不得沿用陈旧 hash。
 
-闸门：长度只是异常信号。语义覆盖、连续段落、例子类型、position/recommendation 一致性、manifest 新鲜度与 continuation 父状态必须同时通过。
+闸门：长度只是异常信号，正文不设总字数上限。语义覆盖、reader beats、实际审校短摘、例子类型、position/recommendation 一致性、manifest 新鲜度与 continuation 父状态必须同时通过。
 
 ## P11：validation and repair
 
@@ -307,7 +314,7 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_artifacts.py --w
 
 每个 `phase_sealed` event 必须由已验证 `PhaseState` 通过 `seal_phase_event` 生成，再由 `append_phase_event` 写入同一日志。输入 hash 必须引用活动上游工件，输出 hash 必须是本阶段新工件。reset 使用 `build_reset_event`，同时失效该阶段及全部下游。
 
-多角色运行时，固定五个角色：
+多角色运行时，固定六个角色：
 
 | 角色 | 冻结输入上限 | 主要输出 |
 | --- | --- | --- |
@@ -316,6 +323,7 @@ python skills/crossframe-promax/scripts/check_crossframe_promax_artifacts.py --w
 | counterexample auditor | P6 | P7 red-team report |
 | adjudicator | P7 | P8 position/recommendation |
 | longform writer | P9 | P10 longform artifacts |
+| `prose_fidelity_auditor` | P10 | P10 `promax-prose-review.json` |
 
 角色只交换 `artifact-contract` 规定的结构化输入和输出。若使用单代理，仍按角色顺序和冻结输入执行，并如实登记 `single-agent-separated`。
 

@@ -62,7 +62,7 @@ class ReplayFixture:
         self.run_dir = run_dir
         self.known: dict[str, str] = {}
         self.role_records: list[dict[str, object]] = []
-        output_phases = ("P4", "P6", "P7", "P8", "P10")
+        output_phases = ("P4", "P6", "P7", "P8", "P10", "P10")
         metadata: dict[str, dict[str, object]] = {}
 
         for index, plan in enumerate(self.contract["role_plan"]):

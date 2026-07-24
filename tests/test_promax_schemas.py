@@ -45,6 +45,16 @@ HOUSE_OPTION_KIND_RANKING = (
     "exit_or_transfer",
     "no_action",
 )
+READER_ACTION_IDS = (
+    "reality_entry",
+    "center_thesis",
+    "mechanism_progression",
+    "same_dimension_comparison",
+    "strongest_counterposition",
+    "explicit_position",
+    "withdrawal_action_boundary",
+    "resonant_close",
+)
 
 EXPECTED_RUNTIME_SCHEMAS = (
     "promax-artifact-manifest.schema.json",
@@ -56,6 +66,7 @@ EXPECTED_RUNTIME_SCHEMAS = (
     "promax-output-plan.schema.json",
     "promax-phase-event.schema.json",
     "promax-position.schema.json",
+    "promax-prose-review.schema.json",
     "promax-read-event.schema.json",
     "promax-recommendation.schema.json",
     "promax-red-team-report.schema.json",
@@ -91,6 +102,7 @@ MODEL_AUTHORED_SCHEMAS = (
     "promax-position.schema.json",
     "promax-recommendation.schema.json",
     "promax-output-plan.schema.json",
+    "promax-prose-review.schema.json",
     "promax-repair-plan.schema.json",
 )
 HIDDEN_THOUGHT_FIELD_NAMES = (
@@ -899,6 +911,138 @@ def output_plan() -> dict[str, Any]:
     }
 
 
+def output_plan_v2() -> dict[str, Any]:
+    plan = output_plan()
+    plan["schema_version"] = 2
+    plan["sections"][0]["mechanism_ids"] = ["MECHANISM-1"]
+    plan["sections"][0]["path_node_ids"] = ["NODE-1"]
+    plan["reader_projection"] = {
+        "article_type": "neutral-analysis",
+        "house_voice_id": "crossframe-promax",
+        "thesis_claim_id": "CLAIM-CENTRAL",
+        "core_concept_ids": ["V8-CANON-OBJECT"],
+        "atlas_only_concept_ids": [],
+        "stance_projection": {
+            "relation_to_proposition": "supports",
+            "judgment_strength": "moderate",
+            "center_thesis_text": "The current evidence supports the thesis.",
+            "preferred_option_id": None,
+            "preferred_option_kind": None,
+            "preferred_option_text": None,
+            "second_option_id": None,
+            "second_option_kind": None,
+            "second_option_text": None,
+            "withdrawal_text": "Withdraw if the boundary evidence changes.",
+            "action_ceiling_text": "This analysis does not authorize action.",
+        },
+        "core_concept_bindings": [
+            {
+                "concept_id": "V8-CANON-OBJECT",
+                "reader_anchor_terms": ["object boundary", "decision scope"],
+                "source_support_spans": [
+                    "object boundary and decision scope are jointly constrained"
+                ],
+                "source_misuse_spans": [],
+                "reader_explanation": (
+                    "Object boundary and decision scope determine who bears the cost."
+                ),
+            }
+        ],
+        "selected_techniques": [
+            {
+                "technique_id": "layered-argument",
+                "tier": "core",
+                "paragraph_action": "Build the mechanism in dependent stages.",
+                "section_ids": ["SECTION-1"],
+            },
+            {
+                "technique_id": "same-different",
+                "tier": "core",
+                "paragraph_action": "Compare alternatives on the same dimension.",
+                "section_ids": ["SECTION-1"],
+            },
+            {
+                "technique_id": "one-stone-many-birds",
+                "tier": "core",
+                "paragraph_action": "Close several implications with one judgment.",
+                "section_ids": ["SECTION-1"],
+            },
+        ],
+        "reader_beats": [
+            {
+                "beat_id": f"BEAT-{index + 1}",
+                "function": "Carry the next two reader-facing argument actions.",
+                "action_ids": list(READER_ACTION_IDS[index * 2 : index * 2 + 2]),
+                "section_ids": ["SECTION-1"],
+                "claim_ids": ["CLAIM-CENTRAL"],
+                "mechanism_ids": ["MECHANISM-1"],
+                "evidence_refs": ["EVIDENCE-1"],
+                "core_concept_ids": ["V8-CANON-OBJECT"],
+                "technique_ids": [
+                    (
+                        "layered-argument",
+                        "same-different",
+                        "one-stone-many-birds",
+                        "one-stone-many-birds",
+                    )[index]
+                ],
+            }
+            for index in range(4)
+        ],
+    }
+    return plan
+
+
+def prose_review() -> dict[str, Any]:
+    dimensions = (
+        "reality_entry",
+        "argument_dependency",
+        "v8_concept_fidelity",
+        "evidence_binding",
+        "strongest_counterposition",
+        "fair_comparison",
+        "position_recommendation_consistency",
+        "withdrawal_action_boundary",
+        "house_voice",
+        "model_flavor_independence",
+        "audit_leakage",
+    )
+    return {
+        "schema_id": "crossframe.promax.v8.prose-review",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "source_snapshot_sha256": SOURCE_SNAPSHOT_SHA256,
+        "essay_sha256": HASH_A,
+        "position_sha256": HASH_B,
+        "output_plan_sha256": HASH_C,
+        "article_type": "neutral-analysis",
+        "technique_ids": [
+            "layered-argument",
+            "same-different",
+            "one-stone-many-birds",
+        ],
+        "required_beat_mappings": [
+            {
+                "beat_id": f"BEAT-{index + 1}",
+                "action_ids": list(READER_ACTION_IDS[index * 2 : index * 2 + 2]),
+                "section_ids": ["SECTION-1"],
+                "evidence_excerpts": [f"Reader beat {index + 1} appears in the essay."],
+            }
+            for index in range(4)
+        ],
+        "dimensions": {
+            dimension: {
+                "status": "pass",
+                "evidence_excerpts": ["现实关系已经进入正文。"],
+                "repair_target": None,
+            }
+            for dimension in dimensions
+        },
+        "overall_status": "pass",
+        "reviewed_at": STAMP,
+    }
+
+
 def continuation_ledger() -> dict[str, Any]:
     return {
         "schema_id": "crossframe.promax.v8.continuation-ledger",
@@ -1027,6 +1171,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "promax-output-plan.schema.json": output_plan(),
         "promax-phase-event.schema.json": phase_event(),
         "promax-position.schema.json": position(),
+        "promax-prose-review.schema.json": prose_review(),
         "promax-read-event.schema.json": read_event(),
         "promax-recommendation.schema.json": recommendation(),
         "promax-red-team-report.schema.json": red_team_report(),
@@ -1132,6 +1277,98 @@ class ProMaxRuntimeSchemaTests(unittest.TestCase):
                 validator = self.runtime.validator_for(name)
                 self.assertIsInstance(validator, Draft202012Validator)
                 self.assertEqual(list(validator.iter_errors(instance)), [])
+
+    def test_v2_output_plan_requires_reader_anchors_and_closed_action_fields(
+        self,
+    ) -> None:
+        valid = output_plan_v2()
+        self.assertValid("promax-output-plan.schema.json", valid)
+
+        fifth_public_artifact = copy.deepcopy(valid)
+        fifth_public_artifact["required_artifacts"].append(
+            "promax-reader-appendix.md"
+        )
+        self.assertInvalid(
+            "promax-output-plan.schema.json",
+            fifth_public_artifact,
+        )
+
+        missing_binding = copy.deepcopy(valid)
+        missing_binding["reader_projection"].pop("core_concept_bindings")
+        self.assertInvalid("promax-output-plan.schema.json", missing_binding)
+
+        invalid_anchor = copy.deepcopy(valid)
+        invalid_anchor["reader_projection"]["core_concept_bindings"][0][
+            "reader_anchor_terms"
+        ][0] = "--"
+        self.assertInvalid("promax-output-plan.schema.json", invalid_anchor)
+
+        variants = {}
+
+        missing_action_field = copy.deepcopy(valid)
+        missing_action_field["reader_projection"]["reader_beats"][0].pop(
+            "action_ids"
+        )
+        variants["missing_action_field"] = missing_action_field
+
+        too_many_actions = copy.deepcopy(valid)
+        too_many_actions["reader_projection"]["reader_beats"][0]["action_ids"] = [
+            "reality_entry",
+            "center_thesis",
+            "mechanism_progression",
+        ]
+        variants["too_many_actions"] = too_many_actions
+
+        duplicate_local_action = copy.deepcopy(valid)
+        duplicate_local_action["reader_projection"]["reader_beats"][0][
+            "action_ids"
+        ] = ["reality_entry", "reality_entry"]
+        variants["duplicate_local_action"] = duplicate_local_action
+
+        unknown_action = copy.deepcopy(valid)
+        unknown_action["reader_projection"]["reader_beats"][0]["action_ids"] = [
+            "invented_action"
+        ]
+        variants["unknown_action"] = unknown_action
+
+        for case, instance in variants.items():
+            with self.subTest(case=case):
+                self.assertInvalid("promax-output-plan.schema.json", instance)
+
+    def test_prose_review_requires_closed_local_action_fields(self) -> None:
+        valid = prose_review()
+        self.assertValid("promax-prose-review.schema.json", valid)
+
+        variants = {}
+
+        missing_action_field = copy.deepcopy(valid)
+        missing_action_field["required_beat_mappings"][0].pop("action_ids")
+        variants["missing_action_field"] = missing_action_field
+
+        too_many_actions = copy.deepcopy(valid)
+        too_many_actions["required_beat_mappings"][0]["action_ids"] = [
+            "reality_entry",
+            "center_thesis",
+            "mechanism_progression",
+        ]
+        variants["too_many_actions"] = too_many_actions
+
+        duplicate_local_action = copy.deepcopy(valid)
+        duplicate_local_action["required_beat_mappings"][0]["action_ids"] = [
+            "reality_entry",
+            "reality_entry",
+        ]
+        variants["duplicate_local_action"] = duplicate_local_action
+
+        unknown_action = copy.deepcopy(valid)
+        unknown_action["required_beat_mappings"][0]["action_ids"] = [
+            "invented_action"
+        ]
+        variants["unknown_action"] = unknown_action
+
+        for case, instance in variants.items():
+            with self.subTest(case=case):
+                self.assertInvalid("promax-prose-review.schema.json", instance)
 
     def test_runtime_validator_enforces_declared_date_time_date_and_uri_formats(self) -> None:
         bad_timestamp = source_snapshot()
@@ -1864,6 +2101,16 @@ class ProMaxRuntimeSchemaTests(unittest.TestCase):
                 "required_artifacts",
                 "unexpanded_branch_ids",
                 "coverage_complete",
+            },
+            "promax-prose-review.schema.json": {
+                "essay_sha256",
+                "position_sha256",
+                "output_plan_sha256",
+                "article_type",
+                "technique_ids",
+                "required_beat_mappings",
+                "dimensions",
+                "overall_status",
             },
             "promax-repair-plan.schema.json": {
                 "failed_report_sha256",

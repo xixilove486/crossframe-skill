@@ -40,17 +40,21 @@ description: "Use when the user explicitly names crossframe-promax, CrossFrame P
 2. `protocols/promax-judgment-constitution.md`
 3. `protocols/promax-retrieval-red-team-protocol.md`
 4. `protocols/promax-repair-loop-protocol.md`
-5. `references/source_manifest.json`
-6. `references/runtime-routing-map.md`
-7. `references/retrieval-policy.md`
-8. `references/v8-full-source/00-index.md`
-9. `references/v8-full-source/00-heading-index.md`
-10. `references/v8-full-source/00-term-index.md`
-11. `references/v8-full-source/00-table-index.md`
-12. `references/concept-registry/index.md`
-13. `references/concept-registry/v8-concept-registry.json`
-14. `references/concept-contracts/v8-contract-map.json` 及合同文件
-15. `references/v8-route-map.json`
+5. `protocols/promax-prose-protocol.md`
+6. `references/source_manifest.json`
+7. `references/runtime-routing-map.md`
+8. `references/retrieval-policy.md`
+9. `references/promax-house-voice.md`
+10. `references/prose-routing-map.md`
+11. `references/prose-techniques/index.md`
+12. `references/v8-full-source/00-index.md`
+13. `references/v8-full-source/00-heading-index.md`
+14. `references/v8-full-source/00-term-index.md`
+15. `references/v8-full-source/00-table-index.md`
+16. `references/concept-registry/index.md`
+17. `references/concept-registry/v8-concept-registry.json`
+18. `references/concept-contracts/v8-contract-map.json` 及合同文件
+19. `references/v8-route-map.json`
 
 索引只用于定位，不替代正文。route 只决定优先读取与概念闭包起点，不降低全源连续读取要求。不得把运行胶囊、注册表摘要、外部案例或模型常识当作 v8 原文定义。
 
@@ -64,7 +68,7 @@ python skills/crossframe-promax/scripts/crossframe_promax_runtime.py init --repo
 
 档位表达本轮要兑现的目标契约，不是模型对结果的预先宣告。若本轮确实具备严格完成所需的 v8 文件、验证器与实际任务所需能力，并以严格闭合为目标，初始化时改用 `--mode promax-complete`；这不等于已经完成。只有本轮 fresh canonical checker report 才能判定是否达到 `promax-complete`。已知存在能力缺口时保持默认 `promax-artifact-run`，不得为了得到完成标签虚报能力或事后更改冻结档位。
 
-有网络能力时加入 `--network`。只有宿主确实提供隔离子代理，而且能取得五次真实执行的宿主可见唯一 ID 时才加入 `--subagents`，并按该 CLI 的 `--help` 设置并发上限；否则使用 `single-agent-separated`。能力不存在时如实登记，不要冒充工具已运行。`init` 负责生成并绑定 `promax-run-contract.json`、`promax-source-snapshot.json` 和初始 `promax-phase-events.jsonl`。
+有网络能力时加入 `--network`。只有宿主确实提供隔离子代理，而且能取得六次真实执行的宿主可见唯一 ID 时才加入 `--subagents`，并按该 CLI 的 `--help` 设置并发上限；否则使用 `single-agent-separated`。能力不存在时如实登记，不要冒充工具已运行。`init` 负责生成并绑定 `promax-run-contract.json`、`promax-source-snapshot.json` 和初始 `promax-phase-events.jsonl`。
 
 ## 生产物化入口
 
@@ -103,15 +107,15 @@ python skills/crossframe-promax/scripts/crossframe_promax_runtime.py materialize
 | `P6` | 完成五向真实检索或诚实记录能力缺口 | `promax-retrieval-ledger.json` |
 | `P7` | 完成最强反方、误用攻击和正反立场稳定性检查 | `promax-red-team-report.json` |
 | `P8` | 在攻击后冻结判断、行动上限和建议排序 | `promax-position.locked.json`, `promax-recommendation.locked.json` |
-| `P9` | 把概念、机制、路径、例子、反例和判断映射到章节 | `promax-output-plan.locked.json` |
-| `P10` | 先生成完整长文工件，再生成 manifest 与续跑控制面 | dossier、atlas、case/countercase、essay、continuation、manifest |
+| `P9` | 完成 package coverage，并自动冻结体裁、P8 自然立场投影、固定八动作 reader beats、核心概念 v8 来源/解释锁与最多五张技法 | `promax-output-plan.locked.json` |
+| `P10` | 生成四份公开长文，完成独立成文审校，再生成 manifest 与续跑控制面 | dossier、atlas、case/countercase、essay、prose review、continuation、manifest |
 | `P11` | 运行验证器；失败时只重置最早受影响阶段及下游 | `promax-validator-report.json`，失败时另有 `promax-repair-plan.json` |
 
 每次阶段封存都使用 `promax_runtime.state_machine` 的验证、封存与 append-only 写入函数。不要手工伪造父 hash、事件 hash、reset 事件或完成状态。控制面工件必须服从相应 schema；不要为 run contract、source snapshot、read events、phase events 或 continuation ledger 创造散文替代品。
 
 ## 多角色隔离
 
-能力允许时隔离运行五个角色：源与概念审计、外部事实检索、反例攻击、裁决与立场冻结、长文主笔。角色只通过冻结工件交换信息，并按 run contract 的 `role_plan` 登记输入、观测输入、输出和状态。
+能力允许时隔离运行六个角色：源与概念审计、外部事实检索、反例攻击、裁决与立场冻结、长文主笔、`prose_fidelity_auditor` 成文保真审校。角色只通过冻结工件交换信息，并按 run contract 的 `role_plan` 登记输入、观测输入、输出和状态。
 
 没有子代理能力时按同一角色顺序执行，登记 `single-agent-separated`，每个角色只读取其冻结输入。不得把单代理顺序执行声称为独立审查；能力允许却无故跳过隔离角色时不得声明严格完成。
 
@@ -123,11 +127,14 @@ python skills/crossframe-promax/scripts/crossframe_promax_runtime.py materialize
 - `promax-concept-atlas.md`
 - `promax-case-and-countercase.md`
 - `promax-essay.md`
+- `promax-prose-review.json`
 - `promax-continuation-index.md`
 - `promax-artifact-manifest.json`
 - `promax-continuation-ledger.json`
 
-`promax-essay.md` 必须是连续、可读、有明确立场的完整中文正文，不能是台账转储或 dossier 摘要。解释每个 `applied` 概念的权威定义、当前作用、邻接关系、误用边界、相似结构和失效条件。每个主要机制至少提供两个显式标型的相似例子和一个反例或失效例子；例子类型只能按模板登记为真实案例、用户材料例子、条件情景或结构类比。真实案例不足时如实降档，不得伪造。
+`promax-essay.md` 必须是连续、可读、有明确立场的完整中文正文，不能是台账转储或 dossier 摘要。第一段先写现实，不用框架术语；正文只转译真正改变判断的核心概念，全部 applied concepts 的权威定义、邻接关系和误用边界由 atlas 精确闭合。P9 自动选择九种体裁之一、固定 ProMax 声口，并把现实入口、中心命题、机制递进、同维比较、最强反方、明确立场、撤回与行动边界、余味结尾八个动作按固定顺序分配给 reader beats；每个 beat 最多合并相邻两个动作。P9 还须逐项复制 P8 的判断关系、强度、首选与次选，并冻结进入正文的自然句；每个核心概念绑定完整 v8 支持原句、具体误用边界、2–4 个非通用锚词和一条将逐字进入正文的自然解释。P9 同时为三个核心技法和至多两个辅助技法分配段落动作；正文不设总字数上限，以 reader beats 与论证闭合为止。每个主要机制至少提供两个显式标型的相似例子和一个反例或失效例子；例子类型只能按模板登记为真实案例、用户材料例子、条件情景或结构类比。真实案例不足时如实降档，不得伪造。
+
+`promax-prose-review.json` 是第六角色生成的内部审校工件，必须绑定当前 essay、P8 position 与 P9 output plan 的真实散列，并逐 beat 原样映射 P9 的 `action_ids`，用正文实际短摘覆盖全部审校维度和 reader beats。beat 映射顺序与动作摘录在正文中的真实位置均不得倒退；概念、立场、反方和撤回维度必须绑定各自的 P9 自然锁。现实入口的摘录必须落在第一个正文段，余味结尾的摘录必须落在最后一个正文段，撤回边界摘录必须同时证明撤回条件和行动上限。它进入 manifest 和验证集，但不作为第五份公开长文，也不进入最终公开工件链接。
 
 用户要求判断时给出当前最佳判断、判断强度、次优解释、最强反证、为何暂不采纳、撤回条件和行动上限。用户要求建议时比较主动行动、延迟、试探、退出或转移、维持现状、不行动六类方案，明确首选、次选、切换条件、不行动成本、授权状态、停止条件和回滚条件。
 

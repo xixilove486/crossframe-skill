@@ -4,7 +4,7 @@
 生成阶段：`P10`
 冻结输入：v8 registry、concept disposition ledger、output plan
 
-Atlas 必须为每个 `status=applied` 的 concept 建立独立语义节。顶层标题使用 `# ProMax v8 概念图谱`；每个 applied concept 的二级标题严格采用：
+Atlas 负责全部 applied concepts 的精确概念闭包，必须为每个 `status=applied` 的 concept 建立独立语义节。顶层标题使用 `# ProMax v8 概念图谱`；每个 applied concept 的二级标题严格采用：
 
 ```text
 ## V8-CANON-* 权威中文名
@@ -31,4 +31,4 @@ Atlas 必须为每个 `status=applied` 的 concept 建立独立语义节。顶�
 
 ## 语义闭包
 
-Atlas 通过的条件不是名称出现，而是每个 applied section 同时包含精确定义、当前 rationale、全部误用边界和全部邻接关系。essay 还必须重新以连续段落解释相同的权威名、定义和 rationale；atlas 不能替代 essay。
+Atlas 通过的条件不是名称出现，而是每个 applied section 同时包含权威定义、当前 rationale、全部误用边界和全部邻接关系。essay 只转译 P9 `core_concept_ids` 中真正改变读者判断的概念，不复制完整 definition 或机器 rationale；atlas 与 dossier 共同承担精确审计责任，essay 承担读者理解责任。

@@ -26,7 +26,8 @@
   ],
   "properties": {
     "schema_id": {"const": "crossframe.promax.v8.run-contract"},
-    "schema_version": {"const": 1},
+    "schema_version": {"enum": [1, 2]},
+    "skill_release": {"const": "1.0.1"},
     "framework_version": {"const": "v8.0"},
     "run_id": {"$ref": "promax-common.schema.json#/$defs/runId"},
     "run_nonce": {"$ref": "promax-common.schema.json#/$defs/runNonce"},
@@ -93,6 +94,24 @@
     "created_at": {"$ref": "promax-common.schema.json#/$defs/timestamp"}
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {"schema_version": {"const": 1}},
+        "required": ["schema_version"]
+      },
+      "then": {
+        "properties": {
+          "role_plan": {"maxItems": 5}
+        },
+        "not": {"required": ["skill_release"]}
+      },
+      "else": {
+        "required": ["skill_release"],
+        "properties": {
+          "role_plan": {"minItems": 6}
+        }
+      }
+    },
     {
       "if": {
         "properties": {"mode": {"const": "promax-blocked/progress"}},

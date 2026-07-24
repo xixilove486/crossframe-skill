@@ -36,16 +36,31 @@ INCLUDE_FILES = [
 
 EXCLUDED_PARTS = {
     ".git",
+    ".mypy_cache",
     "__pycache__",
     ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "artifacts",
+    "build",
+    "dist",
+    "drafts",
     "node_modules",
     "outputs",
+    "runs",
+    "venv",
     "work",
 }
 
 EXCLUDED_NAMES = {
+    ".env",
+    ".env.local",
     ".v8-full-source.lock",
+    ".DS_Store",
+    "Thumbs.db",
 }
+
+EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
 
 
 def iter_package_files(repo: Path):
@@ -61,6 +76,7 @@ def iter_package_files(repo: Path):
             if (
                 path.is_file()
                 and path.name not in EXCLUDED_NAMES
+                and path.suffix.casefold() not in EXCLUDED_SUFFIXES
                 and not any(part in EXCLUDED_PARTS for part in path.relative_to(repo).parts)
             ):
                 yield path

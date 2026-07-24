@@ -114,7 +114,8 @@
         "external_case_researcher",
         "counterexample_auditor",
         "position_adjudicator",
-        "longform_writer"
+        "longform_writer",
+        "prose_fidelity_auditor"
       ]
     },
     "orchestrationMode": {
@@ -126,7 +127,7 @@
       "required": ["role_id", "sequence", "execution_mode", "exchange_protocol"],
       "properties": {
         "role_id": {"$ref": "#/$defs/roleId"},
-        "sequence": {"type": "integer", "minimum": 1, "maximum": 5},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 6},
         "execution_mode": {"$ref": "#/$defs/orchestrationMode"},
         "exchange_protocol": {"const": "structured-artifacts-only"}
       }
@@ -146,7 +147,7 @@
       ],
       "properties": {
         "role_id": {"$ref": "#/$defs/roleId"},
-        "sequence": {"type": "integer", "minimum": 1, "maximum": 5},
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 6},
         "execution_mode": {"$ref": "#/$defs/orchestrationMode"},
         "exchange_protocol": {"const": "structured-artifacts-only"},
         "input_artifacts": {
@@ -222,7 +223,7 @@
     "orderedRolePlan": {
       "type": "array",
       "minItems": 5,
-      "maxItems": 5,
+      "maxItems": 6,
       "uniqueItems": true,
       "prefixItems": [
         {
@@ -253,6 +254,12 @@
           "allOf": [
             {"$ref": "#/$defs/rolePlanRecord"},
             {"properties": {"role_id": {"const": "longform_writer"}, "sequence": {"const": 5}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/rolePlanRecord"},
+            {"properties": {"role_id": {"const": "prose_fidelity_auditor"}, "sequence": {"const": 6}}}
           ]
         }
       ],
@@ -261,7 +268,7 @@
     "orderedRoleRecords": {
       "type": "array",
       "minItems": 5,
-      "maxItems": 5,
+      "maxItems": 6,
       "uniqueItems": true,
       "prefixItems": [
         {
@@ -292,6 +299,12 @@
           "allOf": [
             {"$ref": "#/$defs/roleRecord"},
             {"properties": {"role_id": {"const": "longform_writer"}, "sequence": {"const": 5}}}
+          ]
+        },
+        {
+          "allOf": [
+            {"$ref": "#/$defs/roleRecord"},
+            {"properties": {"role_id": {"const": "prose_fidelity_auditor"}, "sequence": {"const": 6}}}
           ]
         }
       ],

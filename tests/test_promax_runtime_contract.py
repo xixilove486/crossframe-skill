@@ -240,7 +240,9 @@ class ProMaxRunInitializationTests(unittest.TestCase):
         ):
             with self.subTest(mode=expected_mode):
                 plan = build_role_plan(capabilities)
-                self.assertEqual([item["role_id"] for item in plan], list(ROLE_IDS))
+                self.assertEqual(
+                    [item["role_id"] for item in plan], list(ROLE_IDS[:-1])
+                )
                 self.assertEqual([item["sequence"] for item in plan], [1, 2, 3, 4, 5])
                 self.assertEqual(
                     {item["execution_mode"] for item in plan}, {expected_mode}
@@ -252,6 +254,14 @@ class ProMaxRunInitializationTests(unittest.TestCase):
                 for item in plan:
                     self.assertNotIn("status", item)
                     self.assertNotIn("output_artifacts", item)
+
+                v2_plan = build_role_plan(capabilities, schema_version=2)
+                self.assertEqual(
+                    [item["role_id"] for item in v2_plan], list(ROLE_IDS)
+                )
+                self.assertEqual(
+                    [item["sequence"] for item in v2_plan], [1, 2, 3, 4, 5, 6]
+                )
 
         multi_contract = initialized(subagents=True)["run_contract"]
         single_contract = initialized(subagents=False)["run_contract"]
@@ -540,7 +550,7 @@ class ProMaxArtifactAndReplayTests(unittest.TestCase):
 
     def _manifest(self, root: Path) -> dict[str, object]:
         metadata: dict[str, dict[str, object]] = {}
-        output_phases = ("P4", "P6", "P7", "P8", "P10")
+        output_phases = ("P4", "P6", "P7", "P8", "P10", "P10")
         output_metadata: dict[str, tuple[str, list[str]]] = {}
         for index, record in enumerate(self.records):
             observed_hashes = [
@@ -759,6 +769,22 @@ class ProMaxArtifactAndReplayTests(unittest.TestCase):
             future_ref = artifact_ref(orphan_path, orphan_sha)
             future_read[0]["input_artifacts"] = [future_ref]
             future_read[0]["observed_input_artifacts"] = [future_ref]
+            attestation = future_read[0]["execution_attestation"]
+            attestation["observed_input_artifacts"] = [copy.deepcopy(future_ref)]
+            attestation_claim = {
+                "run_id": self.contract["run_id"],
+                "request_sha256": self.contract["request_sha256"],
+                "source_snapshot_sha256": self.contract["source_snapshot_sha256"],
+                "role_id": future_read[0]["role_id"],
+                "sequence": future_read[0]["sequence"],
+                "agent_id": future_read[0]["agent_id"],
+                "completed_at": attestation["completed_at"],
+                "observed_input_artifacts": [copy.deepcopy(future_ref)],
+                "produced_output_artifacts": copy.deepcopy(
+                    attestation["produced_output_artifacts"]
+                ),
+            }
+            attestation["claim_sha256"] = sha256_json(attestation_claim)
             for artifact in artifacts:
                 if artifact["path"] == first_output:
                     artifact["input_artifact_sha256s"] = [orphan_sha]

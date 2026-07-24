@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -19,6 +20,10 @@ from promax_runtime.source_integrity import (
 )
 from promax_runtime.concept_closure import validate_concept_closure
 from promax_runtime.claim_path import validate_claim_path_saturation
+from promax_runtime.deliverables import (
+    validate_prose_review,
+    validate_v2_reader_documents,
+)
 from promax_runtime.jsonio import sha256_json
 from promax_runtime.retrieval import validate_retrieval_saturation
 from promax_runtime.schemas import validate_instance
@@ -284,6 +289,33 @@ class ProMaxFixtureFactoryTests(unittest.TestCase):
             locked_at="2026-07-23T18:00:00Z",
         )
         validate_instance("promax-output-plan.schema.json", plan)
+        self.assertEqual(plan["schema_version"], 2)
+        self.assertEqual(
+            plan["reader_projection"]["core_concept_ids"],
+            [fixture_factory.FIXTURE_CONCEPT_ID],
+        )
+        self.assertEqual(
+            sum(
+                technique["tier"] == "core"
+                for technique in plan["reader_projection"]["selected_techniques"]
+            ),
+            3,
+        )
+        self.assertEqual(
+            plan["reader_projection"]["article_type"],
+            "public-commentary",
+        )
+        self.assertEqual(
+            [
+                technique["technique_id"]
+                for technique in plan["reader_projection"]["selected_techniques"]
+            ],
+            [
+                "event-association",
+                "layered-argument",
+                "positive-negative-contrast",
+            ],
+        )
         section = plan["sections"][0]
         self.assertEqual(
             section["concept_ids"],
@@ -305,7 +337,20 @@ class ProMaxFixtureFactoryTests(unittest.TestCase):
             {"EX-M1-F1", "EX-M2-F1", "EX-M3-F1"},
         )
 
-        deliverables = fixture_factory.build_deliverables(ROOT)
+        position = fixture_factory.build_position_lock(
+            run_id="promax-fixture-factory-test",
+            locked_at="2026-07-23T17:40:00Z",
+        )
+        recommendation = fixture_factory.build_recommendation_lock(
+            position,
+            run_id="promax-fixture-factory-test",
+            locked_at="2026-07-23T17:50:00Z",
+        )
+        deliverables = fixture_factory.build_deliverables(
+            ROOT,
+            position=position,
+            recommendation=recommendation,
+        )
         self.assertEqual(
             set(deliverables),
             {
@@ -332,9 +377,96 @@ class ProMaxFixtureFactoryTests(unittest.TestCase):
             "OPTION-EXIT",
             "OPTION-NO-ACTION",
         ]
-        for path in ("promax-dossier.md", "promax-essay.md"):
-            first_appearances = [deliverables[path].index(option_id) for option_id in locked_ranking]
-            self.assertEqual(first_appearances, sorted(first_appearances), path)
+        dossier = deliverables["promax-dossier.md"]
+        first_appearances = [dossier.index(option_id) for option_id in locked_ranking]
+        self.assertEqual(first_appearances, sorted(first_appearances))
+        essay = deliverables["promax-essay.md"]
+        for machine_prefix in ("V8-CANON", "CLAIM-", "OPTION-"):
+            self.assertNotIn(machine_prefix, essay)
+        first_prose_paragraph = essay.split("\n\n")[1]
+        self.assertNotIn("bounded transfer mechanism", first_prose_paragraph)
+        self.assertIn("转移机制是当前较强的条件解释", essay)
+
+        disposition = fixture_factory.build_concept_disposition(
+            ROOT,
+            run_id="promax-fixture-factory-test",
+            completed_at="2026-07-23T17:30:00Z",
+            applied_concept_ids=(fixture_factory.FIXTURE_CONCEPT_ID,),
+        )
+        registry = json.loads(
+            (
+                ROOT
+                / "skills/crossframe-promax/references/concept-registry/v8-concept-registry.json"
+            ).read_text(encoding="utf-8")
+        )
+        validate_v2_reader_documents(
+            reader_projection=plan["reader_projection"],
+            concept_registry=registry,
+            dispositions=disposition["dispositions"],
+            atlas=deliverables["promax-concept-atlas.md"],
+            essay=essay,
+            dossier=dossier,
+            position=position,
+            recommendation=recommendation,
+            recommendation_required=True,
+        )
+        review = fixture_factory.build_prose_review(
+            run_id="promax-fixture-factory-test",
+            reviewed_at="2026-07-23T18:10:00Z",
+            essay=essay,
+            position=position,
+            output_plan=plan,
+        )
+        validate_instance("promax-prose-review.schema.json", review)
+        validate_prose_review(
+            review,
+            essay=essay,
+            position=position,
+            output_plan=plan,
+            run_id="promax-fixture-factory-test",
+            source_snapshot_sha256=V8_SOURCE_SNAPSHOT_SHA256,
+        )
+        self.assertEqual(len(review["dimensions"]), 11)
+        dimension_excerpts = [
+            excerpt
+            for dimension in review["dimensions"].values()
+            for excerpt in dimension["evidence_excerpts"]
+        ]
+        self.assertGreaterEqual(len(set(dimension_excerpts)), 8)
+        self.assertLessEqual(
+            max(dimension_excerpts.count(excerpt) for excerpt in dimension_excerpts),
+            2,
+        )
+
+    def test_adversarial_review_keeps_beat_excerpts_bounded_and_unique(self) -> None:
+        run_id = "promax-fixture-marker-stuffing"
+        position = fixture_factory.build_position_lock(
+            run_id=run_id,
+            locked_at="2026-07-23T17:40:00Z",
+        )
+        plan = fixture_factory.build_output_plan(
+            run_id=run_id,
+            locked_at="2026-07-23T18:00:00Z",
+        )
+        essay = (
+            "# IDs only\n"
+            + " V8-CANON-U01 CLAIM-CENTRAL MECH-1 MECH-2 MECH-3" * 120
+        )
+
+        review = fixture_factory.build_prose_review(
+            run_id=run_id,
+            reviewed_at="2026-07-23T18:10:00Z",
+            essay=essay,
+            position=position,
+            output_plan=plan,
+        )
+
+        self.assertEqual(review["overall_status"], "fail")
+        for mapping in review["required_beat_mappings"]:
+            for excerpt in mapping["evidence_excerpts"]:
+                self.assertGreaterEqual(len(excerpt), 8)
+                self.assertLessEqual(len(excerpt), 240)
+                self.assertEqual(essay.count(excerpt), 1)
 
     def test_catalog_is_closed_complete_and_has_all_fixture_classes(self) -> None:
         catalog = fixture_factory.load_scenario_catalog(ROOT)
@@ -361,6 +493,89 @@ class ProMaxFixtureFactoryTests(unittest.TestCase):
                         else "expected_error_type"
                     ),
                 },
+            )
+
+    def test_new_fixture_workspace_materializes_v2_internal_prose_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir) / "valid-complete"
+            fixture_factory.materialize_fixture(
+                ROOT,
+                scenario_id="valid-complete",
+                output=workspace,
+            )
+
+            contract = json.loads(
+                (workspace / "promax-run-contract.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(contract["schema_version"], 2)
+            self.assertEqual(len(contract["role_plan"]), 6)
+            self.assertIn("prose", contract["capabilities"]["validators"]["validator_ids"])
+
+            plan = json.loads(
+                (workspace / "promax-output-plan.locked.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            review = json.loads(
+                (workspace / "promax-prose-review.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(plan["schema_version"], 2)
+            validate_instance("promax-prose-review.schema.json", review)
+
+            events = [
+                json.loads(line)
+                for line in (workspace / "promax-phase-events.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            p10 = next(event for event in events if event["phase_id"] == "P10")
+            self.assertIn(
+                "promax-prose-review.json",
+                p10["output_artifact_hashes"],
+            )
+
+            manifest = json.loads(
+                (workspace / "promax-artifact-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            artifacts = {
+                item["path"]: item for item in manifest["artifacts"]
+            }
+            self.assertIn("promax-prose-review.json", artifacts)
+            review_record = manifest["role_records"][-1]
+            self.assertEqual(review_record["role_id"], "prose_fidelity_auditor")
+            self.assertEqual(
+                [item["path"] for item in review_record["input_artifacts"]],
+                [
+                    "promax-essay.md",
+                    "promax-position.locked.json",
+                    "promax-output-plan.locked.json",
+                ],
+            )
+            self.assertEqual(
+                review_record["observed_input_artifacts"],
+                review_record["input_artifacts"],
+            )
+            self.assertEqual(
+                [item["path"] for item in review_record["output_artifacts"]],
+                ["promax-prose-review.json"],
+            )
+            self.assertEqual(
+                set(artifacts["promax-prose-review.json"]["input_artifact_sha256s"]),
+                {
+                    artifacts["promax-essay.md"]["sha256"],
+                    artifacts["promax-position.locked.json"]["sha256"],
+                    artifacts["promax-output-plan.locked.json"]["sha256"],
+                },
+            )
+
+            final_chat = json.loads(
+                (workspace / "promax-final-chat.json").read_text(encoding="utf-8")
+            )
+            self.assertNotIn(
+                "promax-prose-review.json",
+                final_chat["artifact_links"],
             )
 
     def test_list_cli_reports_the_canonical_catalog_and_root_entry_is_thin(self) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import copy
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from promax_runtime.deliverables import (
     validate_continuation_lineage,
     validate_final_chat,
     validate_output_bundle,
+    validate_prose_review,
 )
 from promax_runtime.jsonio import canonical_json_bytes, load_json_bytes, sha256_json
 from promax_runtime.pollution import validate_version_isolation
@@ -63,6 +65,7 @@ JSON_ARTIFACTS = {
     "position": "promax-position.locked.json",
     "recommendation": "promax-recommendation.locked.json",
     "output_plan": "promax-output-plan.locked.json",
+    "prose_review": "promax-prose-review.json",
     "manifest": "promax-artifact-manifest.json",
     "continuation_ledger": "promax-continuation-ledger.json",
 }
@@ -90,6 +93,7 @@ _SCHEMAS = {
     "position": "promax-position.schema.json",
     "recommendation": "promax-recommendation.schema.json",
     "output_plan": "promax-output-plan.schema.json",
+    "prose_review": "promax-prose-review.schema.json",
     "manifest": "promax-artifact-manifest.schema.json",
     "continuation_ledger": "promax-continuation-ledger.schema.json",
 }
@@ -107,6 +111,7 @@ _PHASE_BY_KEY = {
     "position": "P8",
     "recommendation": "P8",
     "output_plan": "P9",
+    "prose_review": "P10",
     "dossier": "P10",
     "concept_atlas": "P10",
     "case_and_countercase": "P10",
@@ -147,6 +152,38 @@ _MANIFEST_FORBIDDEN_ARTIFACTS = {
     REPAIR_ARTIFACT,
     FINAL_CHAT_ARTIFACT,
 }
+
+
+def _contract_schema_version(run_contract: object) -> int:
+    """Return the only supported artifact inventory version."""
+
+    if isinstance(run_contract, Mapping) and run_contract.get("schema_version") == 2:
+        return 2
+    return 1
+
+
+def _json_artifact_keys_for(schema_version: int) -> tuple[str, ...]:
+    """Route fixed JSON inputs after the immutable run contract is loaded."""
+
+    if schema_version not in {1, 2}:
+        raise ValueError(f"unsupported run contract schema_version: {schema_version!r}")
+    return tuple(
+        key
+        for key in JSON_ARTIFACTS
+        if key != "run_contract"
+        and (schema_version == 2 or key != "prose_review")
+    )
+
+
+def _manifest_current_artifacts(schema_version: int) -> set[str]:
+    """Return the exact current analysis inventory frozen by the contract."""
+
+    if schema_version not in {1, 2}:
+        raise ValueError(f"unsupported run contract schema_version: {schema_version!r}")
+    expected = set(_MANIFEST_CURRENT_ARTIFACTS)
+    if schema_version == 2:
+        expected.add(JSON_ARTIFACTS["prose_review"])
+    return expected
 
 
 def _utc_now() -> str:
@@ -333,6 +370,27 @@ def _semantic_error_type(gate: str, error: BaseException) -> tuple[str, str]:
             token in message for token in ("parent", "manifest", "sequence", "resume")
         ):
             return "continuation_parent_mismatch", "continuation_ledger"
+        if any(token in message for token in ("manifest", "stale artifact")):
+            for key in ("dossier", "concept_atlas", "case_and_countercase", "essay"):
+                if TEXT_ARTIFACTS[key].casefold() in message:
+                    return "manifest_stale", key
+            return "manifest_stale", "manifest"
+        if "reader_projection" in message:
+            return "output_semantic_coverage_invalid", "output_plan"
+        if "essay" in message:
+            error_type = (
+                "semantic_content_missing"
+                if any(
+                    token in message
+                    for token in ("does not explain", "semantic", "definition")
+                )
+                else "output_semantic_coverage_invalid"
+            )
+            return error_type, "essay"
+        if "atlas" in message:
+            return "semantic_content_missing", "concept_atlas"
+        if "dossier" in message:
+            return "semantic_content_missing", "dossier"
         if any(
             token in message
             for token in (
@@ -358,16 +416,13 @@ def _semantic_error_type(gate: str, error: BaseException) -> tuple[str, str]:
             )
         ):
             return "semantic_content_missing", "output_plan"
-        if any(token in message for token in ("manifest", "stale artifact")):
-            for key in ("dossier", "concept_atlas", "case_and_countercase", "essay"):
-                if TEXT_ARTIFACTS[key].casefold() in message:
-                    return "manifest_stale", key
-            return "manifest_stale", "manifest"
         return "output_semantic_coverage_invalid", "output_plan"
     raise ValueError(f"unknown semantic gate: {gate}")
 
 
 def _schema_error_type(key: str, error: BaseException) -> str:
+    if key == "prose_review":
+        return "prose_review_invalid"
     if key == "recommendation":
         return "recommendation_option_set_incomplete"
     if key == "retrieval_ledger" and "too short" in str(error).casefold():
@@ -678,7 +733,11 @@ def _load_concept_registry(repo: Path) -> dict[str, object]:
     return value
 
 
-def _validate_manifest_inventory_policy(manifest: Mapping[str, object]) -> None:
+def _validate_manifest_inventory_policy(
+    manifest: Mapping[str, object],
+    *,
+    schema_version: int = 1,
+) -> None:
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list):
         raise ValueError("manifest artifacts must be an array")
@@ -696,12 +755,43 @@ def _validate_manifest_inventory_policy(manifest: Mapping[str, object]) -> None:
         raise ValueError(
             f"manifest creates a control-plane/output identity cycle: {forbidden!r}"
         )
-    if current_paths != _MANIFEST_CURRENT_ARTIFACTS:
-        missing = sorted(_MANIFEST_CURRENT_ARTIFACTS - current_paths)
-        extra = sorted(current_paths - _MANIFEST_CURRENT_ARTIFACTS)
+    expected_current = _manifest_current_artifacts(schema_version)
+    if current_paths != expected_current:
+        missing = sorted(expected_current - current_paths)
+        extra = sorted(current_paths - expected_current)
         raise ValueError(
             f"manifest current analysis inventory is not closed; missing={missing!r}, extra={extra!r}"
         )
+
+
+def _validate_current_file_hash(
+    workspace: Path,
+    manifest: Mapping[str, object],
+    *,
+    artifact_name: str,
+) -> None:
+    """Bind one internal artifact to the exact current bytes in the manifest."""
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("manifest artifacts must be an array")
+    matching = [
+        record
+        for record in artifacts
+        if isinstance(record, Mapping)
+        and record.get("path") == artifact_name
+        and record.get("status") == "current"
+    ]
+    if len(matching) != 1:
+        raise ValueError(
+            f"manifest must contain one current record for {artifact_name}"
+        )
+    raw = read_stable_regular_file(
+        workspace / artifact_name,
+        within_root=workspace,
+    )
+    if hashlib.sha256(raw).hexdigest() != matching[0].get("sha256"):
+        raise ValueError(f"{artifact_name} does not match its current manifest hash")
 
 
 def _next_validation_attempt(
@@ -751,6 +841,7 @@ def _validator_checks(
     failures: Sequence[Mapping[str, object]],
     capability_gaps: Sequence[str],
 ) -> tuple[dict[str, str], list[dict[str, object]]]:
+    schema_version = _contract_schema_version(run_contract)
     capabilities = run_contract.get("capabilities")
     validators = capabilities.get("validators") if isinstance(capabilities, Mapping) else None
     raw_ids = validators.get("validator_ids") if isinstance(validators, Mapping) else None
@@ -758,11 +849,16 @@ def _validator_checks(
         not isinstance(item, str) or not item for item in raw_ids
     ):
         raise ValueError("run contract has no executable frozen validator set")
+    if schema_version == 2 and "prose" not in raw_ids:
+        raise ValueError("current run contract omits the required prose validator")
     versions = {validator_id: CHECKER_VERSION for validator_id in raw_ids}
     codes: dict[str, list[str]] = {validator_id: [] for validator_id in raw_ids}
 
     checked_paths = {
-        "schema": sorted(JSON_ARTIFACTS.values()),
+        "schema": sorted(
+            JSON_ARTIFACTS[key]
+            for key in ("run_contract", *_json_artifact_keys_for(schema_version))
+        ),
         "source-integrity": [
             JSON_ARTIFACTS["source_snapshot"],
             JSONL_ARTIFACTS["read_events"],
@@ -790,6 +886,13 @@ def _validator_checks(
             TEXT_ARTIFACTS["continuation_index"],
         ],
     }
+    if schema_version == 2:
+        checked_paths["prose"] = [
+            TEXT_ARTIFACTS["essay"],
+            JSON_ARTIFACTS["position"],
+            JSON_ARTIFACTS["output_plan"],
+            JSON_ARTIFACTS["prose_review"],
+        ]
 
     def choose(failure: Mapping[str, object]) -> str:
         error_type = str(failure.get("error_type", ""))
@@ -822,6 +925,15 @@ def _validator_checks(
             TEXT_ARTIFACTS["continuation_index"],
         }:
             preferred = "continuation"
+        elif (
+            schema_version == 2
+            and artifact
+            in {
+                JSON_ARTIFACTS["prose_review"],
+                TEXT_ARTIFACTS["essay"],
+            }
+        ):
+            preferred = "prose"
         elif artifact in {
             JSON_ARTIFACTS["output_plan"],
             TEXT_ARTIFACTS["dossier"],
@@ -951,7 +1063,30 @@ def validate_workspace(
     anomalies: list[str] = []
     capability_gaps: list[str] = []
 
-    for key, name in JSON_ARTIFACTS.items():
+    try:
+        value, path = _read_fixed(
+            root,
+            JSON_ARTIFACTS["run_contract"],
+            kind="json",
+        )
+        if not isinstance(value, dict):
+            raise ValueError("top-level JSON value must be an object")
+        documents["run_contract"] = value
+        input_paths.append(path)
+    except Exception as error:
+        _append_failure(
+            failures,
+            diagnostics,
+            key="run_contract",
+            error_type="artifact_missing_or_unreadable",
+            repair_action="rebuild_artifact_as_safe_regular_file_and_revalidate",
+            error=error,
+        )
+
+    run_contract = documents.get("run_contract")
+    schema_version = _contract_schema_version(run_contract)
+    for key in _json_artifact_keys_for(schema_version):
+        name = JSON_ARTIFACTS[key]
         try:
             value, path = _read_fixed(root, name, kind="json")
             if not isinstance(value, dict):
@@ -964,14 +1099,21 @@ def validate_workspace(
                 diagnostics,
                 key=key,
                 error_type="artifact_missing_or_unreadable",
-                repair_action="rebuild_artifact_as_safe_regular_file_and_revalidate",
+                repair_action=(
+                    "rewrite_reader_prose_and_rerun_prose_review"
+                    if key == "prose_review"
+                    else "rebuild_artifact_as_safe_regular_file_and_revalidate"
+                ),
                 error=error,
             )
 
     manifest = documents.get("manifest")
     if isinstance(manifest, Mapping):
         try:
-            _validate_manifest_inventory_policy(manifest)
+            _validate_manifest_inventory_policy(
+                manifest,
+                schema_version=schema_version,
+            )
         except Exception as error:
             _append_failure(
                 failures,
@@ -1027,7 +1169,6 @@ def validate_workspace(
                 error=error,
             )
 
-    run_contract = documents.get("run_contract")
     mode = run_contract.get("mode") if isinstance(run_contract, Mapping) else None
     if not isinstance(mode, str):
         mode = "promax-artifact-run"
@@ -1069,7 +1210,11 @@ def validate_workspace(
                 diagnostics,
                 key=key,
                 error_type=error_type,
-                repair_action="rebuild_artifact_from_canonical_schema_and_revalidate",
+                repair_action=(
+                    "rewrite_reader_prose_and_rerun_prose_review"
+                    if key == "prose_review"
+                    else "rebuild_artifact_from_canonical_schema_and_revalidate"
+                ),
                 error=error,
             )
 
@@ -1433,6 +1578,9 @@ def validate_workspace(
                 deliverables=deliverables,
                 manifest=documents["manifest"],
                 continuation_ledger=documents["continuation_ledger"],
+                retrieval_ledger=(
+                    retrieval if isinstance(retrieval, Mapping) else None
+                ),
             )
             raw_anomalies = validated_output.get("anomalies")
             if isinstance(raw_anomalies, list):
@@ -1446,7 +1594,47 @@ def validate_workspace(
                 diagnostics,
                 key=artifact_key,
                 error_type=error_type,
-                repair_action="rebuild_plan_outputs_examples_and_lineage_then_revalidate",
+                repair_action=(
+                    "rebuild_reader_projection_from_upstream_closure_and_revalidate"
+                    if "reader_projection" in str(error)
+                    else "rebuild_plan_outputs_examples_and_lineage_then_revalidate"
+                ),
+                error=error,
+            )
+
+    if (
+        schema_version == 2
+        and isinstance(documents.get("prose_review"), Mapping)
+        and isinstance(position, Mapping)
+        and isinstance(documents.get("output_plan"), Mapping)
+        and isinstance(manifest, Mapping)
+        and isinstance(run_id, str)
+        and isinstance(source_sha, str)
+        and "essay" in texts
+    ):
+        try:
+            _validate_current_file_hash(
+                root,
+                manifest,
+                artifact_name=JSON_ARTIFACTS["prose_review"],
+            )
+            validated_review = validate_prose_review(
+                documents["prose_review"],
+                essay=texts["essay"],
+                position=position,
+                output_plan=documents["output_plan"],
+                run_id=run_id,
+                source_snapshot_sha256=source_sha,
+            )
+            if validated_review.get("overall_status") != "pass":
+                raise ValueError("prose review overall_status must be pass")
+        except Exception as error:
+            _append_failure(
+                failures,
+                diagnostics,
+                key="prose_review",
+                error_type="prose_review_invalid",
+                repair_action="rewrite_reader_prose_and_rerun_prose_review",
                 error=error,
             )
 
