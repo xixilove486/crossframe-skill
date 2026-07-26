@@ -7,6 +7,7 @@
 /skills/crossframe-promax/scripts/check_crossframe_promax_v8_full_source.py text eol=lf
 /scripts/generate_crossframe_promax_v8_full_source.py text eol=lf
 /scripts/check_crossframe_promax_v8_full_source.py text eol=lf
+/scripts/check_crossframe_skill_integrity.py text eol=lf
 /tests/test_promax_v8_source_generation.py text eol=lf
 /tests/test_promax_v8_source_integrity.py text eol=lf
 /skills/crossframe-promax/references/concept-registry/** text eol=lf
@@ -14,6 +15,17 @@
 /skills/crossframe-promax/references/v8-route-map.json text eol=lf
 /skills/crossframe-promax/schemas/** text eol=lf
 /skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py text eol=lf
+# Mirror the canonical ProMax eol pins for the .claude copy so both trees
+# check out byte-identical on Windows (same_tree compares raw bytes).
+/.claude/skills/crossframe-promax/references/v8-full-source/** text eol=lf
+/.claude/skills/crossframe-promax/references/source_manifest.json text eol=lf
+/.claude/skills/crossframe-promax/references/concept-registry/** text eol=lf
+/.claude/skills/crossframe-promax/references/concept-contracts/** text eol=lf
+/.claude/skills/crossframe-promax/references/v8-route-map.json text eol=lf
+/.claude/skills/crossframe-promax/schemas/** text eol=lf
+/.claude/skills/crossframe-promax/scripts/generate_crossframe_promax_v8_full_source.py text eol=lf
+/.claude/skills/crossframe-promax/scripts/check_crossframe_promax_v8_full_source.py text eol=lf
+/.claude/skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py text eol=lf
 /scripts/check_crossframe_promax_v8_knowledge.py text eol=lf
 /tests/test_promax_v8_registry_closure.py text eol=lf
 /tests/test_promax_v8_version_isolation.py text eol=lf
