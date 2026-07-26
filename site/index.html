@@ -9,6 +9,15 @@
 <meta property="og:description" content="3,980 次全源读取 · 709 个概念逐项处置 · P0–P11 阶段状态机 · 五向真实检索。不是提示词，是运行时。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://xi-kari.github.io/crossframe-skill/">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://xi-kari.github.io/crossframe-skill/assets/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CrossFrame ProMax — 把一次判断，跑成一条可对账的运行链">
+<meta name="twitter:description" content="3,980 次全源读取 · 709 个概念逐项处置 · P0–P11 阶段状态机 · 五向真实检索。不是提示词，是运行时。">
+<meta name="twitter:image" content="https://xi-kari.github.io/crossframe-skill/assets/og-image.png">
+<meta name="theme-color" content="#0E141C">
+<link rel="canonical" href="https://xi-kari.github.io/crossframe-skill/">
+<script>document.documentElement.classList.add('js');</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='4' width='56' height='56' rx='10' fill='%23B23A2E'/%3E%3Ctext x='32' y='44' font-size='34' font-family='serif' font-weight='700' fill='%23F5F5F1' text-anchor='middle'%3E驗%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -418,9 +427,9 @@ footer a:hover{color:var(--paper);}
 .foot-note{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;line-height:2.1;margin-top:26px;color:#66798F;max-width:60em;}
 
 /* ---------- 进场 ---------- */
-[data-reveal]{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease;}
-[data-reveal].in{opacity:1;transform:none;}
-@media (prefers-reduced-motion:reduce){[data-reveal]{opacity:1;transform:none;}}
+html.js [data-reveal]{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease;}
+html.js [data-reveal].in{opacity:1;transform:none;}
+@media (prefers-reduced-motion:reduce){html.js [data-reveal]{opacity:1;transform:none;}}
 </style>
 </head>
 <body>
@@ -729,19 +738,34 @@ footer a:hover{color:var(--paper);}
   </div>
   <div class="codeblock">
     <div class="codeblock-bar">
-      <span>INSTALL · CODEX</span>
-      <button class="copy-btn" data-copy="bash scripts/install-codex.sh">复制</button>
+      <span>CLONE</span>
+      <button class="copy-btn" data-copy="git clone https://github.com/xi-kari/crossframe-skill
+cd crossframe-skill">复制</button>
+    </div>
+    <pre>git clone https://github.com/xi-kari/crossframe-skill
+cd crossframe-skill</pre>
+  </div>
+  <div class="codeblock">
+    <div class="codeblock-bar">
+      <span>INSTALL · CODEX · WINDOWS</span>
+      <button class="copy-btn" data-copy=".\scripts\install-codex.ps1">复制</button>
     </div>
     <pre><span class="cm"># Windows PowerShell</span>
-.\scripts\install-codex.ps1
-
-<span class="cm"># macOS / Linux</span>
+.\scripts\install-codex.ps1</pre>
+  </div>
+  <div class="codeblock">
+    <div class="codeblock-bar">
+      <span>INSTALL · CODEX · MACOS / LINUX</span>
+      <button class="copy-btn" data-copy="bash scripts/install-codex.sh">复制</button>
+    </div>
+    <pre><span class="cm"># macOS / Linux</span>
 bash scripts/install-codex.sh</pre>
   </div>
   <div class="codeblock">
     <div class="codeblock-bar">
       <span>VERIFY · REPO</span>
-      <button class="copy-btn" data-copy="python scripts/check_crossframe_skill_integrity.py --repo .">复制</button>
+      <button class="copy-btn" data-copy="python scripts/check_crossframe_skill_integrity.py --repo .
+python scripts/check_source_continuity.py --materials-only --repo .">复制</button>
     </div>
     <pre>python scripts/check_crossframe_skill_integrity.py --repo .
 python scripts/check_source_continuity.py --materials-only --repo .</pre>

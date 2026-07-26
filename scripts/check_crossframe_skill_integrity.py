@@ -54,7 +54,7 @@ PROMAX_CANONICAL_SKILL_PATTERN = re.compile(
 )
 
 PROMAX_CONTRADICTORY_FALLBACK_PATTERNS = (
-    re.compile(r"(?:允许|可以|可)(?:模型)?(?:降级|回退)(?:回|到|至|为)?\s*Max", re.IGNORECASE),
+    re.compile(r"(?<![不没未])(?:允许|可以|可)(?:模型)?(?:降级|回退)(?:回|到|至|为)?\s*Max", re.IGNORECASE),
     re.compile(
         r"(?:allow(?:s|ed)?|may|can)\b.{0,32}\b(?:fall\s*back|fallback|downgrade)\b.{0,24}\bMax\b",
         re.IGNORECASE,
@@ -76,7 +76,6 @@ PROMAX_POLICY_ALIASES = {
         "suite 不得自动升级",
         "Suite 不得自动升级",
         "Suite 不会把普通 Max",
-        "Suite <b>不会</b>把普通 Max",
     ),
     "own audit": ("own audit", "独立审计", "独立闭环"),
     "no review chain": ("no review chain", "不串联 review", "不追加 crossframe-review"),
@@ -304,9 +303,12 @@ def check_promax_policy_text(text: str, rel: str, label: str) -> None:
             not any(marker.casefold() in context.casefold() for marker in PROMAX_TRIGGER_CONTEXT_MARKERS),
             f"{label}: ProMax policy adapter {rel} contains an unapproved trigger literal: {literal}",
         )
+    # HTML adapters may wrap alias phrases in markup (e.g. <b>); match against a
+    # tag-stripped copy as well so emphasis changes cannot break the policy gate.
+    tag_stripped = re.sub(r"<[^>]+>", "", text)
     for policy, aliases in PROMAX_POLICY_ALIASES.items():
         require(
-            any(alias in text for alias in aliases),
+            any(alias in text or alias in tag_stripped for alias in aliases),
             f"{label}: ProMax policy adapter {rel} missing policy: {policy}",
         )
     require(
@@ -684,53 +686,26 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "crossframe-max",
             "crossframe-promax",
             "og:url",
+            "og:image",
+            "og:locale",
+            "twitter:card",
+            "twitter:image",
+            "theme-color",
+            "rel=\"canonical\"",
             "运行条件，与一个诚实的消耗警告",
             "快速开始",
+            "git clone https://github.com/xi-kari/crossframe-skill",
+            ".\\scripts\\install-codex.ps1",
+            "bash scripts/install-codex.sh",
+            "python scripts/check_crossframe_skill_integrity.py --repo .",
+            "python scripts/check_source_continuity.py --materials-only --repo .",
+            "CrossFrame Skill Suite · 16 skills · explicit-only",
             "VALIDATOR · PASSED",
+            "aria-label",
             "prefers-reduced-motion",
             "IntersectionObserver",
             "navigator.clipboard",
         ],
-        "site/styles.css": [
-            "--bg: #f7f3ea",
-            "--accent: #5b6ee1",
-            ".hero-note",
-            ".noscript-note",
-            ".micro-flow",
-            ".section-note",
-            ".clean-list",
-            ".safe-demo-badge",
-            ".demo-disclaimer",
-            ".install-note",
-            "height: 240px",
-            "grid-template-columns",
-            "@media (max-width: 980px)",
-        ],
-        "site/app.js": [
-            "const demos",
-            "philosophy",
-            "history",
-            "org",
-            "public",
-            "inquiry",
-            "一个问题什么时候不该被直接回答",
-            "虚构城邦",
-            "虚构团队",
-            "虚构平台",
-            "匿名结构分析",
-            "const installs",
-            ".\\\\scripts\\\\install-codex.ps1",
-            "bash scripts/install-codex.sh",
-            "keydown",
-            "ArrowRight",
-            "Home",
-            "tabIndex",
-            "setDemo",
-            "setInstall",
-        ],
-        "site/assets/crossframe-mark.svg": ["CrossFrame mark"],
-        "site/assets/flow.svg": ["CrossFrame quality chain", "concept contract"],
-        "site/assets/og-image.svg": ["CrossFrame Skill Suite"],
         ".github/workflows/pages.yml": [
             "Deploy Website",
             "actions/upload-pages-artifact@v3",
@@ -779,7 +754,9 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             require(needle in text, f"{label}: website file {rel} missing marker: {needle}")
 
     require((repo / "site" / "assets" / "og-image.png").exists(), f"{label}: missing website file: site/assets/og-image.png")
-    public_page_text = read(repo / "site" / "index.html") + "\n" + read(repo / "site" / "app.js")
+    for retired_site_file in ["site/styles.css", "site/app.js", "site/assets/crossframe-mark.svg", "site/assets/flow.svg", "site/assets/og-image.svg"]:
+        require(not (repo / retired_site_file).exists(), f"{label}: retired website file still present: {retired_site_file}")
+    public_page_text = read(repo / "site" / "index.html")
     for retired_demo_marker in [
         "生命的第一因",
         "苏联",
