@@ -15,6 +15,10 @@
 /skills/crossframe-promax/references/v8-route-map.json text eol=lf
 /skills/crossframe-promax/schemas/** text eol=lf
 /skills/crossframe-promax/scripts/check_crossframe_promax_v8_knowledge.py text eol=lf
+# Raw eval outputs are hash-bound (raw_output_sha256 over checkout bytes);
+# pin them to LF so Windows checkouts reproduce the recorded hashes.
+/tests/evals/promax-green/raw/** text eol=lf
+/tests/evals/promax-red/raw/** text eol=lf
 # Mirror the canonical ProMax eol pins for the .claude copy so both trees
 # check out byte-identical on Windows (same_tree compares raw bytes).
 /.claude/skills/crossframe-promax/references/v8-full-source/** text eol=lf
