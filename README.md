@@ -78,7 +78,7 @@
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s02"></a>
+<a id="s02"></a><a id="promax-runtime"></a>
 
 ## §02 · 一条可验证的运行链
 
@@ -102,7 +102,7 @@ request → v8 full-source → concept closure → local world model
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s03"></a>
+<a id="s03"></a><a id="promax-capabilities"></a>
 
 ## §03 · 八项能力，件件有记录
 
@@ -121,7 +121,7 @@ request → v8 full-source → concept closure → local world model
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s04"></a>
+<a id="s04"></a><a id="model-flavor"></a>
 
 ## §04 · 如何抑制模型自身风味
 
@@ -140,7 +140,7 @@ request → v8 full-source → concept closure → local world model
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s05"></a>
+<a id="s05"></a><a id="promax-conditions"></a>
 
 ## §05 · 运行条件、消耗与触发边界
 
@@ -161,7 +161,7 @@ ProMax 是 v8-only、exact-name only 的独立 runtime，仅在用户明确使�
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s06"></a>
+<a id="s06"></a><a id="quickstart"></a>
 
 ## §06 · 快速开始
 
@@ -218,7 +218,7 @@ git diff --check
 
 ---
 
-<a id="s07"></a>
+<a id="s07"></a><a id="what"></a><a id="use-cases"></a><a id="language"></a><a id="workflow"></a><a id="skills"></a>
 
 ## §07 · CrossFrame Skill Suite 家族
 
@@ -306,7 +306,7 @@ CrossFrame 默认面向中文问题和中文读者。**主要输出使用中文*
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s08"></a>
+<a id="s08"></a><a id="max"></a>
 
 ## §08 · Max 模式
 
@@ -341,7 +341,7 @@ python scripts/build_crossframe_max_repair_plan.py --workspace <artifact-dir> --
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s09"></a>
+<a id="s09"></a><a id="promax"></a>
 
 ## §09 · ProMax 模式边界
 
@@ -355,7 +355,7 @@ ProMax 自带生成—反证—校验—修复闭环，最终回答只在工件�
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s10"></a>
+<a id="s10"></a><a id="closure"></a><a id="principles"></a>
 
 ## §10 · 质量闭环与输出原则
 
@@ -392,7 +392,7 @@ CrossFrame 输出应当：
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 
-<a id="s11"></a>
+<a id="s11"></a><a id="docs"></a>
 
 ## §11 · 文档与许可
 
