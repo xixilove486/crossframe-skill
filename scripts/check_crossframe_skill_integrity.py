@@ -50,7 +50,7 @@ PROMAX_101_REQUIRED_PATHS = (
 )
 
 PROMAX_CANONICAL_SKILL_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_./-])skills/crossframe-promax/SKILL\.md"
+    r"(?<![A-Za-z0-9_.-])skills/crossframe-promax/SKILL\.md"
 )
 
 PROMAX_CONTRADICTORY_FALLBACK_PATTERNS = (
@@ -64,19 +64,22 @@ PROMAX_TRIGGER_CONTEXT_MARKERS = ("触发", "点名", "trigger", "invoke")
 
 PROMAX_POLICY_ALIASES = {
     "v8-only": ("v8-only",),
-    "exact-name only": ("exact-name only", "仅在用户精确点名"),
+    "exact-name only": ("exact-name only", "仅在用户精确点名", "仅此四名"),
     "ProMax wins": ("ProMax wins", "ProMax 优先"),
     "generic maximality remains Max": (
         "generic maximality remains Max",
         "泛化最大化请求仍由 Max",
+        "泛化的最大化请求，仍然归 Max",
     ),
     "suite never auto-upgrades": (
         "suite never auto-upgrades",
         "suite 不得自动升级",
         "Suite 不得自动升级",
+        "Suite 不会把普通 Max",
+        "Suite <b>不会</b>把普通 Max",
     ),
-    "own audit": ("own audit", "独立审计"),
-    "no review chain": ("no review chain", "不串联 review"),
+    "own audit": ("own audit", "独立审计", "独立闭环"),
+    "no review chain": ("no review chain", "不串联 review", "不追加 crossframe-review"),
     "no fallback to Max": (
         "no fallback to Max",
         "never falls back to Max",
@@ -667,51 +670,26 @@ def check_public_release_docs(repo: Path, label: str) -> None:
 
     website_files = {
         "site/index.html": [
-            "CrossFrame Skill Suite",
-            "给 AI 装上的中文结构思考系统",
-            "让 AI 在回答前先交账",
-            "这是项目介绍页",
-            "普通 AI 的问题，不是不会说，而是太会说",
-            "CrossFrame 让 AI 先做四件事",
-            "source_id",
-            "claim_id",
-            "concept contract",
-            "crossframe-inquiry",
+            "CrossFrame ProMax",
+            "可对账的 v8 结构推演 Runtime",
+            "把一次判断",
+            "跑成一条可对账的运行链",
+            "3,980 次全源读取",
+            "709 个概念逐项处置",
+            "P0–P11 阶段状态机",
+            "十三个节点，一条可验证的链",
+            "八项能力，逐项交账",
+            "六道结构约束",
+            "触发边界：仅此四名",
             "crossframe-max",
             "crossframe-promax",
-            "16 个 skills",
-            "https://xi-kari.github.io/crossframe-skill/assets/og-image.png",
-            "twitter:image",
-            "rel=\"canonical\"",
             "og:url",
-            "选择一个安全模拟场景，看它怎么工作",
-            "首页示例均为虚构或匿名结构样例",
-            "匿名模拟示例",
-            "示例说明",
-            "Use Boundary",
-            "什么时候适合用 CrossFrame？",
-            "开始安装",
-            "查看文档",
-            "https://github.com/xi-kari/crossframe-skill#docs",
-            "<noscript>",
-            "noscript-note",
-            "交互示例需要 JavaScript",
-            "概念追问",
-            "历史接口",
-            "组织机制",
-            "公共证据",
-            "data-demo=\"philosophy\"",
-            "data-install=\"codex\"",
-            "id=\"install-code\">git clone https://github.com/xi-kari/crossframe-skill",
-            "aria-controls=\"demo-panel\"",
-            "role=\"tabpanel\" id=\"demo-panel\"",
-            "一键安装脚本覆盖 Windows PowerShell 与 macOS / Linux Bash",
-            "到对应 skills 目录",
-            "安装页签需要 JavaScript",
-            "这个网页能直接运行 CrossFrame 吗？",
-            "为什么首页示例都是虚构或匿名的？",
-            "它会让 AI 变慢吗？",
-            "CrossFrame Skill Suite · v5.1.7 · explicit-only",
+            "运行条件，与一个诚实的消耗警告",
+            "快速开始",
+            "VALIDATOR · PASSED",
+            "prefers-reduced-motion",
+            "IntersectionObserver",
+            "navigator.clipboard",
         ],
         "site/styles.css": [
             "--bg: #f7f3ea",

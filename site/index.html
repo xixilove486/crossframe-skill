@@ -1,398 +1,859 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>CrossFrame Skill Suite | AI 的中文结构思考系统</title>
-    <meta
-      name="description"
-      content="CrossFrame Skill Suite 让 AI 在回答前先交账，在回答后继续追问。"
-    >
-    <meta property="og:title" content="CrossFrame Skill Suite">
-    <meta
-      property="og:description"
-      content="给 AI 装上的中文结构思考系统：诊断、成文、审查与追问。"
-    >
-    <meta property="og:url" content="https://xi-kari.github.io/crossframe-skill/">
-    <meta property="og:type" content="website">
-    <meta property="og:image" content="https://xi-kari.github.io/crossframe-skill/assets/og-image.png">
-    <meta property="og:locale" content="zh_CN">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="CrossFrame Skill Suite">
-    <meta name="twitter:description" content="让 AI 在回答前先交账，在回答后继续追问。">
-    <meta name="twitter:image" content="https://xi-kari.github.io/crossframe-skill/assets/og-image.png">
-    <meta name="theme-color" content="#f7f3ea">
-    <link rel="canonical" href="https://xi-kari.github.io/crossframe-skill/">
-    <link rel="icon" href="assets/crossframe-mark.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="CrossFrame 首页">
-        <img src="assets/crossframe-mark.svg" alt="" width="34" height="34">
-        <span>CrossFrame</span>
-      </a>
-      <nav class="nav-links" aria-label="主导航">
-        <a href="#how">How it works</a>
-        <a href="#examples">Examples</a>
-        <a href="#skills">Skills</a>
-        <a href="#install">Install</a>
-        <a href="https://github.com/xi-kari/crossframe-skill">GitHub</a>
-      </nav>
-    </header>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CrossFrame ProMax — 可对账的 v8 结构推演 Runtime</title>
+<meta name="description" content="CrossFrame ProMax 是 v8-only、精确点名的独立结构推演 runtime：全源加载、概念闭合、真实检索、反方攻击、明确裁决、机器校验与定向修复，锁进同一次有状态的运行。">
+<meta property="og:title" content="CrossFrame ProMax — 把一次判断，跑成一条可对账的运行链">
+<meta property="og:description" content="3,980 次全源读取 · 709 个概念逐项处置 · P0–P11 阶段状态机 · 五向真实检索。不是提示词，是运行时。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://xi-kari.github.io/crossframe-skill/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='4' y='4' width='56' height='56' rx='10' fill='%23B23A2E'/%3E%3Ctext x='32' y='44' font-size='34' font-family='serif' font-weight='700' fill='%23F5F5F1' text-anchor='middle'%3E驗%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F5F1;
+  --wash:#ECEFF3;
+  --ink:#161D26;
+  --ink-deep:#0E141C;
+  --indigo:#27436E;
+  --indigo-deep:#1C3357;
+  --indigo-soft:#DCE3EE;
+  --rule:#C7D0DE;
+  --cinnabar:#B23A2E;
+  --cinnabar-deep:#8E2A20;
+  --stone:#5E6673;
+  --serif:'Noto Serif SC','Songti SC','SimSun',serif;
+  --mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  *,*::before,*::after{animation:none!important;transition:none!important;}
+}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--serif);
+  font-size:17px;
+  line-height:1.95;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--indigo);color:var(--paper);}
+a{color:var(--indigo);text-decoration:none;border-bottom:1px solid var(--rule);transition:border-color .2s,color .2s;}
+a:hover{color:var(--cinnabar);border-bottom-color:var(--cinnabar);}
+a:focus-visible,button:focus-visible{outline:2px solid var(--cinnabar);outline-offset:3px;border-radius:2px;}
+.mono{font-family:var(--mono);}
+.wrap{max-width:920px;margin:0 auto;padding:0 28px;}
+section[id],.ledger{scroll-margin-top:82px;}
+@media(max-width:720px){.topnav a:not(.keep){display:none;}}
 
-    <main id="top">
-      <section class="hero section-band">
-        <div class="hero-copy">
-          <p class="eyebrow">CrossFrame Skill Suite</p>
-          <h1>给 AI 装上的中文结构思考系统。</h1>
-          <p class="hero-lede">
-            不是让 AI 更快回答，而是让 AI 在回答前先交账，在回答后还能继续追问。
-          </p>
-          <p class="hero-support">
-            CrossFrame 会先拆清事实、证据、尺度、机制、判断档位和行动边界，再生成可审查、可追问的中文输出。
-          </p>
-          <p class="hero-note">
-            这是项目介绍页；CrossFrame 作为本地 AI skill 使用，推荐安装到 Codex、Claude Code 或其它支持项目规则的 agent。
-          </p>
-          <div class="micro-flow" aria-label="CrossFrame 微流程">
-            <span>问题</span>
-            <span>事实边界</span>
-            <span>命题台账</span>
-            <span>正文</span>
-            <span>review</span>
-            <span>inquiry</span>
-          </div>
-          <div class="hero-actions">
-            <a class="button primary" href="#install">开始安装</a>
-            <a class="button secondary" href="https://github.com/xi-kari/crossframe-skill#docs">查看文档</a>
-            <a class="button secondary" href="https://github.com/xi-kari/crossframe-skill">查看 GitHub</a>
-          </div>
-        </div>
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  background:rgba(14,20,28,.96);
+  backdrop-filter:blur(6px);
+  border-bottom:1px solid rgba(220,227,238,.12);
+}
+.topbar-inner{
+  max-width:1180px;margin:0 auto;padding:14px 28px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+}
+.brand{display:flex;align-items:center;gap:12px;border:none;}
+.brand:hover{border:none;}
+.brand-seal{
+  width:30px;height:30px;border-radius:7px;background:var(--cinnabar);
+  color:var(--paper);font-family:var(--serif);font-weight:700;font-size:17px;
+  display:flex;align-items:center;justify-content:center;flex:none;
+  transform:rotate(-4deg);
+}
+.brand-name{font-family:var(--mono);font-size:.82rem;font-weight:600;letter-spacing:.08em;color:var(--paper);}
+.brand-name em{font-style:normal;color:#8FB0E0;}
+.topnav{display:flex;gap:22px;align-items:center;}
+.topnav a{font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;color:#B9C4D4;border:none;}
+.topnav a:hover{color:var(--paper);}
+.progress{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--cinnabar);transition:width .1s linear;}
 
-        <div class="hero-visual" aria-label="CrossFrame 质量链示意">
-          <img class="flow-art" src="assets/flow.svg" alt="source_id 到 inquiry 的结构链路图">
-          <div class="ledger-card card-a">
-            <span class="ledger-id">source_id: S1</span>
-            <strong>supports: CL2</strong>
-            <small>cannot prove: final cause</small>
-          </div>
-          <div class="ledger-card card-b">
-            <span class="ledger-id">claim_id: CL2</span>
-            <strong>grade: open_assertion</strong>
-            <small>withdraw if: source boundary fails</small>
-          </div>
-        </div>
-      </section>
+/* ---------- 左侧运行链轨道 ---------- */
+.rail{
+  position:fixed;left:0;top:0;bottom:0;width:196px;
+  display:none;z-index:30;pointer-events:none;
+  padding:110px 0 40px 26px;
+}
+@media(min-width:1340px){.rail{display:flex;flex-direction:column;justify-content:center;gap:0;}}
+.rail-title{font-family:var(--mono);font-size:.6rem;letter-spacing:.22em;color:var(--stone);margin-bottom:18px;}
+.rail-node{
+  display:flex;align-items:baseline;gap:10px;
+  font-family:var(--mono);font-size:.66rem;line-height:2.15;
+  color:#9AA4B2;letter-spacing:.04em;white-space:nowrap;
+  transition:color .3s;
+}
+.rail-node .dot{
+  width:7px;height:7px;border-radius:50%;flex:none;position:relative;top:-1px;
+  border:1.5px solid var(--rule);background:transparent;transition:all .3s;
+}
+.rail-node.done{color:var(--indigo);}
+.rail-node.done .dot{border-color:var(--indigo);background:var(--indigo);}
+.rail-node.active{color:var(--ink);font-weight:600;}
+.rail-node.active .dot{border-color:var(--cinnabar);background:var(--cinnabar);box-shadow:0 0 0 4px rgba(178,58,46,.14);}
+.rail-status{
+  margin-top:20px;font-family:var(--mono);font-size:.62rem;letter-spacing:.1em;
+  color:var(--stone);border-top:1px solid var(--rule);padding-top:12px;max-width:150px;
+}
+.rail-status b{color:var(--cinnabar);font-weight:600;}
 
-      <section class="section-band pain" aria-labelledby="pain-title">
-        <div class="section-heading">
-          <p class="eyebrow">Pain Point</p>
-          <h2 id="pain-title">普通 AI 的问题，不是不会说，而是太会说。</h2>
-          <p>
-            它能把一个判断写得顺滑，却不告诉你事实在哪里、证据到哪一档、哪些只是推测、什么情况必须撤回。
-          </p>
-        </div>
-        <div class="three-grid">
-          <article class="surface-card">
-            <span class="card-index">01</span>
-            <h3>看起来像推理</h3>
-            <p>但没有证据边界。</p>
-          </article>
-          <article class="surface-card">
-            <span class="card-index">02</span>
-            <h3>看起来很深刻</h3>
-            <p>但把比喻当证明。</p>
-          </article>
-          <article class="surface-card">
-            <span class="card-index">03</span>
-            <h3>看起来有结论</h3>
-            <p>但没有撤回条件。</p>
-          </article>
-        </div>
-      </section>
+/* ---------- 英雄区（墨） ---------- */
+.hero{
+  background:var(--ink-deep);
+  color:var(--paper);
+  position:relative;
+  overflow:hidden;
+  padding:96px 0 0;
+}
+.hero::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(rgba(143,176,224,.05) 1px,transparent 1px) 0 0/100% 44px,
+    radial-gradient(1200px 500px at 85% -10%,rgba(39,67,110,.55),transparent 70%);
+}
+.hero-inner{position:relative;}
+.eyebrow{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;
+  color:#8FB0E0;margin-bottom:30px;
+}
+.hero h1{
+  font-size:clamp(2.3rem,5.6vw,4.1rem);
+  font-weight:900;line-height:1.28;letter-spacing:.015em;
+  max-width:15.5em;
+}
+.hero h1 .punct{color:#8FB0E0;}
+.hero-sub{
+  margin-top:30px;max-width:41em;
+  font-size:clamp(.98rem,1.6vw,1.08rem);line-height:2.05;color:#C6CFDC;
+}
+.hero-sub b{color:var(--paper);font-weight:700;}
+.hero-meta{margin-top:30px;display:flex;flex-wrap:wrap;gap:10px;}
+.chip{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;
+  padding:6px 12px;border:1px solid rgba(220,227,238,.25);border-radius:999px;color:#B9C4D4;
+}
+.chip.hot{border-color:rgba(178,58,46,.7);color:#E8998F;}
+.hero-cta{margin-top:38px;display:flex;flex-wrap:wrap;gap:14px;}
+.btn{
+  font-family:var(--mono);font-size:.78rem;letter-spacing:.12em;font-weight:600;
+  padding:14px 26px;border-radius:4px;border:1px solid transparent;cursor:pointer;
+  transition:transform .15s,background .2s,color .2s,border-color .2s;
+}
+.btn:active{transform:translateY(1px);}
+.btn-primary{background:var(--paper);color:var(--ink-deep);}
+.btn-primary:hover{background:#fff;color:var(--cinnabar);border-color:transparent;}
+.btn-ghost{background:transparent;color:var(--paper);border-color:rgba(220,227,238,.35);}
+.btn-ghost:hover{border-color:var(--paper);color:var(--paper);}
+.hero-vertical{
+  position:absolute;right:34px;top:104px;
+  writing-mode:vertical-rl;
+  font-family:var(--serif);font-weight:600;font-size:.86rem;letter-spacing:.5em;
+  color:#4C5E78;
+  border-left:1px solid rgba(143,176,224,.28);padding-left:14px;
+  display:none;
+}
+@media(min-width:900px){.hero-vertical{display:block;}}
 
-      <section id="how" class="section-band how" aria-labelledby="how-title">
-        <div class="section-heading">
-          <p class="eyebrow">How It Works</p>
-          <h2 id="how-title">CrossFrame 让 AI 先做四件事</h2>
-        </div>
-        <div class="four-grid">
-          <article class="surface-card">
-            <span class="card-index">1</span>
-            <h3>拆事实</h3>
-            <p>事实、解释、推测和来源分开，不让顺滑表达替代证据。</p>
-          </article>
-          <article class="surface-card">
-            <span class="card-index">2</span>
-            <h3>定尺度</h3>
-            <p>个人、关系、组织、制度和历史阶段不能混写成同一种判断。</p>
-          </article>
-          <article class="surface-card">
-            <span class="card-index">3</span>
-            <h3>交台账</h3>
-            <p>中心命题必须绑定 claim_id，来源必须绑定 source_id。</p>
-          </article>
-          <article class="surface-card">
-            <span class="card-index">4</span>
-            <h3>过审查</h3>
-            <p>正文不能强于台账，生成层不能自己宣布质量通过。</p>
-          </article>
-        </div>
-      </section>
+/* 运行链跑马带 */
+.chain-strip{
+  margin-top:64px;
+  border-top:1px solid rgba(220,227,238,.14);
+  background:rgba(14,20,28,.6);
+  overflow-x:auto;scrollbar-width:none;
+}
+.chain-strip::-webkit-scrollbar{display:none;}
+.chain-strip-inner{
+  display:flex;align-items:center;gap:0;
+  padding:18px 28px;white-space:nowrap;
+  font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;color:#8FA0B6;
+  width:max-content;margin:0 auto;
+}
+.chain-strip-inner .n{padding:0 4px;}
+.chain-strip-inner .n b{color:#D8E1EE;font-weight:500;}
+.chain-strip-inner .arrow{color:#4C5E78;padding:0 10px;}
+.chain-strip-inner .n.fix b{color:#E8998F;}
 
-      <section class="section-band fit" aria-labelledby="fit-title">
-        <div class="section-heading">
-          <p class="eyebrow">Use Boundary</p>
-          <h2 id="fit-title">什么时候适合用 CrossFrame？</h2>
-        </div>
-        <div class="compare-grid">
-          <article class="surface-card">
-            <span class="panel-label">适合</span>
-            <ul class="clean-list">
-              <li>复杂问题，需要拆事实、机制和边界。</li>
-              <li>写文章前，需要先形成结构底稿。</li>
-              <li>AI 输出看起来顺，但你想检查它有没有真正推理。</li>
-              <li>分析结束后，还想继续追问、反证和迁移。</li>
-            </ul>
-          </article>
-          <article class="surface-card">
-            <span class="panel-label">不适合</span>
-            <ul class="clean-list">
-              <li>单纯事实查询。</li>
-              <li>普通改写、翻译、摘要。</li>
-              <li>没有要求 CrossFrame 的日常聊天。</li>
-              <li>需要医生、律师、财务顾问或正式调查程序的高责任结论。</li>
-            </ul>
-          </article>
-        </div>
-      </section>
+/* ---------- 台账统计 ---------- */
+.ledger{padding:78px 0 20px;}
+.ledger-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+  border-bottom:2px solid var(--ink);padding-bottom:12px;margin-bottom:6px;flex-wrap:wrap;
+}
+.ledger-head h2{font-size:1.05rem;font-weight:700;letter-spacing:.06em;}
+.ledger-head .tag{font-family:var(--mono);font-size:.64rem;letter-spacing:.18em;color:var(--stone);}
+.ledger-row{
+  display:grid;grid-template-columns:200px 1fr;gap:8px 40px;
+  padding:26px 0;border-bottom:1px solid var(--rule);align-items:start;
+}
+.ledger-num{
+  font-family:var(--mono);font-weight:600;color:var(--indigo);
+  font-size:clamp(1.7rem,3.4vw,2.5rem);line-height:1.1;letter-spacing:-.01em;
+}
+.ledger-num small{display:block;font-size:.66rem;font-weight:500;letter-spacing:.16em;color:var(--stone);margin-top:8px;}
+.ledger-desc{font-size:.98rem;line-height:2;color:#3A4350;padding-top:6px;}
+.ledger-desc b{color:var(--ink);}
+@media(max-width:640px){.ledger-row{grid-template-columns:1fr;gap:6px;}}
 
-      <section class="section-band loop" aria-labelledby="loop-title">
-        <div class="section-heading">
-          <p class="eyebrow">Workflow Loop</p>
-          <h2 id="loop-title">诊断、成文、审查、追问，是一条闭环</h2>
-        </div>
-        <div class="loop-track" aria-label="CrossFrame 工作流">
-          <article>
-            <span>Diagnose</span>
-            <h3>结构诊断</h3>
-            <p>生成事实边界、机制候选和 claim ledger。</p>
-          </article>
-          <article>
-            <span>Write</span>
-            <h3>中文成文</h3>
-            <p>把结构判断写成普通读者能读懂的中文。</p>
-          </article>
-          <article>
-            <span>Review</span>
-            <h3>质量闸</h3>
-            <p>抽句反查 source_id、claim_id 和概念契约。</p>
-          </article>
-          <article>
-            <span>Inquire</span>
-            <h3>继续追问</h3>
-            <p>完成后继续反证、补证、迁移和收束。</p>
-          </article>
-        </div>
-      </section>
+/* ---------- 章节通用 ---------- */
+section.block{padding:84px 0 10px;}
+.sec-eyebrow{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.28em;color:var(--cinnabar);
+  margin-bottom:16px;display:flex;align-items:center;gap:14px;
+}
+.sec-eyebrow::after{content:"";height:1px;flex:1;background:var(--rule);}
+.block h2{
+  font-size:clamp(1.55rem,3vw,2.15rem);font-weight:900;line-height:1.45;letter-spacing:.02em;
+  margin-bottom:26px;max-width:20em;
+}
+.lead{max-width:40em;color:#2B333F;}
+.lead p{margin-bottom:1.3em;}
+.lead b{font-weight:700;}
+.lead .zhu{color:var(--cinnabar);font-weight:700;}
+.footnote{font-family:var(--mono);font-size:.68rem;letter-spacing:.06em;color:var(--stone);line-height:1.9;margin-top:22px;}
 
-      <section id="examples" class="section-band examples" aria-labelledby="examples-title">
-        <div class="section-heading">
-          <p class="eyebrow">Demo Cards</p>
-          <h2 id="examples-title">选择一个安全模拟场景，看它怎么工作</h2>
-          <p class="section-note">
-            首页示例均为虚构或匿名结构样例，只展示 CrossFrame 的工作方式，不对现实人物、机构、国家、宗教或公共事件作判断。
-          </p>
-          <noscript>
-            <p class="noscript-note">交互示例需要 JavaScript；你仍可以在 GitHub README 和 docs 中查看完整说明。</p>
-          </noscript>
-        </div>
-        <div class="demo-shell">
-          <div class="demo-tabs" role="tablist" aria-label="示例场景">
-            <button class="demo-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="demo-panel" data-demo="philosophy">概念追问</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-panel" data-demo="history">历史接口</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-panel" data-demo="org">组织机制</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-panel" data-demo="public">公共证据</button>
-            <button class="demo-tab" type="button" role="tab" aria-selected="false" aria-controls="demo-panel" data-demo="inquiry">完成后追问</button>
-          </div>
-          <article class="demo-panel" role="tabpanel" id="demo-panel" aria-live="polite">
-            <span class="safe-demo-badge">匿名模拟示例</span>
-            <div>
-              <span class="panel-label">输入</span>
-              <p id="demo-input"></p>
-            </div>
-            <div>
-              <span class="panel-label">工作流</span>
-              <p id="demo-workflow"></p>
-            </div>
-            <div>
-              <span class="panel-label">输出摘要</span>
-              <ul id="demo-output"></ul>
-            </div>
-            <div>
-              <span class="panel-label">会被 review 抓住的边界</span>
-              <p id="demo-review"></p>
-            </div>
-            <div>
-              <span class="panel-label">下一步 inquiry</span>
-              <p id="demo-inquiry"></p>
-            </div>
-          </article>
-        </div>
-        <div class="demo-disclaimer">
-          <strong>示例说明：</strong>
-          首页示例只展示工作流，不构成对现实对象的判断。真实历史、公共议题和组织材料需要进入 source ledger、claim ledger 和 review。
-        </div>
-      </section>
+/* ---------- 运行链十三节 ---------- */
+.chain-list{margin-top:14px;border-top:2px solid var(--ink);}
+.chain-item{
+  display:grid;grid-template-columns:56px 250px 1fr;gap:10px 26px;
+  padding:20px 0;border-bottom:1px solid var(--rule);align-items:baseline;
+}
+.chain-idx{font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--stone);letter-spacing:.08em;}
+.chain-name{font-family:var(--mono);font-size:.86rem;font-weight:600;color:var(--indigo-deep);letter-spacing:.02em;}
+.chain-gloss{font-size:.94rem;line-height:1.95;color:#3A4350;}
+.chain-item.repairish .chain-name{color:var(--cinnabar);}
+@media(max-width:760px){
+  .chain-item{grid-template-columns:44px 1fr;}
+  .chain-gloss{grid-column:2/3;}
+}
 
-      <section id="skills" class="section-band skills" aria-labelledby="skills-title">
-        <div class="section-heading">
-          <p class="eyebrow">Skill Map</p>
-          <h2 id="skills-title">16 个 skills，各司其职</h2>
-        </div>
-        <div class="skill-groups">
-          <section class="skill-group" aria-labelledby="core-title">
-            <h3 id="core-title">Core</h3>
-            <div class="skill-list">
-              <article><strong>crossframe-suite</strong><span>总调度入口，决定连续工作流。</span></article>
-              <article><strong>crossframe</strong><span>结构诊断核心层。</span></article>
-              <article><strong>crossframe-max</strong><span>把对象当作局部世界做最大化推演。</span></article>
-              <article><strong>crossframe-promax</strong><span>精确点名的 v8 穷尽推演与独立审计。</span></article>
-              <article><strong>crossframe-review</strong><span>审查推理、证据边界和输出质量。</span></article>
-              <article><strong>crossframe-inquiry</strong><span>完成态后的结构追问层。</span></article>
-            </div>
-          </section>
-          <section class="skill-group" aria-labelledby="writing-title">
-            <h3 id="writing-title">Writing</h3>
-            <div class="skill-list">
-              <article><strong>crossframe-essay</strong><span>把结构诊断转成完整中文文章。</span></article>
-              <article><strong>crossframe-dialogue</strong><span>读者答复、编辑回信和咨询式短答。</span></article>
-              <article><strong>crossframe-critical</strong><span>点名调用的结构批判长文。</span></article>
-              <article><strong>crossframe-teach</strong><span>概念讲解、误读纠偏和练习。</span></article>
-            </div>
-          </section>
-          <section class="skill-group" aria-labelledby="domains-title">
-            <h3 id="domains-title">Domains</h3>
-            <div class="skill-list">
-              <article><strong>crossframe-history</strong><span>历史材料、史料边界和长时段制度问题。</span></article>
-              <article><strong>crossframe-public</strong><span>公共议题、平台治理和机构责任。</span></article>
-              <article><strong>crossframe-org</strong><span>团队、项目和组织修复。</span></article>
-            </div>
-          </section>
-          <section class="skill-group" aria-labelledby="research-title">
-            <h3 id="research-title">Research</h3>
-            <div class="skill-list">
-              <article><strong>crossframe-debate</strong><span>命题辩论、正反结构和撤回条件。</span></article>
-              <article><strong>crossframe-casebook</strong><span>把材料整理成可复用案例。</span></article>
-              <article><strong>crossframe-notebook</strong><span>读书、理论、文章和摘录研究笔记。</span></article>
-            </div>
-          </section>
-        </div>
-        <p class="section-note">
-          CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 <code>crossframe-promax</code>、<code>CrossFrame ProMax</code>、<code>$crossframe-promax</code> 或 <code>/crossframe-promax</code> 时读取 <code>skills/crossframe-promax/SKILL.md</code>。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
-        </p>
-      </section>
+/* ---------- 能力台账表 ---------- */
+.cap-table{margin-top:10px;border-top:2px solid var(--ink);}
+.cap-row{
+  display:grid;grid-template-columns:170px 1fr 1fr;gap:10px 30px;
+  padding:22px 0;border-bottom:1px solid var(--rule);
+}
+.cap-row.head{padding:12px 0;border-bottom:1px solid var(--ink);}
+.cap-row.head span{font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;color:var(--stone);}
+.cap-name{font-weight:900;font-size:1.02rem;letter-spacing:.02em;}
+.cap-name small{display:block;font-family:var(--mono);font-weight:500;font-size:.62rem;letter-spacing:.1em;color:var(--stone);margin-top:6px;}
+.cap-rule,.cap-proof{font-size:.9rem;line-height:1.9;color:#3A4350;}
+.cap-proof{border-left:2px solid var(--indigo-soft);padding-left:16px;}
+.cap-proof b{color:var(--indigo-deep);}
+@media(max-width:860px){
+  .cap-row{grid-template-columns:1fr;gap:8px;}
+  .cap-row.head{display:none;}
+  .cap-proof{border-left-color:var(--indigo);}
+}
 
-      <section class="section-band quality" aria-labelledby="quality-title">
-        <div class="section-heading">
-          <p class="eyebrow">Quality Gate</p>
-          <h2 id="quality-title">为什么它不是普通提示词？</h2>
-        </div>
-        <div class="compare-grid">
-          <article class="surface-card">
-            <span class="panel-label">普通提示词</span>
-            <blockquote>请深入分析。</blockquote>
-          </article>
-          <article class="surface-card">
-            <span class="panel-label">CrossFrame</span>
-            <blockquote>
-              这条判断对应哪个 claim_id？来源能证明什么，不能证明什么？用了哪个 concept contract？什么情况必须撤回？正文有没有强于台账？
-            </blockquote>
-          </article>
-        </div>
-        <div class="quality-chain" aria-label="质量闭环">
-          <span>source_id</span>
-          <span>claim_id</span>
-          <span>concept contract</span>
-          <span>source anchor</span>
-          <span>review</span>
-          <span>inquiry</span>
-        </div>
-      </section>
+/* ---------- 六道约束 ---------- */
+.six{margin-top:8px;counter-reset:six;max-width:44em;}
+.six-item{
+  position:relative;padding:24px 0 24px 84px;border-bottom:1px solid var(--rule);
+}
+.six-item::before{
+  counter-increment:six;
+  content:counter(six,cjk-ideographic);
+  position:absolute;left:8px;top:20px;
+  font-family:var(--serif);font-weight:900;font-size:1.7rem;color:var(--indigo);
+  opacity:.9;
+}
+.six-item::after{
+  content:"";position:absolute;left:52px;top:26px;bottom:26px;width:1px;background:var(--rule);
+}
+.six-item h3{font-size:1.04rem;font-weight:900;margin-bottom:8px;letter-spacing:.02em;}
+.six-item p{font-size:.93rem;line-height:1.95;color:#3A4350;}
+.six-coda{margin-top:26px;max-width:42em;font-size:.98rem;color:#2B333F;border-left:3px solid var(--cinnabar);padding-left:20px;}
 
-      <section id="install" class="section-band install" aria-labelledby="install-title">
-        <div class="section-heading">
-          <p class="eyebrow">Install / Try</p>
-          <h2 id="install-title">两分钟内试一次</h2>
-        </div>
-        <div class="install-shell">
-          <div class="install-tabs" role="tablist" aria-label="安装方式">
-            <button class="install-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="install-panel" data-install="codex">Codex</button>
-            <button class="install-tab" type="button" role="tab" aria-selected="false" aria-controls="install-panel" data-install="claude">Claude Code</button>
-            <button class="install-tab" type="button" role="tab" aria-selected="false" aria-controls="install-panel" data-install="agents">Other Agents</button>
-          </div>
-          <pre class="code-panel" role="tabpanel" id="install-panel"><code id="install-code">git clone https://github.com/xi-kari/crossframe-skill
-cd crossframe-skill
+/* ---------- 触发边界 ---------- */
+.trigger-card{
+  margin-top:8px;border:1.5px solid var(--ink);border-radius:6px;overflow:hidden;
+  background:#FBFBF8;
+}
+.trigger-top{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 24px;border-bottom:1.5px solid var(--ink);flex-wrap:wrap;
+}
+.trigger-top .t-label{font-family:var(--mono);font-size:.64rem;letter-spacing:.24em;color:var(--stone);}
+.trigger-stamp{
+  font-family:var(--serif);font-weight:900;font-size:.8rem;letter-spacing:.28em;
+  color:var(--cinnabar);border:1.5px solid var(--cinnabar);border-radius:4px;
+  padding:5px 12px 5px 15px;transform:rotate(-2deg);
+}
+.trigger-names{
+  display:grid;grid-template-columns:1fr 1fr;
+}
+.trigger-names code{
+  font-family:var(--mono);font-size:clamp(.82rem,1.8vw,1.02rem);font-weight:600;color:var(--indigo-deep);
+  padding:22px 24px;border-bottom:1px solid var(--rule);letter-spacing:.02em;
+}
+.trigger-names code:nth-child(odd){border-right:1px solid var(--rule);}
+.trigger-names code:nth-child(3),.trigger-names code:nth-child(4){border-bottom:none;}
+@media(max-width:640px){
+  .trigger-names{grid-template-columns:1fr;}
+  .trigger-names code:nth-child(odd){border-right:none;}
+  .trigger-names code:nth-child(3){border-bottom:1px solid var(--rule);}
+}
+.trigger-rules{margin-top:34px;max-width:44em;}
+.trigger-rules li{
+  list-style:none;position:relative;padding:14px 0 14px 34px;
+  font-size:.95rem;line-height:1.9;color:#3A4350;border-bottom:1px dashed var(--rule);
+}
+.trigger-rules li::before{
+  content:"";position:absolute;left:6px;top:26px;width:9px;height:9px;
+  border:1.5px solid var(--indigo);border-radius:1px;transform:rotate(45deg);
+}
+.trigger-rules li b{color:var(--ink);}
+.trigger-rules li.hot::before{border-color:var(--cinnabar);background:var(--cinnabar);}
 
-# Windows PowerShell
+/* ---------- 条件与消耗 ---------- */
+.cond-grid{margin-top:8px;border-top:2px solid var(--ink);}
+.cond-row{
+  display:grid;grid-template-columns:190px 1fr;gap:8px 30px;
+  padding:16px 0;border-bottom:1px solid var(--rule);align-items:baseline;
+}
+.cond-key{font-family:var(--mono);font-size:.74rem;font-weight:600;letter-spacing:.1em;color:var(--indigo-deep);}
+.cond-val{font-size:.93rem;color:#3A4350;line-height:1.9;}
+.cond-val code{font-family:var(--mono);font-size:.82em;background:var(--wash);padding:2px 7px;border-radius:3px;color:var(--indigo-deep);}
+@media(max-width:640px){.cond-row{grid-template-columns:1fr;gap:4px;}}
+.warn{
+  margin-top:40px;border:1.5px solid var(--cinnabar);border-radius:6px;
+  background:linear-gradient(0deg,rgba(178,58,46,.045),rgba(178,58,46,.045)),#FBFBF8;
+  padding:28px 30px;position:relative;max-width:46em;
+}
+.warn-tag{
+  position:absolute;top:-13px;left:24px;background:var(--cinnabar);color:var(--paper);
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.24em;font-weight:600;
+  padding:5px 14px;border-radius:3px;
+}
+.warn p{font-size:.94rem;line-height:2;color:#43302C;}
+.warn p+p{margin-top:.9em;}
+.warn .big{
+  font-family:var(--mono);font-weight:600;color:var(--cinnabar-deep);
+  font-size:clamp(1.35rem,3vw,1.9rem);letter-spacing:-.01em;
+}
+.warn small{display:block;margin-top:14px;font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;color:#8A5F58;line-height:1.9;}
+
+/* ---------- 家族对照 ---------- */
+.family{margin-top:8px;display:grid;gap:0;border-top:2px solid var(--ink);}
+.fam-row{
+  display:grid;grid-template-columns:230px 110px 1fr;gap:10px 28px;
+  padding:24px 0;border-bottom:1px solid var(--rule);align-items:baseline;
+}
+.fam-name{font-family:var(--mono);font-size:.9rem;font-weight:600;color:var(--indigo-deep);}
+.fam-ver{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;color:var(--stone);}
+.fam-desc{font-size:.93rem;line-height:1.9;color:#3A4350;}
+.fam-row.promax{background:linear-gradient(90deg,rgba(39,67,110,.05),transparent 70%);}
+.fam-row.promax .fam-name{color:var(--cinnabar);}
+@media(max-width:760px){
+  .fam-row{grid-template-columns:1fr;gap:4px;}
+}
+
+/* ---------- 快速开始 ---------- */
+.codeblock{
+  margin-top:26px;background:var(--ink-deep);border-radius:6px;overflow:hidden;
+  border:1px solid #23303F;
+}
+.codeblock-bar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 18px;border-bottom:1px solid #23303F;
+}
+.codeblock-bar span{font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;color:#7C8BA0;}
+.copy-btn{
+  font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;
+  background:transparent;color:#B9C4D4;border:1px solid #3A4A5E;border-radius:3px;
+  padding:5px 12px;cursor:pointer;transition:all .2s;
+}
+.copy-btn:hover{color:var(--paper);border-color:#B9C4D4;}
+.copy-btn.ok{color:#8FD6A8;border-color:#4C7A5E;}
+.codeblock pre{
+  padding:20px 22px;overflow-x:auto;
+  font-family:var(--mono);font-size:.82rem;line-height:1.9;color:#DDE5EF;
+}
+.codeblock pre .cm{color:#66798F;}
+.codeblock pre .hi{color:#F0A79E;}
+
+/* ---------- 共创与页脚 ---------- */
+.coda{padding:96px 0 60px;}
+.coda-inner{
+  display:grid;grid-template-columns:1fr 180px;gap:50px;align-items:center;max-width:56em;
+}
+@media(max-width:720px){.coda-inner{grid-template-columns:1fr;}}
+.coda p{font-size:.95rem;line-height:2.05;color:#2B333F;margin-bottom:1.1em;}
+.coda p b{font-weight:700;}
+.seal-wrap{display:flex;justify-content:center;}
+.seal{
+  width:128px;height:128px;border:4px solid var(--cinnabar);border-radius:14px;
+  display:grid;grid-template-columns:1fr 1fr;place-items:center;
+  transform:rotate(-5deg) scale(.6);opacity:0;
+  font-family:var(--serif);font-weight:900;font-size:2rem;color:var(--cinnabar);
+  background:
+    radial-gradient(circle at 30% 30%,rgba(178,58,46,.09),transparent 60%),
+    #FBFBF8;
+  box-shadow:0 1px 0 rgba(178,58,46,.3) inset;
+  line-height:1;padding:10px;
+  transition:transform .45s cubic-bezier(.2,1.6,.4,1),opacity .35s;
+}
+.seal span{transform:translateY(2px);}
+.seal.stamped{transform:rotate(-5deg) scale(1);opacity:1;}
+@media (prefers-reduced-motion:reduce){.seal{transform:rotate(-5deg) scale(1);opacity:1;}}
+.seal-cap{font-family:var(--mono);font-size:.6rem;letter-spacing:.26em;color:var(--stone);text-align:center;margin-top:16px;}
+footer{
+  background:var(--ink-deep);color:#8FA0B6;padding:44px 0 52px;
+}
+.foot-inner{
+  display:flex;flex-wrap:wrap;gap:18px 40px;justify-content:space-between;align-items:baseline;
+}
+footer .links{display:flex;flex-wrap:wrap;gap:22px;}
+footer a{font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;color:#B9C4D4;border:none;}
+footer a:hover{color:var(--paper);}
+.foot-note{font-family:var(--mono);font-size:.64rem;letter-spacing:.06em;line-height:2.1;margin-top:26px;color:#66798F;max-width:60em;}
+
+/* ---------- 进场 ---------- */
+[data-reveal]{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease;}
+[data-reveal].in{opacity:1;transform:none;}
+@media (prefers-reduced-motion:reduce){[data-reveal]{opacity:1;transform:none;}}
+</style>
+</head>
+<body>
+
+<!-- 左侧运行链轨道（桌面端） -->
+<aside class="rail" aria-hidden="true">
+  <div class="rail-title">RUN CHAIN · 13</div>
+  <div class="rail-node" data-n><span class="dot"></span>request</div>
+  <div class="rail-node" data-n><span class="dot"></span>v8 full-source</div>
+  <div class="rail-node" data-n><span class="dot"></span>concept closure</div>
+  <div class="rail-node" data-n><span class="dot"></span>local world model</div>
+  <div class="rail-node" data-n><span class="dot"></span>claim-path</div>
+  <div class="rail-node" data-n><span class="dot"></span>retrieval</div>
+  <div class="rail-node" data-n><span class="dot"></span>red-team</div>
+  <div class="rail-node" data-n><span class="dot"></span>position lock</div>
+  <div class="rail-node" data-n><span class="dot"></span>reader projection</div>
+  <div class="rail-node" data-n><span class="dot"></span>artifacts ×4</div>
+  <div class="rail-node" data-n><span class="dot"></span>prose review</div>
+  <div class="rail-node" data-n><span class="dot"></span>validator</div>
+  <div class="rail-node" data-n><span class="dot"></span>phase-aware repair</div>
+  <div class="rail-status">本页即一次运行<br><b id="rail-readout">01/13 · request</b></div>
+</aside>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top" aria-label="回到页首">
+      <span class="brand-seal">驗</span>
+      <span class="brand-name">CrossFrame <em>ProMax</em></span>
+    </a>
+    <nav class="topnav">
+      <a href="#chain">运行链</a>
+      <a href="#caps">能力</a>
+      <a href="#trigger">触发</a>
+      <a href="#cost">消耗</a>
+      <a class="keep" href="https://github.com/xi-kari/crossframe-skill" target="_blank" rel="noopener">GITHUB ↗</a>
+    </nav>
+  </div>
+  <div class="progress" id="progress"></div>
+</header>
+
+<!-- 英雄区 -->
+<section class="hero" id="top">
+  <div class="wrap hero-inner">
+    <div class="eyebrow">CROSSFRAME · V8 STRUCTURAL REASONING RUNTIME</div>
+    <h1>把一次判断<span class="punct">，</span><br>跑成一条可对账的运行链<span class="punct">。</span></h1>
+    <p class="hero-sub">
+      CrossFrame ProMax 是 <b>v8-only、精确点名</b>的独立结构推演 runtime。
+      它不是"让模型多想一会儿"的提示词，而是把 v8 全源知识、概念闭合、真实检索、反方攻击、明确裁决、完整长文与机器校验，<b>锁进同一次有状态的运行</b>——每一步都留下工件，每个工件都可以被验证，验证失败则定向修复。
+    </p>
+    <div class="hero-meta">
+      <span class="chip">ProMax 1.0.1 · v8.0</span>
+      <span class="chip hot">EXACT-NAME ONLY</span>
+      <span class="chip">独立审计闭环</span>
+      <span class="chip">Python 3.11</span>
+      <span class="chip">MIT</span>
+    </div>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://github.com/xi-kari/crossframe-skill/blob/main/skills/crossframe-promax/SKILL.md" target="_blank" rel="noopener">阅读 SKILL.md</a>
+      <a class="btn btn-ghost" href="https://github.com/xi-kari/crossframe-skill" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a class="btn btn-ghost" href="https://github.com/xi-kari/crossframe-skill/releases" target="_blank" rel="noopener">下载 Release</a>
+    </div>
+    <div class="hero-vertical">重型・可審計・可修復</div>
+  </div>
+  <div class="chain-strip" aria-hidden="true">
+    <div class="chain-strip-inner">
+      <span class="n"><b>request</b></span><span class="arrow">→</span>
+      <span class="n"><b>v8 full-source</b></span><span class="arrow">→</span>
+      <span class="n"><b>concept closure</b></span><span class="arrow">→</span>
+      <span class="n"><b>world model</b></span><span class="arrow">→</span>
+      <span class="n"><b>claim-path</b></span><span class="arrow">→</span>
+      <span class="n"><b>retrieval</b></span><span class="arrow">→</span>
+      <span class="n"><b>red-team</b></span><span class="arrow">→</span>
+      <span class="n"><b>position lock</b></span><span class="arrow">→</span>
+      <span class="n"><b>reader projection</b></span><span class="arrow">→</span>
+      <span class="n"><b>artifacts</b></span><span class="arrow">→</span>
+      <span class="n"><b>prose review</b></span><span class="arrow">→</span>
+      <span class="n"><b>validator</b></span><span class="arrow">→</span>
+      <span class="n fix"><b>phase-aware repair</b></span>
+    </div>
+  </div>
+</section>
+
+<main>
+
+<!-- 台账统计 -->
+<section class="ledger wrap" data-reveal>
+  <div class="ledger-head">
+    <h2>一次完整运行的账面</h2>
+    <span class="tag">LEDGER · 取自仓库 README</span>
+  </div>
+  <div class="ledger-row">
+    <div class="ledger-num">3,980<small>全源读取事件</small></div>
+    <p class="ledger-desc"><b>3,863 个段落 + 117 张表</b>，来自固定的 v8 源快照。每一次读取都形成 read event 与 hash——加载了多少、加载了什么，账面上可以证明，而不是宣称。</p>
+  </div>
+  <div class="ledger-row">
+    <div class="ledger-num">709<small>逐项处置的概念</small></div>
+    <p class="ledger-desc">每个概念登记<b>定义、邻接概念、误用边界</b>，以及与当前请求相关的理由。概念不能只被"提到"——它必须说明自己如何进入、或为何退出本次推演。</p>
+  </div>
+  <div class="ledger-row">
+    <div class="ledger-num">P0–P11<small>阶段状态机</small></div>
+    <p class="ledger-desc">冻结、验证、定向修复。校验失败时，系统依据 <b>affected_phase</b> 只重置受影响阶段及其下游产物，再做修复——不靠补几个关键词伪装完成。</p>
+  </div>
+  <div class="ledger-row" style="border-bottom:2px solid var(--ink);">
+    <div class="ledger-num">五向<small>真实检索</small></div>
+    <p class="ledger-desc">按五个方向搜寻案例、支持证据、反例与边界条件，<b>支持与反例分开登记</b>。有网络时外部校准；断网时诚实降档——不伪造来源，也不伪造"检索已完成"。</p>
+  </div>
+</section>
+
+<!-- §01 不是提示词 -->
+<section class="block wrap" id="what" data-reveal>
+  <div class="sec-eyebrow">§01 · RUNTIME, NOT PROMPT</div>
+  <h2>不是更长的提示词，<br>是一个有状态的运行时</h2>
+  <div class="lead">
+    <p>常见的"深度思考"，只是让模型在同一段上下文里多说几句。ProMax 走的是另一条路：<b>有状态、有工件、有验证闸</b>。问题与 v8 源快照先被冻结；概念闭合、局部世界、命题路径与检索结果被登记为可检查的工件；初稿必须先接受最强反方的攻击、完成立场锁定，然后才由 reader projection 把整个审计闭包，投影成一篇普通读者能够进入的中文长文。</p>
+    <p>一次完整运行交付<b>四份公开产物</b>——dossier、concept atlas、cases 与纯读者 essay——外加内部的 prose review 与 manifest。正文不再转储审计台账；<span class="zhu">发布状态由独立校验报告决定</span>，而不是由生成它的那个模型自己盖章。</p>
+  </div>
+</section>
+
+<!-- §02 运行链 -->
+<section class="block wrap" id="chain" data-reveal>
+  <div class="sec-eyebrow">§02 · RUN CHAIN</div>
+  <h2>十三个节点，一条可验证的链</h2>
+  <div class="chain-list">
+    <div class="chain-item"><span class="chain-idx">01</span><span class="chain-name">request</span><span class="chain-gloss">冻结请求。推演途中悄悄改题、换证据、移动判断标准——都会被登记发现。</span></div>
+    <div class="chain-item"><span class="chain-idx">02</span><span class="chain-name">v8 full-source</span><span class="chain-gloss">连续读取 v8 全源快照：3,863 个段落与 117 张表，逐次留下 read event 与 hash。</span></div>
+    <div class="chain-item"><span class="chain-idx">03</span><span class="chain-name">concept closure</span><span class="chain-gloss">709 个概念逐项处置：定义、邻接、误用边界，以及进入或退出本次推演的理由。</span></div>
+    <div class="chain-item"><span class="chain-idx">04</span><span class="chain-name">local world model</span><span class="chain-gloss">把对象显式建模为局部世界：行动者、圈层、尺度、双通道、时钟、事件、证据与未知项——分离已知、推断和待证，阻止单一视角冒充全局。</span></div>
+    <div class="chain-item"><span class="chain-idx">05</span><span class="chain-name">claim-path</span><span class="chain-gloss">中心命题绑定路径 DAG：竞争机制、条件预测、切换条件与撤回条件。结论不以修辞强度代替机制解释。</span></div>
+    <div class="chain-item"><span class="chain-idx">06</span><span class="chain-name">retrieval</span><span class="chain-gloss">五向真实检索，支持与反例分开登记。断网只能诚实降档，不能伪造来源。</span></div>
+    <div class="chain-item"><span class="chain-idx">07</span><span class="chain-name">red-team</span><span class="chain-gloss">构造最强反方，检查概念误用、立场稳定性与证据截止——反例拥有真实机会改写、降档或推翻初稿。</span></div>
+    <div class="chain-item"><span class="chain-idx">08</span><span class="chain-name">position lock</span><span class="chain-gloss">攻击结束后必须锁定立场。"各有道理"不是一个可以交账的出口。</span></div>
+    <div class="chain-item"><span class="chain-idx">09</span><span class="chain-name">reader projection</span><span class="chain-gloss">P9 用八个有序动作成文：现实入口、中心命题、机制递进、同维比较、最强反方、明确立场、撤回与行动边界、余味结尾。</span></div>
+    <div class="chain-item"><span class="chain-idx">10</span><span class="chain-name">dossier · atlas · cases · essay</span><span class="chain-gloss">物化四份公开产物，共同承担完整性——正文不转储台账，台账也不冒充正文。</span></div>
+    <div class="chain-item"><span class="chain-idx">11</span><span class="chain-name">prose review</span><span class="chain-gloss">六个角色中的最后一个只审校当前正文，生成绑定 essay 与 P8/P9 锁的内部审校结果。</span></div>
+    <div class="chain-item"><span class="chain-idx">12</span><span class="chain-name">validator</span><span class="chain-gloss">fresh validator 只接受绑定当前字节的审校结果——审的必须就是发的这一版。</span></div>
+    <div class="chain-item repairish"><span class="chain-idx">13</span><span class="chain-name">phase-aware repair</span><span class="chain-gloss">失败依据 affected_phase 定向修复：只重置受影响阶段及其下游产物，能补生成的补生成，该降档的降档，该撤回的撤回。</span></div>
+  </div>
+</section>
+
+<!-- §03 能力台账 -->
+<section class="block wrap" id="caps" data-reveal>
+  <div class="sec-eyebrow">§03 · CAPABILITIES</div>
+  <h2>八项能力，逐项交账</h2>
+  <p class="lead" style="margin-bottom:34px;">每一项能力都同时登记它的运行约束与可审计结果——能力不是宣称出来的，是账面对得上的。</p>
+  <div class="cap-table">
+    <div class="cap-row head"><span>能力</span><span>运行约束</span><span>可审计结果</span></div>
+    <div class="cap-row">
+      <div class="cap-name">v8 全源加载<small>FULL-SOURCE</small></div>
+      <div class="cap-rule">固定源快照；读取 3,863 个段落、117 张表。</div>
+      <div class="cap-proof">每次读取形成 <b>read event 与 hash</b>，证明实际加载范围。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">概念闭合<small>CONCEPT CLOSURE</small></div>
+      <div class="cap-rule">对 709 个概念逐项登记定义、邻接概念、误用边界与相关理由。</div>
+      <div class="cap-proof">概念不能只被"提到"，必须说明<b>如何进入或退出</b>本次推演。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">局部世界建模<small>WORLD MODEL</small></div>
+      <div class="cap-rule">显式建模对象、行动者、圈层、尺度、双通道、时钟、事件、证据与未知项。</div>
+      <div class="cap-proof">分离已知、推断和待证部分，<b>阻止单一视角冒充全局</b>。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">命题与路径<small>CLAIM-PATH</small></div>
+      <div class="cap-rule">建立中心命题、竞争机制、路径 DAG、条件预测、切换与撤回条件。</div>
+      <div class="cap-proof">结论绑定<b>可检验路径</b>，不以修辞强度代替机制解释。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">真实检索<small>RETRIEVAL</small></div>
+      <div class="cap-rule">五向检索案例、支持证据、反例与边界条件，支持与反例分开登记。</div>
+      <div class="cap-proof">有网络时外部校准；断网时<b>诚实降档</b>，不伪造来源或检索完成态。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">自我攻击<small>RED-TEAM</small></div>
+      <div class="cap-rule">构造最强反方，检查概念误用、立场稳定性与证据截止。</div>
+      <div class="cap-proof">让反例<b>真正有机会</b>改写、降档或推翻初始判断。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">明确裁决<small>POSITION LOCK</small></div>
+      <div class="cap-rule">攻击后始终锁定立场；只有用户明确要求建议时，才比较六类行动并给出主方案、备选、停止条件与回滚路径。</div>
+      <div class="cap-proof">未要求建议时只完成判断，recommendation 闭合为 <b>{"status":"not_requested"}</b>——不自行制造方案。</div>
+    </div>
+    <div class="cap-row">
+      <div class="cap-name">可验证交付<small>DELIVERY</small></div>
+      <div class="cap-rule">物化 dossier、concept atlas、cases、纯读者 essay、内部 prose review 与 manifest，交给 fresh validator 与 phase repair。</div>
+      <div class="cap-proof">四份公开产物共同承担完整性；<b>发布状态由独立校验报告决定</b>。</div>
+    </div>
+  </div>
+</section>
+
+<!-- §04 六道约束 -->
+<section class="block wrap" id="six" data-reveal>
+  <div class="sec-eyebrow">§04 · MODEL FLAVOR SUPPRESSION</div>
+  <h2>六道结构约束，<br>抑制宿主模型的自身风味</h2>
+  <p class="lead" style="margin-bottom:10px;">不同 AI 有不同的训练偏好：有的倾向顺从，有的先反驳，有的习惯列举却不裁决。ProMax 不假设能抹去这些差异——它用六道结构约束，限制这些偏好对判断与表达的支配。</p>
+  <div class="six">
+    <div class="six-item">
+      <h3>v8 定义优先</h3>
+      <p>框架原文与概念契约，覆盖模型预训练中碰巧同名的概念——禁止用"熟悉的词义"替代 CrossFrame 的独特定义。</p>
+    </div>
+    <div class="six-item">
+      <h3>冻结关键工件</h3>
+      <p>请求、源快照、证据边界、命题与阶段产物被显式登记，防止推演中悄悄改题、换证据、或移动判断标准。</p>
+    </div>
+    <div class="six-item">
+      <h3>检索与反方攻击草稿</h3>
+      <p>真实案例检索和最强反方不是装饰性章节，而是可以迫使初稿改写、降档或撤回的独立步骤——不能只顺着用户说。</p>
+    </div>
+    <div class="six-item">
+      <h3>Position lock 强制裁决</h3>
+      <p>攻击之后必须给出明确立场与判断撤回条件。未被要求建议时只完成判断，不自行制造方案——"各有道理"不是逃避判断的出口。</p>
+    </div>
+    <div class="six-item">
+      <h3>固定成文声口与读者投影</h3>
+      <p>内置 50 张独立技法卡与九种体裁路由，每次只选 3 张核心卡、至多 2 张辅助卡；核心概念绑定 2–4 个逐字来自 v8 的锚词。正文既不自动迎合，也不为了显得独立而自动反对。</p>
+    </div>
+    <div class="six-item" style="border-bottom:2px solid var(--ink);">
+      <h3>独立审校与阶段修复</h3>
+      <p>第六角色逐项审查现实入口、论证依赖、概念保真、证据绑定、反方、公平比较、判断一致性、撤回边界、固定声口——以及宿主模型风味与审计泄漏本身。失败回到 P10 或其真实根因阶段。</p>
+    </div>
+  </div>
+  <p class="six-coda">这些约束不追求让不同模型的措辞一字不差。它们要求的是：<b>差异必须暴露在证据、路径、反例和撤回条件中，而不能藏进模型的习惯里。</b></p>
+</section>
+
+<!-- §05 触发边界 -->
+<section class="block wrap" id="trigger" data-reveal>
+  <div class="sec-eyebrow">§05 · TRIGGER BOUNDARY</div>
+  <h2>触发边界：仅此四名</h2>
+  <p class="lead" style="margin-bottom:34px;">ProMax 的触发边界比家族里任何一个 skill 都窄。它只接受以下四种<b>精确名称</b>——不多一个，不少一个。</p>
+  <div class="trigger-card">
+    <div class="trigger-top">
+      <span class="t-label">EXACT NAMES · 4</span>
+      <span class="trigger-stamp">僅此四名</span>
+    </div>
+    <div class="trigger-names">
+      <code>crossframe-promax</code>
+      <code>CrossFrame ProMax</code>
+      <code>$crossframe-promax</code>
+      <code>/crossframe-promax</code>
+    </div>
+  </div>
+  <ul class="trigger-rules">
+    <li>仅说<b>"最大算力""全尺度""穷尽推演"</b>——不构成 ProMax 点名。泛化的最大化请求，仍然归 Max。</li>
+    <li>Suite <b>不会</b>把普通 Max 或任何重型任务自动升级为 ProMax。</li>
+    <li class="hot">Max 与 ProMax 同时被精确点名——<b>ProMax 优先</b>；一旦进入 ProMax，不得降级回 Max。</li>
+    <li>ProMax 自带<b>生成 → 反证 → 校验 → 修复</b>的独立闭环：不追加 crossframe-review，也不复用 Max 的 repair 或 audit 链。</li>
+  </ul>
+</section>
+
+<!-- §06 条件与消耗 -->
+<section class="block wrap" id="cost" data-reveal>
+  <div class="sec-eyebrow">§06 · CONDITIONS &amp; COST</div>
+  <h2>运行条件，与一个诚实的消耗警告</h2>
+  <div class="cond-grid">
+    <div class="cond-row"><span class="cond-key">PYTHON</span><span class="cond-val">Python 3.11（仓库 CI 基准）</span></div>
+    <div class="cond-row"><span class="cond-key">生产依赖</span><span class="cond-val"><code>jsonschema</code>；仓库验证另需 <code>pytest</code>、<code>PyYAML</code></span></div>
+    <div class="cond-row"><span class="cond-key">宿主能力</span><span class="cond-val">读取 skill 文件、执行 Python、写入独立 artifact 目录</span></div>
+    <div class="cond-row"><span class="cond-key">网络</span><span class="cond-val">外部真实案例检索的可选能力；无网络时必须显式降档</span></div>
+    <div class="cond-row"><span class="cond-key">V8 材料</span><span class="cond-val">全源快照随 skill 携带，运行时不依赖原始文档</span></div>
+    <div class="cond-row"><span class="cond-key">共创边界</span><span class="cond-val">共创模型不是运行依赖——任何具备文件、Python 与可选网络能力的 Agent 型 AI 都可以调用</span></div>
+  </div>
+  <div class="warn">
+    <span class="warn-tag">消耗警告</span>
+    <p>基础完整轮次会连续读取 v8 全源、逐项处置 709 个概念，并执行检索、反方攻击、长文物化与校验修复。完整运行可能消耗<b>数百万至数千万 token</b>。</p>
+    <p>用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 <span class="big">17,000,000</span> token。</p>
+    <small>它是单次观察，不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。</small>
+  </div>
+</section>
+
+<!-- §07 家族位置 -->
+<section class="block wrap" id="family" data-reveal>
+  <div class="sec-eyebrow">§07 · IN THE FAMILY</div>
+  <h2>它在 CrossFrame 家族中的位置</h2>
+  <p class="lead" style="margin-bottom:34px;">仓库共 <b>16 个 crossframe-* skills</b>，全部 explicit-only——不点名，不触发。ProMax 属于这个家族，同时是独立的旗舰 runtime：它不取代 Suite、Max 与其他专项 skills。</p>
+  <div class="family">
+    <div class="fam-row">
+      <span class="fam-name">crossframe-suite</span>
+      <span class="fam-ver">v5.1.7 主线</span>
+      <span class="fam-desc">推荐总入口。2+1 模式/角色选择器，走"诊断 → 成文 → review → 追问"的重型链路。</span>
+    </div>
+    <div class="fam-row">
+      <span class="fam-name">crossframe-max</span>
+      <span class="fam-ver">v6 运行时</span>
+      <span class="fam-desc">世界观前置 meta-runtime。泛化的"最大尺度、穷尽推演、完整解释"归它；四个运行档位，validator + repair 链。</span>
+    </div>
+    <div class="fam-row promax" style="border-bottom:2px solid var(--ink);">
+      <span class="fam-name">crossframe-promax</span>
+      <span class="fam-ver">v8-only 旗舰</span>
+      <span class="fam-desc">精确点名的独立推演 runtime，内置穷尽、反证、校验和修复闭环——与 Max 的 v6 运行时相互隔离，互不混入。</span>
+    </div>
+  </div>
+</section>
+
+<!-- §08 快速开始 -->
+<section class="block wrap" id="start" data-reveal>
+  <div class="sec-eyebrow">§08 · QUICKSTART</div>
+  <h2>快速开始</h2>
+  <p class="lead">在 Claude Code、Codex 等支持 skill 的 Agent 环境里安装后，用精确名称点名即可：</p>
+  <div class="codeblock">
+    <div class="codeblock-bar">
+      <span>INVOKE</span>
+      <button class="copy-btn" data-copy="/crossframe-promax 用 v8 框架穷尽分析这个判断，主动搜索反例并给出明确立场">复制</button>
+    </div>
+    <pre><span class="hi">/crossframe-promax</span> 用 v8 框架穷尽分析这个判断，主动搜索反例并给出明确立场</pre>
+  </div>
+  <div class="codeblock">
+    <div class="codeblock-bar">
+      <span>INSTALL · CODEX</span>
+      <button class="copy-btn" data-copy="bash scripts/install-codex.sh">复制</button>
+    </div>
+    <pre><span class="cm"># Windows PowerShell</span>
 .\scripts\install-codex.ps1
 
-# macOS / Linux
-bash scripts/install-codex.sh
+<span class="cm"># macOS / Linux</span>
+bash scripts/install-codex.sh</pre>
+  </div>
+  <div class="codeblock">
+    <div class="codeblock-bar">
+      <span>VERIFY · REPO</span>
+      <button class="copy-btn" data-copy="python scripts/check_crossframe_skill_integrity.py --repo .">复制</button>
+    </div>
+    <pre>python scripts/check_crossframe_skill_integrity.py --repo .
+python scripts/check_source_continuity.py --materials-only --repo .</pre>
+  </div>
+  <p class="footnote">Claude Code 项目内提供 <a href="https://github.com/xi-kari/crossframe-skill/tree/main/.claude" target="_blank" rel="noopener">.claude/skills 与 .claude/commands 镜像</a>；完整上手说明见 <a href="https://github.com/xi-kari/crossframe-skill/blob/main/docs/QUICKSTART.md" target="_blank" rel="noopener">docs/QUICKSTART.md</a>。</p>
+</section>
 
-# Start with:
-/crossframe-suite 分析这个团队为什么复盘很多但没有真实修复</code></pre>
-        </div>
-        <p class="install-note">
-          一键安装脚本覆盖 Windows PowerShell 与 macOS / Linux Bash；其它 agent 可按 docs/ADAPTERS.md 手动复制 skills/crossframe* 到对应 skills 目录。
-        </p>
-        <noscript>
-          <p class="noscript-note">安装页签需要 JavaScript；无 JavaScript 时可先使用默认 Codex 命令，或在 GitHub README 和 docs 中查看完整说明。</p>
-        </noscript>
-      </section>
+<!-- 共创与印章 -->
+<section class="coda wrap" data-reveal>
+  <div class="coda-inner">
+    <div>
+      <div class="sec-eyebrow" style="margin-bottom:22px;">CO-CREATION &amp; PROVENANCE</div>
+      <p>CrossFrame ProMax 由 <b>CrossFrame 作者与 ChatGPT 5.6 Sol（Ultra）</b>共同设计、实现、攻击与验证；CrossFrame v8 的框架定义，始终以作者提供的 v8 原始材料为权威。</p>
+      <p>安全边界先行：CrossFrame 不替代法律、医疗、财务、心理危机处置、正式调查或机构审查；不做人格审判、命运预言或无证据公共定性——<b>证据不足时，只能降档、补证或撤回。</b></p>
+      <p style="margin-bottom:0;">本页所有数字与规则，均取自仓库 <a href="https://github.com/xi-kari/crossframe-skill/blob/main/README.md" target="_blank" rel="noopener">README</a> 与 <a href="https://github.com/xi-kari/crossframe-skill/blob/main/llms.txt" target="_blank" rel="noopener">llms.txt</a>——这一页自己，也应当对得上账。</p>
+    </div>
+    <div>
+      <div class="seal-wrap"><div class="seal" id="seal" role="img" aria-label="校验通过印章"><span>校</span><span>驗</span><span>通</span><span>過</span></div></div>
+      <div class="seal-cap">VALIDATOR · PASSED</div>
+    </div>
+  </div>
+</section>
 
-      <section class="section-band faq" aria-labelledby="faq-title">
-        <div class="section-heading">
-          <p class="eyebrow">FAQ</p>
-          <h2 id="faq-title">常见问题</h2>
-        </div>
-        <div class="faq-list">
-          <details>
-            <summary>它会自动接管所有问题吗？</summary>
-            <p>不会。CrossFrame 是 explicit-only，只有用户明确点名 CrossFrame 或对应 skill 时才启动。</p>
-          </details>
-          <details>
-            <summary>它和提示词模板有什么不同？</summary>
-            <p>提示词模板通常要求“说得更好”。CrossFrame 要求回答前交台账，回答后可审查、可追问、可降档。</p>
-          </details>
-          <details>
-            <summary>为什么要有 crossframe-inquiry？</summary>
-            <p>因为完整分析、成文和 review 结束后，真正有价值的下一步通常是反证、补证、迁移和行动边界确认。</p>
-          </details>
-          <details>
-            <summary>这个网页能直接运行 CrossFrame 吗？</summary>
-            <p>不能。这个页面是介绍页。CrossFrame 作为本地 AI skill 使用，需要安装到 Codex、Claude Code 或其它支持项目规则 / skills 的 agent 中。</p>
-          </details>
-          <details>
-            <summary>为什么首页示例都是虚构或匿名的？</summary>
-            <p>因为 CrossFrame 会处理历史、公共、组织等高责任主题。首页只展示工作方式，不对现实对象做判断；真实材料需要进入 source ledger、claim ledger 和 review。</p>
-          </details>
-          <details>
-            <summary>它会让 AI 变慢吗？</summary>
-            <p>复杂任务会更慢，因为它要先拆事实、证据、命题和边界。CrossFrame 的目标不是最快回答，而是降低顺滑错误和越界判断。</p>
-          </details>
-        </div>
-      </section>
-    </main>
+</main>
 
-    <footer class="site-footer">
-      <span>CrossFrame Skill Suite · v5.1.7 · explicit-only</span>
-      <a href="https://github.com/xi-kari/crossframe-skill">GitHub</a>
-      <a href="https://github.com/xi-kari/crossframe-skill/blob/main/docs/QUICKSTART.md">Quickstart</a>
-      <a href="https://github.com/xi-kari/crossframe-skill/blob/main/LICENSE">MIT License</a>
-    </footer>
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span class="brand-name" style="font-size:.76rem;">CrossFrame <em>ProMax</em> · v8 Runtime</span>
+      <nav class="links">
+        <a href="https://github.com/xi-kari/crossframe-skill" target="_blank" rel="noopener">仓库</a>
+        <a href="https://github.com/xi-kari/crossframe-skill/blob/main/skills/crossframe-promax/SKILL.md" target="_blank" rel="noopener">SKILL.MD</a>
+        <a href="https://github.com/xi-kari/crossframe-skill/releases" target="_blank" rel="noopener">RELEASES</a>
+        <a href="https://github.com/xi-kari/crossframe-skill/blob/main/docs/QUICKSTART.md" target="_blank" rel="noopener">QUICKSTART</a>
+        <a href="https://github.com/xi-kari/crossframe-skill/blob/main/LICENSE" target="_blank" rel="noopener">MIT LICENSE</a>
+      </nav>
+    </div>
+    <p class="foot-note">CrossFrame Skill Suite · 16 skills · explicit-only<br>页面由 Claude 重新设计 · 台账格线取意传统账簿的朱丝栏，朱印只落在校验通过之处</p>
+  </div>
+</footer>
 
-    <script src="app.js"></script>
-  </body>
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* 进场 */
+  var reveals = document.querySelectorAll('[data-reveal]');
+  if('IntersectionObserver' in window && !reduce){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+    },{threshold:.08});
+    reveals.forEach(function(el){ io.observe(el); });
+  }else{
+    reveals.forEach(function(el){ el.classList.add('in'); });
+  }
+
+  /* 运行链轨道 + 顶部进度 */
+  var nodes = document.querySelectorAll('.rail-node');
+  var readout = document.getElementById('rail-readout');
+  var bar = document.getElementById('progress');
+  var names = ['request','v8 full-source','concept closure','local world model','claim-path','retrieval','red-team','position lock','reader projection','artifacts','prose review','validator','phase-aware repair'];
+  var ticking = false;
+  function update(){
+    ticking = false;
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    var p = max > 0 ? Math.min(1, Math.max(0, h.scrollTop / max)) : 0;
+    if(bar) bar.style.width = (p*100).toFixed(1) + '%';
+    var idx = Math.min(names.length-1, Math.floor(p * names.length));
+    nodes.forEach(function(n,i){
+      n.classList.toggle('active', i===idx);
+      n.classList.toggle('done', i<idx);
+    });
+    if(readout) readout.textContent = String(idx+1).padStart(2,'0') + '/13 · ' + names[idx];
+  }
+  window.addEventListener('scroll', function(){
+    if(!ticking){ ticking = true; requestAnimationFrame(update); }
+  }, {passive:true});
+  update();
+
+  /* 印章 */
+  var seal = document.getElementById('seal');
+  if(seal){
+    if('IntersectionObserver' in window && !reduce){
+      var so = new IntersectionObserver(function(es){
+        es.forEach(function(e){ if(e.isIntersecting){ seal.classList.add('stamped'); so.unobserve(seal); } });
+      },{threshold:.6});
+      so.observe(seal);
+    }else{
+      seal.classList.add('stamped');
+    }
+  }
+
+  /* 复制 */
+  document.querySelectorAll('.copy-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var text = btn.getAttribute('data-copy');
+      function done(){
+        btn.classList.add('ok'); btn.textContent = '已复制';
+        setTimeout(function(){ btn.classList.remove('ok'); btn.textContent = '复制'; }, 1600);
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(); });
+      }else{ fallback(); }
+      function fallback(){
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try{ document.execCommand('copy'); done(); }catch(e){}
+        document.body.removeChild(ta);
+      }
+    });
+  });
+})();
+</script>
+</body>
 </html>
