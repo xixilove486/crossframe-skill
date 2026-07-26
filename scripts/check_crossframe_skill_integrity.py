@@ -50,7 +50,7 @@ PROMAX_101_REQUIRED_PATHS = (
 )
 
 PROMAX_CANONICAL_SKILL_PATTERN = re.compile(
-    r"(?<![A-Za-z0-9_.-])skills/crossframe-promax/SKILL\.md"
+    r"(?<![A-Za-z0-9_./-])skills/crossframe-promax/SKILL\.md"
 )
 
 PROMAX_CONTRADICTORY_FALLBACK_PATTERNS = (
