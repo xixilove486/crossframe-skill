@@ -1,7 +1,8 @@
 crossframe
 crossframe-suite
+crossframe-promax
+crossframe-max
 crossframe-essay
-crossframe-critical
 codex-skill
 ai-skill
 structural-diagnosis
@@ -10,7 +11,6 @@ chinese-writing
 skill-routing
 workflow-routing
 concept-elevation
-critical-essay
 public-issue
 organization-repair
 debate-analysis

@@ -1,1 +1,1 @@
-CrossFrame Skill Suite：面向 AI agent 的中文结构诊断、公共议题分析、组织复盘、历史材料处理、追问和成文工作流。
+CrossFrame Skill Suite：面向 AI agent 的中文结构诊断、公共议题分析、组织复盘、历史材料处理、追问和成文工作流；旗舰 CrossFrame ProMax 提供 v8-only、精确点名、可对账可修复的独立结构推演 runtime。
