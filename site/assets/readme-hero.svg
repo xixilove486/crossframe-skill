@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-label="CrossFrame ProMax — 让 AI 把一件事认认真真想完，每一步都留下记录">
+  <defs>
+    <style>
+      .serif { font-family: "Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif; }
+      .mono  { font-family: "IBM Plex Mono","SFMono-Regular",Consolas,"Liberation Mono",monospace; }
+    </style>
+  </defs>
+
+  <!-- 纸面 -->
+  <rect x="0.5" y="0.5" width="1199" height="419" fill="#F7F2E3" stroke="#E0D6BC"/>
+
+  <!-- 淡格线 -->
+  <g stroke="#EFE8D3" stroke-width="1">
+    <line x1="202" y1="0" x2="202" y2="420"/>
+    <line x1="332" y1="0" x2="332" y2="420"/>
+    <line x1="462" y1="0" x2="462" y2="420"/>
+    <line x1="592" y1="0" x2="592" y2="420"/>
+    <line x1="722" y1="0" x2="722" y2="420"/>
+    <line x1="852" y1="0" x2="852" y2="420"/>
+    <line x1="982" y1="0" x2="982" y2="420"/>
+  </g>
+
+  <!-- 顶部界栏 + 眉题 -->
+  <line x1="72" y1="78" x2="1128" y2="78" stroke="#D8CCAA" stroke-width="1"/>
+  <text class="mono" x="72" y="112" font-size="15" font-weight="600" letter-spacing="5" fill="#8A7A55">CROSSFRAME · V8 STRUCTURAL REASONING RUNTIME</text>
+
+  <!-- 薄荷色贴纸条 -->
+  <rect x="66" y="238" width="560" height="26" fill="#BFDCCF" opacity="0.55"/>
+
+  <!-- 主题句 -->
+  <text class="serif" x="66" y="205" font-size="62" font-weight="700" fill="#4A4030">让 AI 把一件事，</text>
+  <text class="serif" x="66" y="288" font-size="62" font-weight="700" fill="#4A4030">认认真真想完<tspan fill="#D9A441">。</tspan></text>
+
+  <!-- 副行 -->
+  <text class="mono" x="72" y="340" font-size="16" letter-spacing="2" fill="#8A7A55">每一步都留下记录 · 每个结论都可以被检查 · 出错就修到对为止</text>
+
+  <!-- 右侧书眉：竖排栏 -->
+  <line x1="1052" y1="108" x2="1052" y2="330" stroke="#D8CCAA" stroke-width="1"/>
+  <g class="serif" font-size="22" fill="#6E8F80" text-anchor="middle">
+    <text x="1092" y="140">想</text>
+    <text x="1092" y="176">清</text>
+    <text x="1092" y="212">楚</text>
+    <text x="1092" y="248">再</text>
+    <text x="1092" y="284">回</text>
+    <text x="1092" y="320">答</text>
+  </g>
+  <circle cx="1092" cy="98" r="4" fill="#D9A441"/>
+
+  <!-- 底部界栏 + 署名行 -->
+  <line x1="72" y1="368" x2="1128" y2="368" stroke="#D8CCAA" stroke-width="1"/>
+  <text class="mono" x="72" y="396" font-size="15" font-weight="600" letter-spacing="1" fill="#5C5138">CrossFrame ProMax · v8 Runtime</text>
+  <text class="mono" x="1128" y="396" font-size="13" letter-spacing="2" fill="#A99C77" text-anchor="end">AUTHOR × SOL ULTRA × FABLE 5</text>
+</svg>

@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-label="ProMax 运行链：从 request 到 phase-aware repair 共十三步；哪一步出错，就回到哪一步修">
+  <defs>
+    <style>
+      .serif { font-family: "Noto Serif SC","Source Han Serif SC","Songti SC","SimSun",serif; }
+      .mono  { font-family: "IBM Plex Mono","SFMono-Regular",Consolas,"Liberation Mono",monospace; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#D9A441"/>
+    </marker>
+  </defs>
+
+  <!-- 纸面 -->
+  <rect x="0.5" y="0.5" width="1199" height="599" fill="#F7F2E3" stroke="#E0D6BC"/>
+
+  <!-- 淡格线 -->
+  <g stroke="#EFE8D3" stroke-width="1">
+    <line x1="202" y1="0" x2="202" y2="600"/>
+    <line x1="332" y1="0" x2="332" y2="600"/>
+    <line x1="462" y1="0" x2="462" y2="600"/>
+    <line x1="592" y1="0" x2="592" y2="600"/>
+    <line x1="722" y1="0" x2="722" y2="600"/>
+    <line x1="852" y1="0" x2="852" y2="600"/>
+    <line x1="982" y1="0" x2="982" y2="600"/>
+  </g>
+
+  <!-- 标题行 -->
+  <line x1="72" y1="70" x2="1128" y2="70" stroke="#D8CCAA" stroke-width="1"/>
+  <text class="mono" x="72" y="102" font-size="15" font-weight="600" letter-spacing="5" fill="#8A7A55">RUN CHAIN · 13 STEPS · P0–P11</text>
+  <text class="serif" x="1128" y="102" font-size="17" fill="#8A7A55" text-anchor="end">十三步，每一步都有记录</text>
+
+  <!-- 第一行：01–07 -->
+  <line x1="72" y1="210" x2="1128" y2="210" stroke="#D8CCAA" stroke-width="1.5"/>
+  <g class="mono" font-size="13" letter-spacing="1" fill="#A99C77" text-anchor="middle">
+    <text x="72"   y="180">01</text><text x="248"  y="180">02</text><text x="424"  y="180">03</text>
+    <text x="600"  y="180">04</text><text x="776"  y="180">05</text><text x="952"  y="180">06</text>
+    <text x="1128" y="180">07</text>
+  </g>
+  <g fill="#7FB3A0">
+    <circle cx="72" cy="210" r="5"/><circle cx="248" cy="210" r="5"/><circle cx="424" cy="210" r="5"/>
+    <circle cx="600" cy="210" r="5"/><circle cx="776" cy="210" r="5"/><circle cx="952" cy="210" r="5"/>
+    <circle cx="1128" cy="210" r="5"/>
+  </g>
+  <g class="mono" font-size="14" font-weight="600" fill="#4A4030" text-anchor="middle">
+    <text x="72"   y="243">request</text>
+    <text x="248"  y="243">v8 full-source</text>
+    <text x="424"  y="243">concept closure</text>
+    <text x="600"  y="243">local world model</text>
+    <text x="776"  y="243">claim-path</text>
+    <text x="952"  y="243">retrieval</text>
+    <text x="1128" y="243">red-team</text>
+  </g>
+  <g class="serif" font-size="13" fill="#8A7A55" text-anchor="middle">
+    <text x="72"   y="266">把问题定住</text>
+    <text x="248"  y="266">3,863 段 · 117 表</text>
+    <text x="424"  y="266">逐个核对概念</text>
+    <text x="600"  y="266">局部世界建模</text>
+    <text x="776"  y="266">命题路径 DAG</text>
+    <text x="952"  y="266">五个方向找案例</text>
+    <text x="1128" y="266">最强反方攻击</text>
+  </g>
+
+  <!-- 折返连接线 -->
+  <path d="M 1128 215 L 1128 300 L 72 300 L 72 385" fill="none" stroke="#D8CCAA" stroke-width="1.5"/>
+
+  <!-- 第二行：08–13 -->
+  <line x1="72" y1="390" x2="1128" y2="390" stroke="#D8CCAA" stroke-width="1.5"/>
+  <g class="mono" font-size="13" letter-spacing="1" fill="#A99C77" text-anchor="middle">
+    <text x="72"   y="360">08</text><text x="283"  y="360">09</text><text x="494"  y="360">10</text>
+    <text x="706"  y="360">11</text><text x="917"  y="360">12</text><text x="1128" y="360">13</text>
+  </g>
+  <g fill="#7FB3A0">
+    <circle cx="72" cy="390" r="5"/><circle cx="283" cy="390" r="5"/><circle cx="494" cy="390" r="5"/>
+    <circle cx="706" cy="390" r="5"/><circle cx="917" cy="390" r="5"/><circle cx="1128" cy="390" r="5"/>
+  </g>
+  <g class="mono" font-size="14" font-weight="600" fill="#4A4030" text-anchor="middle">
+    <text x="72"   y="423">position lock</text>
+    <text x="283"  y="423">reader projection</text>
+    <text x="494"  y="423">dossier·atlas·cases·essay</text>
+    <text x="706"  y="423">prose review</text>
+    <text x="917"  y="423">validator</text>
+    <text x="1116" y="423">phase-aware repair</text>
+  </g>
+  <g class="serif" font-size="13" fill="#8A7A55" text-anchor="middle">
+    <text x="72"   y="446">明确表态</text>
+    <text x="283"  y="446">写成能读的文章</text>
+    <text x="494"  y="446">四份公开产物</text>
+    <text x="706"  y="446">独立审校正文</text>
+    <text x="917"  y="446">机器逐项校验</text>
+    <text x="1128" y="446">修到对为止</text>
+  </g>
+
+  <!-- 修复回路：13 → 出错的那一步 -->
+  <path d="M 1128 478 L 1128 512 L 494 512 L 494 460" fill="none" stroke="#D9A441" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text class="serif" x="776" y="536" font-size="14" fill="#B8862F" text-anchor="middle">哪一步出错，就回到哪一步修（affected_phase）</text>
+
+  <!-- 底注 -->
+  <line x1="72" y1="560" x2="1128" y2="560" stroke="#D8CCAA" stroke-width="1"/>
+  <text class="serif" x="72" y="584" font-size="14" fill="#8A7A55">每一步都留下记录，每个结论都可以被检查；出错不糊弄，修完再交付。</text>
+  <text class="mono" x="1128" y="584" font-size="12" letter-spacing="2" fill="#A99C77" text-anchor="end">EVERY STEP ON RECORD</text>
+</svg>
