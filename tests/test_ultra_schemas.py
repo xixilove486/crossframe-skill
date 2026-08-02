@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 import importlib
 import json
 import sys
@@ -27,6 +28,9 @@ FRAMEWORK_SEMANTIC_SHA256 = (
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
+SOURCE_TREE_SHA256 = (
+    "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+)
 STAMP = "2026-08-02T08:00:00Z"
 RUN_ID = "ultra-run-20260802-0001"
 
@@ -96,7 +100,7 @@ def version_binding() -> dict[str, Any]:
         "compiler_version": "1.0.0",
         "validator_version": "1.0.0",
         "article_contract_version": "1.0.0",
-        "source_tree_sha256": HASH_C,
+        "source_tree_sha256": SOURCE_TREE_SHA256,
     }
 
 
@@ -119,6 +123,36 @@ def artifact(
         value["phase_id"] = phase_id
     value.update(payload)
     return value
+
+
+def local_state(state_id: str, name: str, value: str) -> dict[str, Any]:
+    return {
+        "state_id": state_id,
+        "variables": [{"name": name, "value": value, "unit": "category"}],
+    }
+
+
+def scale_profile(*, organizational: str) -> dict[str, str]:
+    return {
+        "spatial": "local",
+        "temporal": "interaction",
+        "organizational": organizational,
+        "institutional": "informal",
+        "material": "bounded",
+        "informational": "partial",
+        "relational": "direct",
+        "power": "delegated",
+        "risk": "reversible",
+    }
+
+
+def evidence_status(*, identity: str = "reported") -> dict[str, Any]:
+    return {
+        "status": "supported-hypothesis",
+        "information_identity": identity,
+        "source_lineage": ["SOURCE-1"],
+        "visibility": "visible in the supplied record",
+    }
 
 
 def compatibility_matrix_instance() -> dict[str, Any]:
@@ -246,31 +280,28 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-run-contract.schema.json": artifact(
             "ultra-run-contract.schema.json",
             phase_id="U0",
+            trigger="CrossFrame Ultra",
             request_sha256=HASH_B,
-            input_sha256=HASH_C,
-            explicit_trigger="CrossFrame Ultra",
+            run_mode="production",
             sensitivity="private",
-            retention_policy="retain-run-package",
+            retention="retain",
             outbound_permission="denied",
+            evidence_cutoff=STAMP,
             capabilities={
-                "files": True,
-                "network": False,
-                "subagents": False,
-                "validators": True,
+                "filesystem": "available",
+                "docx_parser": "available",
+                "network": "unavailable",
+                "retrieval": "not-applicable",
+                "validators": "available",
+                "subagents": "unavailable",
+                "model_context": "available",
             },
             resource_limits={
-                "max_tool_calls": 20,
-                "max_retrieval_rounds": 3,
-                "max_branches": 12,
-                "max_repair_attempts": 3,
+                "maximum_branches": 12,
+                "maximum_retrieval_rounds_without_material_novelty": 2,
+                "maximum_tool_retries": 3,
+                "maximum_repair_attempts": 3,
             },
-            completion_criteria=[
-                "source-closure",
-                "state-closure",
-                "judgment-closure",
-                "article-closure",
-                "validation-closure",
-            ],
         ),
         "ultra-run-status.schema.json": artifact(
             "ultra-run-status.schema.json",
@@ -287,14 +318,18 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-phase-event.schema.json": artifact(
             "ultra-phase-event.schema.json",
             phase_id="U1",
-            event_id="EVENT-U1-0001",
-            parent_phase_sha256=HASH_A,
-            phase_sha256=HASH_B,
+            event_type="phase-completed",
+            parent_event_sha256=HASH_A,
+            input_artifact_hashes=[HASH_A],
+            output_artifact_hashes=[HASH_B],
             source_sha256=HASH_C,
-            input_sha256=HASH_A,
-            status="running",
-            failure_reason=None,
-            downstream_impact=["U2", "U3"],
+            evidence_cutoff=STAMP,
+            run_contract_sha256=HASH_B,
+            timestamp=STAMP,
+            status="complete",
+            failure_code=None,
+            invalidated_phases=[],
+            event_sha256=HASH_C,
         ),
         "ultra-source-lock.schema.json": artifact(
             "ultra-source-lock.schema.json",
@@ -314,11 +349,20 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-read-event.schema.json": artifact(
             "ultra-read-event.schema.json",
             phase_id="U1",
-            read_id="READ-0001",
-            path="registry/concepts.json",
-            byte_sha256=HASH_B,
-            purpose="load promoted concept registry",
+            source_unit_id="V82-P0001",
+            source_kind="paragraph",
+            source_ordinal=1,
+            source_manifest_sha256=HASH_A,
+            promoted_semantic_snapshot_sha256=HASH_B,
+            reader_mode="full-source",
+            execution_identity={
+                "kind": "host-process",
+                "process_id": 1234,
+                "executable": "C:/Python/python.exe",
+                "user": "fixture-user",
+            },
             read_at=STAMP,
+            read_event_sha256=HASH_C,
         ),
         "ultra-evidence-ledger.schema.json": artifact(
             "ultra-evidence-ledger.schema.json",
@@ -332,6 +376,12 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "source_refs": ["SOURCE-1"],
                     "observed_at": STAMP,
                     "confidence": "high",
+                    "event_date": "2026-08-01",
+                    "publication_date": "2026-08-01",
+                    "interest": "No declared conflict in the supplied record.",
+                    "upstream_lineage": ["UPSTREAM-1"],
+                    "supported_claim": "The supplied record contains one dated event.",
+                    "cannot_prove": "The record cannot prove the downstream response.",
                 }
             ],
             unknowns=[
@@ -368,19 +418,39 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                 "object_ids": ["ACTOR-1", "CIRCLE-FAMILY", "CIRCLE-TEAM"],
                 "boundary_rule": "Only represented actors and circles are in scope.",
             },
-            actors=[{"actor_id": "ACTOR-1", "label": "Actor one"}],
+            actors=[
+                {
+                    "actor_id": "ACTOR-1",
+                    "label": "Actor one",
+                    "identity_criteria": "The same represented person in the frozen window.",
+                    "M_state": local_state("M-ACTOR-1", "resources", "bounded"),
+                    "Psi_state": local_state("PSI-ACTOR-1", "meaning", "engaged"),
+                    "scale_profile": scale_profile(organizational="individual"),
+                    "evidence_status": evidence_status(),
+                }
+            ],
             circles=[
                 {
                     "circle_id": "CIRCLE-FAMILY",
                     "label": "Family",
                     "boundary_rule": "Household membership",
                     "membership_basis": "declared household role",
+                    "identity_criteria": "The same household boundary and membership rule.",
+                    "M_state": local_state("M-CIRCLE-FAMILY", "resources", "shared"),
+                    "Psi_state": local_state("PSI-CIRCLE-FAMILY", "meaning", "familial"),
+                    "scale_profile": scale_profile(organizational="household"),
+                    "evidence_status": evidence_status(),
                 },
                 {
                     "circle_id": "CIRCLE-TEAM",
                     "label": "Team",
                     "boundary_rule": "Current project membership",
                     "membership_basis": "active work assignment",
+                    "identity_criteria": "The same project boundary and active assignment rule.",
+                    "M_state": local_state("M-CIRCLE-TEAM", "resources", "allocated"),
+                    "Psi_state": local_state("PSI-CIRCLE-TEAM", "rule", "review"),
+                    "scale_profile": scale_profile(organizational="team"),
+                    "evidence_status": evidence_status(),
                 },
             ],
             positions=[
@@ -402,25 +472,20 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                             {"name": "rule", "value": "review", "unit": "text"}
                         ],
                     },
-                    "scale_profile": {
-                        "spatial": "local",
-                        "temporal": "interaction",
-                        "organizational": "team",
-                        "institutional": "informal",
-                        "material": "bounded",
-                        "informational": "partial",
-                        "relational": "direct",
-                        "power": "delegated",
-                        "risk": "reversible",
-                    },
+                    "scale_profile": scale_profile(organizational="team"),
+                    "evidence_status": evidence_status(identity="observed"),
                 }
             ],
             memberships=[
                 {
+                    "membership_id": "MEMBERSHIP-1",
                     "actor_id": "ACTOR-1",
                     "circle_id": "CIRCLE-TEAM",
                     "role_id": "ROLE-MANAGER",
                     "basis": "active work assignment",
+                    "role_conditions": "Decision authority is limited to the active project.",
+                    "exit_conditions": "The actor may leave after handing off active work.",
+                    "power_distribution": "DIST-POWER-1",
                 }
             ],
             containment_relations=[
@@ -455,6 +520,11 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "to_position_id": "POS-TEAM-MANAGER",
                     "channel_type": "decision",
                     "active": True,
+                    "capacity": "one reviewed decision per cycle",
+                    "delay": "one review cycle",
+                    "threshold": "manager approval",
+                    "constraint_distribution": "DIST-CONSTRAINT-1",
+                    "access_distribution": "Only the represented manager position can transmit.",
                 }
             ],
             events=[
@@ -464,6 +534,38 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "target_position_ids": ["POS-TEAM-MANAGER"],
                     "channel_ids": ["CHANNEL-1"],
                 }
+            ],
+            local_distributions=[
+                {
+                    "distribution_id": "DIST-POWER-1",
+                    "kind": "power",
+                    "location_ref": "MEMBERSHIP-1",
+                    "description": "Decision power is local to the team membership.",
+                },
+                {
+                    "distribution_id": "DIST-CONSTRAINT-1",
+                    "kind": "constraint",
+                    "location_ref": "CHANNEL-1",
+                    "description": "Approval constrains the decision channel.",
+                },
+                {
+                    "distribution_id": "DIST-EXIT-1",
+                    "kind": "exit",
+                    "location_ref": "MEMBERSHIP-1",
+                    "description": "Exit requires a handoff at this membership.",
+                },
+                {
+                    "distribution_id": "DIST-BURDEN-1",
+                    "kind": "burden",
+                    "location_ref": "M-POS-1",
+                    "description": "Review effort is borne at the manager position.",
+                },
+                {
+                    "distribution_id": "DIST-SPILLOVER-1",
+                    "kind": "spillover",
+                    "location_ref": "PSI-POS-1",
+                    "description": "Review meaning can spill over into perceived legitimacy.",
+                },
             ],
             unknowns=[
                 {
@@ -501,6 +603,32 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                             "description": "Interaction detail is aggregated.",
                             "location_ref": "POS-TEAM-MANAGER",
                         }
+                    ],
+                    "location_effects": [
+                        {
+                            "effect_id": "EFFECT-GAIN-1",
+                            "location_ref": "POS-TEAM-MANAGER",
+                            "effect_kind": "gain",
+                            "description": "The organizational view exposes the decision mandate.",
+                        },
+                        {
+                            "effect_id": "EFFECT-DAMAGE-1",
+                            "location_ref": "POS-TEAM-MANAGER",
+                            "effect_kind": "damage",
+                            "description": "Interaction detail is obscured at the position.",
+                        },
+                        {
+                            "effect_id": "EFFECT-EXIT-1",
+                            "location_ref": "MEMBERSHIP-1",
+                            "effect_kind": "exit-cost",
+                            "description": "A handoff is required before exit.",
+                        },
+                        {
+                            "effect_id": "EFFECT-SPILLOVER-1",
+                            "location_ref": "CIRCLE-FAMILY",
+                            "effect_kind": "spillover",
+                            "description": "Organizational delay can consume shared time.",
+                        },
                     ],
                     "effective_variables": ["budget", "rule"],
                     "closure_status": "bounded",
@@ -954,9 +1082,9 @@ PRIMARY_FIELD = {
     "ultra-compatibility-matrix.schema.json": "rules",
     "ultra-run-contract.schema.json": "capabilities",
     "ultra-run-status.schema.json": "status",
-    "ultra-phase-event.schema.json": "phase_sha256",
+    "ultra-phase-event.schema.json": "event_sha256",
     "ultra-source-lock.schema.json": "inputs",
-    "ultra-read-event.schema.json": "byte_sha256",
+    "ultra-read-event.schema.json": "read_event_sha256",
     "ultra-evidence-ledger.schema.json": "entries",
     "ultra-retrieval-ledger.schema.json": "entries",
     "ultra-world-volume.schema.json": "positions",
@@ -1122,12 +1250,98 @@ def test_world_volume_and_forecast_nested_negative_cases() -> None:
     with pytest.raises(ValidationError):
         runtime.validate_instance("ultra-world-volume.schema.json", missing_identity)
 
+    missing_local_state = copy.deepcopy(fixtures["ultra-world-volume.schema.json"])
+    del missing_local_state["actors"][0]["M_state"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", missing_local_state)
+
+    overloaded_evidence_status = copy.deepcopy(
+        fixtures["ultra-world-volume.schema.json"]
+    )
+    overloaded_evidence_status["actors"][0]["evidence_status"][
+        "power_distribution"
+    ] = "must remain local to Rac, Q, M or Psi"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-world-volume.schema.json", overloaded_evidence_status
+        )
+
+    net_effect_only = copy.deepcopy(
+        fixtures["ultra-transformation-ledger.schema.json"]
+    )
+    del net_effect_only["transformations"][0]["location_effects"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-transformation-ledger.schema.json", net_effect_only
+        )
+
     uncalibrated = copy.deepcopy(fixtures["ultra-forecast-ledger.schema.json"])
     forecast = uncalibrated["forecasts"][0]
     forecast["probability"] = 0.73
     forecast["probability_admissible"] = True
     with pytest.raises(ValidationError):
         runtime.validate_instance("ultra-forecast-ledger.schema.json", uncalibrated)
+
+
+def test_task7_runtime_phase_and_read_events_conform_to_public_schemas() -> None:
+    runtime = load_runtime()
+    state_machine = importlib.import_module("ultra_runtime.state_machine")
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    contract = {
+        "trigger": "crossframe-ultra",
+        "request_sha256": HASH_A,
+        "run_mode": "test",
+        "sensitivity": "public",
+        "retention": "retain",
+        "outbound_permission": "denied",
+        "evidence_cutoff": STAMP,
+        "capabilities": {
+            "filesystem": "available",
+            "docx_parser": "available",
+            "network": "unavailable",
+            "retrieval": "not-applicable",
+            "validators": "available",
+            "subagents": "unavailable",
+            "model_context": "available",
+        },
+        "resource_limits": {
+            "maximum_branches": 8,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    store = state_machine.PhaseStore(
+        run_id=RUN_ID,
+        version_binding=version_binding(),
+        source_sha256=HASH_B,
+        input_artifact_hashes=(HASH_C,),
+        evidence_cutoff=STAMP,
+        now=datetime(2026, 8, 2, 8, tzinfo=timezone.utc),
+        run_contract=contract,
+    )
+    phase_event = store.complete("U0", artifact_hashes=(HASH_A,))
+    runtime.validate_instance("ultra-phase-event.schema.json", phase_event)
+
+    source_manifest = source_integrity.load_source_manifest(
+        ULTRA_ROOT / "references" / "source-manifest.json"
+    )
+    read_receipt = source_integrity.capture_committed_read_receipts(
+        ROOT,
+        manifest=source_manifest,
+    )[0]
+    read_event = source_integrity.make_read_event(
+        run_id=RUN_ID,
+        version_binding=version_binding(),
+        source_unit=read_receipt.source_unit,
+        promoted_semantic_snapshot_sha256=source_manifest.semantic_sha256,
+        source_manifest_sha256=source_manifest.sha256,
+        reader_mode="full-source",
+        execution_identity=source_integrity.execution_identity(),
+        read_at=STAMP,
+        receipt=read_receipt,
+    )
+    runtime.validate_instance("ultra-read-event.schema.json", read_event)
 
 
 def test_local_ref_registry_resolves_without_network() -> None:
@@ -1220,10 +1434,10 @@ def test_relative_paths_reject_control_platform_and_segment_escapes(
     unsafe_path: str,
 ) -> None:
     runtime = load_runtime()
-    broken = copy.deepcopy(minimal_instances()["ultra-read-event.schema.json"])
-    broken["path"] = unsafe_path
+    broken = copy.deepcopy(minimal_instances()["ultra-source-lock.schema.json"])
+    broken["inputs"][0]["path"] = unsafe_path
     with pytest.raises(ValidationError):
-        runtime.validate_instance("ultra-read-event.schema.json", broken)
+        runtime.validate_instance("ultra-source-lock.schema.json", broken)
 
 
 @pytest.mark.parametrize(
@@ -1237,9 +1451,9 @@ def test_relative_paths_reject_control_platform_and_segment_escapes(
 )
 def test_relative_paths_accept_safe_portable_segments(safe_path: str) -> None:
     runtime = load_runtime()
-    instance = copy.deepcopy(minimal_instances()["ultra-read-event.schema.json"])
-    instance["path"] = safe_path
-    runtime.validate_instance("ultra-read-event.schema.json", instance)
+    instance = copy.deepcopy(minimal_instances()["ultra-source-lock.schema.json"])
+    instance["inputs"][0]["path"] = safe_path
+    runtime.validate_instance("ultra-source-lock.schema.json", instance)
 
 
 @pytest.mark.parametrize(

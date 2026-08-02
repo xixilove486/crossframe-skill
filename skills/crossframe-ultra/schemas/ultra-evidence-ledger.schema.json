@@ -29,11 +29,11 @@
     "evidenceEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["evidence_id", "identity", "statement", "source_refs", "observed_at", "confidence"],
+      "required": ["evidence_id", "identity", "statement", "source_refs", "observed_at", "confidence", "event_date", "publication_date", "interest", "upstream_lineage", "supported_claim", "cannot_prove"],
       "properties": {
         "evidence_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "identity": {
-          "enum": ["observed", "reported", "inferred-from-material", "competing-explanation", "user-claim", "model-candidate", "simulated-result", "unknown"]
+          "enum": ["observed", "reported", "inferred", "competing", "user-claim", "model-candidate", "simulated", "unknown"]
         },
         "statement": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "source_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
@@ -43,7 +43,13 @@
             {"type": "null"}
           ]
         },
-        "confidence": {"enum": ["low", "medium", "high", "unknown"]}
+        "confidence": {"enum": ["low", "medium", "high", "unknown"]},
+        "event_date": {"type": "string", "format": "date"},
+        "publication_date": {"type": "string", "format": "date"},
+        "interest": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "upstream_lineage": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "supported_claim": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "cannot_prove": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     },
     "unknown": {

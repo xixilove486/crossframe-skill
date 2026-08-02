@@ -7,17 +7,41 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["event_id", "parent_phase_sha256", "phase_sha256", "source_sha256", "input_sha256", "status", "failure_reason", "downstream_impact"],
+      "required": ["event_type", "parent_event_sha256", "input_artifact_hashes", "output_artifact_hashes", "source_sha256", "evidence_cutoff", "run_contract_sha256", "timestamp", "status", "failure_code", "invalidated_phases", "event_sha256"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.phase-event"},
-        "event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
-        "parent_phase_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
-        "phase_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "event_type": {"enum": ["phase-completed", "phase-failed"]},
+        "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "input_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
+        "output_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
         "source_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
-        "input_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
-        "status": {"$ref": "ultra-common.schema.json#/$defs/runStatus"},
-        "failure_reason": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
-        "downstream_impact": {"$ref": "ultra-common.schema.json#/$defs/phaseArray"}
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "run_contract_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "timestamp": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "status": {"enum": ["complete", "failed"]},
+        "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
+        "invalidated_phases": {"$ref": "ultra-common.schema.json#/$defs/phaseArray"},
+        "event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "complete"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "event_type": {"const": "phase-completed"},
+          "failure_code": {"type": "null"},
+          "invalidated_phases": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "failed"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "event_type": {"const": "phase-failed"},
+          "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+          "output_artifact_hashes": {"maxItems": 0}
+        }
       }
     }
   ],

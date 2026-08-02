@@ -7,19 +7,19 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["request_sha256", "input_sha256", "explicit_trigger", "sensitivity", "retention_policy", "outbound_permission", "capabilities", "resource_limits", "completion_criteria"],
+      "required": ["trigger", "request_sha256", "run_mode", "sensitivity", "retention", "outbound_permission", "evidence_cutoff", "capabilities", "resource_limits"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.run-contract"},
         "phase_id": {"const": "U0"},
+        "trigger": {"enum": ["crossframe-ultra", "CrossFrame Ultra", "$crossframe-ultra", "/crossframe-ultra"]},
         "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
-        "input_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
-        "explicit_trigger": {"enum": ["crossframe-ultra", "CrossFrame Ultra", "$crossframe-ultra", "/crossframe-ultra"]},
+        "run_mode": {"enum": ["production", "test"]},
         "sensitivity": {"enum": ["public", "internal", "private", "restricted"]},
-        "retention_policy": {"enum": ["retain-run-package", "retain-delivery-only", "user-directed"]},
-        "outbound_permission": {"enum": ["allowed", "redacted-only", "denied"]},
+        "retention": {"enum": ["retain", "delivery-only", "user-directed"]},
+        "outbound_permission": {"enum": ["allowed", "deidentified-only", "denied"]},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "capabilities": {"$ref": "#/$defs/capabilities"},
-        "resource_limits": {"$ref": "#/$defs/resourceLimits"},
-        "completion_criteria": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"}
+        "resource_limits": {"$ref": "#/$defs/resourceLimits"}
       }
     }
   ],
@@ -28,23 +28,29 @@
     "capabilities": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["files", "network", "subagents", "validators"],
+      "required": ["filesystem", "docx_parser", "network", "retrieval", "validators", "subagents", "model_context"],
       "properties": {
-        "files": {"type": "boolean"},
-        "network": {"type": "boolean"},
-        "subagents": {"type": "boolean"},
-        "validators": {"type": "boolean"}
+        "filesystem": {"$ref": "#/$defs/capabilityState"},
+        "docx_parser": {"$ref": "#/$defs/capabilityState"},
+        "network": {"$ref": "#/$defs/capabilityState"},
+        "retrieval": {"$ref": "#/$defs/capabilityState"},
+        "validators": {"$ref": "#/$defs/capabilityState"},
+        "subagents": {"$ref": "#/$defs/capabilityState"},
+        "model_context": {"$ref": "#/$defs/capabilityState"}
       }
+    },
+    "capabilityState": {
+      "enum": ["available", "required", "unavailable", "not-applicable"]
     },
     "resourceLimits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["max_tool_calls", "max_retrieval_rounds", "max_branches", "max_repair_attempts"],
+      "required": ["maximum_branches", "maximum_retrieval_rounds_without_material_novelty", "maximum_tool_retries", "maximum_repair_attempts"],
       "properties": {
-        "max_tool_calls": {"type": "integer", "minimum": 1},
-        "max_retrieval_rounds": {"type": "integer", "minimum": 0},
-        "max_branches": {"type": "integer", "minimum": 1},
-        "max_repair_attempts": {"type": "integer", "minimum": 0, "maximum": 3}
+        "maximum_branches": {"type": "integer", "minimum": 1},
+        "maximum_retrieval_rounds_without_material_novelty": {"type": "integer", "minimum": 0},
+        "maximum_tool_retries": {"type": "integer", "minimum": 1},
+        "maximum_repair_attempts": {"type": "integer", "minimum": 0, "maximum": 3}
       }
     }
   }
