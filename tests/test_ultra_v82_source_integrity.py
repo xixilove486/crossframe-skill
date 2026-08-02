@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import importlib.util
+from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 
 import pytest
@@ -33,9 +37,273 @@ checker = _load_checker()
 
 def test_checker_exposes_read_only_validation_api() -> None:
     assert checker is not None, "Task3 checker is not implemented"
+    assert callable(checker.validate_committed_source_snapshot)
     assert callable(checker.validate_committed_source_tree)
     assert callable(checker.validate_against_docx)
     assert callable(checker.main)
+
+
+def test_verified_snapshot_exposes_one_frozen_authority_view() -> None:
+    assert checker is not None, "Task3 checker is not implemented"
+    snapshot = checker.validate_committed_source_snapshot(ROOT)
+    assert snapshot.errors == ()
+    assert snapshot.manifest_bytes == (
+        ROOT / "skills/crossframe-ultra/references/source-manifest.json"
+    ).read_bytes()
+    assert snapshot.manifest is not None
+    assert snapshot.manifest["raw_sha256"] == checker.RAW_SHA256
+    assert snapshot.compiler_bytes == (
+        ROOT
+        / "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py"
+    ).read_bytes()
+    assert set(snapshot.files) == checker.EXPECTED_TREE_FILES
+    assert len(snapshot.paragraphs) == checker.EXPECTED_PARAGRAPHS
+    assert len(snapshot.tables) == checker.EXPECTED_TABLES
+    with pytest.raises(TypeError):
+        snapshot.files["not-authority.md"] = b"tamper"
+    with pytest.raises(TypeError):
+        snapshot.paragraphs[0]["text"] = "tamper"
+    with pytest.raises(TypeError):
+        snapshot.manifest["compiler"]["sha256"] = "tamper"
+    with pytest.raises(AttributeError):
+        snapshot.manifest["files"].append({"path": "tamper"})
+    with pytest.raises(TypeError):
+        snapshot.tables[0]["rows"][0][0] = "tamper"
+
+
+def test_committed_snapshot_reads_each_authority_file_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert checker is not None, "Task3 checker is not implemented"
+    original = checker._read_regular_file
+    counts: dict[Path, int] = {}
+
+    def counted(path: Path, *args, **kwargs) -> bytes:
+        absolute = Path(os.path.abspath(path))
+        counts[absolute] = counts.get(absolute, 0) + 1
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(checker, "_read_regular_file", counted)
+    snapshot = checker.validate_committed_source_snapshot(ROOT)
+    assert snapshot.errors == ()
+    expected = {
+        Path(os.path.abspath(ROOT / checker.MANIFEST_RELATIVE)),
+        Path(os.path.abspath(ROOT / snapshot.manifest["compiler"]["path"])),
+        *(
+            Path(os.path.abspath(ROOT / checker.SOURCE_TREE_RELATIVE / relative))
+            for relative in checker.EXPECTED_TREE_FILES
+        ),
+    }
+    assert set(counts) == expected
+    assert all(counts[path] == 1 for path in expected)
+
+
+def test_authority_byte_budgets_are_explicit_and_cover_the_frozen_inputs() -> None:
+    assert checker.MAX_SOURCE_TREE_FILE_BYTES == 2 * 1024 * 1024
+    assert checker.MAX_SOURCE_TREE_BYTES == 8 * 1024 * 1024
+    assert checker.MAX_SOURCE_MANIFEST_BYTES == 2 * 1024 * 1024
+    assert checker.MAX_SOURCE_COMPILER_BYTES == 1 * 1024 * 1024
+    assert checker.MAX_CAPTURED_AUTHORITY_BYTES == 12 * 1024 * 1024
+    assert checker.MAX_SOURCE_DOCX_BYTES == 8 * 1024 * 1024
+    assert checker.MAX_SOURCE_TREE_ENTRIES == 256
+    assert checker.MAX_SOURCE_TREE_DEPTH == 2
+
+    tree = ROOT / checker.SOURCE_TREE_RELATIVE
+    tree_files = tuple(path for path in tree.rglob("*") if path.is_file())
+    assert max(path.stat().st_size for path in tree_files) < checker.MAX_SOURCE_TREE_FILE_BYTES
+    assert sum(path.stat().st_size for path in tree_files) < checker.MAX_SOURCE_TREE_BYTES
+    assert (ROOT / checker.MANIFEST_RELATIVE).stat().st_size < checker.MAX_SOURCE_MANIFEST_BYTES
+    assert (
+        ROOT / "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py"
+    ).stat().st_size < checker.MAX_SOURCE_COMPILER_BYTES
+
+
+def test_initial_oversize_is_rejected_before_the_read_callback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority = tmp_path / "authority.bin"
+    authority.write_bytes(b"x" * 17)
+    callback_called = False
+
+    def forbidden_read(_self) -> bytes:
+        nonlocal callback_called
+        callback_called = True
+        raise AssertionError("oversize input must be rejected before reading")
+
+    monkeypatch.setattr(checker._AnchoredRegularFile, "read_all", forbidden_read)
+    with pytest.raises(ValueError, match="exceeds.*limit|limit.*exceeds"):
+        checker._read_regular_file(
+            authority,
+            anchor=tmp_path,
+            max_bytes=16,
+            label="test authority",
+        )
+    assert callback_called is False
+
+
+def test_bounded_chunk_reader_never_consumes_beyond_initial_size_plus_one() -> None:
+    requests: list[int] = []
+
+    def growing_read(amount: int) -> bytes:
+        requests.append(amount)
+        return b"x" * amount
+
+    payload = checker._read_bounded_chunks(
+        growing_read,
+        initial_size=4,
+        max_bytes=8,
+    )
+    assert payload == b"x" * 5
+    assert sum(requests) == 5
+
+
+def test_growth_after_open_is_rejected_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority = tmp_path / "authority.bin"
+    authority.write_bytes(b"safe")
+    callback_calls = 0
+
+    def grew_after_open() -> bytes:
+        nonlocal callback_calls
+        callback_calls += 1
+        return b"x" * 9
+
+    opened = checker._AnchoredRegularFile(
+        final_path=authority,
+        identity=(1, 2),
+        size=4,
+        _read_and_verify=grew_after_open,
+    )
+
+    @contextmanager
+    def fake_open(*_args, **_kwargs):
+        yield opened
+
+    monkeypatch.setattr(checker, "_open_anchored_regular_file", fake_open)
+    with pytest.raises(ValueError, match="grew|exceeds|changed"):
+        checker._read_regular_file(
+            authority,
+            anchor=tmp_path,
+            max_bytes=8,
+            label="test authority",
+        )
+    assert callback_calls == 1
+
+
+def test_source_tree_total_budget_rejects_before_adding_the_excess_file(
+    tmp_path: Path,
+) -> None:
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "a.md").write_bytes(b"a" * 4)
+    (tree / "b.md").write_bytes(b"b" * 4)
+
+    files, errors = checker._walk_regular_tree(
+        tree,
+        anchor=tree,
+        max_file_bytes=8,
+        max_total_bytes=7,
+    )
+    assert files == {"a.md": b"a" * 4}
+    assert any("total" in error.lower() and "limit" in error.lower() for error in errors)
+
+
+def test_authority_tree_rejects_unknown_directory_without_descending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    (tree / "known.md").write_bytes(b"known")
+    unknown = tree / "unknown"
+    unknown.mkdir()
+    hidden = unknown / "payload.md"
+    hidden.write_bytes(b"must-not-be-read")
+    reads: list[Path] = []
+    original = checker._read_regular_file
+
+    def tracked(path: Path, *args, **kwargs) -> bytes:
+        reads.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(checker, "_read_regular_file", tracked)
+    files, errors = checker._walk_regular_tree(
+        tree,
+        anchor=tree,
+        expected_files=frozenset({"known.md"}),
+    )
+
+    assert files == {"known.md": b"known"}
+    assert hidden not in reads
+    assert any("unknown directory" in error.lower() for error in errors)
+
+
+def test_authority_tree_rejects_more_than_256_entries(tmp_path: Path) -> None:
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    for number in range(checker.MAX_SOURCE_TREE_ENTRIES + 1):
+        (tree / f"entry-{number:03d}.md").write_bytes(b"")
+
+    _files, errors = checker._walk_regular_tree(tree, anchor=tree)
+
+    assert any("entry" in error.lower() and "256" in error for error in errors)
+
+
+def test_authority_tree_rejects_depth_beyond_two_before_reading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = tmp_path / "tree"
+    payload = tree / "allowed" / "nested" / "payload.md"
+    payload.parent.mkdir(parents=True)
+    payload.write_bytes(b"must-not-be-read")
+    reads: list[Path] = []
+    original = checker._read_regular_file
+
+    def tracked(path: Path, *args, **kwargs) -> bytes:
+        reads.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(checker, "_read_regular_file", tracked)
+    _files, errors = checker._walk_regular_tree(
+        tree,
+        anchor=tree,
+        expected_files=frozenset({"allowed/nested/payload.md"}),
+    )
+
+    assert payload not in reads
+    assert any("depth" in error.lower() and "2" in error for error in errors)
+
+
+def test_captured_authority_total_budget_is_enforced_before_compiler_read(
+    committed_copy: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = committed_copy / checker.SOURCE_TREE_RELATIVE
+    tree_size = sum(path.stat().st_size for path in tree.rglob("*") if path.is_file())
+    manifest_size = (committed_copy / checker.MANIFEST_RELATIVE).stat().st_size
+    compiler_path = (
+        committed_copy
+        / "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py"
+    )
+    compiler_size = compiler_path.stat().st_size
+    monkeypatch.setattr(
+        checker,
+        "MAX_CAPTURED_AUTHORITY_BYTES",
+        tree_size + manifest_size + compiler_size - 1,
+    )
+    original = checker._AnchoredRegularFile.read_all
+
+    def guarded_read(opened) -> bytes:
+        if opened.final_path == Path(os.path.abspath(compiler_path)):
+            raise AssertionError("captured total oversize must reject before compiler read")
+        return original(opened)
+
+    monkeypatch.setattr(checker._AnchoredRegularFile, "read_all", guarded_read)
+    errors = checker.validate_committed_source_tree(committed_copy)
+
+    assert any("captured" in error.lower() and "limit" in error.lower() for error in errors)
 
 
 def test_committed_authority_tree_is_self_consistent() -> None:
@@ -234,3 +502,273 @@ def test_reparse_or_symlink_entry_is_rejected(committed_copy: Path) -> None:
         pytest.skip("symlink creation is unavailable on this workstation")
     errors = checker.validate_committed_source_tree(committed_copy)
     assert any("symlink" in error.lower() or "reparse" in error.lower() for error in errors)
+
+
+def _tree_state(root: Path) -> dict[str, tuple[str, int, int, str | None]]:
+    state: dict[str, tuple[str, int, int, str | None]] = {}
+    for path in sorted(root.rglob("*")):
+        metadata = path.lstat()
+        relative = path.relative_to(root).as_posix()
+        if path.is_file() and not path.is_symlink():
+            digest = sha256(path.read_bytes()).hexdigest()
+            kind = "file"
+        elif path.is_dir() and not path.is_symlink():
+            digest = None
+            kind = "directory"
+        else:
+            digest = None
+            kind = "link"
+        state[relative] = (kind, metadata.st_size, metadata.st_mtime_ns, digest)
+    return state
+
+
+def test_whole_tree_validation_is_read_only_and_writes_no_bytecode(
+    committed_copy: Path,
+) -> None:
+    before = _tree_state(committed_copy)
+    snapshot = checker.validate_committed_source_snapshot(committed_copy)
+    after = _tree_state(committed_copy)
+    assert snapshot.errors == ()
+    assert after == before
+    assert not list(committed_copy.rglob("*.pyc"))
+    assert not list(committed_copy.rglob("__pycache__"))
+
+
+def test_manifest_duplicate_key_is_rejected(committed_copy: Path) -> None:
+    manifest_path = committed_copy / checker.MANIFEST_RELATIVE
+    text = manifest_path.read_text(encoding="utf-8")
+    text = text.replace(
+        '  "schema_version": 1,',
+        '  "schema_version": 1,\n  "schema_version": 1,',
+        1,
+    )
+    manifest_path.write_text(text, encoding="utf-8", newline="\n")
+
+    errors = checker.validate_committed_source_tree(committed_copy)
+    assert any("duplicate" in error.lower() and "schema_version" in error for error in errors)
+
+
+def test_manifest_non_finite_number_is_rejected(committed_copy: Path) -> None:
+    manifest_path = committed_copy / checker.MANIFEST_RELATIVE
+    text = manifest_path.read_text(encoding="utf-8")
+    text = text.replace('  "schema_version": 1,', '  "schema_version": NaN,', 1)
+    manifest_path.write_text(text, encoding="utf-8", newline="\n")
+
+    errors = checker.validate_committed_source_tree(committed_copy)
+    assert any("non-finite" in error.lower() for error in errors)
+
+
+def test_manifest_utf8_bom_is_rejected(committed_copy: Path) -> None:
+    manifest_path = committed_copy / checker.MANIFEST_RELATIVE
+    manifest_path.write_bytes(b"\xef\xbb\xbf" + manifest_path.read_bytes())
+
+    errors = checker.validate_committed_source_tree(committed_copy)
+    assert any("bom" in error.lower() for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    (
+        ('{"value": 1, "value": 2}', "duplicate"),
+        ('\ufeff{"value": 1}', "bom"),
+        ('{"value": NaN}', "non-finite"),
+        ('{"value": Infinity}', "non-finite"),
+        ('{"value": -Infinity}', "non-finite"),
+    ),
+)
+def test_canonical_record_json_is_strict_at_every_json_extension(
+    payload: str,
+    message: str,
+) -> None:
+    content = (
+        "<!-- canonical-records:start -->\n"
+        "```json\n"
+        f"{payload}\n"
+        "```\n"
+        "<!-- canonical-records:end -->"
+    )
+    errors: list[str] = []
+
+    assert checker._canonical_block(content, "canonical", errors) is None
+    assert any(message in error.lower() for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("marker", "payload", "message"),
+    (
+        ("rows", '[{"value": 1, "value": 2}]', "duplicate"),
+        ("rows", '\ufeff[]', "bom"),
+        ("cells", '[NaN]', "non-finite"),
+        ("cells", '[Infinity]', "non-finite"),
+    ),
+)
+def test_table_display_json_blocks_use_the_strict_decoder(
+    marker: str,
+    payload: str,
+    message: str,
+) -> None:
+    expected = {
+        "anchor": "V82-T001",
+        "rows": [],
+        "cell_paragraph_ordinals": [],
+    }
+    rows = payload if marker == "rows" else "[]"
+    cells = payload if marker == "cells" else "[]"
+    content = (
+        f"Raw SHA256: `{checker.RAW_SHA256}`\n"
+        f"Semantic SHA256: `{checker.SEMANTIC_SHA256}`\n"
+        "<!-- canonical-records:start -->\n"
+        "```json\n"
+        f"{json.dumps(expected)}\n"
+        "```\n"
+        "<!-- canonical-records:end -->\n"
+        "<!-- table-rows:start -->\n"
+        "```json\n"
+        f"{rows}\n"
+        "```\n"
+        "<!-- table-rows:end -->\n"
+        "<!-- cell-paragraph-anchors:start -->\n"
+        "```json\n"
+        f"{cells}\n"
+        "```\n"
+        "<!-- cell-paragraph-anchors:end -->\n"
+    )
+    errors: list[str] = []
+
+    checker._validate_table_file(
+        content,
+        expected,
+        checker.RAW_SHA256,
+        checker.SEMANTIC_SHA256,
+        errors,
+    )
+
+    assert any(message in error.lower() for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        ('  "schema_version": 1,', '  "schema_version": true,'),
+        ('  "normalization_version": 1,', '  "normalization_version": 1.0,'),
+        ('      "ordinal": 1,', '      "ordinal": true,'),
+    ),
+)
+def test_manifest_rejects_numeric_type_confusion(
+    committed_copy: Path,
+    old: str,
+    new: str,
+) -> None:
+    manifest_path = committed_copy / checker.MANIFEST_RELATIVE
+    text = manifest_path.read_text(encoding="utf-8")
+    assert old in text
+    manifest_path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
+
+    assert checker.validate_committed_source_tree(committed_copy)
+
+
+def test_compiler_execution_leaves_no_mutable_module_cache_or_sys_modules_entry() -> None:
+    before = set(sys.modules)
+
+    snapshot = checker.validate_committed_source_snapshot(ROOT)
+
+    assert snapshot.errors == ()
+    assert not hasattr(checker, "_TASK2_COMPILERS")
+    assert not hasattr(checker, "_load_task2_compiler")
+    created = set(sys.modules) - before
+    assert not any(name.startswith("ultra_v82_task2_compiler_") for name in created)
+
+
+@pytest.mark.parametrize(
+    "shadow_relative",
+    (
+        "pathlib.py",
+        "zipfile.py",
+        "threading.py",
+        "xml/__init__.py",
+    ),
+)
+def test_normal_cli_isolates_wrapper_and_compiler_from_repo_script_shadowing(
+    committed_copy: Path,
+    tmp_path: Path,
+    shadow_relative: str,
+) -> None:
+    root_wrapper = committed_copy / "scripts/check_crossframe_ultra_v82_source.py"
+    root_wrapper.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "scripts/check_crossframe_ultra_v82_source.py", root_wrapper)
+    checker_copy = (
+        committed_copy
+        / "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py"
+    )
+    shutil.copy2(CHECKER_PATH, checker_copy)
+    marker = tmp_path / f"shadow-{shadow_relative.replace('/', '-')}.txt"
+    shadow = root_wrapper.parent / Path(shadow_relative)
+    shadow.parent.mkdir(parents=True, exist_ok=True)
+    canonical_marker = tmp_path / f"canonical-shadow-{shadow_relative.replace('/', '-')}.txt"
+    canonical_shadow = checker_copy.parent / Path(shadow_relative)
+    canonical_shadow.parent.mkdir(parents=True, exist_ok=True)
+    for target, target_marker in ((shadow, marker), (canonical_shadow, canonical_marker)):
+        target.write_text(
+            f"open({str(target_marker)!r}, 'w', encoding='utf-8').write('executed')\n"
+            "raise RuntimeError('shadow module executed')\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root_wrapper),
+            "--repo",
+            str(committed_copy),
+            "--json",
+        ],
+        cwd=root_wrapper.parent,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert not marker.exists(), result.stderr or result.stdout
+    assert not canonical_marker.exists(), result.stderr or result.stdout
+    assert result.returncode in {0, 1}
+    report = json.loads(result.stdout)
+    assert set(report) == {"errors", "ok"}
+    assert not list(committed_copy.rglob("*.pyc"))
+    assert not list(committed_copy.rglob("__pycache__"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junction semantics")
+def test_windows_reader_rejects_an_intermediate_junction(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "payload.txt").write_bytes(b"outside")
+    anchor = tmp_path / "anchor"
+    anchor.mkdir()
+    junction = anchor / "redirect"
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.skip(f"junction creation unavailable: {result.stderr or result.stdout}")
+    with pytest.raises(ValueError, match="reparse|junction|symlink"):
+        checker._read_regular_file(junction / "payload.txt", anchor=anchor)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows handle sharing semantics")
+def test_windows_reader_handle_pins_final_path_and_identity(tmp_path: Path) -> None:
+    target = tmp_path / "authority.txt"
+    target.write_bytes(b"authority")
+    replacement = tmp_path / "replacement.txt"
+    replacement.write_bytes(b"replacement")
+    with checker._open_anchored_regular_file(target, anchor=tmp_path) as opened:
+        assert opened.final_path == Path(os.path.abspath(target))
+        assert opened.size == len(b"authority")
+        assert opened.identity
+        with pytest.raises(OSError):
+            os.replace(replacement, target)
+        assert opened.read_all() == b"authority"

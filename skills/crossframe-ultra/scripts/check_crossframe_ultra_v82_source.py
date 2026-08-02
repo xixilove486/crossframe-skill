@@ -8,17 +8,66 @@ authority.
 
 from __future__ import annotations
 
+# A direct invocation can start with the repository's script directory at the
+# front of sys.path.  Re-enter in isolated mode before importing any ordinary
+# module so a repository file cannot shadow the wrapper/checker's dependencies.
+import sys as _bootstrap_sys
+
+if __name__ == "__main__" and not (
+    _bootstrap_sys.flags.isolated
+    and _bootstrap_sys.flags.no_site
+    and _bootstrap_sys.flags.dont_write_bytecode
+):
+    _bootstrap_os = _bootstrap_sys.modules.get("os")
+    if _bootstrap_os is None:
+        raise RuntimeError("cannot enter isolated checker mode: os is unavailable")
+    _bootstrap_os.execv(
+        _bootstrap_sys.executable,
+        [
+            _bootstrap_sys.executable,
+            "-I",
+            "-S",
+            "-B",
+            _bootstrap_os.path.abspath(__file__),
+            *_bootstrap_sys.argv[1:],
+        ],
+    )
+
+if __name__ == "__main__":
+    # runpy.run_path temporarily places the canonical script directory on
+    # sys.path even in an isolated interpreter.  Remove that directory before
+    # importing ordinary modules (notably threading and subprocess).
+    _bootstrap_os = _bootstrap_sys.modules.get("os")
+    if _bootstrap_os is not None:
+        _canonical_script_dir = _bootstrap_os.path.normcase(
+            _bootstrap_os.path.abspath(_bootstrap_os.path.dirname(__file__))
+        )
+        _bootstrap_sys.path[:] = [
+            entry
+            for entry in _bootstrap_sys.path
+            if _bootstrap_os.path.normcase(
+                _bootstrap_os.path.abspath(entry or _bootstrap_os.getcwd())
+            )
+            != _canonical_script_dir
+        ]
+
 import argparse
-from collections.abc import Iterable, Mapping, Sequence
+import base64
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+import ctypes
+from dataclasses import dataclass
 from hashlib import sha256
-import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
+import subprocess
 import sys
+import threading
+from types import MappingProxyType
 from uuid import uuid4
 
 
@@ -30,7 +79,19 @@ EXPECTED_NON_WHITESPACE_CHARS = 165690
 EXPECTED_TABLES = 122
 EXPECTED_DIVISIONS = 20
 MAX_SOURCE_DOCX_BYTES = 8 * 1024 * 1024
+MAX_SOURCE_TREE_FILE_BYTES = 2 * 1024 * 1024
+MAX_SOURCE_TREE_BYTES = 8 * 1024 * 1024
+MAX_SOURCE_MANIFEST_BYTES = 2 * 1024 * 1024
+MAX_SOURCE_COMPILER_BYTES = 1 * 1024 * 1024
+MAX_CAPTURED_AUTHORITY_BYTES = 12 * 1024 * 1024
+MAX_SOURCE_TREE_ENTRIES = 256
+MAX_SOURCE_TREE_DEPTH = 2
+MAX_ISOLATED_REQUEST_BYTES = 16 * 1024 * 1024
+MAX_ISOLATED_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_ISOLATED_STDERR_BYTES = 64 * 1024
+ISOLATED_COMPILER_TIMEOUT_SECONDS = 30
 COMPILER_VERSION = "1.0.0"
+EXPECTED_COMPILER_SHA256 = "ead8862515fe71e11dd3ecb28cdabeccdf064bf8c67ce2c2763ae83954a9d2ad"
 TREE_MERKLE_VERSION = 1
 TREE_MERKLE_DOMAIN = b"crossframe.ultra.v82.authority-tree-merkle.v1"
 # Frozen after the exact v8.2 tree was rendered.  The manifest repeats this
@@ -282,22 +343,414 @@ HEADING_STYLES = frozenset(
 )
 CONCEPT_STYLES = HEADING_STYLES | {"CardLabel"}
 
-_TASK2_COMPILER = None
+@dataclass(frozen=True)
+class CommittedSourceSnapshot:
+    """One immutable view of every byte used by committed-source validation."""
+
+    errors: tuple[str, ...]
+    manifest_bytes: bytes | None
+    manifest: Mapping[str, object] | None
+    files: Mapping[str, bytes]
+    compiler_bytes: bytes | None
+    paragraphs: tuple[Mapping[str, object], ...]
+    tables: tuple[Mapping[str, object], ...]
 
 
-def _load_task2_compiler():
-    global _TASK2_COMPILER
-    if _TASK2_COMPILER is not None:
-        return _TASK2_COMPILER
-    path = Path(__file__).resolve().with_name("generate_crossframe_ultra_v82_source.py")
-    spec = importlib.util.spec_from_file_location("ultra_v82_task2_compiler", path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot load Task2 compiler: {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    _TASK2_COMPILER = module
-    return module
+@dataclass(frozen=True, slots=True)
+class _CapturedParagraph:
+    ordinal: int
+    anchor: str
+    style: str
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CapturedTable:
+    ordinal: int
+    anchor: str
+    paragraph_ordinals: tuple[int, ...]
+    rows: tuple[tuple[str, ...], ...]
+    cell_paragraph_ordinals: tuple[tuple[tuple[int, ...], ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _CapturedSnapshot:
+    raw_sha256: str
+    semantic_sha256: str
+    non_whitespace_chars: int
+    paragraphs: tuple[_CapturedParagraph, ...]
+    tables: tuple[_CapturedTable, ...]
+    errors: tuple[str, ...]
+
+
+@dataclass
+class _AnchoredRegularFile:
+    final_path: Path
+    identity: tuple[int, ...]
+    size: int
+    _read_and_verify: Callable[[], bytes]
+    _payload: bytes | None = None
+
+    def read_all(self) -> bytes:
+        if self._payload is None:
+            self._payload = self._read_and_verify()
+        return self._payload
+
+
+@dataclass(frozen=True)
+class _AnchoredDirectory:
+    final_path: Path
+    identity: tuple[int, ...]
+    _scan_target: object
+
+    def scandir(self) -> Iterator[os.DirEntry[str]]:
+        return os.scandir(self._scan_target)
+
+
+if os.name == "nt":
+    from ctypes import wintypes
+
+    _WIN_GENERIC_READ = 0x80000000
+    _WIN_FILE_READ_ATTRIBUTES = 0x0080
+    _WIN_FILE_SHARE_READ = 0x00000001
+    _WIN_FILE_SHARE_WRITE = 0x00000002
+    _WIN_OPEN_EXISTING = 3
+    _WIN_FILE_ATTRIBUTE_DIRECTORY = 0x00000010
+    _WIN_FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
+    _WIN_FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
+    _WIN_FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+    _WIN_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+    class _WinByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("dwFileAttributes", wintypes.DWORD),
+            ("ftCreationTime", wintypes.FILETIME),
+            ("ftLastAccessTime", wintypes.FILETIME),
+            ("ftLastWriteTime", wintypes.FILETIME),
+            ("dwVolumeSerialNumber", wintypes.DWORD),
+            ("nFileSizeHigh", wintypes.DWORD),
+            ("nFileSizeLow", wintypes.DWORD),
+            ("nNumberOfLinks", wintypes.DWORD),
+            ("nFileIndexHigh", wintypes.DWORD),
+            ("nFileIndexLow", wintypes.DWORD),
+        ]
+
+    _KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _KERNEL32.CreateFileW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    _KERNEL32.CreateFileW.restype = wintypes.HANDLE
+    _KERNEL32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _KERNEL32.CloseHandle.restype = wintypes.BOOL
+    _KERNEL32.GetFileInformationByHandle.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(_WinByHandleFileInformation),
+    )
+    _KERNEL32.GetFileInformationByHandle.restype = wintypes.BOOL
+    _KERNEL32.GetFinalPathNameByHandleW.argtypes = (
+        wintypes.HANDLE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    )
+    _KERNEL32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    _KERNEL32.ReadFile.argtypes = (
+        wintypes.HANDLE,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPVOID,
+    )
+    _KERNEL32.ReadFile.restype = wintypes.BOOL
+    _KERNEL32.SetFilePointerEx.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_longlong,
+        ctypes.POINTER(ctypes.c_longlong),
+        wintypes.DWORD,
+    )
+    _KERNEL32.SetFilePointerEx.restype = wintypes.BOOL
+
+
+_ISOLATED_COMPILER_RUNNER = r'''
+import base64
+from hashlib import sha256
+import json
+import sys
+import types
+
+MAX_INPUT = 16 * 1024 * 1024
+MAX_OUTPUT = 16 * 1024 * 1024
+
+
+def _pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key: " + str(key))
+        result[key] = value
+    return result
+
+
+def _constant(value):
+    raise ValueError("non-finite JSON number: " + value)
+
+
+def _loads(text):
+    if text.startswith("\\ufeff"):
+        raise ValueError("UTF-8 BOM is forbidden")
+    return json.loads(
+        text,
+        object_pairs_hook=_pairs,
+        parse_constant=_constant,
+    )
+
+
+def _paragraph_record(item):
+    return {
+        "ordinal": item.ordinal,
+        "anchor": item.anchor,
+        "style": item.style,
+        "text": item.text,
+    }
+
+
+def _table_record(item):
+    return {
+        "ordinal": item.ordinal,
+        "anchor": item.anchor,
+        "paragraph_ordinals": list(item.paragraph_ordinals),
+        "rows": [list(row) for row in item.rows],
+        "cell_paragraph_ordinals": [
+            [list(cell) for cell in row] for row in item.cell_paragraph_ordinals
+        ],
+    }
+
+
+def _records(namespace, paragraphs, tables):
+    paragraph_type = namespace["V82Paragraph"]
+    table_type = namespace["V82Table"]
+    paragraph_objects = tuple(
+        paragraph_type(
+            ordinal=item["ordinal"],
+            anchor=item["anchor"],
+            style=item["style"],
+            text=item["text"],
+        )
+        for item in paragraphs
+    )
+    table_objects = tuple(
+        table_type(
+            ordinal=item["ordinal"],
+            anchor=item["anchor"],
+            paragraph_ordinals=tuple(item["paragraph_ordinals"]),
+            rows=tuple(tuple(row) for row in item["rows"]),
+            cell_paragraph_ordinals=tuple(
+                tuple(tuple(cell) for cell in row)
+                for row in item["cell_paragraph_ordinals"]
+            ),
+        )
+        for item in tables
+    )
+    return paragraph_objects, table_objects
+
+
+def _main():
+    try:
+        request_bytes = sys.stdin.buffer.read(MAX_INPUT + 1)
+        if len(request_bytes) > MAX_INPUT:
+            raise ValueError("isolated compiler request exceeds safety limit")
+        request = _loads(request_bytes.decode("utf-8"))
+        if type(request) is not dict or set(request) != {"compiler", "operation", "payload"}:
+            raise ValueError("isolated compiler request fields are not closed")
+        compiler_b64 = request["compiler"]
+        operation = request["operation"]
+        payload = request["payload"]
+        if type(compiler_b64) is not str or type(operation) is not str or type(payload) is not dict:
+            raise ValueError("isolated compiler request types are invalid")
+        compiler_bytes = base64.b64decode(compiler_b64.encode("ascii"), validate=True)
+        source = compiler_bytes.decode("utf-8")
+        module_name = "_captured_crossframe_ultra_v82_compiler"
+        module = types.ModuleType(module_name)
+        module.__file__ = "<captured-crossframe-ultra-v82-compiler>"
+        module.__package__ = ""
+        sys.modules[module_name] = module
+        namespace = module.__dict__
+        try:
+            exec(compile(source, module.__file__, "exec"), namespace, namespace)
+        finally:
+            sys.modules.pop(module_name, None)
+        if operation == "semantic_records":
+            paragraphs, tables = _records(
+                namespace,
+                payload["paragraphs"],
+                payload["tables"],
+            )
+            digest = sha256(namespace["semantic_snapshot_bytes"](paragraphs, tables)).hexdigest()
+            response = {"ok": True, "semantic_sha256": digest}
+        elif operation == "source_snapshot":
+            source_bytes = base64.b64decode(payload["source"].encode("ascii"), validate=True)
+            snapshot = namespace["build_v82_snapshot"](source_bytes)
+            snapshot_errors = namespace["validate_v82_snapshot"](snapshot)
+            response = {
+                "ok": True,
+                "raw_sha256": snapshot.raw_sha256,
+                "semantic_sha256": snapshot.semantic_sha256,
+                "non_whitespace_chars": snapshot.non_whitespace_chars,
+                "paragraphs": [_paragraph_record(item) for item in snapshot.paragraphs],
+                "tables": [_table_record(item) for item in snapshot.tables],
+                "errors": [str(item) for item in snapshot_errors],
+            }
+        else:
+            raise ValueError("unknown isolated compiler operation")
+    except BaseException as error:
+        response = {"ok": False, "error": type(error).__name__ + ": " + str(error)}
+    output = json.dumps(
+        response,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("ascii")
+    if len(output) > MAX_OUTPUT:
+        output = b'{"error":"isolated compiler response exceeds safety limit","ok":false}'
+    sys.stdout.buffer.write(output)
+    sys.stdout.buffer.flush()
+
+
+if __name__ == "__main__":
+    _main()
+'''
+
+
+def _bounded_pipe_reader(pipe: object, limit: int, result: dict[str, object], key: str) -> None:
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            amount = min(64 * 1024, limit + 1 - total)
+            if amount <= 0:
+                result[f"{key}_overflow"] = True
+                break
+            chunk = pipe.read(amount)  # type: ignore[attr-defined]
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > limit:
+                result[f"{key}_overflow"] = True
+                break
+    except (OSError, ValueError) as error:
+        result[f"{key}_error"] = str(error)
+    finally:
+        result[key] = b"".join(chunks)
+        try:
+            pipe.close()  # type: ignore[attr-defined]
+        except OSError:
+            pass
+
+
+def _run_isolated_compiler(
+    compiler_bytes: bytes,
+    operation: str,
+    payload: Mapping[str, object],
+) -> object:
+    """Run only frozen compiler bytes in a bounded, isolated child process."""
+    if _sha256_bytes(compiler_bytes) != EXPECTED_COMPILER_SHA256:
+        raise ValueError("captured compiler SHA256 is not the frozen authority")
+    request = _canonical_json(
+        {
+            "compiler": base64.b64encode(compiler_bytes).decode("ascii"),
+            "operation": operation,
+            "payload": payload,
+        }
+    )
+    if len(request) > MAX_ISOLATED_REQUEST_BYTES:
+        raise ValueError("isolated compiler request exceeds safety limit")
+    process = subprocess.Popen(
+        [sys.executable, "-I", "-S", "-B", "-c", _ISOLATED_COMPILER_RUNNER],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=Path(sys.executable).resolve().parent,
+        close_fds=True,
+    )
+    captured: dict[str, object] = {}
+    stdout_thread = threading.Thread(
+        target=_bounded_pipe_reader,
+        args=(process.stdout, MAX_ISOLATED_RESPONSE_BYTES, captured, "stdout"),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_bounded_pipe_reader,
+        args=(process.stderr, MAX_ISOLATED_STDERR_BYTES, captured, "stderr"),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    timed_out = False
+    write_failed: BaseException | None = None
+    try:
+        assert process.stdin is not None
+        try:
+            process.stdin.write(request)
+            process.stdin.close()
+        except (BrokenPipeError, OSError) as error:
+            write_failed = error
+            try:
+                process.kill()
+            except OSError:
+                pass
+            process.wait(timeout=5)
+        if write_failed is None:
+            try:
+                process.wait(timeout=ISOLATED_COMPILER_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                process.kill()
+                process.wait(timeout=5)
+    finally:
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+    if timed_out:
+        raise ValueError("isolated compiler timed out")
+    if write_failed is not None:
+        raise ValueError(f"isolated compiler closed its input: {write_failed}")
+    if captured.get("stdout_overflow"):
+        raise ValueError("isolated compiler response exceeds safety limit")
+    if captured.get("stderr_overflow"):
+        raise ValueError("isolated compiler diagnostics exceed safety limit")
+    if captured.get("stdout_error") or captured.get("stderr_error"):
+        raise ValueError(
+            "isolated compiler pipe failure: "
+            + str(captured.get("stdout_error") or captured.get("stderr_error"))
+        )
+    returncode = process.returncode
+    if returncode != 0:
+        diagnostics = bytes(captured.get("stderr", b"")).decode("utf-8", "replace")
+        raise ValueError(f"isolated compiler returned {returncode}: {diagnostics[:512]}")
+    output = bytes(captured.get("stdout", b""))
+    diagnostics = bytes(captured.get("stderr", b""))
+    if diagnostics:
+        raise ValueError(
+            "isolated compiler emitted diagnostics: "
+            + diagnostics.decode("utf-8", "replace")[:512]
+        )
+    try:
+        text = output.decode("utf-8")
+        return _strict_json_loads(text)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError(f"isolated compiler returned invalid JSON: {error}") from error
 
 
 def _compiler_path() -> Path:
@@ -306,21 +759,47 @@ def _compiler_path() -> Path:
 
 def _canonical_json(payload: object) -> bytes:
     return (
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         + "\n"
     ).encode("utf-8")
 
 
 def _pretty_json(payload: object) -> str:
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        indent=2,
+        allow_nan=False,
+    )
 
 
 def _sha256_bytes(payload: bytes) -> str:
     return sha256(payload).hexdigest()
 
 
-def _sha256_path(path: Path) -> str:
-    return _sha256_bytes(_read_regular_file(path))
+def _sha256_path(
+    path: Path,
+    *,
+    anchor: Path | None = None,
+    max_bytes: int | None = None,
+) -> str:
+    if max_bytes is None:
+        max_bytes = MAX_SOURCE_TREE_FILE_BYTES
+    return _sha256_bytes(
+        _read_regular_file(
+            path,
+            anchor=anchor,
+            max_bytes=max_bytes,
+            label="authority hash input",
+        )
+    )
 
 
 def _is_reparse_or_link(path: Path) -> bool:
@@ -335,8 +814,328 @@ def _is_reparse_or_link(path: Path) -> bool:
     return bool(attributes & reparse_flag)
 
 
+def _absolute_anchored_paths(path: Path, anchor: Path) -> tuple[Path, Path]:
+    path = Path(os.path.abspath(path))
+    anchor = Path(os.path.abspath(anchor))
+    try:
+        common = os.path.commonpath((str(path), str(anchor)))
+    except ValueError as error:
+        raise ValueError(f"path escapes anchor: {path}") from error
+    if os.path.normcase(os.path.normpath(common)) != os.path.normcase(
+        os.path.normpath(str(anchor))
+    ):
+        raise ValueError(f"path escapes anchor: {path}")
+    return path, anchor
+
+
+def _windows_extended_path(path: Path) -> str:
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return value
+    if value.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + value[2:]
+    return "\\\\?\\" + value
+
+
+def _windows_normalized_final_path(value: str) -> Path:
+    if value.startswith("\\\\?\\UNC\\"):
+        value = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        value = value[4:]
+    return Path(os.path.abspath(value))
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.normpath(str(left))) == os.path.normcase(
+        os.path.normpath(str(right))
+    )
+
+
+def _windows_final_path(handle: int) -> Path:
+    capacity = 512
+    while True:
+        buffer = ctypes.create_unicode_buffer(capacity)
+        result = _KERNEL32.GetFinalPathNameByHandleW(handle, buffer, capacity, 0)
+        if result == 0:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if result < capacity:
+            return _windows_normalized_final_path(buffer.value)
+        capacity = result + 1
+
+
+def _windows_handle_info(handle: int) -> tuple[int, tuple[int, ...], int, tuple[int, ...]]:
+    information = _WinByHandleFileInformation()
+    if not _KERNEL32.GetFileInformationByHandle(handle, ctypes.byref(information)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    identity = (
+        int(information.dwVolumeSerialNumber),
+        (int(information.nFileIndexHigh) << 32) | int(information.nFileIndexLow),
+    )
+    size = (int(information.nFileSizeHigh) << 32) | int(information.nFileSizeLow)
+    write_time = (
+        int(information.ftLastWriteTime.dwHighDateTime) << 32
+    ) | int(information.ftLastWriteTime.dwLowDateTime)
+    signature = (*identity, size, write_time)
+    return int(information.dwFileAttributes), identity, size, signature
+
+
+def _windows_open_handle(path: Path, *, directory: bool) -> tuple[int, tuple[int, ...], int, tuple[int, ...]]:
+    desired_access = _WIN_FILE_READ_ATTRIBUTES if directory else (
+        _WIN_GENERIC_READ | _WIN_FILE_READ_ATTRIBUTES
+    )
+    share_mode = (
+        _WIN_FILE_SHARE_READ | _WIN_FILE_SHARE_WRITE
+        if directory
+        else _WIN_FILE_SHARE_READ
+    )
+    flags = _WIN_FILE_FLAG_OPEN_REPARSE_POINT
+    if directory:
+        flags |= _WIN_FILE_FLAG_BACKUP_SEMANTICS
+    handle = _KERNEL32.CreateFileW(
+        _windows_extended_path(path),
+        desired_access,
+        share_mode,
+        None,
+        _WIN_OPEN_EXISTING,
+        flags,
+        None,
+    )
+    if handle == _WIN_INVALID_HANDLE_VALUE:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        attributes, identity, size, signature = _windows_handle_info(handle)
+        if attributes & _WIN_FILE_ATTRIBUTE_REPARSE_POINT:
+            raise ValueError(f"path contains symlink, junction, or reparse point: {path}")
+        is_directory = bool(attributes & _WIN_FILE_ATTRIBUTE_DIRECTORY)
+        if is_directory != directory:
+            kind = "directory" if directory else "regular file"
+            raise ValueError(f"path is not a {kind}: {path}")
+        final_path = _windows_final_path(handle)
+        if not _same_path(final_path, path):
+            raise ValueError(
+                f"handle final path escaped through a reparse point: {path} -> {final_path}"
+            )
+        return int(handle), identity, size, signature
+    except Exception:
+        _KERNEL32.CloseHandle(handle)
+        raise
+
+
+def _windows_directory_prefixes(path: Path) -> tuple[Path, ...]:
+    parts = path.parts
+    if not parts:
+        raise ValueError(f"directory path has no root: {path}")
+    current = Path(parts[0])
+    prefixes = [current]
+    for part in parts[1:]:
+        current = current / part
+        prefixes.append(current)
+    return tuple(prefixes)
+
+
+def _close_windows_handles(handles: Iterable[int]) -> None:
+    for handle in reversed(tuple(handles)):
+        _KERNEL32.CloseHandle(handle)
+
+
+def _read_bounded_chunks(
+    read: Callable[[int], bytes],
+    *,
+    initial_size: int,
+    max_bytes: int,
+) -> bytes:
+    """Read at most initial_size + 1 bytes, with a hard authority limit."""
+    if type(initial_size) is not int or type(max_bytes) is not int:
+        raise TypeError("bounded reader sizes must be integers")
+    if initial_size < 0 or max_bytes < 0:
+        raise ValueError("bounded reader sizes cannot be negative")
+    if initial_size > max_bytes:
+        raise ValueError(
+            f"initial size exceeds safety limit: {initial_size} > {max_bytes}"
+        )
+    limit = initial_size + 1
+    chunks: list[bytes] = []
+    total = 0
+    while total < limit:
+        amount = min(1024 * 1024, limit - total)
+        chunk = read(amount)
+        if not isinstance(chunk, bytes):
+            raise TypeError("bounded reader callback must return bytes")
+        if len(chunk) > amount:
+            raise ValueError("bounded reader callback exceeded requested amount")
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
+
+
+def _windows_read_handle(
+    handle: int,
+    *,
+    path: Path,
+    expected_final_path: Path,
+    expected_signature: tuple[int, ...],
+    expected_size: int,
+) -> bytes:
+    new_position = ctypes.c_longlong()
+    if not _KERNEL32.SetFilePointerEx(handle, 0, ctypes.byref(new_position), 0):
+        raise ctypes.WinError(ctypes.get_last_error())
+    def read_chunk(amount: int) -> bytes:
+        buffer = ctypes.create_string_buffer(amount)
+        read = wintypes.DWORD()
+        if not _KERNEL32.ReadFile(handle, buffer, amount, ctypes.byref(read), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return buffer.raw[: read.value]
+
+    payload = _read_bounded_chunks(
+        read_chunk,
+        initial_size=expected_size,
+        max_bytes=expected_size,
+    )
+    _attributes, _identity, size_after, signature_after = _windows_handle_info(handle)
+    final_after = _windows_final_path(handle)
+    if signature_after != expected_signature or size_after != expected_size:
+        raise ValueError(f"file changed while being read: {path}")
+    if not _same_path(final_after, expected_final_path):
+        raise ValueError(f"file handle final path changed while being read: {path}")
+    if len(payload) != expected_size:
+        raise ValueError(f"file size/read length mismatch: {path}")
+    return payload
+
+
+def _posix_directory_chain(path: Path) -> list[int]:
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+    handles = [os.open(os.sep, directory_flags)]
+    try:
+        for part in path.parts[1:]:
+            handle = os.open(
+                part,
+                directory_flags | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=handles[-1],
+            )
+            metadata = os.fstat(handle)
+            if not stat.S_ISDIR(metadata.st_mode):
+                os.close(handle)
+                raise ValueError(f"path is not a directory: {path}")
+            handles.append(handle)
+    except Exception:
+        for handle in reversed(handles):
+            os.close(handle)
+        raise
+    return handles
+
+
+@contextmanager
+def _open_anchored_directory(path: Path, *, anchor: Path) -> Iterator[_AnchoredDirectory]:
+    path, _anchor = _absolute_anchored_paths(path, anchor)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            identity: tuple[int, ...] = ()
+            for prefix in _windows_directory_prefixes(path):
+                handle, identity, _size, _signature = _windows_open_handle(
+                    prefix, directory=True
+                )
+                handles.append(handle)
+            yield _AnchoredDirectory(path, identity, path)
+        finally:
+            _close_windows_handles(handles)
+        return
+    handles = _posix_directory_chain(path)
+    try:
+        metadata = os.fstat(handles[-1])
+        yield _AnchoredDirectory(path, (metadata.st_dev, metadata.st_ino), handles[-1])
+    finally:
+        for handle in reversed(handles):
+            os.close(handle)
+
+
+@contextmanager
+def _open_anchored_regular_file(
+    path: Path,
+    *,
+    anchor: Path,
+) -> Iterator[_AnchoredRegularFile]:
+    path, _anchor = _absolute_anchored_paths(path, anchor)
+    if path == _anchor:
+        raise ValueError(f"regular file path cannot equal its directory anchor: {path}")
+    if os.name == "nt":
+        directory_handles: list[int] = []
+        file_handle: int | None = None
+        try:
+            for prefix in _windows_directory_prefixes(path.parent):
+                handle, _identity, _size, _signature = _windows_open_handle(
+                    prefix, directory=True
+                )
+                directory_handles.append(handle)
+            file_handle, identity, size, signature = _windows_open_handle(
+                path, directory=False
+            )
+            final_path = _windows_final_path(file_handle)
+            yield _AnchoredRegularFile(
+                final_path=final_path,
+                identity=identity,
+                size=size,
+                _read_and_verify=lambda: _windows_read_handle(
+                    file_handle,
+                    path=path,
+                    expected_final_path=final_path,
+                    expected_signature=signature,
+                    expected_size=size,
+                ),
+            )
+        finally:
+            if file_handle is not None:
+                _KERNEL32.CloseHandle(file_handle)
+            _close_windows_handles(directory_handles)
+        return
+    directory_handles = _posix_directory_chain(path.parent)
+    file_handle: int | None = None
+    try:
+        file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        file_handle = os.open(path.name, file_flags, dir_fd=directory_handles[-1])
+        before = os.fstat(file_handle)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError(f"file is not regular: {path}")
+        identity = (before.st_dev, before.st_ino)
+        signature = (
+            *identity,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        )
+
+        def read_and_verify() -> bytes:
+            os.lseek(file_handle, 0, os.SEEK_SET)
+
+            payload = _read_bounded_chunks(
+                lambda amount: os.read(file_handle, amount),
+                initial_size=before.st_size,
+                max_bytes=before.st_size,
+            )
+            after = os.fstat(file_handle)
+            after_signature = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+            if after_signature != signature or len(payload) != before.st_size:
+                raise ValueError(f"file changed while being read: {path}")
+            return payload
+
+        yield _AnchoredRegularFile(path, identity, before.st_size, read_and_verify)
+    finally:
+        if file_handle is not None:
+            os.close(file_handle)
+        for handle in reversed(directory_handles):
+            os.close(handle)
+
+
 def _assert_no_link_ancestors(path: Path, stop: Path) -> None:
-    """Reject links in every existing ancestor without resolving user paths."""
+    """Reject links in existing ancestors; byte reads use anchored handles."""
     path = Path(os.path.abspath(path))
     stop = Path(os.path.abspath(stop))
     try:
@@ -360,81 +1159,205 @@ def _assert_no_link_ancestors(path: Path, stop: Path) -> None:
 
 def _safe_repo(repo: Path) -> Path:
     repo = Path(os.path.abspath(repo))
-    if _is_reparse_or_link(repo):
-        raise ValueError(f"repository root is a symlink or reparse point: {repo}")
-    if not repo.is_dir():
-        raise ValueError(f"repository root is not a directory: {repo}")
+    try:
+        with _open_anchored_directory(repo, anchor=repo):
+            pass
+    except (OSError, ValueError) as error:
+        raise ValueError(f"repository root cannot be opened safely: {repo}: {error}") from error
     return repo
 
 
-def _read_regular_file(path: Path) -> bytes:
-    path = Path(path)
-    if _is_reparse_or_link(path):
-        raise ValueError(f"file is a symlink or reparse point: {path}")
-    metadata_before = os.lstat(path)
-    if not stat.S_ISREG(metadata_before.st_mode):
-        raise ValueError(f"file is not regular: {path}")
-    with path.open("rb") as handle:
-        payload = handle.read()
-    metadata_after = os.lstat(path)
-    if (
-        metadata_before.st_dev,
-        metadata_before.st_ino,
-        metadata_before.st_size,
-    ) != (
-        metadata_after.st_dev,
-        metadata_after.st_ino,
-        metadata_after.st_size,
-    ):
-        raise ValueError(f"file changed while being read: {path}")
-    return payload
+def _read_regular_file(
+    path: Path,
+    *,
+    anchor: Path | None = None,
+    max_bytes: int | None = None,
+    label: str = "authority file",
+) -> bytes:
+    path = Path(os.path.abspath(path))
+    anchor = Path(os.path.abspath(anchor or path.parent))
+    if max_bytes is None:
+        max_bytes = MAX_SOURCE_TREE_FILE_BYTES
+    with _open_anchored_regular_file(path, anchor=anchor) as opened:
+        if max_bytes is not None:
+            if type(max_bytes) is not int or max_bytes < 0:
+                raise ValueError(f"{label} limit is invalid")
+            # The handle's initial size is authoritative for the pre-read
+            # check.  This prevents a large file from ever reaching read_all.
+            if opened.size > max_bytes:
+                raise ValueError(
+                    f"{label} exceeds safety limit before read: "
+                    f"{opened.size} > {max_bytes}"
+                )
+        payload = opened.read_all()
+        if max_bytes is not None and len(payload) > max_bytes:
+            raise ValueError(
+                f"{label} exceeds safety limit after read: "
+                f"{len(payload)} > {max_bytes}"
+            )
+        if len(payload) != opened.size:
+            raise ValueError(f"{label} size changed while being read")
+        return payload
 
 
 def _read_bounded_source_docx(path: Path) -> bytes:
-    metadata = os.lstat(path)
-    if metadata.st_size > MAX_SOURCE_DOCX_BYTES:
-        raise ValueError(
-            f"source DOCX exceeds safety limit: {metadata.st_size} > {MAX_SOURCE_DOCX_BYTES}"
+    return _read_regular_file(
+        path,
+        anchor=path.parent,
+        max_bytes=MAX_SOURCE_DOCX_BYTES,
+        label="source DOCX",
+    )
+
+
+def _walk_regular_tree(
+    root: Path,
+    *,
+    anchor: Path | None = None,
+    max_file_bytes: int | None = None,
+    max_total_bytes: int | None = None,
+    max_entries: int | None = None,
+    max_depth: int | None = None,
+    expected_files: Iterable[str] | None = None,
+) -> tuple[dict[str, bytes], list[str]]:
+    root = Path(os.path.abspath(root))
+    anchor = Path(os.path.abspath(anchor or root))
+    max_file_bytes = MAX_SOURCE_TREE_FILE_BYTES if max_file_bytes is None else max_file_bytes
+    max_total_bytes = MAX_SOURCE_TREE_BYTES if max_total_bytes is None else max_total_bytes
+    max_entries = MAX_SOURCE_TREE_ENTRIES if max_entries is None else max_entries
+    max_depth = MAX_SOURCE_TREE_DEPTH if max_depth is None else max_depth
+    if any(type(value) is not int or value < 0 for value in (max_file_bytes, max_total_bytes, max_entries, max_depth)):
+        raise ValueError("source tree safety limits are invalid")
+    expected = None if expected_files is None else frozenset(str(item) for item in expected_files)
+    if expected is not None:
+        if len(expected) > max_entries:
+            return {}, [
+                "frozen authority file list exceeds entry safety limit "
+                f"({max_entries})"
+            ]
+        invalid_expected = [
+            relative
+            for relative in expected
+            if (
+                not relative
+                or PurePosixPath(relative).is_absolute()
+                or "\\" in relative
+                or ".." in PurePosixPath(relative).parts
+                or len(PurePosixPath(relative).parts) > max_depth
+            )
+        ]
+        if invalid_expected:
+            return {}, [
+                "frozen authority file list contains invalid depth/path "
+                f"(max depth {max_depth}): "
+                + ", ".join(sorted(invalid_expected)[:4])
+            ]
+    allowed_directories = (
+        None
+        if expected is None
+        else frozenset(
+            prefix.as_posix()
+            for relative in expected
+            for prefix in tuple(
+                PurePosixPath(relative).parents
+            )[:-1]
+            if prefix != PurePosixPath(".")
         )
-    payload = _read_regular_file(path)
-    if len(payload) > MAX_SOURCE_DOCX_BYTES:
-        raise ValueError("source DOCX grew beyond safety limit while being read")
-    return payload
-
-
-def _walk_regular_tree(root: Path) -> tuple[dict[str, bytes], list[str]]:
-    root = Path(root)
+    )
     errors: list[str] = []
     files: dict[str, bytes] = {}
-    if not root.exists():
-        return files, [f"source tree does not exist: {root}"]
-    if _is_reparse_or_link(root):
-        return files, [f"source tree root is a symlink or reparse point: {root}"]
-    if not root.is_dir():
-        return files, [f"source tree is not a directory: {root}"]
     pending = [root]
+    total_bytes = 0
+    entry_count = 0
+    entry_limit_hit = False
     while pending:
         directory = pending.pop()
         try:
-            entries = list(os.scandir(directory))
-        except OSError as error:
+            with _open_anchored_directory(directory, anchor=anchor) as opened:
+                with opened.scandir() as iterator:
+                    entries = []
+                    for entry in iterator:
+                        entry_count += 1
+                        if entry_count > max_entries:
+                            errors.append(
+                                "source tree entry count exceeds safety limit "
+                                f"({max_entries})"
+                            )
+                            entry_limit_hit = True
+                            break
+                        entries.append(entry)
+                    entries.sort(key=lambda entry: entry.name)
+        except (OSError, ValueError) as error:
             errors.append(f"cannot scan source tree {directory}: {error}")
             continue
         for entry in entries:
-            path = Path(entry.path)
+            path = directory / entry.name
             relative = path.relative_to(root).as_posix()
+            depth = len(PurePosixPath(relative).parts)
             try:
-                if _is_reparse_or_link(path):
+                metadata = entry.stat(follow_symlinks=False)
+                attributes = getattr(metadata, "st_file_attributes", 0)
+                reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+                if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
                     errors.append(f"source tree contains symlink or reparse point: {relative}")
                     continue
                 if entry.is_dir(follow_symlinks=False):
+                    if depth > max_depth:
+                        errors.append(f"source tree depth exceeds safety limit ({max_depth}): {relative}")
+                        continue
+                    if allowed_directories is not None and relative not in allowed_directories:
+                        errors.append(f"source tree contains unknown directory: {relative}")
+                        continue
                     pending.append(path)
                 elif entry.is_file(follow_symlinks=False):
-                    files[relative] = _read_regular_file(path)
+                    if depth > max_depth:
+                        errors.append(f"source tree depth exceeds safety limit ({max_depth}): {relative}")
+                        continue
+                    if expected is not None and relative not in expected:
+                        errors.append(f"unexpected generated file: {relative}")
+                        continue
+                    remaining = max_total_bytes - total_bytes
+                    if remaining <= 0:
+                        errors.append(
+                            f"source tree total byte limit exceeded before reading {relative}"
+                        )
+                        continue
+                    file_limit = min(max_file_bytes, remaining)
+                    try:
+                        payload = _read_regular_file(
+                            path,
+                            anchor=anchor,
+                            max_bytes=file_limit,
+                            label=f"source tree file {relative}",
+                        )
+                    except (OSError, ValueError) as error:
+                        message = str(error)
+                        if file_limit == remaining and (
+                            "exceeds safety limit" in message or "limit" in message
+                        ):
+                            message = (
+                                f"source tree total byte limit exceeded for {relative}: "
+                                + message
+                            )
+                        errors.append(message)
+                        continue
+                    if len(payload) > max_file_bytes:
+                        errors.append(
+                            f"source tree file exceeds safety limit ({max_file_bytes}): {relative}"
+                        )
+                        continue
+                    if total_bytes + len(payload) > max_total_bytes:
+                        errors.append(
+                            f"source tree total byte limit exceeded: {relative}"
+                        )
+                        continue
+                    files[relative] = payload
+                    total_bytes += len(payload)
                 else:
                     errors.append(f"source tree contains non-regular entry: {relative}")
             except (OSError, ValueError) as error:
                 errors.append(f"cannot inspect source tree entry {relative}: {error}")
+        if entry_limit_hit:
+            pending.clear()
     return files, list(dict.fromkeys(errors))
 
 
@@ -506,7 +1429,7 @@ def _tree_merkle_root(files: Mapping[str, bytes]) -> str:
 
 
 def compute_source_tree_merkle_root(source_tree: Path) -> str:
-    files, errors = _walk_regular_tree(Path(source_tree))
+    files, errors = _walk_regular_tree(Path(source_tree), anchor=Path(source_tree))
     if errors:
         raise ValueError("; ".join(errors))
     return _tree_merkle_root(files)
@@ -937,11 +1860,22 @@ def generate_authority_tree(repo: Path, source_docx: Path) -> Path:
     source_bytes = _read_bounded_source_docx(source_docx)
     if _sha256_bytes(source_bytes) != RAW_SHA256:
         raise ValueError(f"raw SHA256 mismatch: expected {RAW_SHA256}, got {_sha256_bytes(source_bytes)}")
-    compiler = _load_task2_compiler()
-    snapshot = compiler.build_v82_snapshot(source_bytes)
-    snapshot_errors = compiler.validate_v82_snapshot(snapshot)
-    if snapshot_errors:
-        raise ValueError("invalid v8.2 snapshot: " + "; ".join(snapshot_errors))
+    compiler_path = _compiler_path()
+    compiler_bytes = _read_regular_file(
+        compiler_path,
+        anchor=compiler_path.parent,
+        max_bytes=MAX_SOURCE_COMPILER_BYTES,
+        label="source compiler",
+    )
+    snapshot = _captured_snapshot_from_response(
+        _run_isolated_compiler(
+            compiler_bytes,
+            "source_snapshot",
+            {"source": base64.b64encode(source_bytes).decode("ascii")},
+        )
+    )
+    if snapshot.errors:
+        raise ValueError("invalid v8.2 snapshot: " + "; ".join(snapshot.errors))
     refs = repo / REFERENCES_RELATIVE
     _assert_no_link_ancestors(refs, repo)
     refs.mkdir(parents=True, exist_ok=True)
@@ -952,10 +1886,18 @@ def generate_authority_tree(repo: Path, source_docx: Path) -> Path:
     stage = refs / f".v8.2-full-source.stage-{uuid4().hex}"
     files = _render_authority_files(snapshot)
     _write_tree_files(stage, files)
-    compiler_sha = _sha256_path(_compiler_path())
+    compiler_sha = _sha256_bytes(compiler_bytes)
     manifest = _manifest_payload(snapshot, files, compiler_sha256=compiler_sha)
     manifest_stage = refs / f".source-manifest.stage-{uuid4().hex}.json"
-    manifest_stage.write_bytes(json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8") + b"\n")
+    manifest_stage.write_bytes(
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            indent=2,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
     backup = refs / f".v8.2-full-source.backup-{uuid4().hex}"
     old_manifest = refs / f".source-manifest.backup-{uuid4().hex}.json"
     try:
@@ -986,12 +1928,52 @@ def generate_authority_tree(repo: Path, source_docx: Path) -> Path:
     return live
 
 
+def _strict_json_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _strict_json_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON number is forbidden: {value}")
+
+
+def _strict_json_loads(text: str) -> object:
+    if text.startswith("\ufeff"):
+        raise ValueError("UTF-8 BOM is forbidden")
+    return json.loads(
+        text,
+        object_pairs_hook=_strict_json_pairs,
+        parse_constant=_strict_json_constant,
+    )
+
+
+def _json_exact_equal(left: object, right: object) -> bool:
+    """Compare decoded JSON recursively without Python numeric coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        if set(left) != set(right):  # type: ignore[arg-type]
+            return False
+        return all(
+            _json_exact_equal(left[key], right[key])  # type: ignore[index]
+            for key in left
+        )
+    if isinstance(left, list):
+        return len(left) == len(right) and all(  # type: ignore[arg-type]
+            _json_exact_equal(item, expected)
+            for item, expected in zip(left, right, strict=True)  # type: ignore[arg-type]
+        )
+    return left == right
+
+
 def _read_json_bytes(payload: bytes, label: str, errors: list[str]) -> object | None:
     try:
         text = payload.decode("utf-8")
-        if text.startswith("\ufeff"):
-            raise ValueError("UTF-8 BOM is forbidden")
-        return json.loads(text)
+        return _strict_json_loads(text)
     except (UnicodeError, json.JSONDecodeError, ValueError) as error:
         errors.append(f"{label}: invalid JSON: {error}")
         return None
@@ -1003,8 +1985,8 @@ def _canonical_block(content: str, label: str, errors: list[str]) -> object | No
         errors.append(f"{label}: canonical record block count is not one")
         return None
     try:
-        return json.loads(matches[0].group(1))
-    except json.JSONDecodeError as error:
+        return _strict_json_loads(matches[0].group(1))
+    except (json.JSONDecodeError, ValueError) as error:
         errors.append(f"{label}: canonical records JSON is invalid: {error}")
         return None
 
@@ -1103,9 +2085,9 @@ def _validate_table_file(
         errors.append(f"{label}: table display blocks are missing or duplicated")
         return
     try:
-        display_rows = json.loads(row_block[0].group(1))
-        display_cells = json.loads(cell_block[0].group(1))
-    except json.JSONDecodeError as error:
+        display_rows = _strict_json_loads(row_block[0].group(1))
+        display_cells = _strict_json_loads(cell_block[0].group(1))
+    except (json.JSONDecodeError, ValueError) as error:
         errors.append(f"{label}: table display JSON is invalid: {error}")
         return
     if display_rows != expected["rows"]:
@@ -1116,24 +2098,38 @@ def _validate_table_file(
         errors.append(f"{label}: markdown rows mismatch")
 
 
-def _manifest_from_tree(repo: Path, files: Mapping[str, bytes], errors: list[str]) -> dict[str, object] | None:
+def _manifest_from_tree(
+    repo: Path,
+    files: Mapping[str, bytes],
+    errors: list[str],
+    *,
+    max_bytes: int | None = None,
+    label: str = "source manifest",
+) -> tuple[bytes | None, dict[str, object] | None]:
     manifest_path = repo / MANIFEST_RELATIVE
+    if max_bytes is None:
+        max_bytes = MAX_SOURCE_MANIFEST_BYTES
     try:
-        payload = _read_regular_file(manifest_path)
+        payload = _read_regular_file(
+            manifest_path,
+            anchor=repo,
+            max_bytes=max_bytes,
+            label=label,
+        )
     except (OSError, ValueError) as error:
         errors.append(f"source manifest cannot be read: {error}")
-        return None
+        return None, None
     value = _read_json_bytes(payload, "source-manifest.json", errors)
     if not isinstance(value, dict):
         errors.append("source-manifest.json root must be an object")
-        return None
-    return value
+        return payload, None
+    return payload, value
 
 
 def _validate_manifest(
-    repo: Path,
     manifest: Mapping[str, object],
     files: Mapping[str, bytes],
+    compiler_bytes: bytes | None,
     paragraphs: Sequence[Mapping[str, object]],
     tables: Sequence[Mapping[str, object]],
     errors: list[str],
@@ -1188,11 +2184,15 @@ def _validate_manifest(
         "source_tree_merkle_version": TREE_MERKLE_VERSION,
     }
     for key, expected in expected_constants.items():
-        if manifest.get(key) != expected:
+        if not _json_exact_equal(manifest.get(key), expected):
             errors.append(f"source manifest constant mismatch: {key}")
-    if manifest.get("source_ranges") != [_range_to_json(item) for item in SOURCE_RANGES]:
+    if not _json_exact_equal(
+        manifest.get("source_ranges"), [_range_to_json(item) for item in SOURCE_RANGES]
+    ):
         errors.append("source manifest source_ranges mismatch")
-    if manifest.get("division_ranges") != [_range_to_json(item) for item in DIVISION_RANGES]:
+    if not _json_exact_equal(
+        manifest.get("division_ranges"), [_range_to_json(item) for item in DIVISION_RANGES]
+    ):
         errors.append("source manifest division_ranges mismatch")
     expected_divisions = []
     for item in DIVISION_RANGES:
@@ -1212,24 +2212,27 @@ def _validate_manifest(
                 ],
             }
         )
-    if manifest.get("divisions") != expected_divisions:
+    if not _json_exact_equal(manifest.get("divisions"), expected_divisions):
         errors.append("source manifest divisions mismatch")
     compiler = manifest.get("compiler")
-    if not isinstance(compiler, dict) or set(compiler) != {"version", "path", "sha256"}:
+    if type(compiler) is not dict or set(compiler) != {"version", "path", "sha256"}:
         errors.append("source manifest compiler fields are not closed")
     else:
-        if compiler.get("version") != COMPILER_VERSION:
+        if type(compiler.get("version")) is not str or compiler.get("version") != COMPILER_VERSION:
             errors.append("source manifest compiler version mismatch")
-        if compiler.get("path") != "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py":
+        if type(compiler.get("path")) is not str or compiler.get("path") != "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py":
             errors.append("source manifest compiler path mismatch")
-        try:
-            compiler_path = repo / str(compiler["path"])
-            _assert_no_link_ancestors(compiler_path, repo)
-            compiler_hash = _sha256_path(compiler_path)
-            if compiler.get("sha256") != compiler_hash:
+        if compiler_bytes is None:
+            errors.append("cannot verify compiler hash: compiler snapshot is unavailable")
+        else:
+            compiler_hash = _sha256_bytes(compiler_bytes)
+            if compiler_hash != EXPECTED_COMPILER_SHA256:
+                errors.append(
+                    "frozen compiler SHA256 mismatch: "
+                    f"expected {EXPECTED_COMPILER_SHA256}, got {compiler_hash}"
+                )
+            if type(compiler.get("sha256")) is not str or compiler.get("sha256") != compiler_hash:
                 errors.append("source manifest compiler hash mismatch")
-        except (OSError, ValueError) as error:
-            errors.append(f"cannot verify compiler hash: {error}")
     entries = manifest.get("files")
     expected_entries = _expected_file_entries(files)
     if isinstance(entries, list):
@@ -1247,11 +2250,11 @@ def _validate_manifest(
                 or not relative_path.startswith("v8.2-full-source/")
             ):
                 errors.append(f"manifest path escapes source tree: {relative_path}")
-    if entries != expected_entries:
+    if not _json_exact_equal(entries, expected_entries):
         errors.append("source manifest file inventory or byte hash mismatch")
     source_units = manifest.get("source_units")
     expected_units = _source_unit_entries(paragraphs, tables)
-    if source_units != expected_units:
+    if not _json_exact_equal(source_units, expected_units):
         errors.append("source manifest source-unit hashes mismatch")
     try:
         root = _tree_merkle_root(files)
@@ -1396,27 +2399,48 @@ def _validate_record_structure(
         errors.append("duplicate table anchor detected")
     text_by_ordinal: dict[int, str] = {}
     for record in paragraphs:
-        try:
-            ordinal = int(record["ordinal"])
-            text = str(record["text"])
-        except (KeyError, TypeError, ValueError):
+        if (
+            type(record.get("ordinal")) is not int
+            or type(record.get("anchor")) is not str
+            or type(record.get("text")) is not str
+            or type(record.get("style")) is not str
+        ):
             errors.append("paragraph record has invalid fields")
             continue
+        ordinal = record["ordinal"]
+        text = record["text"]
         text_by_ordinal[ordinal] = text
         if record.get("anchor") != f"V82-P{ordinal:04d}":
             errors.append(f"paragraph anchor/ordinal binding mismatch: {record.get('anchor')}")
-        if not isinstance(record.get("text"), str) or not isinstance(record.get("style"), str):
-            errors.append(f"paragraph {ordinal}: text/style must be strings")
     for table in tables:
         label = str(table.get("anchor", "unknown-table"))
-        try:
-            ordinal = int(table["ordinal"])
-            paragraph_ordinals = tuple(int(value) for value in table["paragraph_ordinals"])
-            rows = table["rows"]
-            cell_bindings = table["cell_paragraph_ordinals"]
-        except (KeyError, TypeError, ValueError):
+        if (
+            type(table.get("ordinal")) is not int
+            or type(table.get("anchor")) is not str
+            or type(table.get("paragraph_ordinals")) is not list
+            or any(type(value) is not int for value in table.get("paragraph_ordinals", []))
+            or type(table.get("rows")) is not list
+            or any(
+                type(row) is not list or any(type(value) is not str for value in row)
+                for row in table.get("rows", [])
+            )
+            or type(table.get("cell_paragraph_ordinals")) is not list
+            or any(
+                type(row) is not list
+                or any(
+                    type(cell) is not list
+                    or any(type(value) is not int for value in cell)
+                    for cell in row
+                )
+                for row in table.get("cell_paragraph_ordinals", [])
+            )
+        ):
             errors.append(f"{label}: table record has invalid fields")
             continue
+        ordinal = table["ordinal"]
+        paragraph_ordinals = tuple(table["paragraph_ordinals"])
+        rows = table["rows"]
+        cell_bindings = table["cell_paragraph_ordinals"]
         if table.get("anchor") != f"V82-T{ordinal:03d}":
             errors.append(f"{label}: table anchor/ordinal binding mismatch")
         try:
@@ -1468,66 +2492,225 @@ def _validate_record_structure(
 def _semantic_hash_from_records(
     paragraphs: Sequence[Mapping[str, object]],
     tables: Sequence[Mapping[str, object]],
+    compiler_bytes: bytes,
 ) -> str | None:
     try:
-        compiler = _load_task2_compiler()
-        paragraph_objects = tuple(
-            compiler.V82Paragraph(
-                ordinal=int(record["ordinal"]),
-                anchor=str(record["anchor"]),
-                style=str(record["style"]),
-                text=str(record["text"]),
-            )
-            for record in paragraphs
+        response = _run_isolated_compiler(
+            compiler_bytes,
+            "semantic_records",
+            {
+                "paragraphs": [_thaw_authority_value(record) for record in paragraphs],
+                "tables": [_thaw_authority_value(record) for record in tables],
+            },
         )
-        table_objects = tuple(
-            compiler.V82Table(
-                ordinal=int(record["ordinal"]),
-                anchor=str(record["anchor"]),
-                paragraph_ordinals=tuple(int(value) for value in record["paragraph_ordinals"]),
-                rows=tuple(tuple(str(value) for value in row) for row in record["rows"]),
-                cell_paragraph_ordinals=tuple(
-                    tuple(tuple(int(value) for value in cell) for cell in row)
-                    for row in record["cell_paragraph_ordinals"]
-                ),
-            )
-            for record in tables
-        )
-        return _sha256_bytes(compiler.semantic_snapshot_bytes(paragraph_objects, table_objects))
-    except (KeyError, TypeError, ValueError, AttributeError):
+        if (
+            type(response) is not dict
+            or set(response) != {"ok", "semantic_sha256"}
+            or response.get("ok") is not True
+            or type(response.get("semantic_sha256")) is not str
+        ):
+            return None
+        return str(response["semantic_sha256"])
+    except (KeyError, TypeError, ValueError, AttributeError, OSError):
         return None
 
 
-def _self_integrity(repo: Path) -> tuple[list[str], dict[str, bytes], dict[str, object] | None, list[dict[str, object]], list[dict[str, object]]]:
+def _captured_snapshot_from_response(response: object) -> _CapturedSnapshot:
+    if type(response) is not dict:
+        raise ValueError("isolated compiler response root must be an object")
+    if response.get("ok") is not True:
+        if set(response) != {"ok", "error"} or type(response.get("error")) is not str:
+            raise ValueError("isolated compiler error response is not closed")
+        raise ValueError(str(response["error"]))
+    required = {
+        "ok",
+        "raw_sha256",
+        "semantic_sha256",
+        "non_whitespace_chars",
+        "paragraphs",
+        "tables",
+        "errors",
+    }
+    if set(response) != required:
+        raise ValueError("isolated compiler snapshot response fields are not closed")
+    if (
+        type(response["raw_sha256"]) is not str
+        or type(response["semantic_sha256"]) is not str
+        or type(response["non_whitespace_chars"]) is not int
+        or type(response["paragraphs"]) is not list
+        or type(response["tables"]) is not list
+        or type(response["errors"]) is not list
+        or any(type(item) is not str for item in response["errors"])
+    ):
+        raise ValueError("isolated compiler snapshot response types are invalid")
+    captured_paragraphs: list[_CapturedParagraph] = []
+    for item in response["paragraphs"]:
+        if type(item) is not dict or set(item) != {"ordinal", "anchor", "style", "text"}:
+            raise ValueError("isolated paragraph response fields are not closed")
+        if (
+            type(item["ordinal"]) is not int
+            or type(item["anchor"]) is not str
+            or type(item["style"]) is not str
+            or type(item["text"]) is not str
+        ):
+            raise ValueError("isolated paragraph response types are invalid")
+        captured_paragraphs.append(
+            _CapturedParagraph(item["ordinal"], item["anchor"], item["style"], item["text"])
+        )
+    captured_tables: list[_CapturedTable] = []
+    for item in response["tables"]:
+        if type(item) is not dict or set(item) != {
+            "ordinal",
+            "anchor",
+            "paragraph_ordinals",
+            "rows",
+            "cell_paragraph_ordinals",
+        }:
+            raise ValueError("isolated table response fields are not closed")
+        if (
+            type(item["ordinal"]) is not int
+            or type(item["anchor"]) is not str
+            or type(item["paragraph_ordinals"]) is not list
+            or any(type(value) is not int for value in item["paragraph_ordinals"])
+            or type(item["rows"]) is not list
+            or any(
+                type(row) is not list or any(type(value) is not str for value in row)
+                for row in item["rows"]
+            )
+            or type(item["cell_paragraph_ordinals"]) is not list
+            or any(
+                type(row) is not list
+                or any(
+                    type(cell) is not list
+                    or any(type(value) is not int for value in cell)
+                    for cell in row
+                )
+                for row in item["cell_paragraph_ordinals"]
+            )
+        ):
+            raise ValueError("isolated table response types are invalid")
+        captured_tables.append(
+            _CapturedTable(
+                item["ordinal"],
+                item["anchor"],
+                tuple(item["paragraph_ordinals"]),
+                tuple(tuple(row) for row in item["rows"]),
+                tuple(
+                    tuple(tuple(cell) for cell in row)
+                    for row in item["cell_paragraph_ordinals"]
+                ),
+            )
+        )
+    return _CapturedSnapshot(
+        raw_sha256=response["raw_sha256"],
+        semantic_sha256=response["semantic_sha256"],
+        non_whitespace_chars=response["non_whitespace_chars"],
+        paragraphs=tuple(captured_paragraphs),
+        tables=tuple(captured_tables),
+        errors=tuple(response["errors"]),
+    )
+
+
+def _freeze_authority_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {key: _freeze_authority_value(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_authority_value(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return frozenset(_freeze_authority_value(item) for item in value)
+    return value
+
+
+def _thaw_authority_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _thaw_authority_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw_authority_value(item) for item in value]
+    if isinstance(value, frozenset):
+        return {_thaw_authority_value(item) for item in value}
+    return value
+
+
+def _committed_snapshot(
+    errors: Sequence[str],
+    manifest_bytes: bytes | None,
+    manifest: Mapping[str, object] | None,
+    files: Mapping[str, bytes],
+    compiler_bytes: bytes | None,
+    paragraphs: Sequence[Mapping[str, object]],
+    tables: Sequence[Mapping[str, object]],
+) -> CommittedSourceSnapshot:
+    frozen_manifest = _freeze_authority_value(manifest) if manifest is not None else None
+    if frozen_manifest is not None and not isinstance(frozen_manifest, Mapping):
+        raise TypeError("frozen manifest must remain a mapping")
+    return CommittedSourceSnapshot(
+        errors=tuple(dict.fromkeys(errors)),
+        manifest_bytes=manifest_bytes,
+        manifest=frozen_manifest,
+        files=MappingProxyType(dict(files)),
+        compiler_bytes=compiler_bytes,
+        paragraphs=tuple(
+            _freeze_authority_value(record) for record in paragraphs
+        ),
+        tables=tuple(_freeze_authority_value(record) for record in tables),
+    )
+
+
+def _self_integrity(repo: Path) -> CommittedSourceSnapshot:
     errors: list[str] = []
+    manifest_bytes: bytes | None = None
+    manifest: dict[str, object] | None = None
+    compiler_bytes: bytes | None = None
+    files: dict[str, bytes] = {}
+    paragraphs: list[dict[str, object]] = []
+    tables: list[dict[str, object]] = []
     try:
         repo = _safe_repo(repo)
-        _assert_no_link_ancestors(repo / ROOT_RELATIVE, repo)
         source_tree = repo / SOURCE_TREE_RELATIVE
-        _assert_no_link_ancestors(source_tree, repo)
-    except ValueError as error:
-        return [str(error)], {}, None, [], []
+    except (OSError, ValueError) as error:
+        return _committed_snapshot(
+            [str(error)], None, None, {}, None, (), ()
+        )
     references = repo / REFERENCES_RELATIVE
-    if references.is_dir() and not _is_reparse_or_link(references):
-        try:
-            for entry in os.scandir(references):
-                entry_path = Path(entry.path)
-                if entry.name.startswith(
-                    (
-                        ".v8.2-full-source.stage-",
-                        ".v8.2-full-source.backup-",
-                        ".source-manifest.stage-",
-                        ".source-manifest.backup-",
-                    )
-                ):
-                    errors.append(f"incomplete source promotion residue: {entry.name}")
-                if _is_reparse_or_link(entry_path):
-                    errors.append(f"references contains symlink or reparse point: {entry.name}")
-        except OSError as error:
-            errors.append(f"cannot inspect references directory: {error}")
-    if (repo / LEGACY_TREE_RELATIVE).exists():
-        errors.append("legacy v8.2-source tree must not be present")
-    files, walk_errors = _walk_regular_tree(source_tree)
+    try:
+        with _open_anchored_directory(references, anchor=repo) as opened:
+            with opened.scandir() as iterator:
+                for entry in iterator:
+                    try:
+                        metadata = entry.stat(follow_symlinks=False)
+                    except OSError as error:
+                        errors.append(
+                            f"cannot inspect references entry {entry.name}: {error}"
+                        )
+                        continue
+                    if entry.name.startswith(
+                        (
+                            ".v8.2-full-source.stage-",
+                            ".v8.2-full-source.backup-",
+                            ".source-manifest.stage-",
+                            ".source-manifest.backup-",
+                        )
+                    ):
+                        errors.append(f"incomplete source promotion residue: {entry.name}")
+                    attributes = getattr(metadata, "st_file_attributes", 0)
+                    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+                    if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
+                        errors.append(
+                            f"references contains symlink or reparse point: {entry.name}"
+                        )
+                    if entry.name == LEGACY_TREE_RELATIVE.name:
+                        errors.append("legacy v8.2-source tree must not be present")
+    except (OSError, ValueError) as error:
+        errors.append(f"cannot inspect references directory safely: {error}")
+    files, walk_errors = _walk_regular_tree(
+        source_tree,
+        anchor=repo,
+        expected_files=EXPECTED_TREE_FILES,
+        max_file_bytes=min(MAX_SOURCE_TREE_FILE_BYTES, MAX_CAPTURED_AUTHORITY_BYTES),
+        max_total_bytes=min(MAX_SOURCE_TREE_BYTES, MAX_CAPTURED_AUTHORITY_BYTES),
+    )
     errors.extend(walk_errors)
     actual_paths = set(files)
     missing = sorted(EXPECTED_TREE_FILES - actual_paths)
@@ -1545,13 +2728,69 @@ def _self_integrity(repo: Path) -> tuple[list[str], dict[str, bytes], dict[str, 
                     "frozen source tree Merkle root mismatch: "
                     f"expected {EXPECTED_TREE_MERKLE_ROOT}, got {actual_root}"
                 )
-    manifest = _manifest_from_tree(repo, files, errors)
+    captured_total = sum(len(payload) for payload in files.values())
+    if captured_total > MAX_CAPTURED_AUTHORITY_BYTES:
+        errors.append(
+            "captured authority byte limit exceeded by source tree: "
+            f"{captured_total} > {MAX_CAPTURED_AUTHORITY_BYTES}"
+        )
+    manifest_remaining = max(0, MAX_CAPTURED_AUTHORITY_BYTES - captured_total)
+    manifest_limit = min(MAX_SOURCE_MANIFEST_BYTES, manifest_remaining)
+    manifest_label = "source manifest"
+    if manifest_limit < MAX_SOURCE_MANIFEST_BYTES:
+        manifest_label = "source manifest (captured authority total)"
+    manifest_bytes, manifest = _manifest_from_tree(
+        repo,
+        files,
+        errors,
+        max_bytes=manifest_limit,
+        label=manifest_label,
+    )
+    if manifest_bytes is not None:
+        captured_total += len(manifest_bytes)
+    compiler_path = repo / ROOT_RELATIVE / "scripts/generate_crossframe_ultra_v82_source.py"
+    compiler_hash: str | None = None
+    compiler_limit = min(
+        MAX_SOURCE_COMPILER_BYTES,
+        max(0, MAX_CAPTURED_AUTHORITY_BYTES - captured_total),
+    )
+    compiler_label = "source compiler"
+    if compiler_limit < MAX_SOURCE_COMPILER_BYTES:
+        compiler_label = "source compiler (captured authority total)"
+    try:
+        compiler_bytes = _read_regular_file(
+            compiler_path,
+            anchor=repo,
+            max_bytes=compiler_limit,
+            label=compiler_label,
+        )
+    except (OSError, ValueError) as error:
+        errors.append(f"source compiler cannot be read safely: {error}")
+    if compiler_bytes is not None:
+        compiler_hash = _sha256_bytes(compiler_bytes)
+        if compiler_hash != EXPECTED_COMPILER_SHA256:
+            errors.append(
+                "frozen compiler SHA256 mismatch: "
+                f"expected {EXPECTED_COMPILER_SHA256}, got {compiler_hash}"
+            )
+        captured_total += len(compiler_bytes)
+        if captured_total > MAX_CAPTURED_AUTHORITY_BYTES:
+            errors.append(
+                "captured authority byte limit exceeded: "
+                f"{captured_total} > {MAX_CAPTURED_AUTHORITY_BYTES}"
+            )
     if manifest is None:
-        return list(dict.fromkeys(errors)), files, None, [], []
+        return _committed_snapshot(
+            errors, manifest_bytes, None, files, compiler_bytes, (), ()
+        )
     # Parse canonical payloads and collect records before validating indexes.
     paragraphs, tables = _parse_committed_records(repo, files, errors)
     _validate_record_structure(paragraphs, tables, errors)
-    semantic_from_records = _semantic_hash_from_records(paragraphs, tables)
+    semantic_from_records = (
+        _semantic_hash_from_records(paragraphs, tables, compiler_bytes)
+        if compiler_bytes is not None and compiler_hash == EXPECTED_COMPILER_SHA256
+        else None
+    )
     if semantic_from_records != SEMANTIC_SHA256:
         errors.append(
             "committed semantic SHA256 mismatch: "
@@ -1596,40 +2835,56 @@ def _self_integrity(repo: Path) -> tuple[list[str], dict[str, bytes], dict[str, 
                 errors.append(f"V82-T{number:03d}: malformed table record: {error}")
     _validate_indexes(files, paragraphs, tables, RAW_SHA256, SEMANTIC_SHA256, errors)
     _validate_old_anchor_free(((name, payload) for name, payload in files.items()), errors)
-    try:
+    if manifest_bytes is not None:
         _validate_old_anchor_free(
-            (("source-manifest.json", _read_regular_file(repo / MANIFEST_RELATIVE)),),
+            (("source-manifest.json", manifest_bytes),),
             errors,
         )
-    except (OSError, ValueError):
-        pass
-    _validate_manifest(repo, manifest, files, paragraphs, tables, errors)
-    return list(dict.fromkeys(errors)), files, manifest, paragraphs, tables
+    _validate_manifest(
+        manifest, files, compiler_bytes, paragraphs, tables, errors
+    )
+    return _committed_snapshot(
+        errors,
+        manifest_bytes,
+        manifest,
+        files,
+        compiler_bytes,
+        paragraphs,
+        tables,
+    )
+
+
+def validate_committed_source_snapshot(repo: Path) -> CommittedSourceSnapshot:
+    """Return the exact captured bytes and records consumed by validation."""
+    try:
+        return _self_integrity(Path(repo))
+    except Exception as error:
+        return _committed_snapshot(
+            [f"source-tree validation failure: {error}"],
+            None,
+            None,
+            {},
+            None,
+            (),
+            (),
+        )
 
 
 def validate_committed_source_tree(repo: Path) -> list[str]:
     """Validate the committed authority tree without reading the DOCX."""
-    try:
-        errors, _files, _manifest, _paragraphs, _tables = _self_integrity(Path(repo))
-    except Exception as error:
-        return [f"source-tree validation failure: {error}"]
-    return errors
-
-
-def _snapshot_from_source_bytes(source_bytes: bytes) -> object:
-    compiler = _load_task2_compiler()
-    return compiler.build_v82_snapshot(source_bytes)
+    return list(validate_committed_source_snapshot(repo).errors)
 
 
 def validate_against_docx(repo: Path, source_docx: Path) -> list[str]:
     """Validate self-integrity and exact raw/semantic/source-unit identity."""
-    try:
-        errors, _files, _manifest, committed_paragraphs, committed_tables = _self_integrity(Path(repo))
-    except Exception as error:
-        return [f"source-tree validation failure: {error}"]
+    committed = validate_committed_source_snapshot(repo)
+    errors = list(committed.errors)
+    committed_paragraphs = [
+        _thaw_authority_value(record) for record in committed.paragraphs
+    ]
+    committed_tables = [_thaw_authority_value(record) for record in committed.tables]
     source_docx = Path(os.path.abspath(source_docx))
     try:
-        _assert_no_link_ancestors(source_docx, source_docx.parent)
         source_bytes = _read_bounded_source_docx(source_docx)
     except (OSError, ValueError) as error:
         errors.append(f"source DOCX cannot be read safely: {error}")
@@ -1638,14 +2893,28 @@ def validate_against_docx(repo: Path, source_docx: Path) -> list[str]:
     if raw != RAW_SHA256:
         errors.append(f"raw SHA256 mismatch: expected {RAW_SHA256}, got {raw}")
         return list(dict.fromkeys(errors))
+    if committed.compiler_bytes is None:
+        errors.append("cannot validate source DOCX without the captured source compiler")
+        return list(dict.fromkeys(errors))
+    compiler_hash = _sha256_bytes(committed.compiler_bytes)
+    if compiler_hash != EXPECTED_COMPILER_SHA256:
+        errors.append(
+            "cannot execute untrusted captured source compiler: "
+            f"expected {EXPECTED_COMPILER_SHA256}, got {compiler_hash}"
+        )
+        return list(dict.fromkeys(errors))
     try:
-        snapshot = _snapshot_from_source_bytes(source_bytes)
+        snapshot = _captured_snapshot_from_response(
+            _run_isolated_compiler(
+                committed.compiler_bytes,
+                "source_snapshot",
+                {"source": base64.b64encode(source_bytes).decode("ascii")},
+            )
+        )
     except Exception as error:  # compiler owns detailed source parsing errors
         errors.append(f"cannot parse source DOCX: {error}")
         return list(dict.fromkeys(errors))
-    compiler = _load_task2_compiler()
-    snapshot_errors = compiler.validate_v82_snapshot(snapshot)
-    errors.extend(f"source snapshot: {error}" for error in snapshot_errors)
+    errors.extend(f"source snapshot: {error}" for error in snapshot.errors)
     if snapshot.semantic_sha256 != SEMANTIC_SHA256:
         errors.append(f"semantic SHA256 mismatch: expected {SEMANTIC_SHA256}, got {snapshot.semantic_sha256}")
     source_paragraphs, source_tables = _snapshot_records(snapshot)
@@ -1669,18 +2938,18 @@ def validate_against_docx(repo: Path, source_docx: Path) -> list[str]:
             "count",
         )
         errors.append(f"source table mismatch: {mismatch}")
-    expected_semantic = _sha256_bytes(compiler.semantic_snapshot_bytes(snapshot.paragraphs, snapshot.tables))
+    expected_semantic = _semantic_hash_from_records(
+        source_paragraphs,
+        source_tables,
+        committed.compiler_bytes,
+    )
     if expected_semantic != SEMANTIC_SHA256:
         errors.append(f"source semantic snapshot mismatch: expected {SEMANTIC_SHA256}, got {expected_semantic}")
     expected_units = _source_unit_entries(source_paragraphs, source_tables)
-    # Re-read manifest to compare source units even if committed records were
-    # malformed enough that the self-integrity pass could not do so.
-    manifest_path = Path(repo) / MANIFEST_RELATIVE
-    try:
-        manifest = _read_json_bytes(_read_regular_file(manifest_path), "source-manifest.json", errors)
-    except (OSError, ValueError):
-        manifest = None
-    if isinstance(manifest, dict) and manifest.get("source_units") != expected_units:
+    manifest = _thaw_authority_value(committed.manifest)
+    if isinstance(manifest, dict) and not _json_exact_equal(
+        manifest.get("source_units"), expected_units
+    ):
         errors.append("source-unit hashes do not match the exact DOCX")
     return list(dict.fromkeys(errors))
 
@@ -1701,7 +2970,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         errors = [f"checker failure: {error}"]
     result = {"ok": not errors, "errors": errors}
     if args.as_json:
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True, allow_nan=False))
     elif errors:
         print("CrossFrame Ultra v8.2 source tree: FAIL")
         for error in errors:
