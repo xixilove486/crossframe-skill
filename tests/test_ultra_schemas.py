@@ -38,6 +38,8 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-common.schema.json",
     "ultra-compatibility-matrix.schema.json",
     "ultra-concept-disposition.schema.json",
+    "ultra-concept-registry.schema.json",
+    "ultra-contract-map.schema.json",
     "ultra-evidence-ledger.schema.json",
     "ultra-forecast-ledger.schema.json",
     "ultra-framework-gap-ledger.schema.json",
@@ -51,18 +53,30 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-release-manifest.schema.json",
     "ultra-repair-plan.schema.json",
     "ultra-retrieval-ledger.schema.json",
+    "ultra-route-map.schema.json",
     "ultra-run-contract.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-source-lock.schema.json",
+    "ultra-source-manifest.schema.json",
     "ultra-transformation-ledger.schema.json",
     "ultra-validator-report.schema.json",
     "ultra-verdict.schema.json",
     "ultra-world-volume.schema.json",
 )
 
+AUTHORITY_SCHEMAS = frozenset(
+    {
+        "ultra-concept-registry.schema.json",
+        "ultra-contract-map.schema.json",
+        "ultra-route-map.schema.json",
+        "ultra-source-manifest.schema.json",
+    }
+)
 ARTIFACT_SCHEMAS = tuple(
-    name for name in EXPECTED_SCHEMA_NAMES if name != "ultra-common.schema.json"
+    name
+    for name in EXPECTED_SCHEMA_NAMES
+    if name != "ultra-common.schema.json" and name not in AUTHORITY_SCHEMAS
 )
 INSTANCE_SCHEMA_IDS = {
     name: "crossframe.ultra.v82."

@@ -1,0 +1,73 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_id": "V82-CONTRACT-CORE-KERNEL",
+  "responsibility": "共同内核、五层责任、六条方法公理、信息身份与推论边界。",
+  "source_anchors": [
+    "V82-P4588",
+    "V82-P4589",
+    "V82-P4593",
+    "V82-P4596",
+    "V82-P4599",
+    "V82-P4602",
+    "V82-P4605",
+    "V82-P4609",
+    "V82-P4610",
+    "V82-P4611",
+    "V82-P4612",
+    "V82-P4613",
+    "V82-P4614",
+    "V82-P4620"
+  ],
+  "concept_ids": [
+    "V82-M01",
+    "V82-M08"
+  ],
+  "clauses": [
+    {
+      "clause_id": "V82-CLAUSE-CORE-COMMON",
+      "statement": "共同内核只统一论证责任与边界，不要求不同权威文本使用相同章法、制品数量或编号。",
+      "source_anchors": [
+        "V82-P4588"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-CORE-LAYERS",
+      "statement": "五层稳定引用分别是定义层、方法公理层、根一至根四、论一至论十二和治理不变量。",
+      "source_anchors": [
+        "V82-P4589",
+        "V82-P4593",
+        "V82-P4596",
+        "V82-P4599",
+        "V82-P4602",
+        "V82-P4605"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-CORE-AXIOMS",
+      "statement": "六条共同方法公理约束任务相对表示、信息身份、转义损失、表示闭合与路径等价、模拟再入和规范授权。",
+      "source_anchors": [
+        "V82-P4609",
+        "V82-P4610",
+        "V82-P4611",
+        "V82-P4612",
+        "V82-P4613",
+        "V82-P4614"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-CORE-BOUNDARIES",
+      "statement": "信息身份不得静默升级，模拟递归不得提升认识地位，事实、前瞻和能力不得生成价值、责任或授权，责任不得由一个产物自动跨越。",
+      "source_anchors": [
+        "V82-P4610",
+        "V82-P4613",
+        "V82-P4614",
+        "V82-P4620"
+      ]
+    }
+  ]
+}

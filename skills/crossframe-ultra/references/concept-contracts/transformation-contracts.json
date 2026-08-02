@@ -1,0 +1,105 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_id": "V82-CONTRACT-TRANSFORMATION",
+  "responsibility": "尺度变换、圈层关系变换、表示或表述转义、任务相关损失、有效变量、闭合与残差回返。",
+  "source_anchors": [
+    "V82-P0934",
+    "V82-P0936",
+    "V82-P0938",
+    "V82-P0939",
+    "V82-P0940",
+    "V82-P0941",
+    "V82-P0942",
+    "V82-P0944",
+    "V82-P0946",
+    "V82-P0948",
+    "V82-P0951",
+    "V82-P0953",
+    "V82-P0956",
+    "V82-P0958",
+    "V82-P1050",
+    "V82-P1053",
+    "V82-P1072",
+    "V82-P1073",
+    "V82-P1075",
+    "V82-P1077",
+    "V82-P1078",
+    "V82-P1796",
+    "V82-P1800"
+  ],
+  "concept_ids": [
+    "V82-M01",
+    "V82-M02",
+    "V82-M03",
+    "V82-M04",
+    "V82-M05",
+    "V82-M06",
+    "V82-M07",
+    "V82-M08",
+    "V82-M09"
+  ],
+  "clauses": [
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-OPERATORS",
+      "statement": "九种算子各有独有 semantic_signature，不能复制 M01 的聚合语句冒充其他算子。",
+      "source_anchors": [
+        "V82-P0934"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-SEPARATION",
+      "statement": "尺度变换、圈层关系变换和表示或表述转义必须拆成有序记录。",
+      "source_anchors": [
+        "V82-P1050"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-M02-OPERATOR",
+      "statement": "签名是“边界—成员嵌入”。描述性嵌套只检验边界、成员、重叠、退出和接口映射；它可以成立而没有任何跨层因果。跨层因果必须链接预注册 G4a 或 G4b root-instance，固定子型和唯一成功判据，并通过 CAUSAL 与三态/null 门。控制当前状态与共同环境后没有条件增量，并不自动证明“没有跨层作用”；只有等价/充分性、功效/灵敏度和容差门同时通过，才可登记限定零结论。描述性嵌套不生成上位优先、下位义务或 J 轴扩展。记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支，并分别绑定描述、因果、对象转换或干预转换模式；不得用描述性嵌套的边界材料支持后面三支。",
+      "source_anchors": [
+        "V82-P0938",
+        "V82-P0939",
+        "V82-P0940",
+        "V82-P0941",
+        "V82-P0942"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-RCC-NESTING",
+      "statement": "六类关系是封闭的静态描述词。嵌套表示一个圈层的成员、合同或运行位置被另一个圈层部分或全部包含。必须说明包含的基准：成员包含、角色包含、资源会计包含、制度管辖或空间包含并不是同一关系。子圈层的状态不能直接代表上层，外层规则也不必在每个内层位置同样生效。",
+      "source_anchors": [
+        "V82-P1796",
+        "V82-P1800"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-LOSS",
+      "statement": "源任务中可区分而目标表示中不可区分的差异登记为任务相关损失；不得预设无损，也不得断言必然有损。",
+      "source_anchors": [
+        "V82-P1053"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-RETURN",
+      "statement": "异常必须保留回返地址；回返只重开审查，往返重构也不能替代预先声明的保持项、损失容限与目标侧结果。",
+      "source_anchors": [
+        "V82-P1072",
+        "V82-P1073",
+        "V82-P1075"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-TRANSFORM-CLOSURE",
+      "statement": "有效变量必须绑定任务与失效边界；目标表示不默认闭合，出现条件增量时只能登记记忆、噪声、迟滞、未解析项或残差候选。",
+      "source_anchors": [
+        "V82-P1077",
+        "V82-P1078"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_id": "V82-CONTRACT-JUDGMENT-GOVERNANCE",
+  "responsibility": "证据身份，事实、前瞻、价值、责任与授权分离，行动上限及框架治理。",
+  "source_anchors": [
+    "V82-P2133",
+    "V82-P2156",
+    "V82-P2604",
+    "V82-P2605",
+    "V82-P2606",
+    "V82-P2607",
+    "V82-P2644",
+    "V82-P2646",
+    "V82-P2780",
+    "V82-P2781",
+    "V82-P2815",
+    "V82-P2884",
+    "V82-P2885",
+    "V82-P4610",
+    "V82-P4614",
+    "V82-P4620"
+  ],
+  "concept_ids": [
+    "V82-M05",
+    "V82-M07",
+    "V82-M08",
+    "V82-M09"
+  ],
+  "clauses": [
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-IDENTITY",
+      "statement": "报告、观测、模型信念、模拟、证据与授权保持不同身份，任何产物不得静默跨越来源、建模、前瞻、评价、授权和执行责任。",
+      "source_anchors": [
+        "V82-P4610",
+        "V82-P4620"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-SEPARATION",
+      "statement": "推演、前瞻和有限选择使用不同合同；事实不自行选择价值或制造授权，现实行动必须经过事实、规范、方案与有限执行的独立转换。",
+      "source_anchors": [
+        "V82-P2133",
+        "V82-P2156",
+        "V82-P2604",
+        "V82-P2605",
+        "V82-P2606",
+        "V82-P4614"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-CEILING",
+      "statement": "证据增强只能提高描述判断上限；授权前只允许补证或保护性保全，最终行动上限取描述、规范、保护、方案、管辖、可逆性和期限的最窄交集。",
+      "source_anchors": [
+        "V82-P2607",
+        "V82-P2644",
+        "V82-P2646"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-GOVERNANCE",
+      "statement": "框架不能自证现实安全或行动授权；断言必须登记证据、反证、替代解释、撤回条件和行动上限，反例必须写回文本、流程或行动上限。",
+      "source_anchors": [
+        "V82-P2780",
+        "V82-P2781",
+        "V82-P2815",
+        "V82-P2884",
+        "V82-P2885"
+      ]
+    }
+  ]
+}

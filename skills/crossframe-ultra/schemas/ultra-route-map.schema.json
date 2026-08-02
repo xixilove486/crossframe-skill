@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-route-map.schema.json",
+  "title": "CrossFrame Ultra v8.2 knowledge routes",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "framework_revision",
+    "raw_sha256",
+    "semantic_sha256",
+    "route_count",
+    "routes"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.ultra.v8.2.route-map"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.2"},
+    "framework_revision": {"const": "v8.2"},
+    "raw_sha256": {"const": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"},
+    "semantic_sha256": {"const": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"},
+    "route_count": {"type": "integer", "minimum": 1},
+    "routes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/route"}
+    }
+  },
+  "$defs": {
+    "anchor": {
+      "type": "string",
+      "pattern": "^V82-(?:P[0-9]{4}|T[0-9]{3})$"
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route_id", "task", "source_anchors", "concept_ids", "contract_ids"],
+      "properties": {
+        "route_id": {
+          "type": "string",
+          "pattern": "^V82-ROUTE-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+        },
+        "task": {"type": "string", "minLength": 1},
+        "source_anchors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/anchor"}
+        },
+        "concept_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^V82-M[0-9]{2,}$"}
+        },
+        "contract_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^V82-CONTRACT-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+          }
+        }
+      }
+    }
+  }
+}

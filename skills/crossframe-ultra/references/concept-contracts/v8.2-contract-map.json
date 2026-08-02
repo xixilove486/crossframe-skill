@@ -1,0 +1,166 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract-map",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_count": 5,
+  "contracts": [
+    {
+      "contract_id": "V82-CONTRACT-CORE-KERNEL",
+      "file": "core-kernel-contracts.json",
+      "file_sha256": "36e744fb55de92ee8d9cb503816db929c5b4872c21465a94ba0733236d032160",
+      "concept_ids": [
+        "V82-M01",
+        "V82-M08"
+      ],
+      "source_anchors": [
+        "V82-P4588",
+        "V82-P4589",
+        "V82-P4593",
+        "V82-P4596",
+        "V82-P4599",
+        "V82-P4602",
+        "V82-P4605",
+        "V82-P4609",
+        "V82-P4610",
+        "V82-P4611",
+        "V82-P4612",
+        "V82-P4613",
+        "V82-P4614",
+        "V82-P4620"
+      ]
+    },
+    {
+      "contract_id": "V82-CONTRACT-TRANSFORMATION",
+      "file": "transformation-contracts.json",
+      "file_sha256": "9b03a4375b5ff29a9cbbaa17724acb28e8937c47cc14744f3ca03a5e8bf1a97d",
+      "concept_ids": [
+        "V82-M01",
+        "V82-M02",
+        "V82-M03",
+        "V82-M04",
+        "V82-M05",
+        "V82-M06",
+        "V82-M07",
+        "V82-M08",
+        "V82-M09"
+      ],
+      "source_anchors": [
+        "V82-P0934",
+        "V82-P0936",
+        "V82-P0938",
+        "V82-P0939",
+        "V82-P0940",
+        "V82-P0941",
+        "V82-P0942",
+        "V82-P0944",
+        "V82-P0946",
+        "V82-P0948",
+        "V82-P0951",
+        "V82-P0953",
+        "V82-P0956",
+        "V82-P0958",
+        "V82-P1050",
+        "V82-P1053",
+        "V82-P1072",
+        "V82-P1073",
+        "V82-P1075",
+        "V82-P1077",
+        "V82-P1078",
+        "V82-P1796",
+        "V82-P1800"
+      ]
+    },
+    {
+      "contract_id": "V82-CONTRACT-WORLD-VOLUME",
+      "file": "world-volume-contracts.json",
+      "file_sha256": "76136718dc95b25c2a46b8af00d497d95a5ca6ecec975ab4826cb2fac5bcaef7",
+      "concept_ids": [
+        "V82-M02",
+        "V82-M03"
+      ],
+      "source_anchors": [
+        "V82-P0751",
+        "V82-P0752",
+        "V82-P0753",
+        "V82-P0755",
+        "V82-P0852",
+        "V82-P0998",
+        "V82-P1014",
+        "V82-P1015",
+        "V82-P1766",
+        "V82-P1767",
+        "V82-P1771",
+        "V82-P1774",
+        "V82-P1777",
+        "V82-P1780",
+        "V82-P1783",
+        "V82-P1786",
+        "V82-P1789",
+        "V82-P1792",
+        "V82-P1793",
+        "V82-P1840",
+        "V82-P1843",
+        "V82-P1864",
+        "V82-P1865",
+        "V82-P1915",
+        "V82-P1916",
+        "V82-P1929"
+      ]
+    },
+    {
+      "contract_id": "V82-CONTRACT-RECURSIVE-INFERENCE",
+      "file": "recursive-inference-contracts.json",
+      "file_sha256": "58c0d59521b979d7b249fb119a8b0af8d5436e125d09e0706f58ccc7d693331c",
+      "concept_ids": [
+        "V82-M03",
+        "V82-M04",
+        "V82-M06"
+      ],
+      "source_anchors": [
+        "V82-P2110",
+        "V82-P2111",
+        "V82-P2112",
+        "V82-P2114",
+        "V82-P2115",
+        "V82-P2117",
+        "V82-P2118",
+        "V82-P2120",
+        "V82-P2185",
+        "V82-P2188",
+        "V82-P2189"
+      ]
+    },
+    {
+      "contract_id": "V82-CONTRACT-JUDGMENT-GOVERNANCE",
+      "file": "judgment-governance-contracts.json",
+      "file_sha256": "20ab08e9f070a84805be0a871bc25dab1440bf46ebb0b4423f5db141da5a9f4f",
+      "concept_ids": [
+        "V82-M05",
+        "V82-M07",
+        "V82-M08",
+        "V82-M09"
+      ],
+      "source_anchors": [
+        "V82-P2133",
+        "V82-P2156",
+        "V82-P2604",
+        "V82-P2605",
+        "V82-P2606",
+        "V82-P2607",
+        "V82-P2644",
+        "V82-P2646",
+        "V82-P2780",
+        "V82-P2781",
+        "V82-P2815",
+        "V82-P2884",
+        "V82-P2885",
+        "V82-P4610",
+        "V82-P4614",
+        "V82-P4620"
+      ]
+    }
+  ]
+}

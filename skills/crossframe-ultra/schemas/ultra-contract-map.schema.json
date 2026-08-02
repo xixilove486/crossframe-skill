@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-contract-map.schema.json",
+  "title": "CrossFrame Ultra v8.2 contract map",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "framework_revision",
+    "raw_sha256",
+    "semantic_sha256",
+    "contract_count",
+    "contracts"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.ultra.v8.2.contract-map"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.2"},
+    "framework_revision": {"const": "v8.2"},
+    "raw_sha256": {"const": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"},
+    "semantic_sha256": {"const": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"},
+    "contract_count": {"type": "integer", "minimum": 5, "maximum": 5},
+    "contracts": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"$ref": "#/$defs/contractEntry"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "anchor": {
+      "type": "string",
+      "pattern": "^V82-(?:P[0-9]{4}|T[0-9]{3})$"
+    },
+    "anchorArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/anchor"}
+    },
+    "conceptId": {"type": "string", "pattern": "^V82-M[0-9]{2,}$"},
+    "conceptIdArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/conceptId"}
+    },
+    "contractId": {
+      "type": "string",
+      "pattern": "^V82-CONTRACT-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+    },
+    "contractEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "file", "file_sha256", "concept_ids", "source_anchors"],
+      "properties": {
+        "contract_id": {"$ref": "#/$defs/contractId"},
+        "file": {
+          "enum": [
+            "core-kernel-contracts.json",
+            "transformation-contracts.json",
+            "world-volume-contracts.json",
+            "recursive-inference-contracts.json",
+            "judgment-governance-contracts.json"
+          ]
+        },
+        "file_sha256": {"$ref": "#/$defs/sha256"},
+        "concept_ids": {"$ref": "#/$defs/conceptIdArray"},
+        "source_anchors": {"$ref": "#/$defs/anchorArray"}
+      }
+    },
+    "clause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clause_id", "statement", "source_anchors"],
+      "properties": {
+        "clause_id": {
+          "type": "string",
+          "pattern": "^V82-CLAUSE-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+        },
+        "statement": {"type": "string", "minLength": 1},
+        "source_anchors": {"$ref": "#/$defs/anchorArray"}
+      }
+    },
+    "contractDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_id",
+        "schema_version",
+        "framework_version",
+        "framework_revision",
+        "raw_sha256",
+        "semantic_sha256",
+        "contract_id",
+        "responsibility",
+        "source_anchors",
+        "concept_ids",
+        "clauses"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v8.2.contract"},
+        "schema_version": {"const": 1},
+        "framework_version": {"const": "v8.2"},
+        "framework_revision": {"const": "v8.2"},
+        "raw_sha256": {"const": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"},
+        "semantic_sha256": {"const": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"},
+        "contract_id": {"$ref": "#/$defs/contractId"},
+        "responsibility": {"type": "string", "minLength": 1},
+        "source_anchors": {"$ref": "#/$defs/anchorArray"},
+        "concept_ids": {"$ref": "#/$defs/conceptIdArray"},
+        "clauses": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/clause"}
+        }
+      }
+    }
+  }
+}

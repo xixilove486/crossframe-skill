@@ -566,26 +566,46 @@ The canonical concept record requires:
 {
   "concept_id": "V82-M02",
   "canonical_zh": "嵌套",
-  "concept_type": "circle-relation",
-  "responsibility_layer": "joint-state",
-  "definition": "一个圈层的成员、合同或运行位置被另一个圈层部分或全部包含；必须声明具体包含基准。",
-  "source_anchors": ["V82-P1800"],
+  "concept_type": "scale-transformation-operator",
+  "responsibility_layer": "transformation",
+  "definition": "签名是“边界—成员嵌入”。",
+  "source_anchors": ["V82-P0938", "V82-P0939", "V82-P0940", "V82-P0941", "V82-P0942"],
   "prerequisites": [],
-  "allowed_inferences": ["在已声明基准上记录局部或全部包含"],
-  "forbidden_substitutions": ["单父树", "外层规则自动代表所有内层位置"],
-  "common_misuses": ["用子圈层状态直接代表上层"],
+  "allowed_inferences": [
+    "描述性嵌套只检验边界、成员、重叠、退出和接口映射",
+    "跨层因果必须链接预注册 G4a 或 G4b root-instance，固定子型和唯一成功判据，并通过 CAUSAL 与三态/null 门",
+    "记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支，并分别绑定描述、因果、对象转换或干预转换模式"
+  ],
+  "forbidden_substitutions": [
+    "不得用描述性嵌套的边界材料支持后面三支",
+    "描述性嵌套不生成上位优先、下位义务或 J 轴扩展"
+  ],
+  "common_misuses": [
+    "控制当前状态与共同环境后没有条件增量，并不自动证明“没有跨层作用”",
+    "用描述性嵌套的边界材料支持后面三支"
+  ],
   "required_neighbors": [],
   "conflicts": [],
-  "disambiguation_conditions": [],
-  "evidence_requirements": ["成员、角色、合同、资源会计、制度管辖或空间中的具体包含依据"],
-  "counterexamples": ["只有部分共享成员但不存在包含时应登记为重叠"],
-  "withdrawal_conditions": ["无法证明任何具体包含依据"],
-  "inference_interfaces": ["Rcc", "Rac"],
-  "action_ceiling": "只能描述包含关系，不能自动推出价值优先级或行动授权"
+  "disambiguation_conditions": [
+    "描述性嵌套只检验边界、成员、重叠、退出和接口映射；它可以成立而没有任何跨层因果",
+    "记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支"
+  ],
+  "evidence_requirements": [
+    "边界、成员、重叠、退出和接口映射",
+    "固定子型和唯一成功判据",
+    "分别绑定描述、因果、对象转换或干预转换模式"
+  ],
+  "counterexamples": ["控制当前状态与共同环境后没有条件增量"],
+  "withdrawal_conditions": [
+    "跨层因果必须链接预注册 G4a 或 G4b root-instance",
+    "不得用描述性嵌套的边界材料支持后面三支"
+  ],
+  "inference_interfaces": ["Rcc", "Rac", "G4", "CAUSAL"],
+  "action_ceiling": "描述性嵌套不生成上位优先、下位义务或 J 轴扩展。"
 }
 ~~~
 
-Use this source-supported M02 record as the first real registry fixture, then preserve the same field completeness for every promoted concept. The registry review must verify whether v8.2 provides additional explicit prerequisites, neighbors or conflicts before leaving those arrays empty.
+Use this source-supported M02 operator record as the first real registry fixture, then preserve the same field completeness for every promoted concept. The static Rcc relation named 嵌套 remains a contract and route input bound to V82-P1796 and V82-P1800; it is not a second meaning for the M02 identity. The registry review must verify whether v8.2 provides additional explicit prerequisites, neighbors or conflicts before leaving those arrays empty.
 
 - [ ] **Step 2: Observe RED**
 
@@ -601,7 +621,7 @@ The five contract files have fixed responsibilities:
 
 - core-kernel-contracts.json: common kernel, five responsibility layers, six axioms, identities and boundaries.
 - transformation-contracts.json: scale, circle relationship, representation/expression translation, task-relative loss, effective variables, closure and residual return.
-- world-volume-contracts.json: A, C, Rcc, Rac, local M/Psi, Q, E, T, SP, W, K, Unknowns and Residuals.
+- world-volume-contracts.json: A, C, Rcc, Rac, local M/Psi, Q, E, T, SP, source-faithful W evidence status, source-faithful K identity criteria, Unknowns and Residuals. Power, constraint, exit, burden and spillover distributions remain local Rac/Q/M/Psi records rather than alternate meanings of W or K.
 - recursive-inference-contracts.json: order 1–3, lineage, branches, merge/prune/stop, local predictability and per-order evaluation.
 - judgment-governance-contracts.json: evidence identity, fact/prediction/value/responsibility/authorization separation, action ceilings and framework governance.
 
@@ -1049,6 +1069,9 @@ The valid fixture must contain:
 - a nine-axis scale profile per represented object/circle/position;
 - immediate, interaction, organizational, institutional and long-term clocks;
 - a real channel touching only a subset of positions;
+- source-faithful `W` evidence status with information identity, source lineage and visibility;
+- source-faithful `K` identity criteria for every represented object, circle and position;
+- local power, constraint, exit, burden and spillover distributions attached to their exact `Rac`/`Q`/`M`/`Psi` positions rather than overloaded onto `W` or `K`;
 - unknowns and residuals attached to their exact locations.
 
 Reject a global M, global Psi, one global scale label, single parent_id, averaged circle state, missing membership basis, relation without direction, channel without endpoints, and a state position without identity criteria.

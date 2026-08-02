@@ -1,0 +1,77 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_id": "V82-CONTRACT-RECURSIVE-INFERENCE",
+  "responsibility": "一至三阶递归、谱系、分支、合并、剪枝、停止、局部可预测性与按阶评价。",
+  "source_anchors": [
+    "V82-P2110",
+    "V82-P2111",
+    "V82-P2112",
+    "V82-P2114",
+    "V82-P2115",
+    "V82-P2117",
+    "V82-P2118",
+    "V82-P2120",
+    "V82-P2185",
+    "V82-P2188",
+    "V82-P2189"
+  ],
+  "concept_ids": [
+    "V82-M03",
+    "V82-M04",
+    "V82-M06"
+  ],
+  "clauses": [
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-DIMENSIONS",
+      "statement": "多步时间滚动、模拟状态再入和预期反身是三个正交维度，不得用单一递归标签混写。",
+      "source_anchors": [
+        "V82-P2110"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-ORDERS",
+      "statement": "默认探索上限为三阶：第一阶展开直接后果，第二阶检查行动集合与反馈的改变，第三阶检查制度化、锁定、反转、溢出和生成条件改变；条件不足必须提前停止。",
+      "source_anchors": [
+        "V82-P2111",
+        "V82-P2112"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-LINEAGE",
+      "statement": "每次再入都记录父运行与父路径、继承假设、新增条件、损失、未知、残差、返回路径和停止原因；子运行继承未解决项且不得把模拟起点改写为现实。",
+      "source_anchors": [
+        "V82-P2114",
+        "V82-P2115"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-BRANCHES",
+      "statement": "每阶保留主要、竞争、低概率高后果和残差路径；合并必须满足同一性与状态等价条件，剪枝需事前声明并保留被剪记录。",
+      "source_anchors": [
+        "V82-P2117",
+        "V82-P2118"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-STOP",
+      "statement": "同一性、适用域、闭合、分支、敏感性、残差、增量、校准、权利、授权或三阶上限任一停止条件触发时必须停止或降级。",
+      "source_anchors": [
+        "V82-P2120"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-RECURSIVE-EVALUATION",
+      "statement": "可预测性只能在明确对象与资源边界内主张；一至三阶分别冻结、分别评价并与浅阶和简单延续比较，不得把内部递归内容升级为现实证据。",
+      "source_anchors": [
+        "V82-P2185",
+        "V82-P2188",
+        "V82-P2189"
+      ]
+    }
+  ]
+}
