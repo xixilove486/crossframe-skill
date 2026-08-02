@@ -7,7 +7,7 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["volume_id", "object_boundary", "actors", "circles", "positions", "memberships", "containment_relations", "circle_relations", "clocks", "channels", "events", "unknowns", "residuals"],
+      "required": ["volume_id", "object_boundary", "actors", "circles", "positions", "memberships", "containment_relations", "circle_relations", "clocks", "channels", "events", "local_distributions", "unknowns", "residuals"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.world-volume"},
         "phase_id": {"const": "U4"},
@@ -22,6 +22,7 @@
         "clocks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/clock"}},
         "channels": {"type": "array", "items": {"$ref": "#/$defs/channel"}},
         "events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "local_distributions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/localDistribution"}},
         "unknowns": {"type": "array", "items": {"$ref": "ultra-common.schema.json#/$defs/locatedUnknown"}},
         "residuals": {"type": "array", "items": {"$ref": "ultra-common.schema.json#/$defs/locatedResidual"}}
       }
@@ -41,27 +42,37 @@
     "actor": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actor_id", "label"],
+      "required": ["actor_id", "label", "identity_criteria", "M_state", "Psi_state", "scale_profile", "evidence_status"],
       "properties": {
         "actor_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
-        "label": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+        "label": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "identity_criteria": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "M_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
+        "Psi_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
+        "scale_profile": {"$ref": "ultra-common.schema.json#/$defs/scaleProfile"},
+        "evidence_status": {"$ref": "#/$defs/evidenceStatus"}
       }
     },
     "circle": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["circle_id", "label", "boundary_rule", "membership_basis"],
+      "required": ["circle_id", "label", "boundary_rule", "membership_basis", "identity_criteria", "M_state", "Psi_state", "scale_profile", "evidence_status"],
       "properties": {
         "circle_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "label": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "boundary_rule": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "membership_basis": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+        "membership_basis": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "identity_criteria": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "M_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
+        "Psi_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
+        "scale_profile": {"$ref": "ultra-common.schema.json#/$defs/scaleProfile"},
+        "evidence_status": {"$ref": "#/$defs/evidenceStatus"}
       }
     },
     "position": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["position_id", "actor_id", "circle_id", "role_id", "identity_criteria", "M_state", "Psi_state", "scale_profile"],
+      "required": ["position_id", "actor_id", "circle_id", "role_id", "identity_criteria", "M_state", "Psi_state", "scale_profile", "evidence_status"],
       "properties": {
         "position_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "actor_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
@@ -70,18 +81,23 @@
         "identity_criteria": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "M_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
         "Psi_state": {"$ref": "ultra-common.schema.json#/$defs/localState"},
-        "scale_profile": {"$ref": "ultra-common.schema.json#/$defs/scaleProfile"}
+        "scale_profile": {"$ref": "ultra-common.schema.json#/$defs/scaleProfile"},
+        "evidence_status": {"$ref": "#/$defs/evidenceStatus"}
       }
     },
     "membership": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actor_id", "circle_id", "role_id", "basis"],
+      "required": ["membership_id", "actor_id", "circle_id", "role_id", "basis", "role_conditions", "exit_conditions", "power_distribution"],
       "properties": {
+        "membership_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "actor_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "circle_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "role_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
-        "basis": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+        "basis": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "role_conditions": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "exit_conditions": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "power_distribution": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     },
     "containment": {
@@ -103,7 +119,7 @@
         "from_circle_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "to_circle_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "relation_type": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "direction": {"enum": ["directed", "bidirectional"]}
+        "direction": {"const": "directed"}
       }
     },
     "clock": {
@@ -124,13 +140,18 @@
     "channel": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["channel_id", "from_position_id", "to_position_id", "channel_type", "active"],
+      "required": ["channel_id", "from_position_id", "to_position_id", "channel_type", "active", "capacity", "delay", "threshold", "constraint_distribution", "access_distribution"],
       "properties": {
         "channel_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "from_position_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "to_position_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "channel_type": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "active": {"type": "boolean"}
+        "active": {"type": "boolean"},
+        "capacity": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "delay": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "threshold": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "constraint_distribution": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "access_distribution": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     },
     "event": {
@@ -141,7 +162,63 @@
         "event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "source_position_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "target_position_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
-        "channel_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"}
+        "channel_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "M_updates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/localStateUpdate"}},
+        "Psi_updates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/localStateUpdate"}},
+        "relation_updates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/relationUpdate"}},
+        "clock_deltas": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/clockDelta"}}
+      }
+    },
+    "localStateUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position_id", "state_id", "changed_variable_names", "via_channel_id"],
+      "properties": {
+        "position_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "state_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "changed_variable_names": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"},
+        "via_channel_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+      }
+    },
+    "relationUpdate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation_kind", "relation_id", "via_channel_id"],
+      "properties": {
+        "relation_kind": {"enum": ["Rcc", "Rac"]},
+        "relation_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "via_channel_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+      }
+    },
+    "clockDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clock_id", "delta"],
+      "properties": {
+        "clock_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "delta": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "evidenceStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "information_identity", "source_lineage", "visibility"],
+      "properties": {
+        "status": {"enum": ["observed", "supported-hypothesis", "candidate", "disputed", "unknown", "not-applicable"]},
+        "information_identity": {"enum": ["observed", "reported", "inferred", "competing", "user-claim", "model-candidate", "simulated", "unknown"]},
+        "source_lineage": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "visibility": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "localDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["distribution_id", "kind", "location_ref", "description"],
+      "properties": {
+        "distribution_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["power", "constraint", "exit", "burden", "spillover"]},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     }
   }

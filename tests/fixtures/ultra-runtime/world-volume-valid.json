@@ -1,0 +1,483 @@
+{
+  "schema_id": "crossframe.ultra.v82.world-volume",
+  "schema_version": 1,
+  "run_id": "ultra-task8-run",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "generated_at": "2026-08-02T08:00:00Z",
+  "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "phase_id": "U4",
+  "volume_id": "OMEGA-0",
+  "object_boundary": {
+    "object_ids": [
+      "ACTOR-ONE",
+      "CIRCLE-FAMILY",
+      "CIRCLE-TEAM",
+      "CIRCLE-ASSOCIATION"
+    ],
+    "boundary_rule": "Only the represented actor and three declared circles are in scope."
+  },
+  "actors": [
+    {
+      "actor_id": "ACTOR-ONE",
+      "label": "Actor one",
+      "identity_criteria": "The same accountable person across the three declared roles.",
+      "evidence_status": {
+        "status": "supported-hypothesis",
+        "information_identity": "reported",
+        "source_lineage": ["EVIDENCE-INTERVIEW-ONE"],
+        "visibility": "restricted-to-run"
+      },
+      "M_state": {
+        "state_id": "M-ACTOR-ONE",
+        "variables": [
+          {"name": "available-hours", "value": 12, "unit": "hours-per-week"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-ACTOR-ONE",
+        "variables": [
+          {"name": "role-conflict", "value": "declared", "unit": "status"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "single-city",
+        "temporal": "weekly",
+        "organizational": "multi-role",
+        "institutional": "mixed-formal-informal",
+        "material": "person-level",
+        "informational": "partially-visible",
+        "relational": "multi-circle",
+        "power": "role-dependent",
+        "risk": "reversible-to-locking"
+      }
+    }
+  ],
+  "circles": [
+    {
+      "circle_id": "CIRCLE-FAMILY",
+      "label": "Family",
+      "boundary_rule": "Declared household membership.",
+      "membership_basis": "household commitment",
+      "identity_criteria": "The household remains this circle while its declared care boundary persists.",
+      "evidence_status": {
+        "status": "supported-hypothesis",
+        "information_identity": "inferred",
+        "source_lineage": ["EVIDENCE-INTERVIEW-ONE"],
+        "visibility": "restricted-to-run"
+      },
+      "M_state": {
+        "state_id": "M-CIRCLE-FAMILY",
+        "variables": [
+          {"name": "care-hours", "value": 20, "unit": "hours-per-week"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-CIRCLE-FAMILY",
+        "variables": [
+          {"name": "care-expectation", "value": "high", "unit": "ordinal"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "household",
+        "temporal": "daily",
+        "organizational": "kinship",
+        "institutional": "informal",
+        "material": "shared-resources",
+        "informational": "private",
+        "relational": "care",
+        "power": "negotiated",
+        "risk": "medium"
+      }
+    },
+    {
+      "circle_id": "CIRCLE-TEAM",
+      "label": "Project team",
+      "boundary_rule": "Active assignment to project Atlas.",
+      "membership_basis": "work assignment",
+      "identity_criteria": "The team remains Atlas while its mandate and accountable roster persist.",
+      "evidence_status": {
+        "status": "observed",
+        "information_identity": "observed",
+        "source_lineage": ["EVIDENCE-ROSTER-ATLAS"],
+        "visibility": "team-visible"
+      },
+      "M_state": {
+        "state_id": "M-CIRCLE-TEAM",
+        "variables": [
+          {"name": "budget", "value": 100, "unit": "credits"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-CIRCLE-TEAM",
+        "variables": [
+          {"name": "decision-rule", "value": "manager-review", "unit": "text"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "distributed-city",
+        "temporal": "quarterly",
+        "organizational": "team",
+        "institutional": "contractual",
+        "material": "project-budget",
+        "informational": "role-gated",
+        "relational": "managerial",
+        "power": "delegated",
+        "risk": "deadline-sensitive"
+      }
+    },
+    {
+      "circle_id": "CIRCLE-ASSOCIATION",
+      "label": "Professional association",
+      "boundary_rule": "Current elected or delegated association role.",
+      "membership_basis": "delegated representation",
+      "identity_criteria": "The association remains the same chartered body under its registered charter.",
+      "evidence_status": {
+        "status": "disputed",
+        "information_identity": "user-claim",
+        "source_lineage": ["EVIDENCE-ASSOCIATION-CHARTER"],
+        "visibility": "member-visible"
+      },
+      "M_state": {
+        "state_id": "M-CIRCLE-ASSOCIATION",
+        "variables": [
+          {"name": "meeting-capacity", "value": 40, "unit": "seats"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-CIRCLE-ASSOCIATION",
+        "variables": [
+          {"name": "mandate-legitimacy", "value": "contested", "unit": "status"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "regional",
+        "temporal": "annual",
+        "organizational": "association",
+        "institutional": "chartered",
+        "material": "member-funded",
+        "informational": "member-visible",
+        "relational": "representative",
+        "power": "elected",
+        "risk": "mandate-sensitive"
+      }
+    }
+  ],
+  "positions": [
+    {
+      "position_id": "POS-FAMILY-MEMBER",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-FAMILY",
+      "role_id": "ROLE-FAMILY-MEMBER",
+      "identity_criteria": "Actor one acting under the declared household care role.",
+      "evidence_status": {
+        "status": "supported-hypothesis",
+        "information_identity": "reported",
+        "source_lineage": ["EVIDENCE-INTERVIEW-ONE"],
+        "visibility": "restricted-to-run"
+      },
+      "M_state": {
+        "state_id": "M-POS-FAMILY",
+        "variables": [
+          {"name": "care-load", "value": 8, "unit": "hours-per-week"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-POS-FAMILY",
+        "variables": [
+          {"name": "felt-obligation", "value": "high", "unit": "ordinal"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "household",
+        "temporal": "immediate",
+        "organizational": "family-role",
+        "institutional": "informal",
+        "material": "care-time",
+        "informational": "private",
+        "relational": "caregiver",
+        "power": "negotiated",
+        "risk": "fatigue"
+      }
+    },
+    {
+      "position_id": "POS-TEAM-MANAGER",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-TEAM",
+      "role_id": "ROLE-TEAM-MANAGER",
+      "identity_criteria": "Actor one acting under the frozen Atlas management mandate.",
+      "evidence_status": {
+        "status": "observed",
+        "information_identity": "observed",
+        "source_lineage": ["EVIDENCE-ROSTER-ATLAS"],
+        "visibility": "team-visible"
+      },
+      "M_state": {
+        "state_id": "M-POS-TEAM",
+        "variables": [
+          {"name": "decision-budget", "value": 60, "unit": "credits"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-POS-TEAM",
+        "variables": [
+          {"name": "review-visibility", "value": "team-only", "unit": "access-level"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "distributed-city",
+        "temporal": "interaction",
+        "organizational": "manager-position",
+        "institutional": "contractual",
+        "material": "delegated-budget",
+        "informational": "role-gated",
+        "relational": "managerial",
+        "power": "delegated",
+        "risk": "reversible"
+      }
+    },
+    {
+      "position_id": "POS-ASSOCIATION-DELEGATE",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-ASSOCIATION",
+      "role_id": "ROLE-ASSOCIATION-DELEGATE",
+      "identity_criteria": "Actor one acting only within the frozen delegate mandate.",
+      "evidence_status": {
+        "status": "disputed",
+        "information_identity": "user-claim",
+        "source_lineage": ["EVIDENCE-ASSOCIATION-CHARTER"],
+        "visibility": "member-visible"
+      },
+      "M_state": {
+        "state_id": "M-POS-ASSOCIATION",
+        "variables": [
+          {"name": "meeting-time", "value": 4, "unit": "hours-per-month"}
+        ]
+      },
+      "Psi_state": {
+        "state_id": "PSI-POS-ASSOCIATION",
+        "variables": [
+          {"name": "mandate-dispute", "value": "open", "unit": "status"}
+        ]
+      },
+      "scale_profile": {
+        "spatial": "regional",
+        "temporal": "organizational",
+        "organizational": "delegate-position",
+        "institutional": "chartered",
+        "material": "member-funded",
+        "informational": "member-visible",
+        "relational": "representative",
+        "power": "bounded-delegation",
+        "risk": "authorization-sensitive"
+      }
+    }
+  ],
+  "memberships": [
+    {
+      "membership_id": "MEMBERSHIP-FAMILY",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-FAMILY",
+      "role_id": "ROLE-FAMILY-MEMBER",
+      "basis": "household commitment",
+      "role_conditions": "Care role applies only within the household boundary.",
+      "exit_conditions": "Exit requires a replacement care arrangement.",
+      "power_distribution": "Negotiated household voice without organizational authority."
+    },
+    {
+      "membership_id": "MEMBERSHIP-TEAM",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-TEAM",
+      "role_id": "ROLE-TEAM-MANAGER",
+      "basis": "active work assignment",
+      "role_conditions": "Management power is bounded by the Atlas mandate.",
+      "exit_conditions": "The actor can resign with contractual notice.",
+      "power_distribution": "Delegated budget authority is local to the team position."
+    },
+    {
+      "membership_id": "MEMBERSHIP-ASSOCIATION",
+      "actor_id": "ACTOR-ONE",
+      "circle_id": "CIRCLE-ASSOCIATION",
+      "role_id": "ROLE-ASSOCIATION-DELEGATE",
+      "basis": "recorded delegate vote",
+      "role_conditions": "Representation is limited to the recorded motion.",
+      "exit_conditions": "Members may revoke the delegation at the next meeting.",
+      "power_distribution": "No authority exists outside the recorded motion."
+    }
+  ],
+  "containment_relations": [
+    {
+      "child_circle_id": "CIRCLE-TEAM",
+      "parent_circle_id": "CIRCLE-FAMILY",
+      "basis": "resource-accounting"
+    },
+    {
+      "child_circle_id": "CIRCLE-TEAM",
+      "parent_circle_id": "CIRCLE-ASSOCIATION",
+      "basis": "contract"
+    }
+  ],
+  "circle_relations": [
+    {
+      "relation_id": "REL-TEAM-ASSOCIATION-RESOURCE",
+      "from_circle_id": "CIRCLE-TEAM",
+      "to_circle_id": "CIRCLE-ASSOCIATION",
+      "relation_type": "resource-transfer",
+      "direction": "directed"
+    },
+    {
+      "relation_id": "REL-TEAM-ASSOCIATION-INFORMATION",
+      "from_circle_id": "CIRCLE-TEAM",
+      "to_circle_id": "CIRCLE-ASSOCIATION",
+      "relation_type": "information-reporting",
+      "direction": "directed"
+    }
+  ],
+  "clocks": [
+    {
+      "clock_id": "CLOCK-IMMEDIATE",
+      "scope_id": "POS-TEAM-MANAGER",
+      "kind": "immediate",
+      "current_time": "2026-08-02T08:00:00Z",
+      "horizon": "P1D"
+    },
+    {
+      "clock_id": "CLOCK-INTERACTION",
+      "scope_id": "POS-FAMILY-MEMBER",
+      "kind": "interaction",
+      "current_time": "2026-08-02T08:00:00Z",
+      "horizon": "P7D"
+    },
+    {
+      "clock_id": "CLOCK-ORGANIZATIONAL",
+      "scope_id": "CIRCLE-TEAM",
+      "kind": "organizational",
+      "current_time": "2026-08-02T08:00:00Z",
+      "horizon": "P90D"
+    },
+    {
+      "clock_id": "CLOCK-INSTITUTIONAL",
+      "scope_id": "CIRCLE-ASSOCIATION",
+      "kind": "institutional",
+      "current_time": "2026-08-02T08:00:00Z",
+      "horizon": "P1Y"
+    },
+    {
+      "clock_id": "CLOCK-LONG-TERM",
+      "scope_id": "ACTOR-ONE",
+      "kind": "long-term",
+      "current_time": "2026-08-02T08:00:00Z",
+      "horizon": "P5Y"
+    }
+  ],
+  "channels": [
+    {
+      "channel_id": "CHANNEL-FAMILY-TEAM",
+      "from_position_id": "POS-FAMILY-MEMBER",
+      "to_position_id": "POS-TEAM-MANAGER",
+      "channel_type": "time-allocation",
+      "active": true,
+      "capacity": "eight hours per week",
+      "delay": "PT1H",
+      "threshold": "one accepted schedule change",
+      "constraint_distribution": "The family position can constrain only the manager position through this channel.",
+      "access_distribution": "Only the two declared endpoint positions can use this channel."
+    }
+  ],
+  "events": [
+    {
+      "event_id": "EVENT-FAMILY-DEMAND",
+      "source_position_id": "POS-FAMILY-MEMBER",
+      "target_position_ids": ["POS-TEAM-MANAGER"],
+      "channel_ids": ["CHANNEL-FAMILY-TEAM"],
+      "M_updates": [
+        {
+          "position_id": "POS-TEAM-MANAGER",
+          "state_id": "M-POS-TEAM",
+          "changed_variable_names": ["decision-budget"],
+          "via_channel_id": "CHANNEL-FAMILY-TEAM"
+        }
+      ],
+      "Psi_updates": [
+        {
+          "position_id": "POS-TEAM-MANAGER",
+          "state_id": "PSI-POS-TEAM",
+          "changed_variable_names": ["review-visibility"],
+          "via_channel_id": "CHANNEL-FAMILY-TEAM"
+        }
+      ],
+      "relation_updates": [
+        {
+          "relation_kind": "Rac",
+          "relation_id": "MEMBERSHIP-TEAM",
+          "via_channel_id": "CHANNEL-FAMILY-TEAM"
+        },
+        {
+          "relation_kind": "Rcc",
+          "relation_id": "REL-TEAM-ASSOCIATION-RESOURCE",
+          "via_channel_id": "CHANNEL-FAMILY-TEAM"
+        }
+      ],
+      "clock_deltas": [
+        {"clock_id": "CLOCK-IMMEDIATE", "delta": "PT1H"},
+        {"clock_id": "CLOCK-ORGANIZATIONAL", "delta": "P1D"}
+      ]
+    }
+  ],
+  "local_distributions": [
+    {
+      "distribution_id": "DIST-POWER-TEAM",
+      "kind": "power",
+      "location_ref": "MEMBERSHIP-TEAM",
+      "description": "Delegated decision power is local to Rac membership MEMBERSHIP-TEAM."
+    },
+    {
+      "distribution_id": "DIST-EXIT-TEAM",
+      "kind": "exit",
+      "location_ref": "MEMBERSHIP-TEAM",
+      "description": "Contractual exit is local to Rac membership MEMBERSHIP-TEAM."
+    },
+    {
+      "distribution_id": "DIST-CONSTRAINT-FAMILY-TEAM",
+      "kind": "constraint",
+      "location_ref": "CHANNEL-FAMILY-TEAM",
+      "description": "The time-allocation constraint is local to Q channel CHANNEL-FAMILY-TEAM."
+    },
+    {
+      "distribution_id": "DIST-BURDEN-TEAM",
+      "kind": "burden",
+      "location_ref": "M-POS-TEAM",
+      "description": "The budget burden is recorded at the manager position material state."
+    },
+    {
+      "distribution_id": "DIST-SPILLOVER-TEAM",
+      "kind": "spillover",
+      "location_ref": "PSI-POS-TEAM",
+      "description": "Visibility spillover is recorded at the manager position meaning state."
+    }
+  ],
+  "unknowns": [
+    {
+      "unknown_id": "UNKNOWN-CHANNEL-LATENCY",
+      "location_ref": "CHANNEL-FAMILY-TEAM",
+      "description": "The observed channel latency distribution is not yet measured."
+    }
+  ],
+  "residuals": [
+    {
+      "residual_id": "RESIDUAL-ASSOCIATION-RESPONSE",
+      "location_ref": "CIRCLE-ASSOCIATION",
+      "description": "The association response remains outside the one-hop event update."
+    }
+  ]
+}
