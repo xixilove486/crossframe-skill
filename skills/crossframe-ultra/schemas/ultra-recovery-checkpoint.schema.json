@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-recovery-checkpoint.schema.json",
+  "title": "CrossFrame Ultra immutable recovery checkpoint",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["phase_event_sha256", "artifact_hashes", "evidence_cutoff", "completed_boundary", "resumable"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.recovery-checkpoint"},
+        "phase_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "completed_boundary": {"type": "boolean"},
+        "resumable": {"type": "boolean"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

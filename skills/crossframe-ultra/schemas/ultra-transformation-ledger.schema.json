@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-transformation-ledger.schema.json",
+  "title": "CrossFrame Ultra scale, circle and representation transformations",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["source_volume_sha256", "transformations"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.transformation-ledger"},
+        "phase_id": {"const": "U5"},
+        "source_volume_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "transformations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/transformation"}}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "loss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loss_id", "description", "location_ref"],
+      "properties": {
+        "loss_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+      }
+    },
+    "transformation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transform_id", "kind", "input_identity", "output_identity", "preserved", "changed", "folded", "omitted", "unknown", "task_relative_loss", "effective_variables", "closure_status", "residual_ids", "return_conditions"],
+      "properties": {
+        "transform_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["scale", "circle-relation", "representation-translation"]},
+        "input_identity": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "output_identity": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "preserved": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "changed": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "folded": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "omitted": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "unknown": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "task_relative_loss": {"type": "array", "items": {"$ref": "#/$defs/loss"}},
+        "effective_variables": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"},
+        "closure_status": {"enum": ["closed", "bounded", "open"]},
+        "residual_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "return_conditions": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    }
+  }
+}

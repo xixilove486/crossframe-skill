@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-semantic-coverage.schema.json",
+  "title": "CrossFrame Ultra exact article semantic coverage",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["article_sha256", "required_unit_kinds", "mappings", "missing_unit_ids", "coverage_percent", "coverage_complete"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.semantic-coverage"},
+        "phase_id": {"enum": ["U10", "U11"]},
+        "article_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "required_unit_kinds": {
+          "type": "array",
+          "minItems": 13,
+          "maxItems": 13,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/unitKind"}
+        },
+        "mappings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mapping"}},
+        "missing_unit_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "coverage_percent": {"type": "number", "minimum": 0, "maximum": 100},
+        "coverage_complete": {"type": "boolean"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "unitKind": {
+      "enum": ["claim", "evidence", "unknown", "circle-relation", "scale-transform", "translation-loss", "mechanism", "branch", "residual", "forecast", "verdict", "action", "reversal-condition"]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "unit_kind", "section_id", "normalized_excerpt", "source_refs"],
+      "properties": {
+        "unit_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "unit_kind": {"$ref": "#/$defs/unitKind"},
+        "section_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "normalized_excerpt": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "source_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    }
+  }
+}

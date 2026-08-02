@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-source-lock.schema.json",
+  "title": "CrossFrame Ultra U1 source and input lock",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["source_release_id", "source_manifest_sha256", "evidence_cutoff", "lock_status", "inputs"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.source-lock"},
+        "phase_id": {"const": "U1"},
+        "source_release_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "source_manifest_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "lock_status": {"const": "locked"},
+        "inputs": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

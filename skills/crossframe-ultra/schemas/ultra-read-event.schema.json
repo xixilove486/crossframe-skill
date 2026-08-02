@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-read-event.schema.json",
+  "title": "CrossFrame Ultra hash-bound read event",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["read_id", "path", "byte_sha256", "purpose", "read_at"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.read-event"},
+        "read_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "path": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
+        "byte_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "purpose": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "read_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

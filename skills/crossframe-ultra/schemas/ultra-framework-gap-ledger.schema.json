@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-framework-gap-ledger.schema.json",
+  "title": "CrossFrame Ultra isolated framework-gap candidates",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["candidates", "isolated_from_current_reasoning"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.framework-gap-ledger"},
+        "phase_id": {"enum": ["U9", "U10"]},
+        "candidates": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "isolated_from_current_reasoning": {"const": true}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gap_id", "description", "current_run_refs", "evidence_refs", "future_revision_proposal", "status"],
+      "properties": {
+        "gap_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "current_run_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "future_revision_proposal": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "status": {"enum": ["candidate", "rejected", "deferred"]}
+      }
+    }
+  }
+}

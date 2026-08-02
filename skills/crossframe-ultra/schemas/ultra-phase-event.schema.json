@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-phase-event.schema.json",
+  "title": "CrossFrame Ultra U0-U12 phase event",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["event_id", "parent_phase_sha256", "phase_sha256", "source_sha256", "input_sha256", "status", "failure_reason", "downstream_impact"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.phase-event"},
+        "event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "parent_phase_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
+        "phase_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "source_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "input_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "status": {"$ref": "ultra-common.schema.json#/$defs/runStatus"},
+        "failure_reason": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
+        "downstream_impact": {"$ref": "ultra-common.schema.json#/$defs/phaseArray"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

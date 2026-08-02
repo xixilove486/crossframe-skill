@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-claim-mechanism-graph.schema.json",
+  "title": "CrossFrame Ultra claim, mechanism, explanation and insight graph",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["central_claim_id", "claims", "mechanisms", "edges", "explanations", "insights"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.claim-mechanism-graph"},
+        "phase_id": {"const": "U6"},
+        "central_claim_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "claims": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/claim"}},
+        "mechanisms": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mechanism"}},
+        "edges": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/edge"}},
+        "explanations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/explanation"}},
+        "insights": {"type": "array", "items": {"$ref": "#/$defs/insight"}}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "statement", "identity", "evidence_refs", "status"],
+      "properties": {
+        "claim_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "statement": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "identity": {"enum": ["observed", "reported", "inferred-from-material", "competing-explanation", "user-claim", "model-candidate", "simulated-result", "unknown"]},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "status": {"enum": ["active", "rejected", "unknown", "withdrawn"]}
+      }
+    },
+    "mechanism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mechanism_id", "description", "input_refs", "output_refs", "channel_refs", "evidence_refs"],
+      "properties": {
+        "mechanism_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "input_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "output_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "channel_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_id", "to_id", "edge_type"],
+      "properties": {
+        "from_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "to_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "edge_type": {"enum": ["supported-by", "causes", "competes-with", "qualifies", "reverses"]}
+      }
+    },
+    "explanation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["explanation_id", "kind", "claim_ids", "mechanism_ids", "rank"],
+      "properties": {
+        "explanation_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["main", "strongest-rival", "mixture", "residual"]},
+        "claim_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "mechanism_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "rank": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "insight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["insight_id", "effects", "reason"],
+      "properties": {
+        "insight_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "effects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["changes-ranking", "explains-residual", "changes-observable-forecast", "changes-counterfactual", "changes-intervention", "identifies-circle-scale-channel"]}
+        },
+        "reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

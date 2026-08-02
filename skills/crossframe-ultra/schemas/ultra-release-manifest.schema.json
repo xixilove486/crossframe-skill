@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-release-manifest.schema.json",
+  "title": "CrossFrame Ultra immutable release manifest",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/artifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["release_id", "release_state", "stable_pointer", "framework_source", "compiler", "source_counts", "release_artifacts", "built_at", "validated_at"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.release-manifest"},
+        "release_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "release_state": {"enum": ["staging", "validated", "stable", "superseded"]},
+        "stable_pointer": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
+        "framework_source": {"$ref": "#/$defs/frameworkSource"},
+        "compiler": {"$ref": "#/$defs/compiler"},
+        "source_counts": {"$ref": "#/$defs/sourceCounts"},
+        "release_artifacts": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"},
+        "built_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "validated_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "frameworkSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "raw_sha256", "semantic_sha256", "alternate_raw_packages"],
+      "properties": {
+        "path": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
+        "raw_sha256": {"const": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"},
+        "semantic_sha256": {"const": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"},
+        "alternate_raw_packages": {"$ref": "ultra-common.schema.json#/$defs/hashArray"}
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalization_algorithm", "normalization_version"],
+      "properties": {
+        "normalization_algorithm": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "normalization_version": {"const": "1.0.0"}
+      }
+    },
+    "sourceCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["paragraphs", "headings", "tables", "concepts", "contracts", "source_units"],
+      "properties": {
+        "paragraphs": {"type": "integer", "minimum": 1},
+        "headings": {"type": "integer", "minimum": 1},
+        "tables": {"type": "integer", "minimum": 0},
+        "concepts": {"type": "integer", "minimum": 1},
+        "contracts": {"type": "integer", "minimum": 1},
+        "source_units": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

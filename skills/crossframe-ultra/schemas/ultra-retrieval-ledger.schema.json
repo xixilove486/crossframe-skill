@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-retrieval-ledger.schema.json",
+  "title": "CrossFrame Ultra bounded retrieval ledger",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["network_available", "outbound_authorized", "entries", "saturation"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.retrieval-ledger"},
+        "phase_id": {"const": "U2"},
+        "network_available": {"type": "boolean"},
+        "outbound_authorized": {"type": "boolean"},
+        "entries": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/retrievalEntry"}
+        },
+        "saturation": {"$ref": "#/$defs/saturation"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "retrievalEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query_id", "query_sha256", "direction", "result_summary", "source_refs", "stop_reason"],
+      "properties": {
+        "query_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "query_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "direction": {"enum": ["support", "counterexample", "affected-position", "source-lineage", "calibration"]},
+        "result_summary": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "source_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "stop_reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "saturation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rounds", "stop_reason"],
+      "properties": {
+        "rounds": {"type": "integer", "minimum": 0},
+        "stop_reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-run-contract.schema.json",
+  "title": "CrossFrame Ultra immutable U0 run contract",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["request_sha256", "input_sha256", "explicit_trigger", "sensitivity", "retention_policy", "outbound_permission", "capabilities", "resource_limits", "completion_criteria"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.run-contract"},
+        "phase_id": {"const": "U0"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "input_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "explicit_trigger": {"enum": ["crossframe-ultra", "CrossFrame Ultra", "$crossframe-ultra", "/crossframe-ultra"]},
+        "sensitivity": {"enum": ["public", "internal", "private", "restricted"]},
+        "retention_policy": {"enum": ["retain-run-package", "retain-delivery-only", "user-directed"]},
+        "outbound_permission": {"enum": ["allowed", "redacted-only", "denied"]},
+        "capabilities": {"$ref": "#/$defs/capabilities"},
+        "resource_limits": {"$ref": "#/$defs/resourceLimits"},
+        "completion_criteria": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "network", "subagents", "validators"],
+      "properties": {
+        "files": {"type": "boolean"},
+        "network": {"type": "boolean"},
+        "subagents": {"type": "boolean"},
+        "validators": {"type": "boolean"}
+      }
+    },
+    "resourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_tool_calls", "max_retrieval_rounds", "max_branches", "max_repair_attempts"],
+      "properties": {
+        "max_tool_calls": {"type": "integer", "minimum": 1},
+        "max_retrieval_rounds": {"type": "integer", "minimum": 0},
+        "max_branches": {"type": "integer", "minimum": 1},
+        "max_repair_attempts": {"type": "integer", "minimum": 0, "maximum": 3}
+      }
+    }
+  }
+}
