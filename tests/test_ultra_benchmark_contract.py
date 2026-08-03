@@ -98,7 +98,7 @@ def load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_builder():
+def load_builder(*, stub_skill_measurement: bool = True):
     assert BUILDER_PATH.is_file(), "Task 16 results builder does not exist"
     spec = importlib.util.spec_from_file_location(
         "ultra_vs_promax_build_results",
@@ -107,7 +107,27 @@ def load_builder():
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    if stub_skill_measurement:
+        module._measure_execution_skill_tree_sha256 = lambda _repo: {
+            "promax": "a" * 64,
+            "ultra": "b" * 64,
+        }
     return module
+
+
+def canonical_promax_skill_tree_sha256(skill_root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(skill_root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        relative = path.relative_to(skill_root).as_posix()
+        if relative == "references/.v8-full-source.lock":
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -541,6 +561,81 @@ def test_committed_scaffold_cannot_be_prepared_before_evidence_is_frozen() -> No
         )
     assert PAIRING_PATH.read_bytes() == manifest_before
     assert RESULTS_PATH.read_bytes() == results_before
+
+
+def test_execution_ready_rejects_asserted_skill_hash_mismatch_atomically(
+    tmp_path: Path,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    pairing_before = (evaluation / "pairing-manifest.json").read_bytes()
+    results_before = (evaluation / "results.json").read_bytes()
+
+    with pytest.raises(
+        builder.BenchmarkBuildError,
+        match="promax.*does not match.*measured",
+    ):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="execution-ready",
+            promax_skill_tree_sha256="c" * 64,
+            ultra_skill_tree_sha256="b" * 64,
+        )
+
+    assert (evaluation / "pairing-manifest.json").read_bytes() == pairing_before
+    assert (evaluation / "results.json").read_bytes() == results_before
+
+
+def test_execution_ready_rejects_stale_skill_measurement_atomically(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    pairing_before = (evaluation / "pairing-manifest.json").read_bytes()
+    results_before = (evaluation / "results.json").read_bytes()
+
+    def reject_stale(_repo: Path) -> dict[str, str]:
+        raise builder.BenchmarkBuildError(
+            "Ultra skill-tree measurement is stale or not ready"
+        )
+
+    monkeypatch.setattr(
+        builder,
+        "_measure_execution_skill_tree_sha256",
+        reject_stale,
+    )
+    with pytest.raises(builder.BenchmarkBuildError, match="stale|not ready"):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="execution-ready",
+            promax_skill_tree_sha256="a" * 64,
+            ultra_skill_tree_sha256="b" * 64,
+        )
+
+    assert (evaluation / "pairing-manifest.json").read_bytes() == pairing_before
+    assert (evaluation / "results.json").read_bytes() == results_before
+
+
+def test_promax_skill_hash_matches_green_canonical_algorithm() -> None:
+    builder = load_builder(stub_skill_measurement=False)
+    expected = canonical_promax_skill_tree_sha256(
+        ROOT / "skills" / "crossframe-promax"
+    )
+
+    assert builder._measure_promax_skill_tree_sha256(ROOT) == expected
+
+
+def test_ultra_skill_hash_requires_fresh_u1_measurement() -> None:
+    builder = load_builder(stub_skill_measurement=False)
+
+    with pytest.raises(
+        builder.BenchmarkBuildError,
+        match="Ultra.*fresh|Ultra.*ready|release manifest",
+    ):
+        builder._measure_ultra_skill_tree_sha256(ROOT)
 
 
 def test_transition_cli_fails_closed_on_unreviewed_committed_evidence() -> None:

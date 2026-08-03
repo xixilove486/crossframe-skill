@@ -6,6 +6,7 @@ from collections import Counter
 import copy
 from datetime import datetime
 import hashlib
+import importlib
 import json
 import math
 import os
@@ -2663,6 +2664,93 @@ def _require_pristine_raw_root(evaluation: Path) -> None:
         )
 
 
+def _measure_promax_skill_tree_sha256(repo: Path) -> str:
+    skill_root = _repo_path(
+        repo,
+        "skills/crossframe-promax",
+        context="ProMax skill root",
+    )
+    if not skill_root.is_dir():
+        raise BenchmarkBuildError("ProMax skill root is missing")
+    digest = hashlib.sha256()
+    for path in sorted(skill_root.rglob("*")):
+        _reject_link_or_reparse(path, context="ProMax skill tree entry")
+        if not path.is_file() or "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        relative = path.relative_to(skill_root).as_posix()
+        if relative == "references/.v8-full-source.lock":
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _measure_ultra_skill_tree_sha256(repo: Path) -> str:
+    scripts_root = _repo_path(
+        repo,
+        "skills/crossframe-ultra/scripts",
+        context="Ultra runtime scripts root",
+    )
+    manifest_path = _repo_path(
+        repo,
+        "skills/crossframe-ultra/references/source-manifest.json",
+        context="Ultra source manifest",
+    )
+    if not scripts_root.is_dir() or not manifest_path.is_file():
+        raise BenchmarkBuildError("Ultra measurement authority is missing")
+    scripts_text = str(scripts_root)
+    inserted = scripts_text not in sys.path
+    if inserted:
+        sys.path.insert(0, scripts_text)
+    try:
+        source_integrity = importlib.import_module(
+            "ultra_runtime.source_integrity"
+        )
+    except Exception as exc:
+        raise BenchmarkBuildError(
+            "Ultra source-integrity runtime could not be loaded"
+        ) from exc
+    finally:
+        if inserted:
+            sys.path.remove(scripts_text)
+    module_path = Path(str(source_integrity.__file__)).resolve()
+    try:
+        module_path.relative_to(scripts_root.resolve())
+    except ValueError as exc:
+        raise BenchmarkBuildError(
+            "Ultra source-integrity runtime is not from the fixed skill root"
+        ) from exc
+    try:
+        manifest = source_integrity.load_source_manifest(manifest_path)
+        measurement = source_integrity.measure_u1_prerequisites(
+            repo,
+            manifest=manifest,
+        )
+    except Exception as exc:
+        raise BenchmarkBuildError(
+            "Ultra skill-tree measurement failed closed"
+        ) from exc
+    skill_tree_sha256 = getattr(measurement, "skill_tree_sha256", None)
+    if getattr(measurement, "ready", False) is not True or not skill_tree_sha256:
+        raise BenchmarkBuildError(
+            "Ultra skill-tree measurement is not fresh and ready; "
+            "the release manifest may be stale"
+        )
+    return _require_sha256(
+        skill_tree_sha256,
+        context="measured Ultra skill tree SHA-256",
+    )
+
+
+def _measure_execution_skill_tree_sha256(repo: Path) -> dict[str, str]:
+    return {
+        "promax": _measure_promax_skill_tree_sha256(repo),
+        "ultra": _measure_ultra_skill_tree_sha256(repo),
+    }
+
+
 def _contract_with_manifest(
     contract: Mapping[str, object],
     manifest: dict[str, object],
@@ -2732,7 +2820,7 @@ def transition_state(
             contract=candidate_contract,
         )
         _require_pristine_raw_root(evaluation)
-        product_hashes = {
+        asserted_hashes = {
             "promax": _require_sha256(
                 promax_skill_tree_sha256,
                 context="promax skill tree SHA-256",
@@ -2742,6 +2830,18 @@ def transition_state(
                 context="ultra skill tree SHA-256",
             ),
         }
+        measured_hashes = _measure_execution_skill_tree_sha256(repo)
+        for product in PRODUCTS:
+            measured = _require_sha256(
+                measured_hashes.get(product),
+                context=f"measured {product} skill tree SHA-256",
+            )
+            if asserted_hashes[product] != measured:
+                raise BenchmarkBuildError(
+                    f"{product} skill tree SHA-256 assertion does not match "
+                    "the measured fixed skill root"
+                )
+        product_hashes = measured_hashes
         candidate["status"] = "execution-ready"
         for raw_case, raw_pair in zip(scenarios, candidate_pairs, strict=True):
             case = _require_object(raw_case, context="scenario")
