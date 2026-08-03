@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-recursive-state.schema.json",
+  "title": "CrossFrame Ultra sealed recursive state artifact",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "path_id",
+        "node_id",
+        "parent_run_id",
+        "parent_path_id",
+        "parent_node_id",
+        "order",
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "inherited_fact_ids",
+        "inherited_evidence_ids",
+        "inherited_unknown_ids",
+        "inherited_loss_ids",
+        "inherited_residual_ids",
+        "event_id",
+        "mechanism_ids",
+        "state_diff_sha256",
+        "signal_ids",
+        "evidence_identity",
+        "declared_evidence_grade"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.recursive-state"},
+        "phase_id": {"const": "U7"},
+        "path_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "node_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "parent_run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "parent_path_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "parent_node_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "order": {"type": "integer", "minimum": 1, "maximum": 3},
+        "world_volume_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "transformation_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "concept_disposition_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "claim_mechanism_graph_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "full_state_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "bounded_subgraph": {"$ref": "#/$defs/boundedSubgraph"},
+        "inherited_fact_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "inherited_evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "inherited_unknown_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "inherited_loss_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "inherited_residual_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "mechanism_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "state_diff_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "signal_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "evidence_identity": {"$ref": "#/$defs/evidenceIdentity"},
+        "declared_evidence_grade": {"enum": ["unknown", "low", "medium", "high"]}
+      },
+      "oneOf": [
+        {"required": ["full_state_sha256"], "not": {"required": ["bounded_subgraph"]}},
+        {"required": ["bounded_subgraph"], "not": {"required": ["full_state_sha256"]}}
+      ]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "evidenceIdentity": {
+      "enum": ["observed", "reported", "inferred-from-material", "competing-explanation", "user-claim", "model-candidate", "simulated-result", "unknown"]
+    },
+    "boundedSubgraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subgraph_id", "root_state_ids", "included_state_ids", "excluded_state_ids", "boundary_rule", "subgraph_sha256"],
+      "properties": {
+        "subgraph_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "root_state_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "included_state_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "excluded_state_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "boundary_rule": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "subgraph_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      }
+    }
+  }
+}

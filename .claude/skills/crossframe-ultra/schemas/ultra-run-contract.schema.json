@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-run-contract.schema.json",
+  "title": "CrossFrame Ultra immutable U0 run contract",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["trigger", "request_sha256", "run_mode", "sensitivity", "retention", "outbound_permission", "evidence_cutoff", "capabilities", "resource_limits"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.run-contract"},
+        "phase_id": {"const": "U0"},
+        "trigger": {"enum": ["crossframe-ultra", "CrossFrame Ultra", "$crossframe-ultra", "/crossframe-ultra"]},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_mode": {"enum": ["production", "test"]},
+        "sensitivity": {"enum": ["public", "internal", "private", "restricted"]},
+        "retention": {"enum": ["retain", "delivery-only", "user-directed"]},
+        "outbound_permission": {"enum": ["allowed", "deidentified-only", "denied"]},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "capabilities": {"$ref": "#/$defs/capabilities"},
+        "resource_limits": {"$ref": "#/$defs/resourceLimits"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "docx_parser", "network", "retrieval", "validators", "subagents", "model_context"],
+      "properties": {
+        "filesystem": {"$ref": "#/$defs/capabilityState"},
+        "docx_parser": {"$ref": "#/$defs/capabilityState"},
+        "network": {"$ref": "#/$defs/capabilityState"},
+        "retrieval": {"$ref": "#/$defs/capabilityState"},
+        "validators": {"$ref": "#/$defs/capabilityState"},
+        "subagents": {"$ref": "#/$defs/capabilityState"},
+        "model_context": {"$ref": "#/$defs/capabilityState"}
+      }
+    },
+    "capabilityState": {
+      "enum": ["available", "required", "unavailable", "not-applicable"]
+    },
+    "resourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum_branches", "maximum_retrieval_rounds_without_material_novelty", "maximum_tool_retries", "maximum_repair_attempts"],
+      "properties": {
+        "maximum_branches": {"type": "integer", "minimum": 1},
+        "maximum_retrieval_rounds_without_material_novelty": {"type": "integer", "minimum": 0},
+        "maximum_tool_retries": {"type": "integer", "minimum": 1},
+        "maximum_repair_attempts": {"type": "integer", "minimum": 0, "maximum": 3}
+      }
+    }
+  }
+}

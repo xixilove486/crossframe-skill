@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-source-manifest.schema.json",
+  "title": "CrossFrame Ultra v8.2 source manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_id",
+    "schema_version",
+    "framework_version",
+    "framework_revision",
+    "raw_sha256",
+    "semantic_sha256",
+    "semantic_normalization_version",
+    "normalization_version",
+    "paragraph_count",
+    "heading_count",
+    "table_count",
+    "concept_count",
+    "contract_count",
+    "source_unit_count",
+    "non_whitespace_chars",
+    "compiler_version",
+    "compiler",
+    "source_ranges",
+    "division_ranges",
+    "divisions",
+    "source_units",
+    "files",
+    "source_tree_merkle_root",
+    "source_tree_merkle_version"
+  ],
+  "properties": {
+    "schema_id": {"const": "crossframe.ultra.v8.2.source-manifest"},
+    "schema_version": {"const": 1},
+    "framework_version": {"const": "v8.2"},
+    "framework_revision": {"const": "v8.2"},
+    "raw_sha256": {"const": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"},
+    "semantic_sha256": {"const": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"},
+    "semantic_normalization_version": {"const": 1},
+    "normalization_version": {"const": 1},
+    "paragraph_count": {"const": 4631},
+    "heading_count": {"type": "integer", "minimum": 1},
+    "table_count": {"const": 122},
+    "concept_count": {"type": "integer", "minimum": 0},
+    "contract_count": {"type": "integer", "minimum": 0},
+    "source_unit_count": {"const": 4753},
+    "non_whitespace_chars": {"const": 165690},
+    "compiler_version": {"const": "1.0.0"},
+    "compiler": {"$ref": "#/$defs/compiler"},
+    "source_ranges": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {"$ref": "#/$defs/sourceRange"}
+    },
+    "division_ranges": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/sourceRange"}
+    },
+    "divisions": {
+      "type": "array",
+      "minItems": 20,
+      "maxItems": 20,
+      "items": {"$ref": "#/$defs/division"}
+    },
+    "source_units": {
+      "type": "array",
+      "minItems": 4753,
+      "maxItems": 4753,
+      "items": {"$ref": "#/$defs/sourceUnit"}
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/file"}
+    },
+    "source_tree_merkle_root": {"$ref": "#/$defs/sha256"},
+    "source_tree_merkle_version": {"const": 1}
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "paragraphAnchor": {
+      "type": "string",
+      "pattern": "^V82-P[0-9]{4}$"
+    },
+    "tableAnchor": {
+      "type": "string",
+      "pattern": "^V82-T[0-9]{3}$"
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "path", "sha256"],
+      "properties": {
+        "version": {"const": "1.0.0"},
+        "path": {"const": "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sourceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "title", "paragraph_start", "paragraph_end", "table_start", "table_end", "role"],
+      "properties": {
+        "file": {"type": "string", "pattern": "^[0-9]{2}-[a-z0-9-]+\\.md$"},
+        "title": {"type": "string", "minLength": 1},
+        "paragraph_start": {"$ref": "#/$defs/paragraphAnchor"},
+        "paragraph_end": {"$ref": "#/$defs/paragraphAnchor"},
+        "table_start": {"anyOf": [{"$ref": "#/$defs/tableAnchor"}, {"type": "null"}]},
+        "table_end": {"anyOf": [{"$ref": "#/$defs/tableAnchor"}, {"type": "null"}]},
+        "role": {"enum": ["source-envelope", "division"]}
+      }
+    },
+    "division": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "title", "start_ordinal", "end_ordinal", "table_ordinals"],
+      "properties": {
+        "slug": {"type": "string", "pattern": "^[0-9]{2}-[a-z0-9-]+$"},
+        "title": {"type": "string", "minLength": 1},
+        "start_ordinal": {"type": "integer", "minimum": 1, "maximum": 4631},
+        "end_ordinal": {"type": "integer", "minimum": 1, "maximum": 4631},
+        "table_ordinals": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 122}
+        }
+      }
+    },
+    "sourceUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "kind", "ordinal", "sha256"],
+      "properties": {
+        "unit_id": {
+          "type": "string",
+          "pattern": "^V82-(?:P[0-9]{4}|T[0-9]{3})$"
+        },
+        "kind": {"enum": ["paragraph", "table"]},
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 4631},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "size"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^v8\\.2-full-source/(?:[0-9]{2}-[a-z0-9-]+\\.md|tables/V82-T[0-9]{3}\\.md)$"
+        },
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "size": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}
