@@ -1,21 +1,26 @@
 {
   "schema_id": "crossframe.ultra.benchmark-privacy-policy",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "L03",
-  "live_retrieval_allowed": false,
-  "private_source_text_outbound_allowed": false,
-  "product_visible_paths": [
+  "default_deny": true,
+  "product_packet_allowlist": [
     "tests/evals/ultra-vs-promax/cases/L03/prompt.md",
     "tests/evals/ultra-vs-promax/cases/L03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/L03/materials/context.md"
+  ],
+  "grader_case_packet_allowlist": [
+    "tests/evals/ultra-vs-promax/cases/L03/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/L03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/L03/materials/context.md"
+  ],
+  "grader_injected_slots": [
+    "rubric",
+    "article-a",
+    "article-b"
+  ],
+  "audit_only_paths": [
     "tests/evals/ultra-vs-promax/cases/L03/materials/manifest.json",
-    "tests/evals/ultra-vs-promax/cases/L03/privacy-policy.json"
-  ],
-  "grader_visible_paths": [
-    "tests/evals/ultra-vs-promax/cases/L03/prompt.md",
-    "tests/evals/ultra-vs-promax/cases/L03/evidence-cutoff.json",
-    "tests/evals/ultra-vs-promax/cases/L03/materials/manifest.json"
-  ],
-  "forbidden_visible_paths": [
+    "tests/evals/ultra-vs-promax/cases/L03/privacy-policy.json",
     "tests/evals/ultra-vs-promax/cases/L03/expected-pressure.json"
   ]
 }
