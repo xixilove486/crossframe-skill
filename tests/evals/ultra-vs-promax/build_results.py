@@ -11,6 +11,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import random
+import stat
 import statistics
 import sys
 import tempfile
@@ -75,6 +76,39 @@ class ForwardValidationError(ValueError):
     """Raised when paired forward records violate the frozen contract."""
 
 
+def _reject_link_or_reparse(
+    path: Path,
+    *,
+    context: str,
+    error_type: type[ValueError] = BenchmarkBuildError,
+) -> os.stat_result | None:
+    try:
+        result = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    if stat.S_ISLNK(result.st_mode) or (
+        getattr(result, "st_file_attributes", 0) & reparse_flag
+    ):
+        raise error_type(f"{context} must not be a symlink or reparse point: {path}")
+    return result
+
+
+def _reject_path_layers(
+    path: Path,
+    *,
+    context: str,
+    error_type: type[ValueError] = BenchmarkBuildError,
+) -> None:
+    absolute = path.absolute()
+    for layer in reversed((absolute, *absolute.parents)):
+        _reject_link_or_reparse(
+            layer,
+            context=context,
+            error_type=error_type,
+        )
+
+
 def canonical_json_bytes(value: object) -> bytes:
     try:
         return json.dumps(
@@ -127,8 +161,7 @@ def _load_json(
     context: str,
     error_type: type[ValueError] = BenchmarkBuildError,
 ) -> object:
-    if path.is_symlink():
-        raise error_type(f"{context} must not be a symlink: {path}")
+    _reject_link_or_reparse(path, context=context, error_type=error_type)
     if not path.is_file():
         raise error_type(f"missing {context}: {path}")
     return _decode_json(path.read_bytes(), context, error_type)
@@ -226,18 +259,22 @@ def _resolve_roots(
     repo_root: Path | str,
     eval_root: Path | str,
 ) -> tuple[Path, Path]:
-    repo = Path(repo_root).resolve(strict=True)
+    supplied_repo = Path(repo_root).absolute()
+    _reject_path_layers(supplied_repo, context="repo root")
+    repo = supplied_repo.resolve(strict=True)
     if not repo.is_dir():
         raise BenchmarkBuildError(f"repo root is not a directory: {repo}")
     supplied_eval = Path(eval_root)
-    evaluation = (
+    unresolved_evaluation = (
         supplied_eval if supplied_eval.is_absolute() else repo / supplied_eval
-    ).resolve(strict=True)
+    ).absolute()
+    _reject_path_layers(unresolved_evaluation, context="evaluation root")
+    evaluation = unresolved_evaluation.resolve(strict=True)
     try:
         evaluation.relative_to(repo)
     except ValueError as exc:
         raise BenchmarkBuildError("evaluation root must stay inside repo root") from exc
-    if not evaluation.is_dir() or evaluation.is_symlink():
+    if not evaluation.is_dir():
         raise BenchmarkBuildError(
             f"evaluation root must be a real directory: {evaluation}"
         )
@@ -253,26 +290,26 @@ def _repo_path(repo: Path, relative: object, *, context: str) -> Path:
     if pure.is_absolute() or any(part in {"", ".", ".."} for part in pure.parts):
         raise BenchmarkBuildError(f"{context} is not a canonical repo-relative path")
     candidate = repo.joinpath(*pure.parts)
+    current = repo
+    _reject_link_or_reparse(current, context=context)
+    for part in pure.parts:
+        current = current / part
+        _reject_link_or_reparse(current, context=context)
     resolved = candidate.resolve(strict=False)
     try:
         resolved.relative_to(repo)
     except ValueError as exc:
         raise BenchmarkBuildError(f"{context} escapes the repo root") from exc
-    current = repo
-    for part in pure.parts:
-        current = current / part
-        if current.is_symlink():
-            raise BenchmarkBuildError(f"{context} traverses a symlink: {relative}")
     return candidate
 
 
 def tree_sha256(root: Path) -> str:
-    if root.is_symlink() or not root.is_dir():
+    _reject_link_or_reparse(root, context="artifact tree")
+    if not root.is_dir():
         raise BenchmarkBuildError(f"artifact tree must be a real directory: {root}")
     digest = hashlib.sha256()
     for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            raise BenchmarkBuildError(f"artifact tree contains a symlink: {path}")
+        _reject_link_or_reparse(path, context="artifact tree entry")
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix().encode("utf-8")
@@ -368,7 +405,11 @@ def _validate_source_files(
         case["materials_dir"],
         context=f"case {case_id} materials directory",
     )
-    if materials_dir.is_symlink() or not materials_dir.is_dir():
+    _reject_link_or_reparse(
+        materials_dir,
+        context=f"case {case_id} materials directory",
+    )
+    if not materials_dir.is_dir():
         raise BenchmarkBuildError(
             f"case {case_id} materials directory must be a real directory"
         )
@@ -407,10 +448,10 @@ def _validate_source_files(
         current = materials_dir
         for part in pure.parts:
             current = current / part
-            if current.is_symlink():
-                raise BenchmarkBuildError(
-                    f"case {case_id} source path traverses a symlink"
-                )
+            _reject_link_or_reparse(
+                current,
+                context=f"case {case_id} source path",
+            )
         if not source_path.is_file():
             raise BenchmarkBuildError(f"case {case_id} source file is missing")
         _require_sha256(
@@ -449,11 +490,14 @@ def _validate_source_files(
     )
     if materials["source_set_sha256"] != expected_source_set:
         raise BenchmarkBuildError(f"case {case_id} source set SHA-256 mismatch")
-    observed_paths = {
-        path.relative_to(materials_dir).as_posix()
-        for path in materials_dir.rglob("*")
-        if path.is_file() and path != materials_dir / "manifest.json"
-    }
+    observed_paths: set[str] = set()
+    for path in materials_dir.rglob("*"):
+        _reject_link_or_reparse(
+            path,
+            context=f"case {case_id} materials entry",
+        )
+        if path.is_file() and path != materials_dir / "manifest.json":
+            observed_paths.add(path.relative_to(materials_dir).as_posix())
     if observed_paths != declared_paths:
         raise BenchmarkBuildError(
             f"case {case_id} materials contain undeclared or missing files"
@@ -720,6 +764,15 @@ def _validate_reviews(
         raise BenchmarkBuildError(
             f"case {case_id} outcome leakage review found prohibited paths"
         )
+    reviewer_ids = [
+        license_review.get("reviewer_id"),
+        privacy_review.get("reviewer_id"),
+        leakage_review.get("reviewer_id"),
+    ]
+    if require_passed and len(set(reviewer_ids)) != 3:
+        raise BenchmarkBuildError(
+            f"case {case_id} reviews require three distinct reviewer IDs"
+        )
     return reviews
 
 
@@ -812,7 +865,11 @@ def _validate_packet_policy(
             relative,
             context=f"case {case_id} packet policy path {index + 1}",
         )
-        if not path.is_file() or path.is_symlink():
+        _reject_link_or_reparse(
+            path,
+            context=f"case {case_id} packet policy path {index + 1}",
+        )
+        if not path.is_file():
             raise BenchmarkBuildError(
                 f"case {case_id} packet policy path must be a real file"
             )
@@ -825,6 +882,9 @@ def _validate_case_bundle(
     evaluation: Path,
     case: Mapping[str, object],
     require_frozen: bool,
+    manifest_override: Mapping[str, object] | None = None,
+    pair_override: Mapping[str, object] | None = None,
+    validate_pairing: bool = True,
 ) -> dict[str, object]:
     raw_case_id = case.get("id")
     if not isinstance(raw_case_id, str) or not raw_case_id:
@@ -833,6 +893,10 @@ def _validate_case_bundle(
     required_case_fields = {
         "id",
         "category",
+        "question",
+        "decisive_pressure",
+        "v82_decisive",
+        "adversarial_targets",
         "case_dir",
         "prompt_path",
         "evidence_cutoff_path",
@@ -840,10 +904,33 @@ def _validate_case_bundle(
         "expected_pressure_path",
         "privacy_policy_path",
     }
-    if not required_case_fields.issubset(case):
+    case_fields = set(case)
+    if case_fields not in {
+        frozenset(required_case_fields),
+        frozenset({*required_case_fields, "execution_readiness"}),
+    }:
         raise BenchmarkBuildError(f"case {case_id} path contract is incomplete")
     if case["category"] not in CATEGORIES:
         raise BenchmarkBuildError(f"case {case_id} category is invalid")
+    targets = _require_list(
+        case["adversarial_targets"],
+        context=f"case {case_id} adversarial targets",
+    )
+    if (
+        not isinstance(case["question"], str)
+        or not case["question"].strip()
+        or not isinstance(case["decisive_pressure"], str)
+        or not case["decisive_pressure"].strip()
+        or type(case["v82_decisive"]) is not bool
+        or not targets
+        or any(not isinstance(target, str) or not target.strip() for target in targets)
+        or len(targets) != len(set(targets))
+        or (
+            "execution_readiness" in case
+            and case["execution_readiness"] != "awaiting-evidence-bundle"
+        )
+    ):
+        raise BenchmarkBuildError(f"case {case_id} scenario metadata is invalid")
     expected_dir = f"tests/evals/ultra-vs-promax/cases/{case_id}"
     expected_paths = {
         "case_dir": expected_dir,
@@ -857,6 +944,15 @@ def _validate_case_bundle(
         case[field] != expected for field, expected in expected_paths.items()
     ):
         raise BenchmarkBuildError(f"case {case_id} paths are not canonical")
+    prompt_path = _repo_path(
+        repo,
+        case["prompt_path"],
+        context=f"case {case_id} prompt",
+    )
+    if prompt_path.read_bytes() != (str(case["question"]) + "\n").encode("utf-8"):
+        raise BenchmarkBuildError(
+            f"case {case_id} question does not match the canonical prompt"
+        )
     cutoff_path = _repo_path(
         repo,
         case["evidence_cutoff_path"],
@@ -946,9 +1042,28 @@ def _validate_case_bundle(
         require_passed=require_frozen,
     )
     policy = _validate_packet_policy(repo=repo, case=case, sources=sources)
-    manifest, pair = _pair_by_case_id(evaluation, case_id)
+    bundle = {
+        "case": case,
+        "cutoff": cutoff,
+        "materials": materials,
+        "materials_dir": materials_dir,
+        "sources": sources,
+        "reviews": reviews,
+        "policy": policy,
+    }
+    if not validate_pairing:
+        return bundle
+    if (manifest_override is None) != (pair_override is None):
+        raise BenchmarkBuildError("pairing overrides must be supplied together")
+    if manifest_override is None:
+        manifest, pair = _pair_by_case_id(evaluation, case_id)
+    else:
+        manifest = _require_object(manifest_override, context="manifest override")
+        pair = _require_object(pair_override, context=f"pair {case_id} override")
     if manifest.get("schema_version") != 2:
         raise BenchmarkBuildError(f"case {case_id} requires pairing manifest version 2")
+    if pair.get("case_id") != case_id:
+        raise BenchmarkBuildError(f"pair {case_id} identity is invalid")
     bindings = _require_object(
         pair.get("bindings"),
         context=f"pair {case_id} bindings",
@@ -966,9 +1081,7 @@ def _validate_case_bundle(
         context=f"pair {case_id} bindings",
     )
     expected_evidence = _expected_bindings(repo, case)
-    observed_evidence = {
-        key: bindings[key] for key in expected_evidence
-    }
+    observed_evidence = {key: bindings[key] for key in expected_evidence}
     if observed_evidence != expected_evidence:
         raise BenchmarkBuildError(f"pair {case_id} evidence bindings changed")
     for field in ("product_packet_sha256", "grader_base_packet_sha256"):
@@ -976,15 +1089,9 @@ def _validate_case_bundle(
         if value is not None:
             _require_sha256(value, context=f"pair {case_id} {field}")
     return {
-        "case": case,
+        **bundle,
         "pair": pair,
         "manifest": manifest,
-        "cutoff": cutoff,
-        "materials": materials,
-        "materials_dir": materials_dir,
-        "sources": sources,
-        "reviews": reviews,
-        "policy": policy,
         "bindings": bindings,
     }
 
@@ -1002,6 +1109,7 @@ def validate_case_bundle(
         evaluation=evaluation,
         case=_case_by_id(evaluation, case_id),
         require_frozen=require_frozen,
+        validate_pairing=False,
     )
     materials = _require_object(bundle["materials"], context="materials")
     return {
@@ -1056,11 +1164,11 @@ def _build_product_packet_from_bundle(
             media_type="application/json",
         ),
     ]
-    for raw_source in sources:
+    for index, raw_source in enumerate(sources, start=1):
         source = _require_object(raw_source, context=f"case {case_id} source")
         files.append(
             _packet_file(
-                logical_name=f"material/{source['path']}",
+                logical_name=f"material-{index:03d}",
                 path=materials_dir.joinpath(*PurePosixPath(str(source["path"])).parts),
                 media_type=str(source["media_type"]),
             )
@@ -1088,10 +1196,7 @@ def _build_grader_base_packet(
     rubric: Mapping[str, object],
 ) -> dict[str, object]:
     return {
-        "schema_id": "crossframe.benchmark.grader-base-packet",
-        "schema_version": 2,
-        "case_id": product_packet["case_id"],
-        "case_files": product_packet["files"],
+        "files": product_packet["files"],
         "rubric": _grader_rubric_view(rubric),
     }
 
@@ -1140,20 +1245,15 @@ def _build_grader_packet_from_runs(
             context=f"case {case_id} Article {label}",
         )
         article_bytes = article_path.read_bytes()
-        articles[label] = {
+        articles[f"article-{label.lower()}"] = {
             "logical_name": f"Article {label}",
             "sha256": sha256_bytes(article_bytes),
             "content_base64": base64.b64encode(article_bytes).decode("ascii"),
         }
     return {
-        "schema_id": "crossframe.benchmark.blind-grader-packet",
-        "schema_version": 2,
-        "case_id": case_id,
-        "grader_id": grader_id,
-        "base_packet_sha256": sha256_json(base_packet),
-        "case_files": base_packet["case_files"],
+        "files": base_packet["files"],
         "rubric": base_packet["rubric"],
-        "articles": articles,
+        **articles,
     }
 
 
@@ -1258,7 +1358,7 @@ def _contract(
             "expected_pressure_path",
             "privacy_policy_path",
         }
-        if manifest_version == 1:
+        if manifest_version == 1 or "execution_readiness" in case:
             scenario_fields.add("execution_readiness")
         _require_fields(
             case,
@@ -1269,6 +1369,13 @@ def _contract(
         category = case["category"]
         if not isinstance(case_id, str) or not isinstance(category, str):
             raise BenchmarkBuildError(f"scenario[{index}] identity is invalid")
+        if (
+            "execution_readiness" in case
+            and case["execution_readiness"] != "awaiting-evidence-bundle"
+        ):
+            raise BenchmarkBuildError(
+                f"scenario {case_id} legacy execution readiness is invalid"
+            )
         case_ids.append(case_id)
         category_counts[category] += 1
         decisive_count += int(
@@ -1631,6 +1738,12 @@ def _validated_v2_bundles(
             "execution-ready requires pairing manifest version 2"
         )
     manifest = _require_object(contract["manifest"], context="manifest")
+    pairs = _require_list(contract["pairs"], context="pairs")
+    pairs_by_case = {
+        str(_require_object(item, context="manifest pair")["case_id"]):
+        _require_object(item, context="manifest pair")
+        for item in pairs
+    }
     bundles: dict[str, dict[str, object]] = {}
     for raw_case in _require_list(contract["scenarios"], context="scenarios"):
         case = _require_object(raw_case, context="scenario")
@@ -1640,6 +1753,8 @@ def _validated_v2_bundles(
             evaluation=evaluation,
             case=case,
             require_frozen=True,
+            manifest_override=manifest,
+            pair_override=pairs_by_case.get(case_id),
         )
         product_packet = _build_product_packet_from_bundle(repo=repo, bundle=bundle)
         rubric = _require_object(contract["rubric"], context="rubric")
@@ -1678,19 +1793,26 @@ def _validate_all_product_runs(
     allowed_pair_statuses: set[str] | frozenset[str],
 ) -> dict[str, dict[str, dict[str, object]]]:
     runs: dict[str, dict[str, dict[str, object]]] = {}
+    seen_run_ids: set[str] = set()
     for raw_pair in pairs:
         pair = _require_object(raw_pair, context="manifest pair")
         case_id = str(pair["case_id"])
-        runs[case_id] = {
-            product: _validate_product_run(
+        case_runs: dict[str, dict[str, object]] = {}
+        for product in PRODUCTS:
+            run = _validate_product_run(
                 repo=repo,
                 manifest=manifest,
                 pair=pair,
                 product=product,
                 allowed_pair_statuses=allowed_pair_statuses,
             )
-            for product in PRODUCTS
-        }
+            _require_unique_context_id(
+                seen_run_ids,
+                run,
+                kind="product",
+            )
+            case_runs[product] = run
+        runs[case_id] = case_runs
     return runs
 
 
@@ -1704,6 +1826,7 @@ def _validate_all_grades(
     product_runs: Mapping[str, Mapping[str, Mapping[str, object]]],
 ) -> int:
     grade_count = 0
+    seen_run_ids: set[str] = set()
     for raw_pair in pairs:
         pair = _require_object(raw_pair, context="manifest pair")
         case_id = str(pair["case_id"])
@@ -1726,7 +1849,7 @@ def _validate_all_grades(
                 base_packet=base_packet,
                 product_runs=product_runs[case_id],
             )
-            _validate_grade(
+            grade = _validate_grade(
                 repo=repo,
                 rubric=rubric,
                 manifest=manifest,
@@ -1734,6 +1857,11 @@ def _validate_all_grades(
                 grader_contract=grader,
                 product_runs=product_runs[case_id],
                 expected_packet_sha256=sha256_json(packet),
+            )
+            _require_unique_context_id(
+                seen_run_ids,
+                grade,
+                kind="grade",
             )
             grade_count += 1
     return grade_count
@@ -1798,6 +1926,51 @@ def validate_contract(
     }
 
 
+def _context_receipt_sha256(
+    record: Mapping[str, object],
+    fields: Sequence[str],
+) -> str:
+    return sha256_json({field: record[field] for field in fields})
+
+
+def _validate_context_identity(
+    record: Mapping[str, object],
+    *,
+    fields: Sequence[str],
+    context: str,
+) -> str:
+    run_id = record["run_id"]
+    if (
+        not isinstance(run_id, str)
+        or not run_id.strip()
+        or run_id != run_id.strip()
+    ):
+        raise BenchmarkBuildError(f"{context} fresh context run_id is invalid")
+    _require_sha256(
+        record["receipt_sha256"],
+        context=f"{context} fresh context receipt",
+    )
+    if record["receipt_sha256"] != _context_receipt_sha256(record, fields):
+        raise BenchmarkBuildError(
+            f"{context} fresh context receipt SHA-256 mismatch"
+        )
+    return run_id
+
+
+def _require_unique_context_id(
+    seen: set[str],
+    run: Mapping[str, object],
+    *,
+    kind: str,
+) -> None:
+    run_id = str(run["run_id"])
+    if run_id in seen:
+        raise BenchmarkBuildError(
+            f"duplicate {kind} fresh context run_id: {run_id}"
+        )
+    seen.add(run_id)
+
+
 def _validate_product_run(
     *,
     repo: Path,
@@ -1835,6 +2008,8 @@ def _validate_product_run(
         {
             "schema_id",
             "schema_version",
+            "run_id",
+            "receipt_sha256",
             "case_id",
             "product",
             "runtime_name",
@@ -1882,6 +2057,20 @@ def _validate_product_run(
             raise BenchmarkBuildError(
                 f"{case_id} {product} metadata field {field} is not bound"
             )
+    run_id = _validate_context_identity(
+        metadata,
+        fields=(
+            "run_id",
+            "case_id",
+            "product",
+            "runtime_name",
+            "model_id",
+            "reasoning_effort",
+            "packet_sha256",
+            "skill_tree_sha256",
+        ),
+        context=f"{case_id} {product}",
+    )
     _require_sha256(
         metadata["raw_output_sha256"],
         context=f"{case_id} {product} raw_output_sha256",
@@ -1914,6 +2103,7 @@ def _validate_product_run(
             f"artifact tree SHA-256 mismatch for {case_id} {product}"
         )
     return {
+        "run_id": run_id,
         "metadata_path": product_contract["metadata_path"],
         "metadata_sha256": sha256_bytes(metadata_path.read_bytes()),
         "article_path": product_contract["article_path"],
@@ -1950,6 +2140,8 @@ def _validate_grade(
         {
             "schema_id",
             "schema_version",
+            "run_id",
+            "receipt_sha256",
             "case_id",
             "grader_id",
             "model_id",
@@ -1997,6 +2189,22 @@ def _validate_grade(
             raise BenchmarkBuildError(
                 f"{case_id} {grader_contract['grader_id']} field {field} is not bound"
             )
+    run_id = _validate_context_identity(
+        grade,
+        fields=(
+            "run_id",
+            "case_id",
+            "grader_id",
+            "model_id",
+            "reasoning_effort",
+            "prior_grades_visible",
+            "rubric_sha256",
+            "article_a_sha256",
+            "article_b_sha256",
+            "packet_sha256",
+        ),
+        context=f"{case_id} {grader_contract['grader_id']}",
+    )
 
     scores = _require_object(
         grade["dimension_scores"], context=f"{case_id} dimension scores"
@@ -2097,6 +2305,7 @@ def _validate_grade(
         winning_label = "tie"
 
     return {
+        "run_id": run_id,
         "grader_id": grader_contract["grader_id"],
         "grade_path": grader_contract["grade_path"],
         "grade_sha256": sha256_bytes(grade_path.read_bytes()),
@@ -2145,7 +2354,8 @@ def _derive_results(
     automatic_case_counts: dict[str, Counter[str]] = {
         product: Counter() for product in PRODUCTS
     }
-
+    seen_product_run_ids: set[str] = set()
+    seen_grade_run_ids: set[str] = set()
     for raw_case, raw_pair in zip(scenarios, pairs, strict=True):
         case = _require_object(raw_case, context="scenario")
         pair = _require_object(raw_pair, context=f"pair {case['id']}")
@@ -2159,6 +2369,12 @@ def _derive_results(
             )
             for product in PRODUCTS
         }
+        for run in product_runs.values():
+            _require_unique_context_id(
+                seen_product_run_ids,
+                run,
+                kind="product",
+            )
         graders = _require_list(pair["graders"], context=f"pair {case_id} graders")
         base_packet = _require_object(
             bundles[case_id]["grader_base_packet"],
@@ -2177,17 +2393,21 @@ def _derive_results(
                 base_packet=base_packet,
                 product_runs=product_runs,
             )
-            grade_results.append(
-                _validate_grade(
-                    repo=repo,
-                    rubric=rubric,
-                    manifest=manifest,
-                    pair=pair,
-                    grader_contract=grader,
-                    product_runs=product_runs,
-                    expected_packet_sha256=sha256_json(packet),
-                )
+            grade = _validate_grade(
+                repo=repo,
+                rubric=rubric,
+                manifest=manifest,
+                pair=pair,
+                grader_contract=grader,
+                product_runs=product_runs,
+                expected_packet_sha256=sha256_json(packet),
             )
+            _require_unique_context_id(
+                seen_grade_run_ids,
+                grade,
+                kind="grade",
+            )
+            grade_results.append(grade)
         blind_labels = _require_object(
             pair["blind_labels"], context=f"pair {case_id} blind labels"
         )
@@ -2424,6 +2644,37 @@ def _require_not_run_results(evaluation: Path) -> None:
         )
 
 
+def _require_pristine_raw_root(evaluation: Path) -> None:
+    raw_root = evaluation / "raw"
+    _reject_link_or_reparse(raw_root, context="raw evidence root")
+    if not raw_root.is_dir():
+        raise BenchmarkBuildError("raw evidence root must be a real directory")
+    entries = list(raw_root.iterdir())
+    for entry in entries:
+        _reject_link_or_reparse(entry, context="raw evidence placeholder")
+    if (
+        len(entries) != 1
+        or entries[0].name != ".gitkeep"
+        or not entries[0].is_file()
+    ):
+        raise BenchmarkBuildError(
+            "raw evidence root must be empty except for raw/.gitkeep; "
+            "preexisting product or grade evidence is prohibited"
+        )
+
+
+def _contract_with_manifest(
+    contract: Mapping[str, object],
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    return {
+        **contract,
+        "schema_version": 2,
+        "manifest": manifest,
+        "pairs": _require_list(manifest["pairs"], context="manifest pairs"),
+    }
+
+
 
 
 def transition_state(
@@ -2458,15 +2709,6 @@ def transition_state(
         )
 
     contract = _contract(repo, evaluation)
-    if contract["schema_version"] != 2:
-        raise BenchmarkBuildError(
-            "execution-ready requires pairing manifest version 2"
-        )
-    bundles = _validated_v2_bundles(
-        repo=repo,
-        evaluation=evaluation,
-        contract=contract,
-    )
     candidate = copy.deepcopy(
         _require_object(contract["manifest"], context="manifest")
     )
@@ -2474,6 +2716,22 @@ def transition_state(
     candidate_pairs = _require_list(candidate["pairs"], context="manifest pairs")
 
     if target_state == "execution-ready":
+        candidate["schema_version"] = 2
+        for raw_pair in candidate_pairs:
+            pair = _require_object(raw_pair, context="manifest pair")
+            bindings = _require_object(
+                pair["bindings"],
+                context=f"pair {pair['case_id']} bindings",
+            )
+            bindings["product_packet_sha256"] = None
+            bindings["grader_base_packet_sha256"] = None
+        candidate_contract = _contract_with_manifest(contract, candidate)
+        bundles = _validated_v2_bundles(
+            repo=repo,
+            evaluation=evaluation,
+            contract=candidate_contract,
+        )
+        _require_pristine_raw_root(evaluation)
         product_hashes = {
             "promax": _require_sha256(
                 promax_skill_tree_sha256,
@@ -2512,7 +2770,16 @@ def transition_state(
                 )
                 product_contract["status"] = "execution-ready"
                 product_contract["skill_tree_sha256"] = product_hashes[product]
+        _validated_v2_bundles(
+            repo=repo,
+            evaluation=evaluation,
+            contract=_contract_with_manifest(contract, candidate),
+        )
     else:
+        if contract["schema_version"] != 2:
+            raise BenchmarkBuildError(
+                "ready-for-results-build requires pairing manifest version 2"
+            )
         if (
             promax_skill_tree_sha256 is not None
             or ultra_skill_tree_sha256 is not None
@@ -2520,6 +2787,11 @@ def transition_state(
             raise BenchmarkBuildError(
                 "skill tree hashes are accepted only for execution-ready"
             )
+        bundles = _validated_v2_bundles(
+            repo=repo,
+            evaluation=evaluation,
+            contract=contract,
+        )
         current_pairs = _require_list(contract["pairs"], context="pairs")
         manifest = _require_object(contract["manifest"], context="manifest")
         product_runs = _validate_all_product_runs(

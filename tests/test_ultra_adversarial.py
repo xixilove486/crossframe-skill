@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 from collections import Counter
+import importlib.util
 import json
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL_ROOT = ROOT / "tests" / "evals" / "ultra-vs-promax"
 SCENARIOS_PATH = EVAL_ROOT / "scenarios.json"
 PAIRING_PATH = EVAL_ROOT / "pairing-manifest.json"
+CONTRACT_TEST_PATH = ROOT / "tests" / "test_ultra_benchmark_contract.py"
 
 CATEGORY_ORDER = (
     "public",
@@ -212,6 +216,17 @@ def load_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_contract_test_helpers():
+    spec = importlib.util.spec_from_file_location(
+        "ultra_benchmark_contract_test_helpers",
+        CONTRACT_TEST_PATH,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_all_twenty_four_cases_are_frozen_exactly_and_evenly() -> None:
     raw = load_json(SCENARIOS_PATH)
     assert isinstance(raw, list)
@@ -269,7 +284,6 @@ def test_case_directories_bind_prompts_cutoffs_materials_pressure_and_privacy() 
         assert cutoff["schema_version"] == 1
         assert cutoff["case_id"] == case_id
         assert cutoff["benchmark_cutoff"] == "2026-08-02T00:00:00Z"
-        assert cutoff["evidence_state"] == "awaiting-frozen-bundle"
         if case["category"] == "history":
             assert cutoff["temporal_rule"] == "strictly-before-target-event"
         else:
@@ -278,18 +292,35 @@ def test_case_directories_bind_prompts_cutoffs_materials_pressure_and_privacy() 
         materials = load_json(ROOT / case["materials_dir"] / "manifest.json")
         assert isinstance(materials, dict)
         assert materials["case_id"] == case_id
-        assert materials["bundle_status"] == "pending"
-        assert materials["source_files"] == []
-        assert materials["source_count"] == 0
         expected_retrieval = (
             "prohibited"
             if case["category"] == "closed-material"
             else "frozen-bundle-only"
         )
         assert materials["retrieval_mode"] == expected_retrieval
-        assert materials["outcome_leakage_review"] == "pending"
-        assert materials["privacy_review"] == "pending"
-        assert materials["license_review"] == "pending"
+        if materials["schema_version"] == 1:
+            assert cutoff["evidence_state"] == "awaiting-frozen-bundle"
+            assert materials["bundle_status"] == "pending"
+            assert materials["source_files"] == []
+            assert materials["source_count"] == 0
+            assert materials["outcome_leakage_review"] == "pending"
+            assert materials["privacy_review"] == "pending"
+            assert materials["license_review"] == "pending"
+        else:
+            assert materials["schema_version"] == 2
+            assert cutoff["evidence_state"] == "frozen"
+            assert materials["bundle_status"] == "frozen"
+            assert materials["source_count"] == len(materials["source_files"])
+            assert materials["source_count"] > 0
+            assert set(materials["reviews"]) == {
+                "license",
+                "privacy",
+                "outcome_leakage",
+            }
+            assert all(
+                review["status"] == "passed"
+                for review in materials["reviews"].values()
+            )
 
         pressure = load_json(ROOT / case["expected_pressure_path"])
         assert isinstance(pressure, dict)
@@ -310,10 +341,56 @@ def test_case_directories_bind_prompts_cutoffs_materials_pressure_and_privacy() 
         privacy = load_json(ROOT / case["privacy_policy_path"])
         assert isinstance(privacy, dict)
         assert privacy["case_id"] == case_id
-        assert privacy["live_retrieval_allowed"] is False
-        assert privacy["private_source_text_outbound_allowed"] is False
-        assert case["expected_pressure_path"] in privacy["forbidden_visible_paths"]
-        assert case["privacy_policy_path"] in privacy["product_visible_paths"]
+        if privacy["schema_version"] == 1:
+            assert materials["schema_version"] == 1
+            assert privacy["live_retrieval_allowed"] is False
+            assert privacy["private_source_text_outbound_allowed"] is False
+            assert case["expected_pressure_path"] in privacy[
+                "forbidden_visible_paths"
+            ]
+            assert case["privacy_policy_path"] in privacy["product_visible_paths"]
+        else:
+            assert materials["schema_version"] == 2
+            assert privacy["schema_version"] == 2
+            assert privacy["default_deny"] is True
+            audit_only = set(privacy["audit_only_paths"])
+            assert audit_only.isdisjoint(privacy["product_packet_allowlist"])
+            assert audit_only.isdisjoint(privacy["grader_case_packet_allowlist"])
+            assert privacy["grader_injected_slots"] == [
+                "rubric",
+                "article-a",
+                "article-b",
+            ]
+
+
+def test_unfrozen_v2_bundle_cannot_cross_execution_boundary(tmp_path: Path) -> None:
+    helpers = load_contract_test_helpers()
+    builder = helpers.load_builder()
+    repo, evaluation = helpers._make_v2_synthetic_eval(tmp_path)
+    cutoff_path = evaluation / "cases" / "P01" / "evidence-cutoff.json"
+    cutoff = json.loads(cutoff_path.read_text("utf-8"))
+    cutoff["evidence_state"] = "awaiting-frozen-bundle"
+    helpers._write_json(cutoff_path, cutoff)
+    pairing_path = evaluation / "pairing-manifest.json"
+    pairing = json.loads(pairing_path.read_text("utf-8"))
+    pairing["pairs"][0]["bindings"]["evidence_cutoff_sha256"] = (
+        helpers.sha256_bytes(cutoff_path.read_bytes())
+    )
+    helpers._write_json(pairing_path, pairing)
+    pairing_before = pairing_path.read_bytes()
+    results_before = (evaluation / "results.json").read_bytes()
+
+    with pytest.raises(builder.BenchmarkBuildError, match="not frozen"):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="execution-ready",
+            promax_skill_tree_sha256="a" * 64,
+            ultra_skill_tree_sha256="b" * 64,
+        )
+
+    assert pairing_path.read_bytes() == pairing_before
+    assert (evaluation / "results.json").read_bytes() == results_before
 
 
 def test_adversarial_targets_cover_the_frozen_red_failures_without_outcome_leakage() -> None:

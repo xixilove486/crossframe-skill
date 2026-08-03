@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -598,19 +600,28 @@ def test_readme_separates_deterministic_scaffold_from_expensive_evidence() -> No
         assert marker in text
 
 
-def _make_v2_synthetic_eval(tmp_path: Path) -> tuple[Path, Path]:
+def _make_v2_synthetic_eval(
+    tmp_path: Path,
+    *,
+    pairing_schema_version: int = 2,
+) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     evaluation = repo / "tests" / "evals" / "ultra-vs-promax"
     shutil.copytree(EVAL_ROOT, evaluation)
     scenarios = json.loads((evaluation / "scenarios.json").read_text("utf-8"))
     pairing = json.loads((evaluation / "pairing-manifest.json").read_text("utf-8"))
-    pairing["schema_version"] = 2
+    if pairing_schema_version not in {1, 2}:
+        raise ValueError("synthetic pairing schema version must be 1 or 2")
+    pairing["schema_version"] = pairing_schema_version
 
     for case, pair in zip(scenarios, pairing["pairs"], strict=True):
-        case.pop("execution_readiness")
+        if pairing_schema_version == 2:
+            case.pop("execution_readiness")
         case_id = case["id"]
         case_dir = evaluation / "cases" / case_id
         materials_dir = case_dir / "materials"
+        shutil.rmtree(materials_dir)
+        materials_dir.mkdir()
         source_path = materials_dir / "synthetic-source.txt"
         source_path.write_text(
             f"Synthetic source for {case_id}; not benchmark evidence.\n",
@@ -712,14 +723,20 @@ def _make_v2_synthetic_eval(tmp_path: Path) -> tuple[Path, Path]:
         }
         _write_json(materials_dir / "manifest.json", materials)
 
-        pair["bindings"] = {
+        pair_bindings = {
             "request_sha256": sha256_bytes((case_dir / "prompt.md").read_bytes()),
             "evidence_cutoff_sha256": sha256_bytes(cutoff_path.read_bytes()),
             "materials_tree_sha256": tree_sha256(materials_dir),
             "privacy_policy_sha256": sha256_bytes(privacy_path.read_bytes()),
-            "product_packet_sha256": None,
-            "grader_base_packet_sha256": None,
         }
+        if pairing_schema_version == 2:
+            pair_bindings.update(
+                {
+                    "product_packet_sha256": None,
+                    "grader_base_packet_sha256": None,
+                }
+            )
+        pair["bindings"] = pair_bindings
 
     _write_json(evaluation / "scenarios.json", scenarios)
     _write_json(evaluation / "pairing-manifest.json", pairing)
@@ -758,6 +775,7 @@ def _write_v2_product_runs(builder, repo: Path, evaluation: Path) -> None:
             metadata = {
                 "schema_id": "crossframe.ultra-vs-promax.product-run",
                 "schema_version": 2,
+                "run_id": f"product-{case_id}-{product}",
                 "case_id": case_id,
                 "product": product,
                 "runtime_name": product_contract["runtime_name"],
@@ -783,6 +801,7 @@ def _write_v2_product_runs(builder, repo: Path, evaluation: Path) -> None:
                 "artifact_dir": artifact_dir.relative_to(repo).as_posix(),
                 "artifact_tree_sha256": tree_sha256(artifact_dir),
             }
+            metadata["receipt_sha256"] = _product_context_receipt_sha256(metadata)
             _write_json(raw_dir / "run-metadata.json", metadata)
 
 
@@ -820,6 +839,7 @@ def _write_v2_blind_grades(builder, repo: Path, evaluation: Path) -> None:
             grade = {
                 "schema_id": "crossframe.ultra-vs-promax.blind-grade",
                 "schema_version": 2,
+                "run_id": f"grade-{case_id}-{grader['grader_id']}",
                 "case_id": case_id,
                 "grader_id": grader["grader_id"],
                 "model_id": pairing["grader_contract"]["model_id"],
@@ -851,7 +871,46 @@ def _write_v2_blind_grades(builder, repo: Path, evaluation: Path) -> None:
                     for label in ("A", "B")
                 },
             }
+            grade["receipt_sha256"] = _grade_context_receipt_sha256(grade)
             _write_json(repo / grader["grade_path"], grade)
+
+
+def _product_context_receipt_sha256(metadata: dict[str, object]) -> str:
+    return sha256_json(
+        {
+            field: metadata[field]
+            for field in (
+                "run_id",
+                "case_id",
+                "product",
+                "runtime_name",
+                "model_id",
+                "reasoning_effort",
+                "packet_sha256",
+                "skill_tree_sha256",
+            )
+        }
+    )
+
+
+def _grade_context_receipt_sha256(grade: dict[str, object]) -> str:
+    return sha256_json(
+        {
+            field: grade[field]
+            for field in (
+                "run_id",
+                "case_id",
+                "grader_id",
+                "model_id",
+                "reasoning_effort",
+                "prior_grades_visible",
+                "rubric_sha256",
+                "article_a_sha256",
+                "article_b_sha256",
+                "packet_sha256",
+            )
+        }
+    )
 
 
 def _make_v2_complete_synthetic_eval(
@@ -1038,6 +1097,18 @@ def test_v2_packets_never_expose_audit_only_or_product_identity(
         case_id="P01",
         grader_id="grader-1",
     )
+    assert set(grader_packet) == {
+        "files",
+        "rubric",
+        "article-a",
+        "article-b",
+    }
+    assert grader_packet["files"] == product_packet["files"]
+    assert all(
+        "/" not in str(item["logical_name"])
+        and "\\" not in str(item["logical_name"])
+        for item in grader_packet["files"]
+    )
     grader_text = json.dumps(grader_packet, ensure_ascii=False).lower()
     for forbidden in (
         "expected-pressure",
@@ -1047,10 +1118,343 @@ def test_v2_packets_never_expose_audit_only_or_product_identity(
         "promax",
         "ultra",
         "raw/",
+        "case_id",
+        "grader_id",
         "prior grades",
     ):
         assert forbidden not in grader_text
-    assert '"a"' in grader_text and '"b"' in grader_text
+    assert grader_packet["article-a"]["logical_name"] == "Article A"
+    assert grader_packet["article-b"]["logical_name"] == "Article B"
+
+
+def test_v2_reviews_require_three_distinct_reviewer_ids(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    manifest_path = evaluation / "cases" / "P01" / "materials" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    manifest["reviews"]["privacy"]["reviewer_id"] = manifest["reviews"][
+        "license"
+    ]["reviewer_id"]
+    _write_json(manifest_path, manifest)
+    _sync_single_v2_bundle_bindings(evaluation)
+
+    with pytest.raises(builder.BenchmarkBuildError, match="distinct reviewer"):
+        builder.validate_case_bundle(
+            repo_root=repo,
+            eval_root=evaluation,
+            case_id="P01",
+        )
+
+
+def test_execution_ready_rejects_preexisting_raw_evidence_atomically(
+    tmp_path: Path,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    preexisting = evaluation / "raw" / "P01" / "promax" / "article.md"
+    preexisting.parent.mkdir(parents=True, exist_ok=True)
+    preexisting.write_text("preexisting output\n", encoding="utf-8", newline="\n")
+    pairing_before = (evaluation / "pairing-manifest.json").read_bytes()
+    results_before = (evaluation / "results.json").read_bytes()
+
+    with pytest.raises(builder.BenchmarkBuildError, match="raw.*empty|preexisting"):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="execution-ready",
+            promax_skill_tree_sha256="a" * 64,
+            ultra_skill_tree_sha256="b" * 64,
+        )
+
+    assert (evaluation / "pairing-manifest.json").read_bytes() == pairing_before
+    assert (evaluation / "results.json").read_bytes() == results_before
+
+
+@pytest.mark.parametrize(
+    "relative",
+    (
+        "tests/evals/ultra-vs-promax/cases/P01",
+        "tests/evals/ultra-vs-promax/cases/P01/materials",
+        "tests/evals/ultra-vs-promax/cases/P01/materials/synthetic-source.txt",
+    ),
+)
+def test_v2_paths_reject_windows_reparse_points_at_every_layer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    relative: str,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    target = (repo / relative).absolute()
+    real_lstat = os.lstat
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+
+    class ReparseStat:
+        def __init__(self, original: os.stat_result) -> None:
+            self._original = original
+            self.st_file_attributes = (
+                getattr(original, "st_file_attributes", 0) | reparse_flag
+            )
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._original, name)
+
+    def lstat_with_reparse(path: object, *args: object, **kwargs: object) -> object:
+        original = real_lstat(path, *args, **kwargs)
+        candidate = Path(os.fsdecode(path))
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        if candidate.absolute() == target:
+            return ReparseStat(original)
+        return original
+
+    monkeypatch.setattr(builder.os, "lstat", lstat_with_reparse)
+    with pytest.raises(builder.BenchmarkBuildError, match="reparse|symlink"):
+        builder.validate_case_bundle(
+            repo_root=repo,
+            eval_root=evaluation,
+            case_id="P01",
+        )
+
+
+def test_synthetic_v2_fixture_ignores_real_material_directory_contents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contaminated = tmp_path / "contaminated-eval"
+    shutil.copytree(EVAL_ROOT, contaminated)
+    audit_copy = contaminated / "cases" / "P01" / "materials" / "audit-copy.json"
+    _write_json(audit_copy, {"audit_only": True})
+    monkeypatch.setattr(sys.modules[__name__], "EVAL_ROOT", contaminated)
+
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path / "isolated")
+    summary = builder.validate_contract(
+        repo_root=repo,
+        eval_root=evaluation,
+        expected_state="scaffold",
+    )
+    assert summary["case_count"] == 24
+    assert sorted(
+        path.relative_to(evaluation / "cases" / "P01" / "materials").as_posix()
+        for path in (evaluation / "cases" / "P01" / "materials").rglob("*")
+        if path.is_file()
+    ) == ["manifest.json", "synthetic-source.txt"]
+
+
+def test_v1_scaffold_migrates_atomically_to_v2_execution_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(
+        tmp_path,
+        pairing_schema_version=1,
+    )
+    manifest_path = evaluation / "pairing-manifest.json"
+    results_path = evaluation / "results.json"
+    results_before = results_path.read_bytes()
+    replace_calls: list[tuple[Path, Path]] = []
+    real_replace = builder.os.replace
+
+    def counting_replace(source: object, destination: object) -> None:
+        replace_calls.append((Path(source), Path(destination)))
+        real_replace(source, destination)
+
+    monkeypatch.setattr(builder.os, "replace", counting_replace)
+    summary = builder.transition_state(
+        repo_root=repo,
+        eval_root=evaluation,
+        target_state="execution-ready",
+        promax_skill_tree_sha256="a" * 64,
+        ultra_skill_tree_sha256="b" * 64,
+    )
+
+    migrated = json.loads(manifest_path.read_text("utf-8"))
+    assert summary["from"] == "scaffold"
+    assert summary["to"] == "execution-ready"
+    assert migrated["schema_version"] == 2
+    assert migrated["status"] == "execution-ready"
+    assert len(replace_calls) == 1
+    assert replace_calls[0][1] == manifest_path
+    assert results_path.read_bytes() == results_before
+    assert builder.validate_contract(
+        repo_root=repo,
+        eval_root=evaluation,
+        expected_state="execution-ready",
+    )["schema_version"] == 2
+
+
+def test_single_v2_bundle_validates_beside_v1_scaffold(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(
+        tmp_path,
+        pairing_schema_version=1,
+    )
+
+    summary = builder.validate_case_bundle(
+        repo_root=repo,
+        eval_root=evaluation,
+        case_id="P01",
+        require_frozen=True,
+    )
+
+    assert summary["status"] == "bundle-ready"
+    assert summary["case_id"] == "P01"
+    assert summary["source_count"] == 1
+
+
+def test_single_bundle_binds_canonical_scenario_question(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(
+        tmp_path,
+        pairing_schema_version=1,
+    )
+    scenarios_path = evaluation / "scenarios.json"
+    scenarios = json.loads(scenarios_path.read_text("utf-8"))
+    scenarios[0]["question"] = "Tampered scenario text"
+    _write_json(scenarios_path, scenarios)
+
+    with pytest.raises(builder.BenchmarkBuildError, match="question|prompt"):
+        builder.validate_case_bundle(
+            repo_root=repo,
+            eval_root=evaluation,
+            case_id="P01",
+            require_frozen=True,
+        )
+
+
+def test_product_fresh_context_receipt_is_hash_bound(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    builder.transition_state(
+        repo_root=repo,
+        eval_root=evaluation,
+        target_state="execution-ready",
+        promax_skill_tree_sha256="a" * 64,
+        ultra_skill_tree_sha256="b" * 64,
+    )
+    _write_v2_product_runs(builder, repo, evaluation)
+    metadata_path = evaluation / "raw" / "P01" / "promax" / "run-metadata.json"
+    metadata = json.loads(metadata_path.read_text("utf-8"))
+    metadata["receipt_sha256"] = "f" * 64
+    _write_json(metadata_path, metadata)
+
+    with pytest.raises(
+        builder.BenchmarkBuildError,
+        match="fresh context receipt SHA-256 mismatch",
+    ):
+        builder.build_grader_packet(
+            repo_root=repo,
+            eval_root=evaluation,
+            case_id="P01",
+            grader_id="grader-1",
+        )
+
+
+def test_grade_fresh_context_receipt_is_hash_bound(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    builder.transition_state(
+        repo_root=repo,
+        eval_root=evaluation,
+        target_state="execution-ready",
+        promax_skill_tree_sha256="a" * 64,
+        ultra_skill_tree_sha256="b" * 64,
+    )
+    _write_v2_product_runs(builder, repo, evaluation)
+    _write_v2_blind_grades(builder, repo, evaluation)
+    grade_path = evaluation / "raw" / "P01" / "grades" / "grader-1.json"
+    grade = json.loads(grade_path.read_text("utf-8"))
+    grade["receipt_sha256"] = "f" * 64
+    _write_json(grade_path, grade)
+
+    with pytest.raises(
+        builder.BenchmarkBuildError,
+        match="fresh context receipt SHA-256 mismatch",
+    ):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="ready-for-results-build",
+        )
+
+
+def test_ready_for_results_requires_48_unique_product_context_ids(
+    tmp_path: Path,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    builder.transition_state(
+        repo_root=repo,
+        eval_root=evaluation,
+        target_state="execution-ready",
+        promax_skill_tree_sha256="a" * 64,
+        ultra_skill_tree_sha256="b" * 64,
+    )
+    _write_v2_product_runs(builder, repo, evaluation)
+    first_path = evaluation / "raw" / "P01" / "promax" / "run-metadata.json"
+    duplicate_path = evaluation / "raw" / "P01" / "ultra" / "run-metadata.json"
+    first = json.loads(first_path.read_text("utf-8"))
+    duplicate = json.loads(duplicate_path.read_text("utf-8"))
+    duplicate["run_id"] = first["run_id"]
+    duplicate["receipt_sha256"] = _product_context_receipt_sha256(duplicate)
+    _write_json(duplicate_path, duplicate)
+
+    with pytest.raises(builder.BenchmarkBuildError, match="duplicate product.*run_id"):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="ready-for-results-build",
+        )
+
+
+def test_ready_for_results_requires_72_unique_grade_context_ids(
+    tmp_path: Path,
+) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    builder.transition_state(
+        repo_root=repo,
+        eval_root=evaluation,
+        target_state="execution-ready",
+        promax_skill_tree_sha256="a" * 64,
+        ultra_skill_tree_sha256="b" * 64,
+    )
+    _write_v2_product_runs(builder, repo, evaluation)
+    _write_v2_blind_grades(builder, repo, evaluation)
+    first_path = evaluation / "raw" / "P01" / "grades" / "grader-1.json"
+    duplicate_path = evaluation / "raw" / "P01" / "grades" / "grader-2.json"
+    first = json.loads(first_path.read_text("utf-8"))
+    duplicate = json.loads(duplicate_path.read_text("utf-8"))
+    duplicate["run_id"] = first["run_id"]
+    duplicate["receipt_sha256"] = _grade_context_receipt_sha256(duplicate)
+    _write_json(duplicate_path, duplicate)
+
+    with pytest.raises(builder.BenchmarkBuildError, match="duplicate grade.*run_id"):
+        builder.transition_state(
+            repo_root=repo,
+            eval_root=evaluation,
+            target_state="ready-for-results-build",
+        )
+
+
+def test_results_rebuild_rechecks_unique_context_ids(tmp_path: Path) -> None:
+    builder = load_builder()
+    repo, evaluation = _make_v2_complete_synthetic_eval(tmp_path)
+    first_path = evaluation / "raw" / "P01" / "promax" / "run-metadata.json"
+    duplicate_path = evaluation / "raw" / "P01" / "ultra" / "run-metadata.json"
+    first = json.loads(first_path.read_text("utf-8"))
+    duplicate = json.loads(duplicate_path.read_text("utf-8"))
+    duplicate["run_id"] = first["run_id"]
+    duplicate["receipt_sha256"] = _product_context_receipt_sha256(duplicate)
+    _write_json(duplicate_path, duplicate)
+    results_before = (evaluation / "results.json").read_bytes()
+
+    with pytest.raises(builder.BenchmarkBuildError, match="duplicate product.*run_id"):
+        builder.build_results(repo_root=repo, eval_root=evaluation)
+
+    assert (evaluation / "results.json").read_bytes() == results_before
 
 
 def test_execution_ready_is_atomic_when_the_twenty_fourth_bundle_fails(
