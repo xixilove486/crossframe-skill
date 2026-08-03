@@ -1,1 +1,1394 @@
-{"schema_id":"crossframe.ultra-vs-promax.pairing-manifest","schema_version":1,"benchmark_id":"crossframe-ultra-vs-promax-24-v1","status":"scaffold","rubric_path":"tests/evals/ultra-vs-promax/rubric.json","rubric_sha256":"612eb52613ba0cea5f3eb756446d643c77008fbd071d8465d1c26167bf0ea733","product_model":{"model_id":"gpt-5.6-sol","reasoning_effort":"max"},"grader_contract":{"count":3,"model_id":"gpt-5.6-sol","reasoning_effort":"max","fresh_context_required":true,"prior_grades_visible":false},"label_randomization":{"algorithm":"sha256-sort-balanced-v1","seed":"crossframe-ultra-vs-promax-24-v1|blind-labels|2026-08-02","seed_sha256":"6a32314577b32a0bea58d5cd4486913dd412cfb28f81f60e86d6cefb3a49b4fa"},"tool_profiles":{"frozen-offline":{"network":false,"retrieval":false}},"fallback_allowed":false,"grader_visibility":{"visible":["Article A","Article B","case prompt","case materials","rubric"],"hidden":["product names","pairing manifest","runtime internals","directory names","prior grades","expected pressure metadata"]},"pairs":[{"case_id":"P01","category":"public","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"fe899096c43c9882e11631817ccf8a61a75f4afeaec63594ea245fa873e6f83a","evidence_cutoff_sha256":"175420c646fc809562bd90b0a97765abd53ce2142bc9c5ec428bcc1b59c23a3c","materials_tree_sha256":"b3051768282e34f7733a7ea095e1992e5b3a498e6c5350323a546fa8133a5900","privacy_policy_sha256":"d5e5714836982d83ea965f50f2ff86f0ef03ab30dfadaa062fc1de5944f5bf75"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/P01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/P01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/P01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/P01/expected-pressure.json"}},{"case_id":"P02","category":"public","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"5c17d9d5a196281f59de76a00ee1f205441f442297df0c8b22e4cb8aff7394f3","evidence_cutoff_sha256":"d6d19ed79a879f73529dd5f7ec6a9b26040cb9c7d9f4bc47d2ae001a740e95a5","materials_tree_sha256":"508accf9d19d23dfc128758f4ec1c26990dea73aa7e8adab3d2a53b1949d0bff","privacy_policy_sha256":"e6bc43e1fef2be3651cd0088e0ad1aad85afbe2fa3f755f337c6823e3da1bb66"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/P02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/P02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/P02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/P02/expected-pressure.json"}},{"case_id":"P03","category":"public","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"1960a85df02a2ab18b13b92af529b4a41597179e4919e12d848bcd11ca49e3ff","evidence_cutoff_sha256":"ece816680e9cd402a7190616f9ff199cd7a93fb07c98bacc980e7002ec2eccee","materials_tree_sha256":"424ba3195ce7c105604d8d07716dd8ce37a3ab81f8a838ead9ea15777335d756","privacy_policy_sha256":"c62fea91c7aa35a98f5c11fc4a0527bcc9b99238703af9e9c7797a2fea9d5c24"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/P03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/P03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/P03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/P03/expected-pressure.json"}},{"case_id":"P04","category":"public","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"05ca3f8090c6a324d60aba39fe392e05cbdb6952d44abaa578829c6d78f6399a","evidence_cutoff_sha256":"6eec980996fcc98bb553b004b0bf294e99ce3af315d8cb3a88aa603a3ad475b7","materials_tree_sha256":"bfbf1c28f2bba13256f0b41aa09758f99afad8316b582fd16878076d5b2d034d","privacy_policy_sha256":"99770198a785bf1464418a867805fe44d0e537d77ffd1843e69a40972d17ca5c"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/P04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/P04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/P04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/P04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/P04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/P04/expected-pressure.json"}},{"case_id":"O01","category":"organization","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"17416ff4c09d4705b727b8dfad4148848b89fb09bc87f7808b368bc40fdf8ad8","evidence_cutoff_sha256":"af3de35880e133887304c9b932b4be4ccf194b98540e8f58ced453f655b41f68","materials_tree_sha256":"53cefc979ec29d5cfb21615635965d1953a34ad23a0f4552ad827e12e91c962d","privacy_policy_sha256":"3d2fe0101449dc8d051316184c69022f88987bd61e869b3262893b317a41890d"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/O01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/O01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/O01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/O01/expected-pressure.json"}},{"case_id":"O02","category":"organization","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"a0754e43ad76d51d15505435f50db5186c892e7297400fed675c7b9d2526aef2","evidence_cutoff_sha256":"13e71b82b0e21e7677f05f8ee6e593bf542865753c5ba1dadf4f99454ef0301e","materials_tree_sha256":"dfcbf86eeb999d8ebd038898a4e09e57a9fbef0a37169c694c01e64257c90d7f","privacy_policy_sha256":"8673de131c3e2927d0b44d0f75f92862c103a741e9bc39bbe1823c4745084b1c"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/O02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/O02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/O02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/O02/expected-pressure.json"}},{"case_id":"O03","category":"organization","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"f7394c15e1114fc77778c0651d8b7f845ca8c136b4d1c0d7b2ac50fb993c6998","evidence_cutoff_sha256":"305c3f44a688ee9a0b29063df9b12bb1558996bb1d272a44bbf8a95cea47e9c5","materials_tree_sha256":"bd005de2c3bc549da3c5af57ecdc648ac56b19936498d01be924fdc93a9b0039","privacy_policy_sha256":"efea200d8918478a607b8c49026b344786acd19cb5c188883af440cc83f9bbf2"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/O03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/O03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/O03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/O03/expected-pressure.json"}},{"case_id":"O04","category":"organization","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"9d9c98a35b524335893418572f7fef9229b20a326121ecd50eacfd53959642e1","evidence_cutoff_sha256":"b5394ca887ec50af312ec34d9fd65af1e1a4be0ea57c4887c711735cf64865a3","materials_tree_sha256":"9ef1eb1cc96eb3bd7d663bb047df1c942803080c6791819a196b06728cdca699","privacy_policy_sha256":"1978be420016f4b129872cb79b3dc167d3089d82d33adeffe66d22c2d6b38580"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/O04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/O04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/O04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/O04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/O04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/O04/expected-pressure.json"}},{"case_id":"B01","category":"business-tech","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"a9ae247e2f8f6843acb16d16ca52d315422d639b63189aa4b9829c13fa69e220","evidence_cutoff_sha256":"cca8d08aa8674a3ffa3100988c821fd167a9187ebca20736b2363dbc48436368","materials_tree_sha256":"1b361e2cdda764a3606e65b12f9b1c64ca7eea72c7dd5a6c252c324b582643b2","privacy_policy_sha256":"d8f0f4f8f8857464d5ea262095a2d3755e95d6db295781c3537ea00e3c4230a3"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/B01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/B01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/B01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/B01/expected-pressure.json"}},{"case_id":"B02","category":"business-tech","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"9356bd69e43d1d282bba7b8464292472677be4e0def85872a0a3e0cfb87cf5af","evidence_cutoff_sha256":"c68f61ef9fcaed377eb7d3fd088c7490337c3bdd96f578fed955f1b5719cd23d","materials_tree_sha256":"0cc47c590b27321024229ccee10ec478627fb907b5dc47573a2a52d3259f332f","privacy_policy_sha256":"d6c86cf1a6a9c804f042bca099f6eb22c4c38a12217e9f6f8a1feb0eb98e7046"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/B02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/B02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/B02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/B02/expected-pressure.json"}},{"case_id":"B03","category":"business-tech","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"1b6e377b6c0161ba168219de5e1858d59912f60a6be4862d8bd6600c534d228e","evidence_cutoff_sha256":"5bcdb5490b552e5520f593453c1b87561d50201809eaa2583c89ca13b36ae2f1","materials_tree_sha256":"ac36129d4c018b02077b87ffdf8b6d0a5d1e8b7a717cda02450675bf02d81479","privacy_policy_sha256":"0955da7fc4f434c0b0fb535ad79cb960d41b9e01cb5cb51fb053a29c03be9066"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/B03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/B03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/B03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/B03/expected-pressure.json"}},{"case_id":"B04","category":"business-tech","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"87bce2135a9d7316f7b8f4611f19d30aa5897c84be3b8ca9c5b5e22c2e1b6979","evidence_cutoff_sha256":"ed044745f99df371b1a331c067c084278236ca3137b9f91c5e37d0c63fa8f2bd","materials_tree_sha256":"16d5cf5301ee9e3ca4cb43a0c06e7135b52e08f534ff3b387e7cb31ee4ac5030","privacy_policy_sha256":"70ba5eed9484fdb6eda37e36f488698d8646fdf96e1e0ed477fdf6e945b3ca24"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/B04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/B04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/B04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/B04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/B04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/B04/expected-pressure.json"}},{"case_id":"L01","category":"personal","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"cdf6d6ce287525aaa0de413ab7ceb3e9fa69c47f81c9265fc02dcbbe1f6a60ea","evidence_cutoff_sha256":"a42d443b8334a420ea487d5cc7f9eb1f531536e8f626f36e000d30b555d07f4f","materials_tree_sha256":"13f0ba0990ac0af755d85be37f60ffffe75f426e0076506bf0df99788bd1184a","privacy_policy_sha256":"f15329ee06fb2754e91a3686ca90012743890bcae6c0a83dd932801e3a2f5bf5"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/L01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/L01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/L01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/L01/expected-pressure.json"}},{"case_id":"L02","category":"personal","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"c73c575c342de0c2861367731f79608b53e580830938fcb802a6efcc42b09217","evidence_cutoff_sha256":"cf98dc29430020f52ba1a0613b2f78c5fc1c5c18ae730b8a3a7a9e06b358c68e","materials_tree_sha256":"a7ad8f1acefef02ed3e9112d51adb084779ec9bc1f55d542ebf1056ef2c83888","privacy_policy_sha256":"4948b663a4802e88566102d24ed033dcff4045367e7b26a98104db50089c6fad"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/L02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/L02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/L02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/L02/expected-pressure.json"}},{"case_id":"L03","category":"personal","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"01a9a09d47847045bb41453c8eb150b96fe0ed341c8efe44c5177c6f87f1a983","evidence_cutoff_sha256":"9fb86eebbbbe5c6eeadea8e83ab706b5c37451caacc232766389a73429a2f0a0","materials_tree_sha256":"b832be2f08458fbfa2319a3b23f4e06a737b8bf4c0b5d5ea2d729d9fa5431bd7","privacy_policy_sha256":"2c4dc5c4afab763b86811a8c09c7b3c4ccbedac29f88fa88c6dc9383169cb3c5"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/L03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/L03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/L03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/L03/expected-pressure.json"}},{"case_id":"L04","category":"personal","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"ea9ce83c422fef9c918e145b652b9be053ed69808abc1ebcc56263d897aa8188","evidence_cutoff_sha256":"aee159b9f1285f2cc88b9883e533c3c1733adad3742fb41dc941f578c64043ce","materials_tree_sha256":"a8f8331621054b5e3476eaeef52e9902e58507035d6b044141cecbf7b9af5abe","privacy_policy_sha256":"18ea85ae9bf51e9a6fb503b8270906ea8cf73ba7adc64a12f449f7c75fcf5766"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/L04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/L04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/L04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/L04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/L04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/L04/expected-pressure.json"}},{"case_id":"H01","category":"history","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"c961af789f4d8b257c2b8d85aa3914469588c9427f3463064025ba9cbb10ad5a","evidence_cutoff_sha256":"da3cb6dff32ef92a157ce9935a3ca0a3e650a03a5981126e25a774b024ab5516","materials_tree_sha256":"f732326d95708384532297fee1fcc1ddf71dce8c6f7fa85bc2e89615626a7091","privacy_policy_sha256":"f3cc55abc7fe37744dfe6388e29d13733b19dc7951a8a66bda358538d04c9893"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/H01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/H01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/H01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/H01/expected-pressure.json"}},{"case_id":"H02","category":"history","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"465180e11a1081f141bdafb75165701990425329afcc8c81b2acc2c73adc6dca","evidence_cutoff_sha256":"a07d63a2943707682ee84121dea569cf85d827a56bf663171e0365765e665c48","materials_tree_sha256":"fecd7fcead25c07a1facded808e06a7cfac8e4d289d49130720b428bb0b17932","privacy_policy_sha256":"e4cf4cd6946757c17577e179e50cf407fb92acbaffbba850f33937ef09164824"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/H02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/H02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/H02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/H02/expected-pressure.json"}},{"case_id":"H03","category":"history","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"94ebec369484c2025d93d0ddce2fb502e1f14d3019cd415bf5f3058966b46ade","evidence_cutoff_sha256":"65f303e8566b0ceb49244bc3bb19c4c87dde4255638a553663be008ddfbfc189","materials_tree_sha256":"37868e9e141d0220746077c96f653fc263879571afcb09d6f7d054852f076a05","privacy_policy_sha256":"dc471ef90e2cb13922746ec8e2b622ac369d141df101d12a2f5347cf3fdbaaa0"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/H03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/H03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/H03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/H03/expected-pressure.json"}},{"case_id":"H04","category":"history","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"adb39d799ebb2348db0d09d1875bbfd76f656aabfbc4ff6883f657cb7d2a1b5c","evidence_cutoff_sha256":"36f4a4e12a0adbd726d480cf57e66479a1ed673c25d0e89f07c58912de074ccd","materials_tree_sha256":"f51929c1fdb94351be9c7418237b072e0d169921e0904044ce86ebd9809adee0","privacy_policy_sha256":"f71207e12bbe52de8041ed4957c91ac0252784c1f95384a80350572ddfc22c80"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/H04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/H04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/H04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/H04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/H04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/H04/expected-pressure.json"}},{"case_id":"C01","category":"closed-material","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"7a3537d3e810cd674fe3982336a021b38ac5c3d0807fa8eb7e5aa27e7d461fbb","evidence_cutoff_sha256":"dd7a426bd95dd5193b87bca4e8a88522306350866b29e196504d9b8aedaf3077","materials_tree_sha256":"429729c12fc6826a4110a51c310c2fbcb345fa42b927995eb511adee133b6472","privacy_policy_sha256":"75e7f1ad89ebe24b29aed26129f252cb416199157e6c8412058be82971a34716"},"blind_labels":{"A":"ultra","B":"promax"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C01/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C01/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C01/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C01/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/C01/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/C01/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/C01/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/C01/expected-pressure.json"}},{"case_id":"C02","category":"closed-material","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"52d885eb42135c4643c551c308dfcc0795cfdca025d40f7fbc69153ff19c82a9","evidence_cutoff_sha256":"77e044abe1af03c23ae5f782ce8033648c4b8c88e0681187fb28c317447a8fa8","materials_tree_sha256":"bd53eb8e51bb940423d7ebc02fa632738b7a314400291434a7fd4c2698e71ff4","privacy_policy_sha256":"de752d734af673462def98b94bc6b40b61cad912093f210c248697d86733089b"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C02/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C02/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C02/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C02/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/C02/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/C02/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/C02/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/C02/expected-pressure.json"}},{"case_id":"C03","category":"closed-material","v82_decisive":true,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"13cc7cd51b67ff3a071a119a8c44856d9757ef8b7f23cb94775efa73b7bcc661","evidence_cutoff_sha256":"cfdc9c667e20e82857f1d358295a9f3a9feb5ece19cd1d5eea7e8aa8c51ae7fd","materials_tree_sha256":"37b7c9c6201b0197332a0c2430a0b1e13e2ca661b789a358f80a412d039bbb37","privacy_policy_sha256":"448da3ad5e41bd79523286e3cb3b084c747b857d6e9af638807a37c3345a067e"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C03/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C03/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C03/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C03/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/C03/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/C03/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/C03/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/C03/expected-pressure.json"}},{"case_id":"C04","category":"closed-material","v82_decisive":false,"status":"pending","tool_profile_id":"frozen-offline","bindings":{"request_sha256":"60a68d0a3ebd89951b78e01f91c9175519422e96c865726d42d4fa4ed5732d97","evidence_cutoff_sha256":"08b6c8cd29d13693c733abf7c2e91392c169325daff0cbfc9018232e62b9f507","materials_tree_sha256":"b559d217faa53628c17441bc3884ca7a0962271976b4e976ad8b78da7690ca69","privacy_policy_sha256":"91d20d1709b94594a92ca41c58682b51a0b99b094e79a25c4d607ca5fd99de0c"},"blind_labels":{"A":"promax","B":"ultra"},"products":{"promax":{"runtime_name":"crossframe-promax","framework_version":"v8.0","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C04/promax/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C04/promax/run-metadata.json"},"ultra":{"runtime_name":"crossframe-ultra","framework_version":"v8.2","status":"pending","fallback_allowed":false,"skill_tree_sha256":null,"article_path":"tests/evals/ultra-vs-promax/raw/C04/ultra/article.md","metadata_path":"tests/evals/ultra-vs-promax/raw/C04/ultra/run-metadata.json"}},"graders":[{"grader_id":"grader-1","grade_path":"tests/evals/ultra-vs-promax/raw/C04/grades/grader-1.json"},{"grader_id":"grader-2","grade_path":"tests/evals/ultra-vs-promax/raw/C04/grades/grader-2.json"},{"grader_id":"grader-3","grade_path":"tests/evals/ultra-vs-promax/raw/C04/grades/grader-3.json"}],"audit_only":{"expected_pressure_path":"tests/evals/ultra-vs-promax/cases/C04/expected-pressure.json"}}]}
+{
+  "schema_id": "crossframe.ultra-vs-promax.pairing-manifest",
+  "schema_version": 2,
+  "benchmark_id": "crossframe-ultra-vs-promax-24-v1",
+  "status": "execution-ready",
+  "rubric_path": "tests/evals/ultra-vs-promax/rubric.json",
+  "rubric_sha256": "612eb52613ba0cea5f3eb756446d643c77008fbd071d8465d1c26167bf0ea733",
+  "product_model": {
+    "model_id": "gpt-5.6-sol",
+    "reasoning_effort": "max"
+  },
+  "grader_contract": {
+    "count": 3,
+    "model_id": "gpt-5.6-sol",
+    "reasoning_effort": "max",
+    "fresh_context_required": true,
+    "prior_grades_visible": false
+  },
+  "label_randomization": {
+    "algorithm": "sha256-sort-balanced-v1",
+    "seed": "crossframe-ultra-vs-promax-24-v1|blind-labels|2026-08-02",
+    "seed_sha256": "6a32314577b32a0bea58d5cd4486913dd412cfb28f81f60e86d6cefb3a49b4fa"
+  },
+  "tool_profiles": {
+    "frozen-offline": {
+      "network": false,
+      "retrieval": false
+    }
+  },
+  "fallback_allowed": false,
+  "grader_visibility": {
+    "visible": [
+      "Article A",
+      "Article B",
+      "case prompt",
+      "case materials",
+      "rubric"
+    ],
+    "hidden": [
+      "product names",
+      "pairing manifest",
+      "runtime internals",
+      "directory names",
+      "prior grades",
+      "expected pressure metadata"
+    ]
+  },
+  "pairs": [
+    {
+      "case_id": "P01",
+      "category": "public",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "fe899096c43c9882e11631817ccf8a61a75f4afeaec63594ea245fa873e6f83a",
+        "evidence_cutoff_sha256": "82afb69d42295d3fc117eaaf937153435433e972f76975ad120040a74fd3f804",
+        "materials_tree_sha256": "a5b7c7540dea257989abcd0e2d82872dbe04191eae38dfdb29f3780f249157a8",
+        "privacy_policy_sha256": "5bd25233a2fe20694d2773fb42e6981dd22a0761654174d39820bb2bb3d67f0c",
+        "product_packet_sha256": "0e9f006a45a2dd9dcddf870bd7a7c4d7179c62eaacdd7dc619cb69b0a2e50983",
+        "grader_base_packet_sha256": "d14e1cba635ad0fec2efb6aa7d9d4437f5e838a658c654cfe3031b7a53d42585"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/P01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "P02",
+      "category": "public",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "5c17d9d5a196281f59de76a00ee1f205441f442297df0c8b22e4cb8aff7394f3",
+        "evidence_cutoff_sha256": "06db8d96c193cab2b7e1eaa2b883b281e0545fa8e3e93bd3cd4377c1426daa4d",
+        "materials_tree_sha256": "d671618756732bcdf85c44eb6a2b042c7a0007cfab925494f47a155c436d2aca",
+        "privacy_policy_sha256": "522d2e8ed880ed994a06edcc054c33fb8039ad7ea7a9d7d03e1326470216d647",
+        "product_packet_sha256": "68ec474d79afc7bc1617fd809c2cc52be070f149f3dff71853c4620d37cb8dbf",
+        "grader_base_packet_sha256": "3374c3aba6fdf862d8e966e07cb8fd61c71d17e6bb7806b820beea1278cb1dbc"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/P02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "P03",
+      "category": "public",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "1960a85df02a2ab18b13b92af529b4a41597179e4919e12d848bcd11ca49e3ff",
+        "evidence_cutoff_sha256": "17a2fd28b0d207b6d204697dd49013afdd812ff9dfd8532ac295536f46cf46ef",
+        "materials_tree_sha256": "d1b30f88c552958c486e168aae4bd85178429754c563144f962cfab38570a758",
+        "privacy_policy_sha256": "01cbc3426aba8a7816dccff4678556015966012e3447e7664552b45c1d189a43",
+        "product_packet_sha256": "ba1d7c5b720950270e34979acf2681ad16fbe5bc07a93a6a18b85bdf46cfc041",
+        "grader_base_packet_sha256": "12b3f91af9f620a3e7503dde5bac01709bb9527f9a1a86d8722a5935b166729c"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/P03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "P04",
+      "category": "public",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "05ca3f8090c6a324d60aba39fe392e05cbdb6952d44abaa578829c6d78f6399a",
+        "evidence_cutoff_sha256": "82295bb19c8cad0a6eabef80a30a7325791b741eb9a3ee64e3364bbe70685f14",
+        "materials_tree_sha256": "531eca87580e721d90be558075eafb698d933663e00a4ad8ddc43f550f29320f",
+        "privacy_policy_sha256": "a9f9991c94843a9ff0f1327781c6f309fec4b3863f8ebba51d1b37cb50207fff",
+        "product_packet_sha256": "ac2232b6e2fb4dcf3648a774a54edcccb179c3b46df5b2ff4d4c7ded67b7b5d6",
+        "grader_base_packet_sha256": "f3c9bb0ec7b40ba4c513a8f27f05f9067de2f2f73ed07364626535966d92963c"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/P04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/P04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/P04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/P04/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "O01",
+      "category": "organization",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "17416ff4c09d4705b727b8dfad4148848b89fb09bc87f7808b368bc40fdf8ad8",
+        "evidence_cutoff_sha256": "4637188276aa492fa6de45e5ca9120ca4d3d308538d8289fe0276951da7285f7",
+        "materials_tree_sha256": "4ec11d25452118f426c06593560f32cc3d8c6f121d94d97d5a202e40114f1bbc",
+        "privacy_policy_sha256": "3035b0a8b8d6ba0c2bce6b43859ff6875ce566fce995ec7513f5feeac12d0458",
+        "product_packet_sha256": "47af6aa1c3c2a5c7ec480c9542a6ce12648e02bd9a2c6328d47d431fa3662146",
+        "grader_base_packet_sha256": "7d9147b90adb99ec5b261b85471032c53251bbd086d7da9b6732cfedc30daa24"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/O01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "O02",
+      "category": "organization",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "a0754e43ad76d51d15505435f50db5186c892e7297400fed675c7b9d2526aef2",
+        "evidence_cutoff_sha256": "17a2bb9f48926e67390b9e8ac2ac918bf4acf1290c63e64514a6ac0129289fc0",
+        "materials_tree_sha256": "211a39070701ce44ac20b53141aad4a2813c22a39cfcb444b3efdd1d19ad27d2",
+        "privacy_policy_sha256": "6a33269f1016616ed5882655bd9f76e0d6f8ac224ef8f5fb77b1354ec31cdbb8",
+        "product_packet_sha256": "6aeca77b78e2777d755e54d019c07719bcd6f1d0339167659eec64abd8f72d9f",
+        "grader_base_packet_sha256": "365e8aa8bebc7ea1b341af487b39013dfe17283b1cb329fc6c3902037d0410c3"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/O02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "O03",
+      "category": "organization",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "f7394c15e1114fc77778c0651d8b7f845ca8c136b4d1c0d7b2ac50fb993c6998",
+        "evidence_cutoff_sha256": "cf324ab141dc4572068fb7be32de323a349f9d2db43f8b03f1619c474b179342",
+        "materials_tree_sha256": "15f14e2847d6ba9e6420112f7cc29de174546f9a742b6e3bbd8e959de062efc9",
+        "privacy_policy_sha256": "29459cc57eac8d6dbed4a5ec5d940d5f51dad49bae256d893bf89e6119a9e62a",
+        "product_packet_sha256": "7653443c9e38e407a9bd1314332321aac1c6567c036066d7e58e9cd8034f5bd2",
+        "grader_base_packet_sha256": "b9a41d260465351e04a044536cbf2f1fce53e15d92f5ce444d67a65cd3ceb660"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/O03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "O04",
+      "category": "organization",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "9d9c98a35b524335893418572f7fef9229b20a326121ecd50eacfd53959642e1",
+        "evidence_cutoff_sha256": "ba035238164b7245a946442090f40065a30ce7715f28f671bb1582ff130eb0ad",
+        "materials_tree_sha256": "505f0add5d0d3a17fb0d30bc0c9a71a30a6d0c7668f36b026c92cb1b67c4cc63",
+        "privacy_policy_sha256": "6cc6c5862138bec053a2f2a995603c543456675e17f7779bb786bdb175c51d75",
+        "product_packet_sha256": "c33aa33436c69cfc30c56c57f96713560e0df7db2c9c92901dd076fc9ddad1ad",
+        "grader_base_packet_sha256": "ecb046e15d791056f4920b5845b6bed6adde90d1bbc6e1d974e4556085492dbe"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/O04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/O04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/O04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/O04/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "B01",
+      "category": "business-tech",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "a9ae247e2f8f6843acb16d16ca52d315422d639b63189aa4b9829c13fa69e220",
+        "evidence_cutoff_sha256": "d16e89f5b0bb4a940d7d5683f46e3b30a292410f2d70cbab530d11a664b7cb9a",
+        "materials_tree_sha256": "59211307282b22a62bc9b4293a76fd683efbc2da39a16439f91e18cafef681fd",
+        "privacy_policy_sha256": "971a1eb2a6096228c3bfcf53f010b08fe291be31a5eb0a240a50d580019a330a",
+        "product_packet_sha256": "049d5a92a22403bc370d0bbe692015aa4c537007ba96be6a6f0c6efbba328a46",
+        "grader_base_packet_sha256": "719a2a959ab0f312c665737e6c391504113f0bd02fefeea83e0351f86998eca9"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/B01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "B02",
+      "category": "business-tech",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "9356bd69e43d1d282bba7b8464292472677be4e0def85872a0a3e0cfb87cf5af",
+        "evidence_cutoff_sha256": "70371efd5724c8d547618fe356383e9b8595247ad53808b56d71f50558a1acbb",
+        "materials_tree_sha256": "0cf10ab0918f3058f074924efdf8bf3ddffd490000038b93f9ba730214ed9408",
+        "privacy_policy_sha256": "6975faa7b165b42b5d3d16dc6845655c3d57960eb69d598da50ec5fc694e8720",
+        "product_packet_sha256": "7f0c16ee94a0cb3f1471cdd0555044dccb48754d8f3e2d21023e50fce7eb4c07",
+        "grader_base_packet_sha256": "8c4bce5c51cde7b132bcbb25642c4a3edab5757f9eaf2977935bd2ac28085486"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/B02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "B03",
+      "category": "business-tech",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "1b6e377b6c0161ba168219de5e1858d59912f60a6be4862d8bd6600c534d228e",
+        "evidence_cutoff_sha256": "8b0f6988017f2f54b2008125729895c8c0af009b28d430c3e5927178c87ee0fa",
+        "materials_tree_sha256": "c430482b93e463c51605d6f0207efc27a86b30372856cc8fe203b034246848d5",
+        "privacy_policy_sha256": "ee459570a73c39cbea0a36838cdd8dc8e372b238fda5b962d8981c90e065c67c",
+        "product_packet_sha256": "74baf67535fdfbb14adfb0c5b32878de4b7fc28bff7a1d8f5f228988a045a55d",
+        "grader_base_packet_sha256": "6e6e0c6914210286765ce88d1c7e5f44258bac713f4bd29c0fbc05adc390ad6a"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/B03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "B04",
+      "category": "business-tech",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "87bce2135a9d7316f7b8f4611f19d30aa5897c84be3b8ca9c5b5e22c2e1b6979",
+        "evidence_cutoff_sha256": "ef3d02e6291be6bdad930c9fcd6f446c118c0e1aea602f5fe52b7403b96385fd",
+        "materials_tree_sha256": "985ed4ca2e9f8adfd95531675ae1be44864a44c93211d55bab7ee608a0727a71",
+        "privacy_policy_sha256": "450bc95be76586a7e708fab7a02ee434fe2a5356f05cf16e42ca42de263a229d",
+        "product_packet_sha256": "e815401a2feed26f66a0817b5a90d2f7c847507862f49661afd309b4b37e4f67",
+        "grader_base_packet_sha256": "8041fbb3ddc0584a983bc8abd4f0afa20578530b2830c351889996f957e1da9a"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/B04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/B04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/B04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/B04/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "L01",
+      "category": "personal",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "cdf6d6ce287525aaa0de413ab7ceb3e9fa69c47f81c9265fc02dcbbe1f6a60ea",
+        "evidence_cutoff_sha256": "17f072ded24c8965304dcd0d7023077d27a31327cc5f8eed7455b667ffe57018",
+        "materials_tree_sha256": "a532307f536b91d28282253a6d4969b98bb369416cf2d586e0dc8a1db8111371",
+        "privacy_policy_sha256": "5bd5133fe04aecf72f265daf69d96ca3d23508d46e47de50a611ecaa09b12561",
+        "product_packet_sha256": "d34a3c9114fcb3fc45176b937db55af12b95a2c06e2ab13f19b1bb469c458ec5",
+        "grader_base_packet_sha256": "5f41f07e3ace35fc32b5fa00852c0c07be5fd59952218ff82d1be377256e156d"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/L01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "L02",
+      "category": "personal",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "c73c575c342de0c2861367731f79608b53e580830938fcb802a6efcc42b09217",
+        "evidence_cutoff_sha256": "ca7429ba6d31b3eef9344d36c825135b34d4d7ea2ee653affceab29f5cdd0c2f",
+        "materials_tree_sha256": "dfd9d116751ae85287e86da308614623b084084b4ef40db89263bf96ca1508f8",
+        "privacy_policy_sha256": "e534eccb07bd7ff4ac6fb73474bb9f69790cd93944e8c30db634ef0e701ebc40",
+        "product_packet_sha256": "bada23539e14191bedf06a0487ef67da80659561469cdf44e3e8565d398f5566",
+        "grader_base_packet_sha256": "9969037d0f6ab7102479ee18ec436988a629d248b0d00967cc392e34c126b4b9"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/L02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "L03",
+      "category": "personal",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "01a9a09d47847045bb41453c8eb150b96fe0ed341c8efe44c5177c6f87f1a983",
+        "evidence_cutoff_sha256": "3c10da27352b05082cc857295e76218a4a3969f3ef89d6f4608bd0a0aae75a6f",
+        "materials_tree_sha256": "3e1862249c01dad059754c5bd5647e56c586d2c6860303d5d1146c79ee13fe31",
+        "privacy_policy_sha256": "dfdb680b6625d9fab6a1afba120e898b714ab26fc29062352fec6fcfc2c2f05e",
+        "product_packet_sha256": "5c0bab4c277f36a23017e22fb3da5f25d1f80ec745be80527cb3302f44ae62c3",
+        "grader_base_packet_sha256": "45d86ae4a7e0118ad6e47df281dc2ef538c14ea057507551a6bc23fdae5e405c"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/L03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "L04",
+      "category": "personal",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "ea9ce83c422fef9c918e145b652b9be053ed69808abc1ebcc56263d897aa8188",
+        "evidence_cutoff_sha256": "ca898504c29d2243afa8ed88c4229ed54fd35a11e4383052c9cfc0c6c3fc1026",
+        "materials_tree_sha256": "7ef1ffb8982e465f56676eea24398830b19b9bc87c8b2a8b5e197eb412dd7a45",
+        "privacy_policy_sha256": "3d9a16b941a145d1db258b8894d1b132afb43b14a248778b4e46302189a14c06",
+        "product_packet_sha256": "9d9df2f6456a6df5ae406fa558a991399fa111c96f7735f0993f50f3d7b74581",
+        "grader_base_packet_sha256": "e29f2fcea0c809c4636db432103d9eeb896f0f97b704e4f008271884747951f3"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/L04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/L04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/L04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/L04/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "H01",
+      "category": "history",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "c961af789f4d8b257c2b8d85aa3914469588c9427f3463064025ba9cbb10ad5a",
+        "evidence_cutoff_sha256": "87db2357dfc9a0cb5af2b806005ffdc9f9109fa92d2f1082fec4f5c4c9058a6f",
+        "materials_tree_sha256": "46566e438f7f6beb9210fe849fb9b2fd48c4cd55b1c374bde4cd179dc5a4957d",
+        "privacy_policy_sha256": "2ba842eb6cfb171529f3169702c0999d9910def232a0b560a47dc28847125e2e",
+        "product_packet_sha256": "5033ed957117570b63423359693e910e7b58bfbae287e431a6b0d8ed5ace757a",
+        "grader_base_packet_sha256": "a65140142e895e183fa438b281bb883b2f82fffb7e7f652ab5fd4a846b2f8f29"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/H01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "H02",
+      "category": "history",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "465180e11a1081f141bdafb75165701990425329afcc8c81b2acc2c73adc6dca",
+        "evidence_cutoff_sha256": "cacce3f9f73e6a4fcabf6f82c111ca42f399e1eb0dd4288f483dbec1dc689be5",
+        "materials_tree_sha256": "86902aa4c3550d808986212d03cb1f75e3079f42924bc69492cf57fdb986c496",
+        "privacy_policy_sha256": "8e67a5086b7b408d8fe9a5f66309daa67187180b4fb9bb230112a7c814a3097d",
+        "product_packet_sha256": "e2406738da0f9ade92dbf83063b1d6acf9d9b63c7dc3c1cfe607b849d8e58a22",
+        "grader_base_packet_sha256": "6f650df9dd6589830c18c52a1227ddbb5530be92deaee2b98520fd3508b5c5b7"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/H02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "H03",
+      "category": "history",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "94ebec369484c2025d93d0ddce2fb502e1f14d3019cd415bf5f3058966b46ade",
+        "evidence_cutoff_sha256": "a0b96f6ca9c960950b2465085c76158e8beee524280cbc61d20278d50122abb7",
+        "materials_tree_sha256": "4c7d5e977b31d49f23b62c3032283efc309653d5b63a166d36f3fb76612542e5",
+        "privacy_policy_sha256": "2dd385d8c429c0117a9763c59efad94d6d3dd31737406280bccc7041e703442a",
+        "product_packet_sha256": "5104fa1378ff52ccfe47312c03d2ce579f38e97022e374ded502ec1b5a703233",
+        "grader_base_packet_sha256": "20e4205fbcf4533be78b8cafd65413f912f26815ad1bea39f625563123bdfc7c"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/H03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "H04",
+      "category": "history",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "adb39d799ebb2348db0d09d1875bbfd76f656aabfbc4ff6883f657cb7d2a1b5c",
+        "evidence_cutoff_sha256": "fe3d074ed465ea60674e660e50b857db79310b27bebaee593611cb32adc1ae54",
+        "materials_tree_sha256": "c57cbd281291a6e6a1c19a19bfb5924a17bfe967a0e1c87e3d9611ae07bea08e",
+        "privacy_policy_sha256": "f2465f2ba07fc4e2ae6b5624bc705d7c840e21395697d2ae81ccc79bb982d704",
+        "product_packet_sha256": "e3136623fd43f4d18ca431b391f23f6f806b88f7f65f338829a40ab2e7890410",
+        "grader_base_packet_sha256": "82bab6e48786bbe0cca193b494f8aeb65018a6d0414b867dd10d7ac2f7b527f7"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/H04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/H04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/H04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/H04/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "C01",
+      "category": "closed-material",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "7a3537d3e810cd674fe3982336a021b38ac5c3d0807fa8eb7e5aa27e7d461fbb",
+        "evidence_cutoff_sha256": "f11d0320e3f02afaf16e1026452d9e451498bdec59f4844b841a021d4e78af40",
+        "materials_tree_sha256": "386d745ecbc2cef6dfc99b6ea71039a8bb1eefedc23554e9b68a2c4e679cceca",
+        "privacy_policy_sha256": "8796d74d782d04ed947a05b1a7e0b536fa3a7cd705e746537de571c6e59564b7",
+        "product_packet_sha256": "7827d413fa8434b9b5f05fc1a43acb0504c8ba12317d588f96b8a1da3976064c",
+        "grader_base_packet_sha256": "74426c411f3e60f784095d40248096e9bf1bf8592e43d17fcffbf723df8fba38"
+      },
+      "blind_labels": {
+        "A": "ultra",
+        "B": "promax"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C01/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C01/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C01/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C01/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C01/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C01/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C01/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/C01/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "C02",
+      "category": "closed-material",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "52d885eb42135c4643c551c308dfcc0795cfdca025d40f7fbc69153ff19c82a9",
+        "evidence_cutoff_sha256": "bdd5d58923f4c0939ce3df4b4848352a4dcac5ac4f73482b7ea374d27ed64184",
+        "materials_tree_sha256": "f27c98ec166866eb043b871dd2a46a30ec314639824274c8021e9b518ee128ff",
+        "privacy_policy_sha256": "86ade8795c521b9ce60f395e1e7f4cd170dd90ad463be8f45672808d42e0d31e",
+        "product_packet_sha256": "c1b6a71be72dd42e1c14dcb7e86e394553d1e7559335250e464a0da4d9c1a3cd",
+        "grader_base_packet_sha256": "e5bf9e2c7fc7d864324e9f85ca16bacb3488eab2583c86acc0636853237bdb2c"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C02/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C02/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C02/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C02/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C02/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C02/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C02/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/C02/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "C03",
+      "category": "closed-material",
+      "v82_decisive": true,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "13cc7cd51b67ff3a071a119a8c44856d9757ef8b7f23cb94775efa73b7bcc661",
+        "evidence_cutoff_sha256": "f151881231254a934f933430e95a7c969141710352352e055b8231166470e90e",
+        "materials_tree_sha256": "e258b776741f51ad43cf84566f3204c91a282e96a6dd3279b5148a6be94955a3",
+        "privacy_policy_sha256": "771669eea48512b034738e82b2ef059285980ad1c4f79b67771f659bda3c097c",
+        "product_packet_sha256": "7d75cdebe147f8ec55120e0a33122be076d3869daad806624f3862eb243b0ccc",
+        "grader_base_packet_sha256": "991522c51fd7a38eaa962e2d84a32961435a4b2f5a09dca8f61603e3c54da3f7"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C03/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C03/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C03/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C03/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C03/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C03/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C03/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/C03/expected-pressure.json"
+      }
+    },
+    {
+      "case_id": "C04",
+      "category": "closed-material",
+      "v82_decisive": false,
+      "status": "execution-ready",
+      "tool_profile_id": "frozen-offline",
+      "bindings": {
+        "request_sha256": "60a68d0a3ebd89951b78e01f91c9175519422e96c865726d42d4fa4ed5732d97",
+        "evidence_cutoff_sha256": "e0e7e9bfa53f00ccf7aa3477d620a60a59b2932c4d064466a1e442fc09486a7a",
+        "materials_tree_sha256": "4843c01be7341da22b478808fdf2df9c827bfac2bbbc12f8211355da520f8c38",
+        "privacy_policy_sha256": "cd3e2ad69a91430341e67ad8c5133d3b99b97a6063e012ba9adfed0b4bfc5aa6",
+        "product_packet_sha256": "4569441a03155601e6c7d1f331441e2071ec33f7043b0799ebc81dfaedc585bd",
+        "grader_base_packet_sha256": "ec2a94eb073d029c80ea495f24a736c9c6931f6295cb1610f56bc773a5503d6a"
+      },
+      "blind_labels": {
+        "A": "promax",
+        "B": "ultra"
+      },
+      "products": {
+        "promax": {
+          "runtime_name": "crossframe-promax",
+          "framework_version": "v8.0",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "4edc47401f2f923d722918424f623789c1aa88435b15212c3084dcb409227d4e",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C04/promax/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C04/promax/run-metadata.json"
+        },
+        "ultra": {
+          "runtime_name": "crossframe-ultra",
+          "framework_version": "v8.2",
+          "status": "execution-ready",
+          "fallback_allowed": false,
+          "skill_tree_sha256": "11b0caeb4dc8893ac63837a1841f94530b6b96f4c999b5a6e4ed9d0a3f6d8422",
+          "article_path": "tests/evals/ultra-vs-promax/raw/C04/ultra/article.md",
+          "metadata_path": "tests/evals/ultra-vs-promax/raw/C04/ultra/run-metadata.json"
+        }
+      },
+      "graders": [
+        {
+          "grader_id": "grader-1",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C04/grades/grader-1.json"
+        },
+        {
+          "grader_id": "grader-2",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C04/grades/grader-2.json"
+        },
+        {
+          "grader_id": "grader-3",
+          "grade_path": "tests/evals/ultra-vs-promax/raw/C04/grades/grader-3.json"
+        }
+      ],
+      "audit_only": {
+        "expected_pressure_path": "tests/evals/ultra-vs-promax/cases/C04/expected-pressure.json"
+      }
+    }
+  ]
+}

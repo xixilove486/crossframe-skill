@@ -160,16 +160,20 @@ def test_rubric_freezes_weights_blind_grading_and_release_thresholds() -> None:
     )
 
 
-def test_pairing_manifest_is_hash_bound_balanced_and_blind() -> None:
-    builder = load_builder()
-    summary = builder.validate_scaffold(repo_root=ROOT, eval_root=EVAL_ROOT)
+def test_pairing_manifest_is_execution_ready_hash_bound_balanced_and_blind() -> None:
+    builder = load_builder(stub_skill_measurement=False)
+    summary = builder.validate_contract(
+        repo_root=ROOT,
+        eval_root=EVAL_ROOT,
+        expected_state="execution-ready",
+    )
     assert summary == {
-        "status": "scaffold-valid",
+        "state": "execution-ready",
+        "schema_version": 2,
         "case_count": 24,
         "pair_count": 24,
-        "required_product_runs": 48,
-        "required_blind_grades": 72,
-        "decisive_case_count": 8,
+        "product_run_count": 0,
+        "blind_grade_count": 0,
     }
 
     rubric = load_json(RUBRIC_PATH)
@@ -181,8 +185,8 @@ def test_pairing_manifest_is_hash_bound_balanced_and_blind() -> None:
     assert manifest["schema_id"] == (
         "crossframe.ultra-vs-promax.pairing-manifest"
     )
-    assert manifest["schema_version"] == 1
-    assert manifest["status"] == "scaffold"
+    assert manifest["schema_version"] == 2
+    assert manifest["status"] == "execution-ready"
     assert manifest["rubric_sha256"] == sha256_json(rubric)
     assert manifest["product_model"] == {
         "model_id": "gpt-5.6-sol",
@@ -210,11 +214,13 @@ def test_pairing_manifest_is_hash_bound_balanced_and_blind() -> None:
     ultra_as_a = set(ranked[:12])
 
     observed_ultra_a: set[str] = set()
+    measured_skill_hashes = builder._measure_execution_skill_tree_sha256(ROOT)
     for case, pair in zip(scenarios, manifest["pairs"], strict=True):
         case_id = case["id"]
+        assert "execution_readiness" not in case
         assert pair["case_id"] == case_id
         assert pair["tool_profile_id"] == "frozen-offline"
-        assert pair["status"] == "pending"
+        assert pair["status"] == "execution-ready"
         assert pair["bindings"]["request_sha256"] == sha256_bytes(
             (ROOT / case["prompt_path"]).read_bytes()
         )
@@ -237,10 +243,15 @@ def test_pairing_manifest_is_hash_bound_balanced_and_blind() -> None:
             "grader-3",
         ]
         assert len({grader["grade_path"] for grader in pair["graders"]}) == 3
+        for binding in ("product_packet_sha256", "grader_base_packet_sha256"):
+            value = pair["bindings"][binding]
+            assert len(value) == 64
+            assert value == value.lower()
+            int(value, 16)
         for product in ("promax", "ultra"):
             contract = pair["products"][product]
-            assert contract["status"] == "pending"
-            assert contract["skill_tree_sha256"] is None
+            assert contract["status"] == "execution-ready"
+            assert contract["skill_tree_sha256"] == measured_skill_hashes[product]
             assert contract["fallback_allowed"] is False
             assert contract["article_path"] == (
                 f"tests/evals/ultra-vs-promax/raw/{case_id}/{product}/article.md"
@@ -254,6 +265,11 @@ def test_pairing_manifest_is_hash_bound_balanced_and_blind() -> None:
         ]
     assert observed_ultra_a == ultra_as_a
     assert len(observed_ultra_a) == 12
+    assert sorted(
+        path.relative_to(EVAL_ROOT / "raw").as_posix()
+        for path in (EVAL_ROOT / "raw").rglob("*")
+        if path.is_file()
+    ) == [".gitkeep"]
 
     assert manifest["grader_visibility"] == {
         "visible": ["Article A", "Article B", "case prompt", "case materials", "rubric"],
@@ -290,7 +306,10 @@ def test_committed_results_is_an_explicit_not_run_placeholder() -> None:
 def test_builder_refuses_missing_product_runs_without_rewriting_placeholder() -> None:
     builder = load_builder()
     before = RESULTS_PATH.read_bytes()
-    with pytest.raises(builder.BenchmarkBuildError, match="not ready|missing"):
+    with pytest.raises(
+        builder.BenchmarkBuildError,
+        match="pairing manifest state is 'execution-ready'.*ready-for-results-build",
+    ):
         builder.build_results(repo_root=ROOT, eval_root=EVAL_ROOT)
     assert RESULTS_PATH.read_bytes() == before
 
@@ -441,7 +460,8 @@ def test_frozen_cli_fails_without_rewriting_the_unrun_placeholder() -> None:
         text=True,
     )
     assert completed.returncode == 2
-    assert "missing" in completed.stderr or "not ready" in completed.stderr
+    assert "pairing manifest state is 'execution-ready'" in completed.stderr
+    assert "requires 'ready-for-results-build'" in completed.stderr
     assert RESULTS_PATH.read_bytes() == before
 
 
@@ -547,20 +567,39 @@ def test_state_machine_seals_inputs_then_completed_pairs_before_results(
     }
 
 
-def test_committed_scaffold_cannot_be_prepared_before_evidence_is_frozen() -> None:
+def test_synthetic_v1_scaffold_cannot_be_prepared_before_evidence_is_frozen(
+    tmp_path: Path,
+) -> None:
     builder = load_builder()
-    manifest_before = PAIRING_PATH.read_bytes()
-    results_before = RESULTS_PATH.read_bytes()
-    with pytest.raises(builder.BenchmarkBuildError, match="version 2|frozen|review"):
+    repo, evaluation = _make_v2_synthetic_eval(
+        tmp_path,
+        pairing_schema_version=1,
+    )
+    materials_dir = evaluation / "cases" / "P01" / "materials"
+    materials_path = materials_dir / "manifest.json"
+    materials = json.loads(materials_path.read_text("utf-8"))
+    materials["reviews"]["privacy"]["status"] = "pending"
+    _write_json(materials_path, materials)
+    pairing_path = evaluation / "pairing-manifest.json"
+    pairing = json.loads(pairing_path.read_text("utf-8"))
+    pairing["pairs"][0]["bindings"]["materials_tree_sha256"] = tree_sha256(
+        materials_dir
+    )
+    _write_json(pairing_path, pairing)
+    manifest_before = pairing_path.read_bytes()
+    results_path = evaluation / "results.json"
+    results_before = results_path.read_bytes()
+
+    with pytest.raises(builder.BenchmarkBuildError, match="frozen|review|pending"):
         builder.transition_state(
-            repo_root=ROOT,
-            eval_root=EVAL_ROOT,
+            repo_root=repo,
+            eval_root=evaluation,
             target_state="execution-ready",
             promax_skill_tree_sha256="a" * 64,
             ultra_skill_tree_sha256="b" * 64,
         )
-    assert PAIRING_PATH.read_bytes() == manifest_before
-    assert RESULTS_PATH.read_bytes() == results_before
+    assert pairing_path.read_bytes() == manifest_before
+    assert results_path.read_bytes() == results_before
 
 
 def test_execution_ready_rejects_asserted_skill_hash_mismatch_atomically(
@@ -628,17 +667,22 @@ def test_promax_skill_hash_matches_green_canonical_algorithm() -> None:
     assert builder._measure_promax_skill_tree_sha256(ROOT) == expected
 
 
-def test_ultra_skill_hash_requires_fresh_u1_measurement() -> None:
+def test_ultra_skill_hash_matches_fresh_release_artifact_authority() -> None:
     builder = load_builder(stub_skill_measurement=False)
+    release_manifest = load_json(
+        ROOT / "skills/crossframe-ultra/references/release-manifest.json"
+    )
+    assert isinstance(release_manifest, dict)
+    release_artifacts = {
+        artifact["path"]: artifact["sha256"]
+        for artifact in release_manifest["release_artifacts"]
+    }
 
-    with pytest.raises(
-        builder.BenchmarkBuildError,
-        match="Ultra.*fresh|Ultra.*ready|release manifest",
-    ):
-        builder._measure_ultra_skill_tree_sha256(ROOT)
+    expected = sha256_bytes(canonical_json_bytes(release_artifacts) + b"\n")
+    assert builder._measure_ultra_skill_tree_sha256(ROOT) == expected
 
 
-def test_transition_cli_fails_closed_on_unreviewed_committed_evidence() -> None:
+def test_transition_cli_refuses_reentering_committed_execution_ready_state() -> None:
     manifest_before = PAIRING_PATH.read_bytes()
     results_before = RESULTS_PATH.read_bytes()
     completed = subprocess.run(
@@ -665,15 +709,12 @@ def test_transition_cli_fails_closed_on_unreviewed_committed_evidence() -> None:
         text=True,
     )
     assert completed.returncode == 2
-    assert any(
-        marker in completed.stderr
-        for marker in ("version 2", "frozen", "review")
-    )
+    assert "illegal transition 'execution-ready' -> 'execution-ready'" in completed.stderr
     assert PAIRING_PATH.read_bytes() == manifest_before
     assert RESULTS_PATH.read_bytes() == results_before
 
 
-def test_readme_separates_deterministic_scaffold_from_expensive_evidence() -> None:
+def test_readme_separates_execution_readiness_from_expensive_evidence() -> None:
     text = README_PATH.read_text(encoding="utf-8")
     for marker in (
         "48 product runs",
@@ -689,8 +730,9 @@ def test_readme_separates_deterministic_scaffold_from_expensive_evidence() -> No
         SEAL_CLI,
         "scaffold -> execution-ready -> ready-for-results-build",
         "completed pairs",
-        "pre-execution assertions only, not Task 17 final acceptance",
-        "Leaving a pending assertion as the final benchmark contract is a failure",
+        "checked-in `execution-ready`",
+        "0 product runs and 0 blind grades",
+        "Benchmark execution is deferred",
     ):
         assert marker in text
 
@@ -708,10 +750,17 @@ def _make_v2_synthetic_eval(
     if pairing_schema_version not in {1, 2}:
         raise ValueError("synthetic pairing schema version must be 1 or 2")
     pairing["schema_version"] = pairing_schema_version
+    pairing["status"] = "scaffold"
 
     for case, pair in zip(scenarios, pairing["pairs"], strict=True):
+        pair["status"] = "pending"
+        for product in pair["products"].values():
+            product["status"] = "pending"
+            product["skill_tree_sha256"] = None
         if pairing_schema_version == 2:
-            case.pop("execution_readiness")
+            case.pop("execution_readiness", None)
+        else:
+            case["execution_readiness"] = "awaiting-evidence-bundle"
         case_id = case["id"]
         case_dir = evaluation / "cases" / case_id
         materials_dir = case_dir / "materials"
@@ -1611,21 +1660,38 @@ def test_seal_rejects_last_grade_packet_tampering_without_partial_migration(
     assert (evaluation / "results.json").read_bytes() == results_before
 
 
-def test_validate_contract_is_state_sensitive_and_v1_never_executes(
+def test_validate_contract_accepts_committed_execution_ready_and_v1_never_executes(
     tmp_path: Path,
 ) -> None:
     builder = load_builder()
-    assert builder.validate_scaffold(repo_root=ROOT, eval_root=EVAL_ROOT)[
+    assert builder.validate_contract(
+        repo_root=ROOT,
+        eval_root=EVAL_ROOT,
+        expected_state="execution-ready",
+    ) == {
+        "state": "execution-ready",
+        "schema_version": 2,
+        "case_count": 24,
+        "pair_count": 24,
+        "product_run_count": 0,
+        "blind_grade_count": 0,
+    }
+
+    repo, evaluation = _make_v2_synthetic_eval(
+        tmp_path,
+        pairing_schema_version=1,
+    )
+    assert builder.validate_scaffold(repo_root=repo, eval_root=evaluation)[
         "status"
     ] == "scaffold-valid"
     with pytest.raises(builder.BenchmarkBuildError, match="version 2|execution-ready"):
         builder.validate_contract(
-            repo_root=ROOT,
-            eval_root=EVAL_ROOT,
+            repo_root=repo,
+            eval_root=evaluation,
             expected_state="execution-ready",
         )
 
-    repo, evaluation = _make_v2_synthetic_eval(tmp_path)
+    repo, evaluation = _make_v2_synthetic_eval(tmp_path / "v2")
     scaffold = builder.validate_contract(
         repo_root=repo,
         eval_root=evaluation,

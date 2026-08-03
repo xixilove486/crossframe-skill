@@ -201,7 +201,6 @@ SCENARIO_FIELDS = {
     "decisive_pressure",
     "v82_decisive",
     "adversarial_targets",
-    "execution_readiness",
     "case_dir",
     "prompt_path",
     "evidence_cutoff_path",
@@ -403,7 +402,7 @@ def test_adversarial_targets_cover_the_frozen_red_failures_without_outcome_leaka
     }
     assert REQUIRED_ADVERSARIAL_TARGETS.issubset(observed)
     for case in cases:
-        assert case["execution_readiness"] == "awaiting-evidence-bundle"
+        assert "execution_readiness" not in case
         assert case["adversarial_targets"]
         assert len(case["adversarial_targets"]) == len(
             set(case["adversarial_targets"])
@@ -413,12 +412,15 @@ def test_adversarial_targets_cover_the_frozen_red_failures_without_outcome_leaka
 def test_pairing_contract_is_failure_closed_and_never_falls_back() -> None:
     manifest = load_json(PAIRING_PATH)
     assert isinstance(manifest, dict)
-    assert manifest["status"] == "scaffold"
+    assert manifest["status"] == "execution-ready"
     assert manifest["fallback_allowed"] is False
     assert manifest["tool_profiles"]["frozen-offline"]["network"] is False
     assert manifest["tool_profiles"]["frozen-offline"]["retrieval"] is False
     for pair in manifest["pairs"]:
-        assert pair["status"] == "pending"
+        assert pair["status"] == "execution-ready"
+        assert {
+            product["status"] for product in pair["products"].values()
+        } == {"execution-ready"}
         assert pair["products"]["promax"]["runtime_name"] == (
             "crossframe-promax"
         )

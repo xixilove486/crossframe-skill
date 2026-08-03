@@ -2335,7 +2335,8 @@ def _derive_results(
     pairs = _require_list(contract["pairs"], context="pairs")
     if manifest["status"] != "ready-for-results-build":
         raise BenchmarkBuildError(
-            "benchmark not ready: pairing manifest is still a scaffold"
+            f"benchmark not ready: pairing manifest state is "
+            f"{manifest['status']!r}; requires 'ready-for-results-build'"
         )
     bundles = _validated_v2_bundles(
         repo=repo,
