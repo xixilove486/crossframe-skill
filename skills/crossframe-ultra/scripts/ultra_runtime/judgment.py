@@ -21,6 +21,23 @@ INSIGHT_EFFECTS = (
     "identifies-circle-scale-channel",
 )
 
+VERDICT_KINDS = (
+    "fact",
+    "prediction",
+    "value",
+    "responsibility",
+    "authorization",
+)
+
+ACTION_KINDS = (
+    "active",
+    "delay",
+    "probe",
+    "exit-or-transfer",
+    "maintain-status-quo",
+    "no-action",
+)
+
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _AUTHORITY_FIELDS = (
     "evidence_ledger_artifact_sha256",
@@ -44,6 +61,10 @@ _MATERIAL_EVIDENCE_IDENTITIES = frozenset({"observed", "reported", "inferred"})
 
 class ClaimMechanismError(ValueError):
     """Raised when a U6 graph changes identity, evidence, or authority roles."""
+
+
+class JudgmentError(ValueError):
+    """Raised when a U9 verdict changes evidence, identity, or authority roles."""
 
 
 def qualifies_as_insight(candidate: Mapping[str, object]) -> bool:
@@ -684,3 +705,605 @@ def _seal_claim_mechanism_graph(
         expected_transformation_ledger_artifact_sha256=expected_hashes[2],
         expected_concept_disposition_artifact_sha256=expected_hashes[3],
     )
+
+
+def _verdict_rank_prefix(verdict: Mapping[str, Any]) -> None:
+    ranking = verdict["explanation_ranking"]
+    explanation_ids = [item["explanation_id"] for item in ranking]
+    if len(explanation_ids) != len(set(explanation_ids)):
+        raise JudgmentError("verdict explanation identities must be unique")
+    ranks = [item["rank"] for item in ranking]
+    if verdict["judgment_kind"] == "best-current":
+        if verdict["partial_ranking_justification"] is not None:
+            raise JudgmentError(
+                "best-current judgment cannot carry a partial-ranking justification"
+            )
+        if ranks != [1, 2, 3, 4] and set(ranks) != {1, 2, 3, 4}:
+            raise JudgmentError(
+                "best-current judgment requires unique total ranks one through four"
+            )
+        return
+
+    justification = verdict["partial_ranking_justification"]
+    if type(justification) is not str or not justification.strip():
+        raise JudgmentError(
+            "non-decidability requires an explicit partial-ranking justification"
+        )
+    ranked = [rank for rank in ranks if rank is not None]
+    if not 1 <= len(ranked) < 4:
+        raise JudgmentError(
+            "non-decidability requires one to three ranked explanations"
+        )
+    if ranked != list(range(1, len(ranked) + 1)):
+        raise JudgmentError(
+            "non-decidability ranking must be a contiguous prefix from rank one"
+        )
+    if ranks[len(ranked) :] != [None] * (4 - len(ranked)):
+        raise JudgmentError(
+            "non-decidability ranking must leave only a null tail"
+        )
+
+
+def _validate_public_verdict_semantics(
+    verdict: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> None:
+    expected_hashes = (_canonical_sha256(evidence), _canonical_sha256(lineage))
+    if len(set(expected_hashes)) != 2:
+        raise JudgmentError("U3 evidence and U7 lineage authority must be distinct")
+    if (
+        verdict.get("evidence_ledger_artifact_sha256"),
+        verdict.get("recursive_lineage_artifact_sha256"),
+    ) != expected_hashes:
+        raise JudgmentError(
+            "verdict U3 evidence or U7 lineage authority does not match its supplied artifact"
+        )
+
+    _verdict_rank_prefix(verdict)
+    locks = verdict["five_verdicts"]
+    by_kind = {item["kind"]: item for item in locks}
+    if set(by_kind) != set(VERDICT_KINDS) or len(locks) != len(VERDICT_KINDS):
+        raise JudgmentError("verdict must keep exactly five independent lock kinds")
+    lock_ids = [item["verdict_id"] for item in locks]
+    if len(set(lock_ids)) != len(VERDICT_KINDS):
+        raise JudgmentError("five verdict lock identities must be mutually distinct")
+
+    evidence_records = {
+        item["evidence_id"]: item for item in evidence.get("entries", [])
+    }
+    lineage_node_ids = {item["node_id"] for item in lineage.get("nodes", [])}
+    public_reserved = _identifier_values(evidence) | _identifier_values(lineage)
+    if set(lock_ids).intersection(public_reserved):
+        raise JudgmentError(
+            "verdict lock identity cannot reuse an evidence or lineage identity"
+        )
+
+    for lock in locks:
+        if not set(lock["evidence_refs"]).issubset(evidence_records):
+            raise JudgmentError(
+                f"{lock['kind']} verdict evidence_refs do not resolve the sealed U3 ledger"
+            )
+        if not set(lock["recursive_node_ids"]).issubset(lineage_node_ids):
+            raise JudgmentError(
+                f"{lock['kind']} verdict recursive_node_ids do not resolve U7"
+            )
+
+    factual = by_kind["fact"]
+    if not any(
+        factual[field]
+        for field in (
+            "evidence_refs",
+            "claim_ids",
+            "mechanism_ids",
+            "recursive_node_ids",
+        )
+    ):
+        raise JudgmentError(
+            "a factual verdict requires material support rather than rhetoric"
+        )
+    material_identities = {"observed", "reported", "inferred"}
+    if any(
+        evidence_records[ref]["identity"] not in material_identities
+        for ref in factual["evidence_refs"]
+    ):
+        raise JudgmentError(
+            "a factual verdict cannot promote a user, model, simulated, or unknown identity"
+        )
+
+    if verdict["judgment_kind"] == "best-current":
+        main = verdict["main_verdict"]
+        if not set(main["decisive_evidence_refs"]).issubset(evidence_records):
+            raise JudgmentError(
+                "main verdict decisive evidence does not resolve the sealed U3 ledger"
+            )
+        if not set(main["decisive_node_ids"]).issubset(lineage_node_ids):
+            raise JudgmentError(
+                "main verdict decisive nodes do not resolve the sealed U7 lineage"
+            )
+        if main["confidence"] == "high" and verdict["decisive_unknown_ids"]:
+            raise JudgmentError(
+                "high confidence cannot retain an unresolved decisive unknown"
+            )
+        if main["confidence"] == "low" and (
+            not verdict["assumptions"] or not main["reversal_conditions"]
+        ):
+            raise JudgmentError(
+                "low confidence requires explicit assumptions and reversal conditions"
+            )
+
+
+def _validated_public_verdict_inputs(
+    verdict: Mapping[str, object],
+    evidence: Mapping[str, object],
+    lineage: Mapping[str, object],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    verdict_snapshot = _snapshot_mapping(verdict, label="U9 verdict")
+    run_id = verdict_snapshot.get("run_id")
+    binding = verdict_snapshot.get("version_binding")
+    if type(run_id) is not str or not isinstance(binding, Mapping):
+        raise JudgmentError("U9 verdict must expose its run and version authority")
+    evidence_snapshot = _phase(
+        "ultra-evidence-ledger.schema.json",
+        evidence,
+        schema_id="crossframe.ultra.v82.evidence-ledger",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U3",
+        label="U3 evidence ledger",
+    )
+    lineage_snapshot = _phase(
+        "ultra-recursive-lineage.schema.json",
+        lineage,
+        schema_id="crossframe.ultra.v82.recursive-lineage",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U7",
+        label="U7 recursive lineage",
+    )
+    verdict_snapshot = _phase(
+        "ultra-verdict.schema.json",
+        verdict_snapshot,
+        schema_id="crossframe.ultra.v82.verdict",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U9",
+        label="U9 verdict",
+    )
+    _validate_public_verdict_semantics(
+        verdict_snapshot, evidence_snapshot, lineage_snapshot
+    )
+    return verdict_snapshot, evidence_snapshot, lineage_snapshot
+
+
+def validate_verdict_bundle(
+    verdict: Mapping[str, object],
+    evidence: Mapping[str, object],
+    lineage: Mapping[str, object],
+) -> None:
+    _validated_public_verdict_inputs(verdict, evidence, lineage)
+
+
+def _verdict_reference_catalogs(
+    graph: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+    state_registry: Mapping[str, Mapping[str, Any]],
+) -> tuple[set[str], set[str], set[str], dict[str, Mapping[str, Any]], set[str], set[str]]:
+    claims = {item["claim_id"] for item in graph["claims"]}
+    mechanisms = {item["mechanism_id"] for item in graph["mechanisms"]}
+    explanations = {item["explanation_id"] for item in graph["explanations"]}
+    states_by_node = {
+        item["node_id"]: state_registry[item["recursive_state_artifact_sha256"]]
+        for item in lineage["nodes"]
+    }
+    unknowns = {
+        unknown_id
+        for state in state_registry.values()
+        for unknown_id in state["inherited_unknown_ids"]
+    }
+    residuals = {
+        residual_id
+        for state in state_registry.values()
+        for residual_id in state["inherited_residual_ids"]
+    }
+    return claims, mechanisms, explanations, states_by_node, unknowns, residuals
+
+
+def _validate_verdict_against_inference(
+    verdict: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    graph: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+    order_evaluation: Mapping[str, Any],
+    red_team_report: Mapping[str, Any],
+    state_registry: Mapping[str, Mapping[str, Any]],
+) -> None:
+    (
+        claim_ids,
+        mechanism_ids,
+        explanation_ids,
+        states_by_node,
+        unknown_ids,
+        residual_ids,
+    ) = _verdict_reference_catalogs(graph, lineage, state_registry)
+    ranking_ids = {item["explanation_id"] for item in verdict["explanation_ranking"]}
+    if ranking_ids != explanation_ids:
+        raise JudgmentError(
+            "verdict explanation ranking must exactly cover the sealed U6 competitors"
+        )
+    rival_ids = {
+        item["explanation_id"]
+        for item in graph["explanations"]
+        if item["kind"] == "strongest-rival"
+    }
+    main = verdict.get("main_verdict")
+    if main is not None:
+        if main["strongest_rival_id"] not in rival_ids:
+            raise JudgmentError(
+                "main verdict strongest rival does not resolve the sealed U6 rival"
+            )
+        if not set(main["decisive_claim_ids"]).issubset(claim_ids):
+            raise JudgmentError("main verdict cites an unknown U6 claim")
+        if not set(main["decisive_mechanism_ids"]).issubset(mechanism_ids):
+            raise JudgmentError("main verdict cites an unknown U6 mechanism")
+        if not set(main["residual_ids"]).issubset(residual_ids):
+            raise JudgmentError("main verdict cites an unsealed residual identity")
+    if not set(verdict["decisive_unknown_ids"]).issubset(unknown_ids):
+        raise JudgmentError("verdict cites an unsealed decisive unknown identity")
+
+    locks = verdict["five_verdicts"]
+    for lock in locks:
+        if not set(lock["claim_ids"]).issubset(claim_ids):
+            raise JudgmentError(f"{lock['kind']} verdict cites an unknown U6 claim")
+        if not set(lock["mechanism_ids"]).issubset(mechanism_ids):
+            raise JudgmentError(
+                f"{lock['kind']} verdict cites an unknown U6 mechanism"
+            )
+    fact = next(item for item in locks if item["kind"] == "fact")
+    if any(
+        states_by_node[node_id]["evidence_identity"] == "simulated-result"
+        for node_id in fact["recursive_node_ids"]
+    ):
+        raise JudgmentError(
+            "a simulated recursive node cannot be promoted into a factual verdict"
+        )
+
+    lock_ids = {item["verdict_id"] for item in locks}
+    upstream_reserved = set().union(
+        *(
+            _identifier_values(artifact)
+            for artifact in (
+                evidence,
+                graph,
+                lineage,
+                order_evaluation,
+                red_team_report,
+                *state_registry.values(),
+            )
+        )
+    )
+    if lock_ids.intersection(upstream_reserved):
+        raise JudgmentError(
+            "verdict lock IDs must be disjoint from every upstream identity domain"
+        )
+
+
+def _validate_verdict_with_authority(
+    verdict: Mapping[str, object],
+    *,
+    evidence_ledger: Mapping[str, object],
+    recursive_lineage: Mapping[str, object],
+    claim_mechanism_graph: Mapping[str, object],
+    order_evaluation: Mapping[str, object],
+    red_team_report: Mapping[str, object],
+    recursive_state_artifacts: Mapping[str, Mapping[str, object]],
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, object],
+    expected_evidence_ledger_artifact_sha256: str,
+    expected_claim_mechanism_graph_artifact_sha256: str,
+    expected_recursive_lineage_artifact_sha256: str,
+    expected_order_evaluation_artifact_sha256: str,
+    expected_red_team_report_artifact_sha256: str,
+) -> dict[str, Any]:
+    expected_hashes = tuple(
+        _require_sha256(value, label=label)
+        for value, label in (
+            (
+                expected_evidence_ledger_artifact_sha256,
+                "expected U3 evidence ledger artifact hash",
+            ),
+            (
+                expected_claim_mechanism_graph_artifact_sha256,
+                "expected U6 claim/mechanism graph artifact hash",
+            ),
+            (
+                expected_recursive_lineage_artifact_sha256,
+                "expected U7 recursive lineage artifact hash",
+            ),
+            (
+                expected_order_evaluation_artifact_sha256,
+                "expected U8 order evaluation artifact hash",
+            ),
+            (
+                expected_red_team_report_artifact_sha256,
+                "expected U8 red-team report artifact hash",
+            ),
+        )
+    )
+    if len(set(expected_hashes)) != len(expected_hashes):
+        raise JudgmentError("U3/U6/U7/U8 authority roles require distinct hashes")
+    if type(expected_run_id) is not str or not expected_run_id:
+        raise JudgmentError("expected U9 run authority must be explicit")
+    binding = _snapshot_mapping(
+        expected_version_binding, label="expected U9 version binding"
+    )
+
+    verdict_snapshot, evidence, lineage = _validated_public_verdict_inputs(
+        verdict, evidence_ledger, recursive_lineage
+    )
+    if verdict_snapshot["run_id"] != expected_run_id or verdict_snapshot[
+        "version_binding"
+    ] != binding:
+        raise JudgmentError("U9 verdict run or version authority does not match")
+    if _canonical_sha256(evidence) != expected_hashes[0]:
+        raise JudgmentError(
+            "U3 evidence full artifact hash differs from external authority"
+        )
+
+    from . import recursion as recursive_runtime
+
+    graph_snapshot = _snapshot_mapping(
+        claim_mechanism_graph, label="U6 claim/mechanism graph"
+    )
+    evaluation_snapshot = _snapshot_mapping(
+        order_evaluation, label="U8 order evaluation"
+    )
+    red_team_snapshot = recursive_runtime._validate_red_team_report(
+        red_team_report,
+        claim_mechanism_graph=graph_snapshot,
+        recursive_lineage=lineage,
+        order_evaluation=evaluation_snapshot,
+        recursive_state_artifacts=recursive_state_artifacts,
+        expected_run_id=expected_run_id,
+        expected_version_binding=binding,
+        expected_claim_mechanism_graph_artifact_sha256=expected_hashes[1],
+        expected_recursive_lineage_artifact_sha256=expected_hashes[2],
+        expected_order_evaluation_artifact_sha256=expected_hashes[3],
+    )
+    if _canonical_sha256(red_team_snapshot) != expected_hashes[4]:
+        raise JudgmentError(
+            "U8 red-team full artifact hash differs from external authority"
+        )
+    if tuple(
+        verdict_snapshot[field]
+        for field in (
+            "evidence_ledger_artifact_sha256",
+            "claim_mechanism_graph_artifact_sha256",
+            "recursive_lineage_artifact_sha256",
+            "order_evaluation_artifact_sha256",
+            "red_team_report_artifact_sha256",
+        )
+    ) != expected_hashes:
+        raise JudgmentError(
+            "U9 verdict authority fields do not match externally verified U3/U6/U7/U8 artifacts"
+        )
+
+    state_registry = recursive_runtime._state_registry_documents(
+        recursive_state_artifacts,
+        expected_run_id=expected_run_id,
+        expected_version_binding=binding,
+        expected_hashes=(
+            lineage["world_volume_artifact_sha256"],
+            lineage["transformation_ledger_artifact_sha256"],
+            expected_hashes[1],
+        ),
+        expected_concept_hash=lineage["concept_disposition_artifact_sha256"],
+    )
+    _validate_verdict_against_inference(
+        verdict_snapshot,
+        evidence,
+        graph_snapshot,
+        lineage,
+        evaluation_snapshot,
+        red_team_snapshot,
+        state_registry,
+    )
+    return verdict_snapshot
+
+
+def _seal_verdict_bundle(
+    verdict: Mapping[str, object],
+    **authority: object,
+) -> dict[str, Any]:
+    snapshot = _snapshot_mapping(verdict, label="unsealed U9 verdict")
+    if "content_sha256" in snapshot:
+        raise JudgmentError(
+            "U9 producer accepts an unsealed verdict without content_sha256"
+        )
+    snapshot["content_sha256"] = compute_artifact_content_sha256(snapshot)
+    return _validate_verdict_with_authority(snapshot, **authority)
+
+
+def _validate_action_ranking(
+    action: Mapping[str, object],
+    *,
+    verdict: Mapping[str, object],
+    evidence: Mapping[str, object],
+    lineage: Mapping[str, object],
+    expected_verdict_artifact_sha256: str,
+) -> dict[str, Any]:
+    verdict_snapshot, _, _ = _validated_public_verdict_inputs(
+        verdict, evidence, lineage
+    )
+    expected_verdict_hash = _require_sha256(
+        expected_verdict_artifact_sha256,
+        label="expected sealed U9 verdict artifact hash",
+    )
+    if _canonical_sha256(verdict_snapshot) != expected_verdict_hash:
+        raise JudgmentError(
+            "sealed verdict full artifact hash differs from external authority"
+        )
+    action_snapshot = _phase(
+        "ultra-action-ranking.schema.json",
+        action,
+        schema_id="crossframe.ultra.v82.action-ranking",
+        run_id=verdict_snapshot["run_id"],
+        version_binding=verdict_snapshot["version_binding"],
+        phase_id="U9",
+        label="U9 action ranking",
+    )
+    if action_snapshot["verdict_artifact_sha256"] != expected_verdict_hash:
+        raise JudgmentError(
+            "action ranking does not bind the externally sealed U9 verdict"
+        )
+
+    locks = {item["kind"]: item for item in verdict_snapshot["five_verdicts"]}
+    lock_ids = {item["verdict_id"] for item in locks.values()}
+    if set(action_snapshot["considered_verdict_ids"]) != lock_ids:
+        raise JudgmentError(
+            "action ranking must consider exactly the five bound verdict lock IDs"
+        )
+
+    options = action_snapshot["options"]
+    option_ids = [item["option_id"] for item in options]
+    option_kinds = [item["kind"] for item in options]
+    if len(set(option_ids)) != len(ACTION_KINDS):
+        raise JudgmentError("action option identities must be unique")
+    if set(option_kinds) != set(ACTION_KINDS) or len(options) != len(ACTION_KINDS):
+        raise JudgmentError("action ranking must compare all six frozen action kinds")
+    if set(option_ids).intersection(lock_ids | _identifier_values(verdict_snapshot)):
+        raise JudgmentError(
+            "action option identities must remain distinct from verdict identity roles"
+        )
+    if set(action_snapshot["ranking"]) != set(option_ids) or len(
+        action_snapshot["ranking"]
+    ) != len(option_ids):
+        raise JudgmentError("action ranking must cover each option exactly once")
+    if action_snapshot["requested_choice"]:
+        if (
+            action_snapshot["preferred_option_id"] != action_snapshot["ranking"][0]
+            or action_snapshot["second_option_id"] != action_snapshot["ranking"][1]
+            or action_snapshot["preferred_option_id"]
+            == action_snapshot["second_option_id"]
+        ):
+            raise JudgmentError(
+                "a direct choice request requires distinct first and second ranked recommendations"
+            )
+
+    authorization_id = locks["authorization"]["verdict_id"]
+    for option in options:
+        reference = option["authorization_verdict_id"]
+        if option["authorized"]:
+            if reference != authorization_id:
+                raise JudgmentError(
+                    "an authorized action must resolve only the authorization verdict lock"
+                )
+        elif reference is not None:
+            raise JudgmentError(
+                "an unauthorized action cannot carry an authorization verdict reference"
+            )
+    return action_snapshot
+
+
+def _seal_action_ranking(
+    action: Mapping[str, object],
+    **authority: object,
+) -> dict[str, Any]:
+    snapshot = _snapshot_mapping(action, label="unsealed U9 action ranking")
+    if "content_sha256" in snapshot:
+        raise JudgmentError(
+            "U9 producer accepts an unsealed action ranking without content_sha256"
+        )
+    snapshot["content_sha256"] = compute_artifact_content_sha256(snapshot)
+    return _validate_action_ranking(snapshot, **authority)
+
+
+def _validate_framework_gap_isolation(
+    gap: Mapping[str, object],
+    *,
+    claim_mechanism_graph: Mapping[str, object],
+    verdict: Mapping[str, object],
+    action_ranking: Mapping[str, object],
+) -> dict[str, Any]:
+    verdict_snapshot = _snapshot_mapping(verdict, label="sealed U9 verdict")
+    run_id = verdict_snapshot.get("run_id")
+    binding = verdict_snapshot.get("version_binding")
+    if type(run_id) is not str or not isinstance(binding, Mapping):
+        raise JudgmentError("sealed U9 verdict must expose run and version authority")
+    verdict_snapshot = _phase(
+        "ultra-verdict.schema.json",
+        verdict_snapshot,
+        schema_id="crossframe.ultra.v82.verdict",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U9",
+        label="sealed U9 verdict",
+    )
+    graph_snapshot = _phase(
+        "ultra-claim-mechanism-graph.schema.json",
+        claim_mechanism_graph,
+        schema_id="crossframe.ultra.v82.claim-mechanism-graph",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U6",
+        label="sealed U6 claim/mechanism graph",
+    )
+    action_snapshot = _phase(
+        "ultra-action-ranking.schema.json",
+        action_ranking,
+        schema_id="crossframe.ultra.v82.action-ranking",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U9",
+        label="sealed U9 action ranking",
+    )
+    gap_snapshot = _phase(
+        "ultra-framework-gap-ledger.schema.json",
+        gap,
+        schema_id="crossframe.ultra.v82.framework-gap-ledger",
+        run_id=run_id,
+        version_binding=binding,
+        phase_id="U10",
+        label="isolated U10 framework-gap ledger",
+    )
+
+    authority_fields = (
+        "evidence_ledger_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "order_evaluation_artifact_sha256",
+        "red_team_report_artifact_sha256",
+        "verdict_artifact_sha256",
+        "action_ranking_artifact_sha256",
+        "forecast_ledger_artifact_sha256",
+    )
+    authority_hashes = tuple(gap_snapshot[field] for field in authority_fields)
+    if len(set(authority_hashes)) != len(authority_hashes):
+        raise JudgmentError(
+            "U10 gap ledger authority roles require eight distinct artifact hashes"
+        )
+    if (
+        gap_snapshot["claim_mechanism_graph_artifact_sha256"]
+        != _canonical_sha256(graph_snapshot)
+        or gap_snapshot["verdict_artifact_sha256"]
+        != _canonical_sha256(verdict_snapshot)
+        or gap_snapshot["action_ranking_artifact_sha256"]
+        != _canonical_sha256(action_snapshot)
+    ):
+        raise JudgmentError(
+            "U10 gap ledger does not bind the supplied current U6/U9 artifacts"
+        )
+    gap_ids = [item["gap_id"] for item in gap_snapshot["candidates"]]
+    if len(set(gap_ids)) != len(gap_ids):
+        raise JudgmentError("framework-gap candidate identities must be unique")
+    current_reasoning_ids = set().union(
+        *(
+            _identifier_values(artifact)
+            for artifact in (graph_snapshot, verdict_snapshot, action_snapshot)
+        )
+    )
+    if set(gap_ids).intersection(current_reasoning_ids):
+        raise JudgmentError(
+            "a U10 framework-gap candidate cannot become current U6/U9 authority"
+        )
+    return gap_snapshot
