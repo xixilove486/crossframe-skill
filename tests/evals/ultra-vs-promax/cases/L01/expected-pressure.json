@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "L01",
+  "decisive_pressure": "low-confidence hard judgment",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "sparse-evidence-ranking",
+    "hard-judgment"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

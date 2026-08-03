@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "P02",
+  "decisive_pressure": "authorization, exit cost",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "value-authorization-separation",
+    "order-three-lock-in"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

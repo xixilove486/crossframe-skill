@@ -1,0 +1,31 @@
+{
+  "schema_id": "crossframe.ultra-vs-promax.rubric",
+  "schema_version": 1,
+  "benchmark_id": "crossframe-ultra-vs-promax-24-v1",
+  "dimension_weights": {
+    "truth_evidence_unknowns": 20,
+    "circle_scale_translation_closure": 15,
+    "mechanism_causal_chain": 10,
+    "three_order_recursion": 15,
+    "judgment_rival_reversal": 15,
+    "forecast_resolvability": 10,
+    "completeness_readability_independence": 15
+  },
+  "grader_count": 3,
+  "automatic_case_loss": [
+    "severe_factual_error",
+    "simulation_as_fact",
+    "unsupported_central_verdict"
+  ],
+  "word_count_rewarded": false,
+  "penalty_policy": "Graders penalize repetition and unsupported detail; they do not reward word count.",
+  "score_derivation": "build_results.py derives totals, votes, medians, winners, and thresholds from hash-bound raw grades",
+  "release_thresholds": {
+    "minimum_ultra_case_wins": 18,
+    "minimum_median_score_advantage": 10,
+    "no_category_median_regression": true,
+    "minimum_ultra_decisive_case_wins": 7,
+    "maximum_ultra_simulation_as_fact_cases": 0,
+    "maximum_ultra_severe_factual_error_cases": 0
+  }
+}

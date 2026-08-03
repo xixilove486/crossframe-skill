@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "C04",
+  "decisive_pressure": "proposition non-decidability",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "proposition-non-decidability",
+    "false-user-premise"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

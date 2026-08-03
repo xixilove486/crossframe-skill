@@ -1,0 +1,8 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-evidence-cutoff",
+  "schema_version": 1,
+  "case_id": "C03",
+  "benchmark_cutoff": "2026-08-02T00:00:00Z",
+  "evidence_state": "awaiting-frozen-bundle",
+  "temporal_rule": "not-after-benchmark-cutoff"
+}

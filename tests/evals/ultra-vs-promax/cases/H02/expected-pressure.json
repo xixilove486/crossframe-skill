@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "H02",
+  "decisive_pressure": "counterfactual and channel",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "counterfactual-channel",
+    "no-channel-no-update"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

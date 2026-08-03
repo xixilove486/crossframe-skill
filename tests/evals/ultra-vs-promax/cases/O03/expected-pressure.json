@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "O03",
+  "decisive_pressure": "actor-role/personality separation",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "actor-role-separation",
+    "false-user-premise"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

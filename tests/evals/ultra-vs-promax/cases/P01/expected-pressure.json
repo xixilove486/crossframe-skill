@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "P01",
+  "decisive_pressure": "jurisdiction, low-visibility positions",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "value-authorization-separation",
+    "sparse-evidence-ranking"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "B04",
+  "decisive_pressure": "sparse evidence, responsibility",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "sparse-evidence-ranking",
+    "sensitive-outbound",
+    "responsibility-allocation"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

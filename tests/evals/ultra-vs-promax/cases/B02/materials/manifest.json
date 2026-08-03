@@ -1,0 +1,12 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-materials-manifest",
+  "schema_version": 1,
+  "case_id": "B02",
+  "bundle_status": "pending",
+  "retrieval_mode": "frozen-bundle-only",
+  "source_files": [],
+  "source_count": 0,
+  "outcome_leakage_review": "pending",
+  "privacy_review": "pending",
+  "license_review": "pending"
+}

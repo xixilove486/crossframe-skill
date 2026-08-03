@@ -1,0 +1,21 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-privacy-policy",
+  "schema_version": 1,
+  "case_id": "C03",
+  "live_retrieval_allowed": false,
+  "private_source_text_outbound_allowed": false,
+  "product_visible_paths": [
+    "tests/evals/ultra-vs-promax/cases/C03/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/C03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/C03/materials/manifest.json",
+    "tests/evals/ultra-vs-promax/cases/C03/privacy-policy.json"
+  ],
+  "grader_visible_paths": [
+    "tests/evals/ultra-vs-promax/cases/C03/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/C03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/C03/materials/manifest.json"
+  ],
+  "forbidden_visible_paths": [
+    "tests/evals/ultra-vs-promax/cases/C03/expected-pressure.json"
+  ]
+}
