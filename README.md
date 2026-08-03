@@ -58,7 +58,7 @@
 | `§04` | [**如何抑制模型自身风味**](#s04) | <sub>六道结构约束，差异只能暴露在证据里</sub> |
 | `§05` | [**运行条件、消耗与触发边界**](#s05) | <sub>依赖、成本警告，与仅此四名的点名规则</sub> |
 | `§06` | [**快速开始**](#s06) | <sub>克隆、安装、点名、验证</sub> |
-| `§07` | [**CrossFrame Skill Suite 家族**](#s07) | <sub>16 个 skills：诊断、成文、评审与追问</sub> |
+| `§07` | [**CrossFrame Skill Suite 家族**](#s07) | <sub>17 个 skills：诊断、成文、评审与追问</sub> |
 | `§08` | [**Max 模式**](#s08) | <sub>先搭好世界观再推演的重型模式，分四个运行档位</sub> |
 | `§09` | [**ProMax 模式边界**](#s09) | <sub>与 Max 的隔离，独立的生成—反证—校验—修复闭环</sub> |
 | `§10` | [**质量闭环与输出原则**](#s10) | <sub>每个判断都能被检查、追问和撤回</sub> |
@@ -157,6 +157,10 @@ request → v8 full-source → concept closure → local world model
 
 ProMax 是 v8-only、exact-name only 的独立 runtime，仅在用户明确使用以下四种名称之一时触发：`crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax`。仅说「最大算力」「全尺度」或「穷尽推演」不构成 ProMax 点名，泛化最大化请求仍由 Max 承接；suite 不得自动升级。若 Max 与 ProMax 同时出现，ProMax 优先；一旦进入 ProMax，也不得降级回 Max。
 
+<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
+CrossFrame Ultra 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
+<!-- CROSSFRAME-ULTRA-ROUTING-END -->
+
 > **消耗警告：** 基础完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、长文物化与验证修复；仅在用户明确要求建议时，才额外执行建议比较。完整运行可能消耗数百万至数千万 token。用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 **17,000,000 token**；它不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
@@ -174,14 +178,14 @@ git clone https://github.com/xi-kari/crossframe-skill
 cd crossframe-skill
 ```
 
-Codex 安装（Windows PowerShell / macOS &amp; Linux）：
+从当前 clean-local candidate 安装到 Codex（Windows PowerShell / macOS &amp; Linux）：
 
 ```powershell
-.\scripts\install-codex.ps1
+.\scripts\install-codex.ps1 -Repo (Resolve-Path .).Path
 ```
 
 ```bash
-bash scripts/install-codex.sh
+bash scripts/install-codex.sh --repo "$(pwd -P)"
 ```
 
 Claude Code 项目内常用命令：
@@ -190,6 +194,7 @@ Claude Code 项目内常用命令：
 /crossframe-suite 分析这个团队为什么复盘很多但没有真实修复
 /crossframe-max 把这件事当作一个局部世界，做全尺度结构推演并写完整解释
 /crossframe-promax 用 v8 框架穷尽分析这个判断，主动搜索反例并给出明确立场
+/crossframe-ultra 用固定 v8.2 参考运行时分析这个判断
 /crossframe-essay 写一篇关于平台治理的中文评论文章
 /crossframe-inquiry 基于刚才的文章继续追问反证和迁移条件
 ```
@@ -231,7 +236,9 @@ git diff --check
 
 CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成文 skills，适合处理那些不能只靠「给建议」「写一段评论」「简单总结」解决的问题：关系、团队、组织、制度、公共争议、历史材料、命题辩论、读者来信、研究笔记，以及需要写成完整中文文章的复杂议题。
 
-当前仓库包含 16 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。[`crossframe-promax`](skills/crossframe-promax/SKILL.md) 则是上文展示的 v8-only、exact-name only 独立旗舰 runtime，与 Max 的 v6 运行时相互隔离。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
+当前仓库包含 17 个 `crossframe-*` skills；它们都是 explicit-only，不会在普通任务中自动触发。推荐入口是 `crossframe-suite`；部分专项 skill 只应由 suite 或显式命令路由进入。`crossframe-max` 是独立的最大化推演入口，用来把对象当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支，不进入 suite 的 `2+1` 选择器。[`crossframe-promax`](skills/crossframe-promax/SKILL.md) 则是上文展示的 v8-only、exact-name only 独立旗舰 runtime，与 Max 的 v6 运行时相互隔离。完整分析、成文和 review 结束后，后续追问默认交给 `crossframe-inquiry`。
+
+[`crossframe-ultra`](skills/crossframe-ultra/SKILL.md) 是精确点名才进入的固定 v8.2 参考运行时；它不替代 Suite、Max 或 ProMax。
 
 它的核心目标不是堆术语，而是让 AI 在输出前先完成几件事：
 
@@ -249,6 +256,7 @@ CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成�
 | `crossframe` | 结构诊断核心层 |
 | `crossframe-max` | v6 世界观前置 meta-runtime，把对象当作局部世界完成最大化推演、完整解释或设计审查 |
 | `crossframe-promax` | v8-only、精确点名的独立推演 runtime，内置穷尽、反证、校验和修复闭环 |
+| `crossframe-ultra` | v8.2、精确点名的固定参考运行时 |
 | `crossframe-essay` | 把结构诊断转成完整中文文章 |
 | `crossframe-review` | 审查推理、证据边界和输出质量 |
 | `crossframe-dialogue` | 读者答复、编辑回信、咨询式短答 |
@@ -276,6 +284,7 @@ CrossFrame Skill Suite 是一组给 AI agent 使用的中文结构诊断与成�
 读书研究      crossframe -> crossframe-notebook
 超限推演      crossframe-max -> crossframe-review
 v8 ProMax     crossframe-promax（独立审计，不串联 review）
+v8.2 Ultra    crossframe-ultra（固定参考运行时，独立运行）
 完成后追问    crossframe -> crossframe-review(lite) -> crossframe-inquiry
 ```
 
@@ -352,6 +361,12 @@ python scripts/build_crossframe_max_repair_plan.py --workspace <artifact-dir> --
 ProMax 的触发边界比 Max 更窄：它只接受 [§05](#s05) 列出的四种精确名称。仅说「最大算力」「全尺度」「穷尽推演」仍进入 Max；suite 也不能把普通 Max 或重型任务自动升级为 ProMax。若同一请求同时精确点名 Max 与 ProMax，必须选择 ProMax，且不得回退到 Max。
 
 ProMax 自带生成—反证—校验—修复闭环，最终回答只在工件通过校验后发布。因此它不追加 `crossframe-review`，也不复用 Max 的 repair 或 audit 链。
+
+### Ultra v8.2 参考运行时与发布边界
+
+Ultra 是 exact-only 的固定 v8.2 参考运行时；ProMax 保持 v8.0。生产运行根固定为 `E:\世界模型\output\crossframe-ultra`，测试运行根固定为 `E:\世界模型\output\crossframe-ultra-tests`，官方文章路径固定为 `delivery\CrossFrame-Ultra-完整文章.md`。
+
+Ultra 不自行演化理论；它只执行并验证被冻结的参考运行时。预测机制验证不等于前瞻准确率验证，任何前瞻准确率主张都需要独立、面向未来的证据。
 
 <p align="right"><sub><a href="#s00">↥ 返回目录</a></sub></p>
 

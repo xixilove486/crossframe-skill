@@ -13,6 +13,7 @@
 - `skills/crossframe-inquiry/SKILL.md`
 - `skills/crossframe-max/SKILL.md`
 - `skills/crossframe-promax/SKILL.md`
+- `skills/crossframe-ultra/SKILL.md`
 - `skills/crossframe-public/SKILL.md`
 - `skills/crossframe-org/SKILL.md`
 - `skills/crossframe-teach/SKILL.md`
@@ -33,7 +34,10 @@
 - `crossframe-critical` 不进入总入口调度。只有用户明确写 `$crossframe-critical`、`crossframe-critical` 或要求测试这个批判 skill 时才读取它。
 - `crossframe-max` 不进入 suite 的 `2+1` 模式/角色选择器，也不走普通文章类型选择器。只有用户明确写 `$crossframe-max`、`/crossframe-max`、`crossframe-max` 或要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取它。
 - CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
-- 当前仓库包含 16 个 CrossFrame skill。
+<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
+- CrossFrame Ultra 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
+<!-- CROSSFRAME-ULTRA-ROUTING-END -->
+- 当前仓库包含 17 个 CrossFrame skill。
 - 只有用户明确说“只要/不要文章/短答/表格/清单/纯诊断/仅行动方案”时，才关闭默认文章层。
 - 若需要更新框架主体，优先更新 `skills/crossframe/`，再回填薄适配层。
 - 若需要更新文章写作主体，优先更新 `skills/crossframe-essay/`，并确认它仍通过相对路径读取 `skills/crossframe/`。
@@ -54,7 +58,7 @@
 | 接口 | 入口文件 | 说明 |
 | --- | --- | --- |
 | Codex | `skills/crossframe*/` | 可直接用 skill-installer 安装；安装后不被动触发，需用户显式点名；suite 显式启动后仍可联合调用 sibling skill |
-| Claude Code | `.claude/skills/crossframe*/SKILL.md` + `.claude/commands/crossframe*.md` + `CLAUDE.md` | 禁止自动触发 skill；通过 `/crossframe`、`/crossframe-suite`、`/crossframe-max`、`/crossframe-promax`、`/crossframe-explain`、`/crossframe-audit`、`/crossframe-essay` 或明确点名启动 |
+| Claude Code | `.claude/skills/crossframe*/SKILL.md` + `.claude/commands/crossframe*.md` + `CLAUDE.md` | 禁止自动触发 skill；通过 `/crossframe`、`/crossframe-suite`、`/crossframe-max`、`/crossframe-promax`、`/crossframe-ultra`、`/crossframe-explain`、`/crossframe-audit`、`/crossframe-essay` 或明确点名启动 |
 | Gemini CLI | `GEMINI.md` | 仓库级上下文入口 |
 | Cursor | `.cursor/rules/crossframe-suite.mdc` + `.cursor/rules/crossframe.mdc` + `.cursor/rules/crossframe-essay.mdc` + `AGENTS.md` | 规则文件与通用入口 |
 | GitHub Copilot | `.github/copilot-instructions.md` | 仓库级说明 |

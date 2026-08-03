@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -29,6 +30,7 @@ LEGACY_CROSSFRAME_SKILLS = [
 CURRENT_CROSSFRAME_SKILLS = [
     *LEGACY_CROSSFRAME_SKILLS,
     "crossframe-promax",
+    "crossframe-ultra",
 ]
 
 PROMAX_EXACT_TRIGGER_NAMES = (
@@ -47,6 +49,70 @@ PROMAX_101_REQUIRED_PATHS = (
     "scripts/promax_runtime/prose.py",
     "templates/promax-output-plan-output.md",
     "templates/promax-prose-review-output.md",
+)
+
+ULTRA_EXACT_TRIGGER_NAMES = (
+    "crossframe-ultra",
+    "CrossFrame Ultra",
+    "$crossframe-ultra",
+    "/crossframe-ultra",
+)
+ULTRA_RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
+ULTRA_SEMANTIC_SHA256 = "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
+ULTRA_EXPECTED_PARAGRAPHS = 4631
+ULTRA_EXPECTED_TABLES = 122
+ULTRA_EXPECTED_DIVISIONS = 20
+ULTRA_ROUTING_BEGIN = "<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->"
+ULTRA_ROUTING_END = "<!-- CROSSFRAME-ULTRA-ROUTING-END -->"
+ULTRA_ROUTING_POLICY_FILES = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "GEMINI.md",
+    "CONVENTIONS.md",
+    "INTERFACES.md",
+    ".github/copilot-instructions.md",
+    "llms.txt",
+    "README.md",
+)
+ULTRA_ROUTING_POLICY_ALIASES = {
+    "exact Ultra-only request routes Ultra": (
+        "单独精确点名 Ultra 时直接进入 Ultra",
+        "An exact Ultra-only request routes to Ultra",
+    ),
+    "generic maximum/deep/full remains Max": (
+        "泛化的最大/深度/完整请求仍由 Max",
+        "generic maximum/deep/full requests remain Max",
+    ),
+    "ProMax-over-Max remains unchanged": (
+        "Max 与 ProMax 同时出现仍由 ProMax 优先",
+        "ProMax-over-Max remains unchanged",
+    ),
+    "explicit comparison runs independently": (
+        "Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行",
+        "when Ultra and another runtime are both named, an explicit comparison runs each independently",
+    ),
+    "ambiguous multi-runtime invocation pauses": (
+        "同时点名但未要求比较时暂停确认 runtime",
+        "when both are named without an explicit comparison, pause for runtime choice",
+    ),
+    "suite cannot route to Ultra implicitly": (
+        "suite 未精确点名 Ultra 时绝不进入 Ultra",
+        "suite without an exact Ultra name never routes to Ultra",
+    ),
+    "Ultra failure cannot fall back": (
+        "Ultra 失败不得回退",
+        "Ultra failure never falls back",
+    ),
+}
+ULTRA_CONTRADICTORY_FALLBACK_PATTERNS = (
+    re.compile(
+        r"(?<![不没未])(?:允许|可以|可).{0,24}(?:降级|回退).{0,24}(?:Max|ProMax|其它|其他)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:allow(?:s|ed)?|may|can)\b.{0,32}\b(?:fall\s*back|fallback|downgrade)\b",
+        re.IGNORECASE,
+    ),
 )
 
 PROMAX_CANONICAL_SKILL_PATTERN = re.compile(
@@ -317,6 +383,39 @@ def check_promax_policy_text(text: str, rel: str, label: str) -> None:
     )
 
 
+def check_ultra_policy_text(text: str, rel: str, label: str) -> None:
+    require(
+        text.count(ULTRA_ROUTING_BEGIN) == 1,
+        f"{label}: Ultra policy adapter {rel} must contain one routing start marker",
+    )
+    require(
+        text.count(ULTRA_ROUTING_END) == 1,
+        f"{label}: Ultra policy adapter {rel} must contain one routing end marker",
+    )
+    start = text.index(ULTRA_ROUTING_BEGIN) + len(ULTRA_ROUTING_BEGIN)
+    end = text.index(ULTRA_ROUTING_END, start)
+    block = text[start:end]
+    require(
+        "skills/crossframe-ultra/SKILL.md" in block,
+        f"{label}: Ultra policy adapter {rel} does not link the canonical skill",
+    )
+    require("v8.2" in block, f"{label}: Ultra policy adapter {rel} omits v8.2")
+    for trigger in ULTRA_EXACT_TRIGGER_NAMES:
+        require(
+            trigger in block,
+            f"{label}: Ultra policy adapter {rel} missing exact trigger: {trigger}",
+        )
+    for policy, aliases in ULTRA_ROUTING_POLICY_ALIASES.items():
+        require(
+            any(alias in block for alias in aliases),
+            f"{label}: Ultra policy adapter {rel} missing policy: {policy}",
+        )
+    require(
+        not any(pattern.search(block) for pattern in ULTRA_CONTRADICTORY_FALLBACK_PATTERNS),
+        f"{label}: Ultra policy adapter {rel} contains contradictory fallback permission",
+    )
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -456,32 +555,194 @@ def check_crossframe_promax_skill(root: Path, label: str) -> None:
             )
 
 
+def check_crossframe_ultra_no_promax_imports(ultra: Path, label: str) -> None:
+    for path in sorted(ultra.rglob("*.py")):
+        try:
+            tree = ast.parse(read(path), filename=path.as_posix())
+        except SyntaxError as error:
+            raise SystemExit(
+                f"{label}: invalid Ultra Python syntax in {path.relative_to(ultra)}: {error}"
+            ) from error
+        for node in ast.walk(tree):
+            imported: list[str] = []
+            if isinstance(node, ast.Import):
+                imported.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imported.append(node.module)
+                imported.extend(alias.name for alias in node.names)
+            for module_name in imported:
+                normalized = module_name.casefold().replace("-", "_")
+                require(
+                    "promax" not in normalized,
+                    f"{label}: Ultra contains ProMax Python import in "
+                    f"{path.relative_to(ultra)}: {module_name}",
+                )
+
+
+def check_crossframe_ultra_skill(root: Path, label: str) -> None:
+    ultra = root / "crossframe-ultra"
+    skill = ultra / "SKILL.md"
+    require(skill.is_file(), f"{label}: missing crossframe-ultra/SKILL.md")
+    required_paths = (
+        "agents/openai.yaml",
+        "evals/crossframe-ultra-smoke-tests.md",
+        "protocols/ultra-article-protocol.md",
+        "protocols/ultra-judgment-protocol.md",
+        "protocols/ultra-recursive-inference-protocol.md",
+        "protocols/ultra-runtime-protocol.md",
+        "protocols/ultra-safety-recovery-protocol.md",
+        "protocols/ultra-source-authority-protocol.md",
+        "protocols/ultra-validation-repair-protocol.md",
+        "protocols/ultra-world-volume-protocol.md",
+        "references/runtime-routing-map.md",
+        "references/retrieval-policy.md",
+        "references/release-manifest.json",
+        "references/source-manifest.json",
+        "references/v8.2-full-source/00-index.md",
+        "schemas/ultra-run-contract.schema.json",
+        "scripts/check_crossframe_ultra_artifacts.py",
+        "scripts/check_crossframe_ultra_v82_knowledge.py",
+        "scripts/check_crossframe_ultra_v82_source.py",
+        "scripts/crossframe_ultra_runtime.py",
+        "templates/ultra-article-output.md",
+    )
+    missing = [relative for relative in required_paths if not (ultra / relative).is_file()]
+    require(
+        not missing,
+        f"{label}: crossframe-ultra required files missing: {', '.join(missing)}",
+    )
+
+    skill_text = read(skill)
+    routing_text = read(ultra / "references/runtime-routing-map.md")
+    metadata_text = read(ultra / "agents/openai.yaml")
+    for marker in (
+        "name: crossframe-ultra",
+        "ULTRA-EXPLICIT-ONLY",
+        "ULTRA-NO-SUITE-UPGRADE",
+        "ULTRA-NO-FALLBACK",
+        "ULTRA-PROMOTED-V82-ONLY",
+        "ULTRA-NO-THEORY-SELF-AMENDMENT",
+    ):
+        require(marker in skill_text, f"{label}: crossframe-ultra missing marker: {marker}")
+    accepted_begin = "<!-- ULTRA-ACCEPTED-FORMS-BEGIN -->"
+    accepted_end = "<!-- ULTRA-ACCEPTED-FORMS-END -->"
+    require(
+        skill_text.count(accepted_begin) == 1 and skill_text.count(accepted_end) == 1,
+        f"{label}: crossframe-ultra accepted-form block is missing or duplicated",
+    )
+    accepted_block = skill_text.split(accepted_begin, 1)[1].split(accepted_end, 1)[0]
+    accepted_forms = tuple(
+        re.findall(r"^- `([^`]+)`\s*$", accepted_block, flags=re.MULTILINE)
+    )
+    require(
+        accepted_forms == ULTRA_EXACT_TRIGGER_NAMES,
+        f"{label}: crossframe-ultra accepted forms changed: {accepted_forms}",
+    )
+    require(
+        "allow_implicit_invocation: false" in metadata_text,
+        f"{label}: crossframe-ultra must disable implicit invocation",
+    )
+    require(
+        "暂停确认" in skill_text,
+        f"{label}: crossframe-ultra missing ambiguous multi-runtime stop",
+    )
+    require(
+        not any(
+            pattern.search(skill_text)
+            for pattern in ULTRA_CONTRADICTORY_FALLBACK_PATTERNS
+        ),
+        f"{label}: crossframe-ultra contains contradictory fallback permission",
+    )
+
+    authority_text = skill_text + "\n" + routing_text
+    for marker in (
+        "E:\\世界模型\\output\\crossframe-ultra",
+        "E:\\世界模型\\output\\crossframe-ultra-tests",
+        "delivery\\CrossFrame-Ultra-完整文章.md",
+    ):
+        require(marker in authority_text, f"{label}: crossframe-ultra missing fixed marker: {marker}")
+
+    manifest = json.loads(read(ultra / "references/source-manifest.json"))
+    expected_manifest = {
+        "framework_version": "v8.2",
+        "raw_sha256": ULTRA_RAW_SHA256,
+        "semantic_sha256": ULTRA_SEMANTIC_SHA256,
+        "paragraph_count": ULTRA_EXPECTED_PARAGRAPHS,
+        "table_count": ULTRA_EXPECTED_TABLES,
+    }
+    for field, expected in expected_manifest.items():
+        require(
+            manifest.get(field) == expected,
+            f"{label}: Ultra source manifest changed {field}",
+        )
+    divisions = manifest.get("division_ranges")
+    require(
+        isinstance(divisions, list) and len(divisions) == ULTRA_EXPECTED_DIVISIONS,
+        f"{label}: Ultra source manifest division count changed",
+    )
+
+    for relative in (
+        "scripts/check_crossframe_ultra_v82_source.py",
+        "scripts/check_crossframe_ultra_v82_knowledge.py",
+    ):
+        checker_text = read(ultra / relative)
+        for marker in (
+            ULTRA_RAW_SHA256,
+            ULTRA_SEMANTIC_SHA256,
+        ):
+            require(
+                marker in checker_text,
+                f"{label}: {relative} missing frozen v8.2 hash: {marker}",
+            )
+
+    check_crossframe_ultra_no_promax_imports(ultra, label)
+    for path in ultra.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in {
+            ".md", ".py", ".json", ".txt", ".yaml", ".yml"
+        }:
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        for index, line in enumerate(lines, start=1):
+            require(
+                not line.endswith((" ", "\t")),
+                f"{label}: trailing whitespace in {path.relative_to(root)}:{index}",
+            )
+
+
 def check_repo_adapters(repo: Path, label: str) -> None:
     if not (repo / "skills").is_dir():
         return
 
     adapter_needles = {
-        "AGENTS.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "局部世界", "完成态后继续追问", "纯致谢"],
+        "AGENTS.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "crossframe-ultra", "局部世界", "完成态后继续追问", "纯致谢"],
         "CLAUDE.md": [
             ".claude/skills/crossframe-inquiry/SKILL.md",
             ".claude/skills/crossframe-max/SKILL.md",
             ".claude/skills/crossframe-promax/SKILL.md",
+            ".claude/skills/crossframe-ultra/SKILL.md",
             ".claude/commands/crossframe-inquiry.md",
             ".claude/commands/crossframe-max.md",
             ".claude/commands/crossframe-promax.md",
+            ".claude/commands/crossframe-ultra.md",
             "/crossframe-inquiry",
             "/crossframe-max",
             "/crossframe-promax",
+            "/crossframe-ultra",
             "skills/crossframe-inquiry/SKILL.md",
             "skills/crossframe-max/SKILL.md",
             "skills/crossframe-promax/SKILL.md",
+            "skills/crossframe-ultra/SKILL.md",
             "纯致谢",
         ],
-        "GEMINI.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "完成后追问", "纯致谢"],
-        "CONVENTIONS.md": ["crossframe-inquiry", "crossframe-max", "crossframe-promax", "16 CrossFrame skills", "pure acknowledgments"],
-        "INTERFACES.md": ["skills/crossframe-inquiry/SKILL.md", "skills/crossframe-max/SKILL.md", "skills/crossframe-promax/SKILL.md", "16 个 CrossFrame skill", "纯致谢"],
-        "llms.txt": ["History skill", "Inquiry skill", "Max skill", "ProMax skill", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "pure acknowledgments"],
-        ".github/copilot-instructions.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "完成后追问", "纯致谢"],
+        "GEMINI.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "crossframe-ultra", "完成后追问", "纯致谢"],
+        "CONVENTIONS.md": ["crossframe-inquiry", "crossframe-max", "crossframe-promax", "crossframe-ultra", "17 CrossFrame skills", "pure acknowledgments"],
+        "INTERFACES.md": ["skills/crossframe-inquiry/SKILL.md", "skills/crossframe-max/SKILL.md", "skills/crossframe-promax/SKILL.md", "skills/crossframe-ultra/SKILL.md", "17 个 CrossFrame skill", "纯致谢"],
+        "llms.txt": ["History skill", "Inquiry skill", "Max skill", "ProMax skill", "Ultra skill", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "crossframe-ultra", "pure acknowledgments"],
+        ".github/copilot-instructions.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "crossframe-ultra", "完成后追问", "纯致谢"],
         ".cursor/rules/crossframe.mdc": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "post-completion inquiry", "pure acknowledgment/thanks signal"],
         ".cursor/rules/crossframe-suite.mdc": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "post-completion inquiry", "pure acknowledgment/thanks signal"],
         ".cursor/rules/crossframe-essay.mdc": ["skills/crossframe-essay/SKILL.md", "runtime-read-policy.md"],
@@ -490,8 +751,8 @@ def check_repo_adapters(repo: Path, label: str) -> None:
         ".roo/rules/crossframe.md": ["history research", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "post-completion inquiry", "pure acknowledgment/thanks signal"],
         ".windsurf/rules/crossframe.md": ["history research", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "post-completion inquiry", "pure acknowledgment/thanks signal"],
         "docs/ADAPTERS.md": ["crossframe-history", "crossframe-inquiry", "crossframe-max", "crossframe-promax", "16 个 `crossframe-*` skills", "纯致谢"],
-        "scripts/install-codex.ps1": ["skills/crossframe-history", "skills/crossframe-inquiry", "skills/crossframe-max", "skills/crossframe-promax", "Invoke-CodexSkillInstaller", "Get-Command python"],
-        "scripts/install-codex.sh": ["skills/crossframe-history", "skills/crossframe-inquiry", "skills/crossframe-max", "skills/crossframe-promax", "for skill_path in", "done"],
+        "scripts/install-codex.ps1": ["skills/crossframe-history", "skills/crossframe-inquiry", "skills/crossframe-max", "skills/crossframe-promax", "skills/crossframe-ultra", "Invoke-CodexSkillInstaller", "Get-Command python"],
+        "scripts/install-codex.sh": ["skills/crossframe-history", "skills/crossframe-inquiry", "skills/crossframe-max", "skills/crossframe-promax", "skills/crossframe-ultra", "for skill_path in", "done"],
     }
     runtime_ref_adapters = set(adapter_needles) - {"docs/ADAPTERS.md", "scripts/install-codex.ps1", "scripts/install-codex.sh"}
     retired_adapter_refs = [
@@ -557,6 +818,11 @@ def check_repo_adapters(repo: Path, label: str) -> None:
         text = read(path)
         check_promax_policy_text(text, rel, label)
 
+    for rel in ULTRA_ROUTING_POLICY_FILES:
+        path = repo / rel
+        require(path.exists(), f"{label}: missing Ultra policy adapter: {rel}")
+        check_ultra_policy_text(read(path), rel, label)
+
     claude_command_dir = repo / ".claude" / "commands"
     require(claude_command_dir.is_dir(), f"{label}: missing Claude command directory")
     for command_file in sorted(claude_command_dir.glob("crossframe*.md")):
@@ -587,6 +853,36 @@ def check_repo_adapters(repo: Path, label: str) -> None:
     max_command_text = read(max_command)
     for needle in ["# /crossframe-max", "This explicit command is allowed", "skills/crossframe-max/SKILL.md", "independent max artifact workflow", "local world", "artifact-first gate", "max-artifact-manifest.md", "complete article must live in its own `max-essay.md`", "branches we can keep discussing", "template-fidelity gate", "longform-dominance gate", "1.6x floor", "2.2x/3.0x", "max-source-frontier", "max-transcendence-window", "max-continuation-ledger", "max-red-team-pass", "max-position-matrix", "max-path-confidence-layers", "max-unexhaustible-declaration", "max-output-layers", "max-continuation-index", "max-dossier", "max-essay"]:
         require(needle in max_command_text, f"{label}: crossframe-max command missing marker: {needle}")
+
+    ultra_command = repo / ".claude" / "commands" / "crossframe-ultra.md"
+    require(ultra_command.exists(), f"{label}: missing Claude command for crossframe-ultra")
+    ultra_command_text = read(ultra_command)
+    require(
+        len(ultra_command_text) < 2400,
+        f"{label}: crossframe-ultra Claude command is not a thin adapter",
+    )
+    for needle in (
+        "skills/crossframe-ultra/SKILL.md",
+        "$ARGUMENTS",
+        "v8.2",
+        "暂停确认",
+        "不得回退",
+        *ULTRA_EXACT_TRIGGER_NAMES,
+    ):
+        require(
+            needle in ultra_command_text,
+            f"{label}: crossframe-ultra command missing marker: {needle}",
+        )
+    for forbidden in (
+        "skills/crossframe-max",
+        "skills/crossframe-promax",
+        "crossframe-review",
+        "protocols/",
+    ):
+        require(
+            forbidden not in ultra_command_text,
+            f"{label}: crossframe-ultra command imports forbidden runtime: {forbidden}",
+        )
 
     max_artifact_validator = repo / "scripts" / "check_crossframe_max_artifacts.py"
     require(max_artifact_validator.exists(), f"{label}: missing crossframe-max artifact validator")
@@ -685,6 +981,7 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "触发边界：仅此四名",
             "crossframe-max",
             "crossframe-promax",
+            "crossframe-ultra",
             "og:url",
             "og:image",
             "og:locale",
@@ -699,7 +996,7 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "bash scripts/install-codex.sh",
             "python scripts/check_crossframe_skill_integrity.py --repo .",
             "python scripts/check_source_continuity.py --materials-only --repo .",
-            "CrossFrame Skill Suite · 16 skills · explicit-only",
+            "CrossFrame Skill Suite · 17 skills · explicit-only",
             "VALIDATOR · PASSED",
             "aria-label",
             "prefers-reduced-motion",
@@ -743,6 +1040,10 @@ def check_public_release_docs(repo: Path, label: str) -> None:
             "python scripts/build_crossframe_max_repair_plan.py",
             "python scripts/sync_skill_mirrors.py --check",
             "python scripts/package_crossframe_skill.py --repo . --version ci",
+            "ultra-contracts-and-artifacts",
+            "python -I -S -B scripts/check_crossframe_ultra_v82_source.py --repo .",
+            "python -B scripts/check_crossframe_ultra_v82_knowledge.py --repo .",
+            "python -B -m pytest -q tests/test_ultra_*.py",
             "git diff --check",
         ],
     }
@@ -787,7 +1088,7 @@ def check_public_release_docs(repo: Path, label: str) -> None:
         require(marker in readme_text, f"{label}: README.md missing ProMax dossier marker: {marker}")
 
     required_docs = {
-        "README.md": ["16 个 `crossframe-*` skills", "crossframe-max", "crossframe-promax", "局部世界", "安全边界先行", "source_id -> claim_id", "docs/QUICKSTART.md", "framework-CrossFrame_v5.1.7", "review_%E2%86%92_inquiry", "https://xi-kari.github.io/crossframe-skill/", "网页介绍", "install-codex.sh", "validate_claim_ledger_schema_fixtures.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "v6 世界观前置 meta-runtime", "skill_design", "route-ledger gate", "max-artifact-run", "max-blocked/progress", "max-validation-failed:<profile>:<first-error-type>", "mark_artifact_incomplete", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py", "brief-visible", "standard-visible"],
+        "README.md": ["17 个 `crossframe-*` skills", "crossframe-max", "crossframe-promax", "crossframe-ultra", "局部世界", "安全边界先行", "source_id -> claim_id", "docs/QUICKSTART.md", "framework-CrossFrame_v5.1.7", "review_%E2%86%92_inquiry", "https://xi-kari.github.io/crossframe-skill/", "网页介绍", "install-codex.sh", "validate_claim_ledger_schema_fixtures.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "v6 世界观前置 meta-runtime", "skill_design", "route-ledger gate", "max-artifact-run", "max-blocked/progress", "max-validation-failed:<profile>:<first-error-type>", "mark_artifact_incomplete", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py", "brief-visible", "standard-visible"],
         "CHANGELOG.md": ["v5.1.7", "v5.1.6", "v5.1.5", "v5.1.4", "v5.1.3", "site/", "GitHub Pages", "v5.0.2", "crossframe-history", "crossframe-inquiry", "crossframe-promax", "source_id", "max-validator-report.json", "max-repair-plan.json"],
         "docs/WHAT_IS_CROSSFRAME.md": ["CrossFrame 是一组给 AI 使用的中文结构思考 skills", "一个一分钟例子", "它不是什么", "最推荐怎么用", "crossframe-inquiry", "crossframe-max", "crossframe-promax"],
         "docs/QUICKSTART.md": ["install-codex.ps1", "install-codex.sh", "crossframe-promax", "--materials-only", "--source-docx", "validate_claim_ledger_schema_fixtures.py", "validate_v5_dlc_quantification_schema_fixtures.py", "check_v5_dlc_casebook_trials.py", "check_v5_dlc_publication_bundle.py", "check_crossframe_max_v6_full_source.py", "check_crossframe_max_v6_registry_anchors.py", "validate_crossframe_max_route_ledger_fixtures.py", "validate_crossframe_max_repair_fixtures.py", "max-validator-report.schema.json", "max-repair-plan.schema.json", "build_crossframe_max_repair_plan.py", "max-validator-report.json", "max-repair-plan.json", "build_v5_dlc_publication_bundle.py", "build_v5_dlc_docx.py", "sync_skill_mirrors.py --check", "bash -n scripts/install-codex.sh", "python -m py_compile scripts/*.py"],
@@ -3220,6 +3521,7 @@ def check_root(root: Path, label: str) -> None:
     check_expression_layer_hardening(root, label)
     check_crossframe_max_skill(root, label)
     check_crossframe_promax_skill(root, label)
+    check_crossframe_ultra_skill(root, label)
     check_freeze_cleanup(root, label)
     check_no_trailing_whitespace(root, label)
 

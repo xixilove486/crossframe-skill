@@ -86,6 +86,30 @@ jobs:
             tests/test_promax_materializer.py \
             tests/test_promax_repository_integration.py
 
+  ultra-contracts-and-artifacts:
+    name: ultra-contracts-and-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Ultra test dependencies
+        run: python -m pip install jsonschema pytest PyYAML
+      - name: Validate Ultra v8.2 source and knowledge
+        run: |
+          python -I -S -B scripts/check_crossframe_ultra_v82_source.py --repo .
+          python -B scripts/check_crossframe_ultra_v82_knowledge.py --repo .
+      - name: Parse every Ultra JSON schema
+        run: |
+          for schema in skills/crossframe-ultra/schemas/*.json; do
+            python -m json.tool "$schema" > /dev/null
+          done
+      - name: Run Ultra contracts and artifact tests
+        run: python -B -m pytest -q tests/test_ultra_*.py
+
   schemas-and-fixtures:
     name: schemas-and-fixtures
     runs-on: ubuntu-latest

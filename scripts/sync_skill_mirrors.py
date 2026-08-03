@@ -23,6 +23,7 @@ CROSSFRAME_SKILLS = [
     "crossframe-teach",
     "crossframe-debate",
     "crossframe-notebook",
+    "crossframe-ultra",
 ]
 
 IGNORED_DIRECTORY_NAMES = {"__pycache__", ".pytest_cache"}

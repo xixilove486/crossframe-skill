@@ -14,6 +14,9 @@
 - 完整链路已经完成分析、成文和 review 后，下一轮用户未明确说“新任务 / 换主题 / 退出追问 / 不接着上文”，且不是“谢谢 / 好的 / 明白了 / 先这样”等纯致谢、确认收到或结束语时，默认进入 `crossframe-inquiry`；它可以定向检索 1-3 个相关 sibling skill 的必要材料，但不得把检索写成正式专项判断。
 - `crossframe-max` 是 named-only 独立模式；只有明确点名或要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取 `skills/crossframe-max/SKILL.md`，不走 suite 的 `2+1` 选择器或普通文章类型选择器。
 - CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
+<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
+- CrossFrame Ultra 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
+<!-- CROSSFRAME-ULTRA-ROUTING-END -->
 - 文章任务需要深度、概念上升、引经据典、理论参照或文学互文时，按需读取 `skills/crossframe-essay/protocols/concept-elevation-protocol.md` 与 `skills/crossframe-essay/references/reference-and-allusion-rules.md`。
 - 文章任务自动成文默认读取 `skills/crossframe-essay/protocols/editorial-comrade-voice-protocol.md` 与 `skills/crossframe-essay/references/editorial-voice-principles.md`；只有显式中性报告/备忘录/表格/纯诊断时关闭。
 - 概念解释或思想解释任务也应进入 CrossFrame，但先读 `skills/crossframe/protocols/concept-explanation-protocol.md`。
