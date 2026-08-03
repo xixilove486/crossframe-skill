@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from types import MappingProxyType
 
-from .constants import PHASES, RUN_STATUSES
+from .constants import PHASES, RUN_STATUSES, current_version_binding
 from .errors import UltraRuntimeError
 from .jsonio import (
     AUTHORITY_SNAPSHOT_LOCK_FILENAME,
@@ -20,6 +21,7 @@ from .paths import (
     _validate_run_id,
     assert_safe_descendant,
 )
+from .schemas import compute_artifact_content_sha256, validate_phase_artifact
 
 
 RUN_STATUS_TRANSITIONS = {
@@ -50,6 +52,10 @@ RUN_STATUS_TRANSITIONS = {
     "complete": frozenset(),
 }
 
+_RUN_STATUS_SCHEMA = "ultra-run-status.schema.json"
+_RUN_STATUS_SCHEMA_ID = "crossframe.ultra.v82.run-status"
+_UNSET = object()
+
 
 class RunStatusError(UltraRuntimeError, RuntimeError):
     pass
@@ -65,24 +71,44 @@ class RunStatusTransitionError(RunStatusError):
 
 @dataclass(frozen=True, slots=True)
 class RunStatusRecord:
+    schema_id: str
+    schema_version: int
     run_id: str
+    version_binding: Mapping[str, object]
+    generated_at: str
+    content_sha256: str
+    phase_id: str
     status: str
-    created_at: str
-    updated_at: str
-    revision: int
-    phase_id: str | None
+    previous_status: str | None
+    current_phase: str
+    last_complete_phase: str | None
     reason: str | None
+    tools_allowed: bool
+    validation_passed: bool
+    updated_at: str
+    created_at: str
+    revision: int
 
 
 _STATUS_FIELDS = frozenset(
     {
+        "schema_id",
+        "schema_version",
         "run_id",
-        "status",
-        "created_at",
-        "updated_at",
-        "revision",
+        "version_binding",
+        "generated_at",
+        "content_sha256",
         "phase_id",
+        "status",
+        "previous_status",
+        "current_phase",
+        "last_complete_phase",
         "reason",
+        "tools_allowed",
+        "validation_passed",
+        "updated_at",
+        "created_at",
+        "revision",
     }
 )
 
@@ -106,13 +132,23 @@ def _parse_utc(value: object, field: str) -> datetime:
 
 def _record_to_object(record: RunStatusRecord) -> dict[str, object]:
     return {
+        "schema_id": record.schema_id,
+        "schema_version": record.schema_version,
         "run_id": record.run_id,
-        "status": record.status,
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
-        "revision": record.revision,
+        "version_binding": dict(record.version_binding),
+        "generated_at": record.generated_at,
+        "content_sha256": record.content_sha256,
         "phase_id": record.phase_id,
+        "status": record.status,
+        "previous_status": record.previous_status,
+        "current_phase": record.current_phase,
+        "last_complete_phase": record.last_complete_phase,
         "reason": record.reason,
+        "tools_allowed": record.tools_allowed,
+        "validation_passed": record.validation_passed,
+        "updated_at": record.updated_at,
+        "created_at": record.created_at,
+        "revision": record.revision,
     }
 
 
@@ -125,40 +161,60 @@ def _record_from_object(
         raise ValueError(
             f"run status must be a closed object; unexpected={unexpected}, missing={missing}"
         )
-    run_id = value["run_id"]
-    status = value["status"]
-    revision = value["revision"]
-    phase_id = value["phase_id"]
-    reason = value["reason"]
-    if not isinstance(run_id, str):
-        raise ValueError("run status run_id must be a string")
-    _validate_run_id(run_id)
-    if run_id != expected_run_id:
-        raise ValueError("run status run_id does not match its run bundle")
-    if not isinstance(status, str) or status not in RUN_STATUSES:
-        raise ValueError(f"unknown run status: {status!r}")
-    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
-        raise ValueError("run status revision must be a non-negative integer")
-    if phase_id is not None and (
-        not isinstance(phase_id, str) or phase_id not in PHASES
-    ):
-        raise ValueError(f"run status phase_id must be one of {PHASES} or null")
-    if reason is not None and (
-        not isinstance(reason, str) or not reason.strip()
-    ):
-        raise ValueError("run status reason must be a non-empty string or null")
+    current_phase = value["current_phase"]
+    if not isinstance(current_phase, str) or current_phase not in PHASES:
+        raise ValueError(f"run status current_phase must be one of {PHASES}")
     created_at = _parse_utc(value["created_at"], "created_at")
     updated_at = _parse_utc(value["updated_at"], "updated_at")
+    _parse_utc(value["generated_at"], "generated_at")
+    try:
+        snapshot = validate_phase_artifact(
+            _RUN_STATUS_SCHEMA,
+            value,
+            expected_schema_id=_RUN_STATUS_SCHEMA_ID,
+            expected_run_id=expected_run_id,
+            expected_version_binding=current_version_binding(),
+            expected_phase_id=current_phase,
+        )
+    except Exception as error:
+        raise ValueError(f"run status authority is invalid: {error}") from error
+
+    if snapshot["phase_id"] != snapshot["current_phase"]:
+        raise ValueError("run status phase_id must equal current_phase")
+    if snapshot["generated_at"] != snapshot["updated_at"]:
+        raise ValueError("run status generated_at must equal updated_at")
     if updated_at < created_at:
         raise ValueError("run status updated_at cannot precede created_at")
+    last_complete_phase = snapshot["last_complete_phase"]
+    if last_complete_phase is not None and PHASES.index(last_complete_phase) > PHASES.index(
+        current_phase
+    ):
+        raise ValueError("run status last_complete_phase cannot exceed current_phase")
+
     return RunStatusRecord(
-        run_id=run_id,
-        status=status,
-        created_at=str(value["created_at"]),
-        updated_at=str(value["updated_at"]),
-        revision=revision,
-        phase_id=phase_id,
-        reason=reason,
+        schema_id=str(snapshot["schema_id"]),
+        schema_version=int(snapshot["schema_version"]),
+        run_id=str(snapshot["run_id"]),
+        version_binding=MappingProxyType(dict(snapshot["version_binding"])),
+        generated_at=str(snapshot["generated_at"]),
+        content_sha256=str(snapshot["content_sha256"]),
+        phase_id=str(snapshot["phase_id"]),
+        status=str(snapshot["status"]),
+        previous_status=(
+            None
+            if snapshot["previous_status"] is None
+            else str(snapshot["previous_status"])
+        ),
+        current_phase=current_phase,
+        last_complete_phase=(
+            None if last_complete_phase is None else str(last_complete_phase)
+        ),
+        reason=None if snapshot["reason"] is None else str(snapshot["reason"]),
+        tools_allowed=bool(snapshot["tools_allowed"]),
+        validation_passed=bool(snapshot["validation_passed"]),
+        updated_at=str(snapshot["updated_at"]),
+        created_at=str(snapshot["created_at"]),
+        revision=int(snapshot["revision"]),
     )
 
 
@@ -166,6 +222,42 @@ def _validate_record(record: RunStatusRecord, expected_run_id: str) -> None:
     if not isinstance(record, RunStatusRecord):
         raise TypeError("status record must be a RunStatusRecord")
     _record_from_object(_record_to_object(record), expected_run_id)
+
+
+def _make_record(
+    *,
+    run_id: str,
+    status: str,
+    previous_status: str | None,
+    current_phase: str,
+    last_complete_phase: str | None,
+    reason: str | None,
+    validation_passed: bool,
+    created_at: str,
+    updated_at: str,
+    revision: int,
+) -> RunStatusRecord:
+    value: dict[str, object] = {
+        "schema_id": _RUN_STATUS_SCHEMA_ID,
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": current_version_binding(),
+        "generated_at": updated_at,
+        "content_sha256": "0" * 64,
+        "phase_id": current_phase,
+        "status": status,
+        "previous_status": previous_status,
+        "current_phase": current_phase,
+        "last_complete_phase": last_complete_phase,
+        "reason": reason,
+        "tools_allowed": status == "running",
+        "validation_passed": validation_passed,
+        "updated_at": updated_at,
+        "created_at": created_at,
+        "revision": revision,
+    }
+    value["content_sha256"] = compute_artifact_content_sha256(value)
+    return _record_from_object(value, run_id)
 
 
 class RunStatusStore:
@@ -197,14 +289,17 @@ class RunStatusStore:
         _require_utc(now, "now")
         self._assert_paths_safe()
         timestamp = _iso_utc(now)
-        record = RunStatusRecord(
+        record = _make_record(
             run_id=self.layout.run_dir.name,
             status="created",
+            previous_status=None,
+            current_phase="U0",
+            last_complete_phase=None,
+            reason=None,
+            validation_passed=False,
             created_at=timestamp,
             updated_at=timestamp,
             revision=0,
-            phase_id=None,
-            reason=None,
         )
         with _exclusive_path_lock(self.authority_lock_path):
             self._assert_paths_safe()
@@ -227,16 +322,38 @@ class RunStatusStore:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
         _validate_record(replacement, run_id)
-        if replacement.created_at != expected.created_at:
-            raise RunStatusTransitionError("created_at is immutable")
+        if (
+            replacement.schema_id != expected.schema_id
+            or replacement.schema_version != expected.schema_version
+            or replacement.run_id != expected.run_id
+            or replacement.version_binding != expected.version_binding
+            or replacement.created_at != expected.created_at
+        ):
+            raise RunStatusTransitionError(
+                "schema, run, version, and created_at authority are immutable"
+            )
         if replacement.revision != expected.revision + 1:
             raise RunStatusTransitionError("replacement revision must advance by one")
+        if replacement.previous_status != expected.status:
+            raise RunStatusTransitionError(
+                "replacement previous_status must equal the previous status authority"
+            )
         expected_updated = _parse_utc(expected.updated_at, "updated_at")
         replacement_updated = _parse_utc(replacement.updated_at, "updated_at")
         if replacement_updated <= expected_updated:
             raise RunStatusTransitionError(
                 "replacement updated_at must advance monotonically after the old value"
             )
+        if PHASES.index(replacement.current_phase) < PHASES.index(
+            expected.current_phase
+        ):
+            raise RunStatusTransitionError("current_phase cannot move backwards")
+        if expected.last_complete_phase is not None and (
+            replacement.last_complete_phase is None
+            or PHASES.index(replacement.last_complete_phase)
+            < PHASES.index(expected.last_complete_phase)
+        ):
+            raise RunStatusTransitionError("last_complete_phase cannot move backwards")
         allowed = RUN_STATUS_TRANSITIONS[expected.status]
         if replacement.status not in allowed:
             terminal = expected.status in {"complete", "failed", "cancelled"}
@@ -270,19 +387,40 @@ class RunStatusStore:
         status: str,
         now: datetime,
         *,
-        phase_id: str | None = None,
+        current_phase: str | None = None,
+        last_complete_phase: str | None | object = _UNSET,
         reason: str | None = None,
+        validation_passed: bool = False,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         if not isinstance(status, str) or status not in RUN_STATUSES:
             raise ValueError(f"unknown run status: {status!r}")
-        replacement = RunStatusRecord(
+        if not isinstance(validation_passed, bool):
+            raise TypeError("validation_passed must be a boolean")
+        target_phase = expected.current_phase if current_phase is None else current_phase
+        target_last_complete = (
+            expected.last_complete_phase
+            if last_complete_phase is _UNSET
+            else last_complete_phase
+        )
+        if status == "complete" and (
+            target_phase != "U12"
+            or target_last_complete != "U12"
+            or validation_passed is not True
+        ):
+            raise RunStatusTransitionError(
+                "complete transition requires current_phase and last_complete_phase U12 with validation_passed true"
+            )
+        replacement = _make_record(
             run_id=expected.run_id,
             status=status,
+            previous_status=expected.status,
+            current_phase=target_phase,
+            last_complete_phase=target_last_complete,
+            reason=reason,
+            validation_passed=validation_passed,
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
-            phase_id=expected.phase_id if phase_id is None else phase_id,
-            reason=reason,
         )
         return self.replace(expected, replacement)

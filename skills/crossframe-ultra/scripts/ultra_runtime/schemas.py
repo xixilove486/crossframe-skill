@@ -49,6 +49,7 @@ SCHEMA_NAMES = (
     "ultra-retrieval-ledger.schema.json",
     "ultra-route-map.schema.json",
     "ultra-run-contract.schema.json",
+    "ultra-run-migration.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-source-lock.schema.json",

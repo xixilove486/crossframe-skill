@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 
+from .constants import RUN_STATUSES
 from .errors import UltraRuntimeError
 from .jsonio import (
     AUTHORITY_SNAPSHOT_LOCK_FILENAME,
@@ -21,7 +22,6 @@ from .status import (
     RunStatusRecord,
     _parse_utc,
     _record_from_object,
-    _record_to_object,
 )
 
 
@@ -41,6 +41,9 @@ _GENERATION_FILE_NAMES = frozenset(
     {"runs.jsonl", "latest.json", "latest-complete.json", "latest-needs-attention.json"}
 )
 _SHA256_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z", re.ASCII)
+_PROJECTION_FIELDS = frozenset(
+    {"run_id", "status", "created_at", "updated_at", "revision"}
+)
 
 
 class IndexError(UltraRuntimeError, RuntimeError):
@@ -48,9 +51,39 @@ class IndexError(UltraRuntimeError, RuntimeError):
 
 
 def _record_to_projection(record: RunStatusRecord) -> dict[str, object]:
-    projection = _record_to_object(record)
-    projection["reason"] = None
-    return projection
+    return {
+        "run_id": record.run_id,
+        "status": record.status,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+        "revision": record.revision,
+    }
+
+
+def _projection_from_object(value: dict[str, object]) -> dict[str, object]:
+    if set(value) != _PROJECTION_FIELDS:
+        raise ValueError("index status projection must be a closed neutral object")
+    run_id = value["run_id"]
+    status = value["status"]
+    revision = value["revision"]
+    if not isinstance(run_id, str):
+        raise ValueError("index status projection run_id must be a string")
+    _validate_run_id(run_id)
+    if not isinstance(status, str) or status not in RUN_STATUSES:
+        raise ValueError("index status projection status is invalid")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise ValueError("index status projection revision is invalid")
+    created_at = _parse_utc(value["created_at"], "created_at")
+    updated_at = _parse_utc(value["updated_at"], "updated_at")
+    if updated_at < created_at:
+        raise ValueError("index status projection updated_at precedes created_at")
+    return {
+        "run_id": run_id,
+        "status": status,
+        "created_at": str(value["created_at"]),
+        "updated_at": str(value["updated_at"]),
+        "revision": revision,
+    }
 
 
 def _generation_id(files: dict[str, str | None]) -> str:
@@ -272,12 +305,12 @@ class IndexStore:
     @staticmethod
     def _decode_runs(
         raw: bytes,
-    ) -> list[RunStatusRecord]:
+    ) -> list[dict[str, object]]:
         if not isinstance(raw, bytes):
             raise TypeError("runs cache must be bytes")
         if raw == b"":
             return []
-        records: list[RunStatusRecord] = []
+        records: list[dict[str, object]] = []
         for line in raw.splitlines(keepends=True):
             if not line.endswith(b"\n"):
                 raise IndexError(
@@ -297,29 +330,23 @@ class IndexStore:
                 raise IndexError(
                     "index cache needs rebuild: runs.jsonl is not canonical"
                 )
-            run_id = value.get("run_id")
-            if not isinstance(run_id, str):
-                raise IndexError(
-                    "index cache needs rebuild: runs.jsonl row has no run_id"
-                )
             try:
-                record = _record_from_object(value, run_id)
+                record = _projection_from_object(value)
             except (TypeError, ValueError, RuntimeError) as error:
                 raise IndexError(
-                    f"index cache needs rebuild: invalid runs.jsonl row {run_id}"
+                    "index cache needs rebuild: invalid runs.jsonl projection row"
                 ) from error
-            if value != _record_to_projection(record):
-                raise IndexError(
-                    "index cache needs rebuild: runs.jsonl contains a non-projection row"
-                )
             records.append(record)
-        if len({record.run_id for record in records}) != len(records):
+        if len({str(record["run_id"]) for record in records}) != len(records):
             raise IndexError(
                 "index cache needs rebuild: runs.jsonl contains duplicate run IDs"
             )
         expected_order = sorted(
             records,
-            key=lambda record: (_parse_utc(record.updated_at, "updated_at"), record.run_id),
+            key=lambda record: (
+                _parse_utc(record["updated_at"], "updated_at"),
+                str(record["run_id"]),
+            ),
         )
         if records != expected_order:
             raise IndexError(
@@ -337,9 +364,7 @@ class IndexStore:
                 "index cache needs rebuild: runs.jsonl hash does not match generation"
             )
         records = self._decode_runs(runs_raw)
-        projections = {
-            record.run_id: _record_to_projection(record) for record in records
-        }
+        projections = {str(record["run_id"]): record for record in records}
         pointers: dict[str, dict[str, object] | None] = {}
         for name, filename in _POINTER_FILES.items():
             path = self._pointer_path(name)
@@ -366,38 +391,26 @@ class IndexStore:
                 raise IndexError(
                     f"index cache needs rebuild: {filename} is not canonical"
                 )
-            run_id = value.get("run_id")
-            if not isinstance(run_id, str):
-                raise IndexError(
-                    f"index cache needs rebuild: {filename} has no valid run_id"
-                )
             try:
-                record = _record_from_object(value, run_id)
+                projection = _projection_from_object(value)
             except (TypeError, ValueError, RuntimeError) as error:
                 raise IndexError(
                     f"index cache needs rebuild: {filename} is invalid"
                 ) from error
-            if value != _record_to_projection(record):
-                raise IndexError(
-                    f"index cache needs rebuild: {filename} exposes non-projection data"
-                )
-            if projections.get(run_id) != value:
+            run_id = str(projection["run_id"])
+            if projections.get(run_id) != projection:
                 raise IndexError(
                     f"index cache needs rebuild: {filename} does not match runs.jsonl"
                 )
-            pointers[name] = value
+            pointers[name] = projection
 
         def expected_pointer(status: str | None) -> dict[str, object] | None:
             candidates = [
                 record
                 for record in records
-                if status is None or record.status == status
+                if status is None or record["status"] == status
             ]
-            return (
-                None
-                if not candidates
-                else _record_to_projection(candidates[-1])
-            )
+            return None if not candidates else candidates[-1]
 
         expected = {
             "latest": expected_pointer(None),
@@ -517,5 +530,7 @@ class IndexStore:
             run_id = value.get("run_id")
             if not isinstance(run_id, str):
                 raise IndexError(f"index pointer {name} has no valid run_id")
-            record = _record_from_object(value, run_id)
-            return _record_to_object(record)
+            try:
+                return _projection_from_object(value)
+            except (TypeError, ValueError, RuntimeError) as error:
+                raise IndexError(f"index pointer {name} is invalid") from error

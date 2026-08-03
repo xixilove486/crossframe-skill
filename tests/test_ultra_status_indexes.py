@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import gc
 import importlib
@@ -17,6 +16,30 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "skills/crossframe-ultra/scripts"
 RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
+STATUS_AUTHORITY_FIELDS = frozenset(
+    {
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "version_binding",
+        "generated_at",
+        "content_sha256",
+        "phase_id",
+        "status",
+        "previous_status",
+        "current_phase",
+        "last_complete_phase",
+        "reason",
+        "tools_allowed",
+        "validation_passed",
+        "updated_at",
+        "created_at",
+        "revision",
+    }
+)
+INDEX_PROJECTION_FIELDS = frozenset(
+    {"run_id", "status", "created_at", "updated_at", "revision"}
+)
 
 
 def _runtime_module(name: str):
@@ -53,6 +76,12 @@ def _layout(paths_module, root: Path, run_id: str):
 def _create_status(status_module, layout, now: datetime):
     store = status_module.RunStatusStore(layout)
     return store, store.create(now)
+
+
+def _rehash_status(value: dict[str, object]) -> dict[str, object]:
+    schemas = _runtime_module("schemas")
+    value["content_sha256"] = schemas.compute_artifact_content_sha256(value)
+    return value
 
 
 def test_status_index_and_json_modules_exist_for_red_gate() -> None:
@@ -350,36 +379,50 @@ def test_status_store_create_read_transition_and_closed_serialization(
     now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
     store, created = _create_status(status_module, layout, now)
 
-    assert created == status_module.RunStatusRecord(
-        run_id=layout.run_dir.name,
-        status="created",
-        created_at="2026-08-02T03:04:05Z",
-        updated_at="2026-08-02T03:04:05Z",
-        revision=0,
-        phase_id=None,
-        reason=None,
-    )
+    assert created.schema_id == "crossframe.ultra.v82.run-status"
+    assert created.schema_version == 1
+    assert created.run_id == layout.run_dir.name
+    assert created.version_binding == _runtime_module(
+        "constants"
+    ).current_version_binding()
+    with pytest.raises(TypeError):
+        created.version_binding["runtime_version"] = "9.9.9"
+    assert created.generated_at == "2026-08-02T03:04:05Z"
+    assert created.phase_id == "U0"
+    assert created.status == "created"
+    assert created.previous_status is None
+    assert created.current_phase == "U0"
+    assert created.last_complete_phase is None
+    assert created.reason is None
+    assert created.tools_allowed is False
+    assert created.validation_passed is False
+    assert created.created_at == "2026-08-02T03:04:05Z"
+    assert created.updated_at == "2026-08-02T03:04:05Z"
+    assert created.revision == 0
     assert store.read() == created
-    assert set(jsonio.load_json_object(layout.run_dir / "run-status.json")) == {
-        "run_id",
-        "status",
-        "created_at",
-        "updated_at",
-        "revision",
-        "phase_id",
-        "reason",
-    }
+    persisted = jsonio.load_json_object(layout.run_dir / "run-status.json")
+    assert set(persisted) == STATUS_AUTHORITY_FIELDS
+    assert persisted["phase_id"] == persisted["current_phase"]
+    assert persisted["generated_at"] == persisted["updated_at"]
+    assert persisted["content_sha256"] == _runtime_module(
+        "schemas"
+    ).compute_artifact_content_sha256(persisted)
+    _runtime_module("schemas").validate_instance(
+        "ultra-run-status.schema.json", persisted
+    )
 
     running = store.transition(
         created,
         "running",
         now + timedelta(seconds=1),
-        phase_id="U0",
+        current_phase="U0",
         reason="started",
     )
     assert running.status == "running"
     assert running.revision == 1
-    assert running.phase_id == "U0"
+    assert running.phase_id == running.current_phase == "U0"
+    assert running.previous_status == "created"
+    assert running.tools_allowed is True
     assert store.read() == running
 
 
@@ -392,24 +435,14 @@ def test_status_replace_is_atomic_and_rejects_stale_cas(
     )
     now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
     store, created = _create_status(status_module, layout, now)
-    running = replace(
-        created,
-        status="running",
-        updated_at="2026-08-02T03:04:06Z",
-        revision=1,
-        phase_id="U0",
-    )
-
-    assert store.replace(created, running) == running
-    stale_replacement = replace(
-        created,
-        status="failed",
-        updated_at="2026-08-02T03:04:07Z",
-        revision=1,
-        reason="stale",
-    )
+    running = store.transition(created, "running", now + timedelta(seconds=1))
     with pytest.raises(RuntimeError, match="CAS|stale|revision|updated"):
-        store.replace(created, stale_replacement)
+        store.transition(
+            created,
+            "failed",
+            now + timedelta(seconds=2),
+            reason="stale",
+        )
     assert store.read() == running
 
 
@@ -427,7 +460,18 @@ def test_status_illegal_and_terminal_transitions_never_revive(
         store.transition(created, "complete", now + timedelta(seconds=1))
 
     running = store.transition(created, "running", now + timedelta(seconds=1))
-    complete = store.transition(running, "complete", now + timedelta(seconds=2))
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="U12|complete|validation"):
+        store.transition(running, "complete", now + timedelta(seconds=2))
+    complete = store.transition(
+        running,
+        "complete",
+        now + timedelta(seconds=2),
+        current_phase="U12",
+        last_complete_phase="U12",
+        validation_passed=True,
+    )
+    assert complete.tools_allowed is False
+    assert complete.validation_passed is True
     with pytest.raises((TypeError, ValueError, RuntimeError), match="terminal|transition|complete"):
         store.transition(complete, "running", now + timedelta(seconds=3))
     assert store.read() == complete
@@ -445,6 +489,7 @@ def test_cancelled_status_rejects_all_ordinary_replacements(
     cancelled = store.transition(
         created, "cancelled", now + timedelta(seconds=1), reason="operator cancelled"
     )
+    assert cancelled.tools_allowed is False
 
     with pytest.raises((TypeError, ValueError, RuntimeError), match="cancelled|terminal|transition"):
         store.transition(cancelled, "running", now + timedelta(seconds=2))
@@ -473,22 +518,16 @@ def test_status_read_rejects_open_or_corrupt_authority(runtime_modules, tmp_path
     layout = _layout(
         paths_module, tmp_path, "20260802T030405Z-000000000001"
     )
-    layout.run_dir.mkdir(parents=True)
-    jsonio.atomic_write_json(
-        layout.run_dir / "run-status.json",
-        {
-            "run_id": layout.run_dir.name,
-            "status": "created",
-            "created_at": "2026-08-02T03:04:05Z",
-            "updated_at": "2026-08-02T03:04:05Z",
-            "revision": 0,
-            "phase_id": None,
-            "reason": None,
-            "unexpected": "not closed",
-        },
+    store, _ = _create_status(
+        status_module,
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
     )
+    authority = jsonio.load_json_object(store.path)
+    authority["unexpected"] = "not closed"
+    jsonio.atomic_write_json(store.path, authority)
     with pytest.raises((TypeError, ValueError, RuntimeError), match="field|closed|unexpected"):
-        status_module.RunStatusStore(layout).read()
+        store.read()
 
 
 @pytest.mark.parametrize(
@@ -521,27 +560,107 @@ def test_status_read_rejects_noncanonical_or_control_bearing_utc_timestamps(
         store.read()
 
 
-def test_index_rebuild_never_writes_noncanonical_timestamp_to_markdown(
-    runtime_modules, tmp_path: Path
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("phase_id", "U1", "phase|current"),
+        ("generated_at", "2026-08-02T03:04:06Z", "generated|updated"),
+        ("content_sha256", "0" * 64, "content_sha256|hash"),
+    ),
+)
+def test_status_read_rejects_self_inconsistent_or_stale_authority(
+    runtime_modules,
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
 ) -> None:
-    paths_module, jsonio, _, indexes_module = runtime_modules
+    paths_module, jsonio, status_module, _ = runtime_modules
     layout = _layout(
         paths_module, tmp_path, "20260802T030405Z-000000000001"
     )
-    layout.run_dir.mkdir(parents=True)
-    injected = "2026-08-02\u202803:04:05Z"
-    jsonio.atomic_write_json(
-        layout.run_dir / "run-status.json",
-        {
-            "run_id": layout.run_dir.name,
-            "status": "created",
-            "created_at": injected,
-            "updated_at": injected,
-            "revision": 0,
-            "phase_id": None,
-            "reason": None,
-        },
+    store, _ = _create_status(
+        status_module,
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
     )
+    authority = jsonio.load_json_object(store.path)
+    authority[field] = value
+    if field != "content_sha256":
+        _rehash_status(authority)
+    jsonio.atomic_write_json(store.path, authority)
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match=message):
+        store.read()
+
+
+def test_status_replace_requires_previous_status_to_match_cas_authority(
+    runtime_modules, tmp_path: Path
+) -> None:
+    paths_module, _, status_module, _ = runtime_modules
+    layout = _layout(
+        paths_module, tmp_path, "20260802T030405Z-000000000001"
+    )
+    base = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store, created = _create_status(status_module, layout, base)
+    running = store.transition(created, "running", base + timedelta(seconds=1))
+    replacement_object = status_module._record_to_object(running)
+    replacement_object.update(
+        status="failed",
+        previous_status="created",
+        tools_allowed=False,
+        updated_at="2026-08-02T03:04:07Z",
+        generated_at="2026-08-02T03:04:07Z",
+        revision=2,
+    )
+    _rehash_status(replacement_object)
+    replacement = status_module._record_from_object(
+        replacement_object, layout.run_dir.name
+    )
+
+    with pytest.raises(RuntimeError, match="previous_status|previous status"):
+        store.replace(running, replacement)
+    assert store.read() == running
+
+
+def test_status_authority_rejects_caller_selected_version_binding(
+    runtime_modules, tmp_path: Path
+) -> None:
+    paths_module, jsonio, status_module, _ = runtime_modules
+    layout = _layout(
+        paths_module, tmp_path, "20260802T030405Z-000000000001"
+    )
+    store, _ = _create_status(
+        status_module,
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    authority = jsonio.load_json_object(store.path)
+    authority["version_binding"]["runtime_version"] = "9.9.9"
+    _rehash_status(authority)
+    jsonio.atomic_write_json(store.path, authority)
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="version|binding|authority"):
+        store.read()
+
+
+def test_index_rebuild_never_writes_noncanonical_timestamp_to_markdown(
+    runtime_modules, tmp_path: Path
+) -> None:
+    paths_module, jsonio, status_module, indexes_module = runtime_modules
+    layout = _layout(
+        paths_module, tmp_path, "20260802T030405Z-000000000001"
+    )
+    injected = "2026-08-02\u202803:04:05Z"
+    store, _ = _create_status(
+        status_module,
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    authority = jsonio.load_json_object(store.path)
+    authority["created_at"] = injected
+    _rehash_status(authority)
+    jsonio.atomic_write_json(store.path, authority)
 
     with pytest.raises((TypeError, ValueError, RuntimeError), match="canonical|timestamp|authority"):
         indexes_module.IndexStore(layout.root).rebuild()
@@ -567,7 +686,12 @@ def _seed_index_runs(paths_module, status_module, tmp_path: Path):
         complete_created, "running", base + timedelta(seconds=1)
     )
     complete = complete_store.transition(
-        complete_running, "complete", base + timedelta(seconds=2)
+        complete_running,
+        "complete",
+        base + timedelta(seconds=2),
+        current_phase="U12",
+        last_complete_phase="U12",
+        validation_passed=True,
     )
 
     attention_layout = _layout(
@@ -635,6 +759,8 @@ def test_index_rebuild_uses_only_authority_and_preserves_latest_complete(
         seeded["attention"][2].run_id,
         seeded["failed"][2].run_id,
     ]
+    assert all(set(row) == INDEX_PROJECTION_FIELDS for row in rows)
+    assert all("content_sha256" not in row for row in rows)
 
 
 def test_index_rebuild_snapshot_blocks_authority_change_until_publish_finishes(
@@ -888,9 +1014,10 @@ def test_index_projection_redacts_reason_without_changing_authority(
         json.loads(line)
         for line in index_store.runs_path.read_text(encoding="utf-8").splitlines()
     ]
-    assert rows[0]["reason"] is None
-    assert index_store.read_pointer("latest")["reason"] is None
-    assert index_store.read_pointer("latest-needs-attention")["reason"] is None
+    assert set(rows[0]) == INDEX_PROJECTION_FIELDS
+    assert set(index_store.read_pointer("latest")) == INDEX_PROJECTION_FIELDS
+    assert set(index_store.read_pointer("latest-needs-attention")) == INDEX_PROJECTION_FIELDS
+    assert "reason" not in rows[0]
     assert secret.encode("utf-8") not in index_store.runs_path.read_bytes()
     assert secret.encode("utf-8") not in (
         layout.root / "index/latest.json"
@@ -909,6 +1036,23 @@ def test_index_rebuild_refuses_corrupt_authority_instead_of_hiding_it(
 
     with pytest.raises((TypeError, ValueError, RuntimeError), match="JSON|json|authority|status"):
         indexes_module.IndexStore(layout.root).rebuild()
+
+
+def test_index_rebuild_rejects_status_only_forgery_as_non_authoritative(
+    runtime_modules, tmp_path: Path
+) -> None:
+    paths_module, jsonio, _, indexes_module = runtime_modules
+    layout = _layout(
+        paths_module, tmp_path, "20260802T030405Z-000000000001"
+    )
+    layout.run_dir.mkdir(parents=True)
+    jsonio.atomic_write_json(
+        layout.run_dir / "run-status.json", {"status": "complete"}
+    )
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="authority|status|closed"):
+        indexes_module.IndexStore(layout.root).rebuild()
+    assert not (layout.root / "index/latest-complete.json").exists()
 
 
 def test_read_pointer_rejects_unknown_names(runtime_modules, tmp_path: Path) -> None:
@@ -964,7 +1108,6 @@ def test_index_rebuild_failure_after_runs_replace_invalidates_old_cache(
             "run_id": changed.run_id,
             "status": "needs_attention",
             "revision": changed.revision,
-            "reason": None,
         }
     ]
     with pytest.raises(

@@ -22,6 +22,7 @@ from .paths import (
     _validate_run_id,
     assert_safe_descendant,
 )
+from .status import RunStatusStore
 
 
 LEASE_FILENAME = ".writer-lease.json"
@@ -218,12 +219,12 @@ def _check_cancelled(layout: RunLayout) -> None:
     if not status_path.exists():
         return
     try:
-        status = load_json_object(status_path)
-    except (OSError, TypeError, ValueError) as error:
+        status = RunStatusStore(layout).read()
+    except (OSError, TypeError, ValueError, UltraRuntimeError) as error:
         raise LeaseNeedsAttentionError(
             "run status is corrupt; lease acquisition needs attention"
         ) from error
-    if status.get("status") == "cancelled":
+    if status.status == "cancelled":
         raise CancelledRunError("cancelled run cannot acquire or heartbeat a lease")
 
 

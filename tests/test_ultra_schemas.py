@@ -235,6 +235,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-retrieval-ledger.schema.json",
     "ultra-route-map.schema.json",
     "ultra-run-contract.schema.json",
+    "ultra-run-migration.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-source-lock.schema.json",
@@ -666,6 +667,8 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             tools_allowed=True,
             validation_passed=False,
             updated_at=STAMP,
+            created_at=STAMP,
+            revision=1,
         ),
         "ultra-phase-event.schema.json": artifact(
             "ultra-phase-event.schema.json",
@@ -1648,6 +1651,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-recovery-checkpoint.schema.json": artifact(
             "ultra-recovery-checkpoint.schema.json",
             phase_id="U7",
+            boundary_kind="phase",
+            boundary_id="U7",
+            boundary_ordinal=0,
             phase_event_sha256=HASH_A,
             artifact_hashes=[
                 {
@@ -1659,6 +1665,28 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             evidence_cutoff=STAMP,
             completed_boundary=True,
             resumable=True,
+        ),
+        "ultra-run-migration.schema.json": artifact(
+            "ultra-run-migration.schema.json",
+            parent_run_id="ultra-run-20260801-parent",
+            parent_checkpoint_sha256=HASH_A,
+            parent_version_binding=version_binding(),
+            compatibility_result="fork-required",
+            fork_reason="Known framework migration requires an immutable child run.",
+            frozen_input_refs=[
+                {
+                    "path": "input/request.md",
+                    "sha256": HASH_B,
+                    "media_type": "text/markdown",
+                }
+            ],
+            inherited_artifact_hashes=[
+                {
+                    "path": "artifacts/U00-U03-evidence/evidence-ledger.json",
+                    "sha256": HASH_C,
+                    "media_type": "application/json",
+                }
+            ],
         ),
         "ultra-artifact-manifest.schema.json": artifact(
             "ultra-artifact-manifest.schema.json",
@@ -1840,6 +1868,7 @@ PRIMARY_FIELD = {
     "ultra-release-manifest.schema.json": "release_id",
     "ultra-compatibility-matrix.schema.json": "rules",
     "ultra-run-contract.schema.json": "capabilities",
+    "ultra-run-migration.schema.json": "parent_checkpoint_sha256",
     "ultra-run-status.schema.json": "status",
     "ultra-phase-event.schema.json": "event_sha256",
     "ultra-source-lock.schema.json": "inputs",
@@ -2113,6 +2142,184 @@ def test_each_artifact_schema_has_a_real_minimal_valid_instance() -> None:
     assert len({fixture["schema_id"] for fixture in fixtures.values()}) == len(fixtures)
     for schema_name, fixture in fixtures.items():
         runtime.validate_instance(schema_name, fixture)
+
+
+@pytest.mark.parametrize(
+    "required_field",
+    (
+        "status",
+        "previous_status",
+        "current_phase",
+        "last_complete_phase",
+        "reason",
+        "tools_allowed",
+        "validation_passed",
+        "updated_at",
+        "created_at",
+        "revision",
+    ),
+)
+def test_run_status_schema_requires_complete_lifecycle_authority(
+    required_field: str,
+) -> None:
+    runtime = load_runtime()
+    status = copy.deepcopy(minimal_instances()["ultra-run-status.schema.json"])
+    del status[required_field]
+
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-run-status.schema.json", status)
+
+
+def test_run_status_schema_closes_created_complete_and_cancelled_invariants() -> None:
+    runtime = load_runtime()
+    running = minimal_instances()["ultra-run-status.schema.json"]
+
+    created = copy.deepcopy(running)
+    created.update(
+        status="created",
+        previous_status=None,
+        phase_id="U0",
+        current_phase="U0",
+        last_complete_phase=None,
+        tools_allowed=False,
+        validation_passed=False,
+        revision=0,
+    )
+    runtime.validate_instance("ultra-run-status.schema.json", created)
+
+    complete = copy.deepcopy(running)
+    complete.update(
+        status="complete",
+        previous_status="running",
+        phase_id="U12",
+        current_phase="U12",
+        last_complete_phase="U12",
+        tools_allowed=False,
+        validation_passed=True,
+        revision=2,
+    )
+    runtime.validate_instance("ultra-run-status.schema.json", complete)
+    for field, invalid in (
+        ("phase_id", "U11"),
+        ("current_phase", "U11"),
+        ("last_complete_phase", "U11"),
+        ("tools_allowed", True),
+        ("validation_passed", False),
+    ):
+        broken = copy.deepcopy(complete)
+        broken[field] = invalid
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-run-status.schema.json", broken)
+
+    cancelled = copy.deepcopy(running)
+    cancelled.update(status="cancelled", tools_allowed=False)
+    runtime.validate_instance("ultra-run-status.schema.json", cancelled)
+    cancelled["tools_allowed"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-run-status.schema.json", cancelled)
+
+
+def test_recovery_checkpoint_schema_distinguishes_phase_and_packet_boundaries() -> None:
+    runtime = load_runtime()
+    phase = copy.deepcopy(
+        minimal_instances()["ultra-recovery-checkpoint.schema.json"]
+    )
+    runtime.validate_instance("ultra-recovery-checkpoint.schema.json", phase)
+
+    for field, invalid in (
+        ("boundary_id", "U8"),
+        ("boundary_ordinal", 1),
+    ):
+        broken = copy.deepcopy(phase)
+        broken[field] = invalid
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-recovery-checkpoint.schema.json", broken)
+
+    packet = copy.deepcopy(phase)
+    packet.update(
+        phase_id="U11",
+        boundary_kind="article-packet",
+        boundary_id="PACKET-001",
+        boundary_ordinal=1,
+    )
+    runtime.validate_instance("ultra-recovery-checkpoint.schema.json", packet)
+    for field, invalid in (
+        ("phase_id", "U10"),
+        ("boundary_ordinal", 0),
+        ("boundary_id", "packet with spaces"),
+    ):
+        broken = copy.deepcopy(packet)
+        broken[field] = invalid
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-recovery-checkpoint.schema.json", broken)
+
+
+@pytest.mark.parametrize(
+    "required_field",
+    (
+        "parent_run_id",
+        "parent_checkpoint_sha256",
+        "parent_version_binding",
+        "compatibility_result",
+        "fork_reason",
+        "frozen_input_refs",
+        "inherited_artifact_hashes",
+    ),
+)
+def test_run_migration_schema_requires_closed_parent_and_inheritance_authority(
+    required_field: str,
+) -> None:
+    runtime = load_runtime()
+    migration = copy.deepcopy(
+        minimal_instances()["ultra-run-migration.schema.json"]
+    )
+    del migration[required_field]
+
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-run-migration.schema.json", migration)
+
+
+@pytest.mark.parametrize(
+    ("path", "invalid"),
+    (
+        (("compatibility_result",), "resume"),
+        (("parent_checkpoint_sha256",), "not-a-hash"),
+        (("parent_version_binding", "runtime_version"), "not-semver"),
+        (("frozen_input_refs",), []),
+        (("inherited_artifact_hashes",), []),
+    ),
+)
+def test_run_migration_schema_rejects_unfrozen_or_nonfork_payloads(
+    path: tuple[str, ...], invalid: Any
+) -> None:
+    runtime = load_runtime()
+    migration = copy.deepcopy(
+        minimal_instances()["ultra-run-migration.schema.json"]
+    )
+    target: Any = migration
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = invalid
+
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-run-migration.schema.json", migration)
+
+
+def test_run_migration_keeps_parent_binding_general_and_child_binding_current() -> None:
+    runtime = load_runtime()
+    migration = copy.deepcopy(
+        minimal_instances()["ultra-run-migration.schema.json"]
+    )
+    migration["parent_version_binding"].update(
+        framework_version="8.1",
+        framework_revision="v8.1-r9",
+        runtime_version="0.9.0",
+        artifact_schema_version=0,
+    )
+
+    runtime.validate_instance("ultra-run-migration.schema.json", migration)
+    assert migration["version_binding"] == version_binding()
+    assert migration["parent_version_binding"] != migration["version_binding"]
 
 
 @pytest.mark.parametrize(

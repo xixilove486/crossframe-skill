@@ -204,21 +204,19 @@ def test_release_removes_only_the_current_owner_lease(runtime_modules, tmp_path:
 
 
 def test_cancelled_status_rejects_lease_acquisition(runtime_modules, tmp_path: Path) -> None:
-    paths_module, jsonio, locks = runtime_modules
+    paths_module, _, locks = runtime_modules
+    status_module = _runtime_module("status")
     layout = _layout(paths_module, tmp_path)
-    layout.run_dir.mkdir(parents=True)
-    jsonio.atomic_write_json(
-        layout.run_dir / "run-status.json",
-        {
-            "run_id": layout.run_dir.name,
-            "status": "cancelled",
-            "created_at": "2026-08-02T03:04:05Z",
-            "updated_at": "2026-08-02T03:04:06Z",
-            "revision": 1,
-            "phase_id": None,
-            "reason": "cancelled",
-        },
+    base = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(base)
+    cancelled = store.transition(
+        created,
+        "cancelled",
+        base + timedelta(seconds=1),
+        reason="cancelled",
     )
+    assert cancelled.tools_allowed is False
 
     with pytest.raises(RuntimeError, match="cancelled"):
         locks.acquire_run_lease(
@@ -226,6 +224,27 @@ def test_cancelled_status_rejects_lease_acquisition(runtime_modules, tmp_path: P
             datetime(2026, 8, 2, 3, 4, 7, tzinfo=timezone.utc),
             timedelta(seconds=30),
         )
+
+
+def test_status_only_cancellation_forgery_is_rejected_as_corrupt_authority(
+    runtime_modules, tmp_path: Path
+) -> None:
+    paths_module, jsonio, locks = runtime_modules
+    layout = _layout(paths_module, tmp_path)
+    layout.run_dir.mkdir(parents=True)
+    jsonio.atomic_write_json(
+        layout.run_dir / "run-status.json", {"status": "cancelled"}
+    )
+
+    with pytest.raises(locks.LeaseNeedsAttentionError) as caught:
+        locks.acquire_run_lease(
+            layout,
+            datetime(2026, 8, 2, 3, 4, 7, tzinfo=timezone.utc),
+            timedelta(seconds=30),
+        )
+
+    assert not isinstance(caught.value, locks.CancelledRunError)
+    assert not locks._lease_path(layout).exists()
 
 
 @pytest.mark.parametrize("operation", ["acquire", "heartbeat"])

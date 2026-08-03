@@ -1854,11 +1854,200 @@ python -B -m pytest -q tests/test_ultra_article.py tests/test_ultra_semantic_cov
 git commit -m "feat: add complete ultra article contract"
 ~~~
 
+## W6-0: Freeze authoritative status, recovery, and publication handoffs
+
+**Owner:** Root planner only
+
+**Depends on:** Integrated Tasks 5–11, including W5-0 -> Task 10A -> Task 9 -> Task 10B
+
+**Files:**
+
+- Modify: docs/superpowers/plans/2026-08-02-crossframe-ultra-implementation.md
+- Modify: tests/test_ultra_schemas.py
+- Modify: tests/test_ultra_status_indexes.py
+- Modify: tests/test_ultra_locks.py
+- Modify: skills/crossframe-ultra/schemas/ultra-run-status.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-recovery-checkpoint.schema.json
+- Create: skills/crossframe-ultra/schemas/ultra-run-migration.schema.json
+- Modify: skills/crossframe-ultra/scripts/ultra_runtime/schemas.py
+- Modify: skills/crossframe-ultra/scripts/ultra_runtime/status.py
+- Modify: skills/crossframe-ultra/scripts/ultra_runtime/indexes.py
+- Modify: skills/crossframe-ultra/scripts/ultra_runtime/locks.py
+
+This gate owns exactly the eleven files above. It freezes the Task 12/13 handoff but does not implement any Task 12 recovery, validation, repair, checker, wrapper or extended phase-state file.
+
+- [ ] **Step 1: Write authoritative status and recovery schema RED tests**
+
+The public `ultra-run-status.schema.json` remains schema v1, keeps the common `phaseArtifactEnvelope`, stays closed, and additionally requires `status`, `previous_status`, `current_phase`, `last_complete_phase`, `reason`, `tools_allowed`, `validation_passed`, `updated_at`, `created_at` and `revision`.
+
+The runtime is the producer and validator of that public schema. It derives `version_binding` from `current_version_binding()`, recomputes `content_sha256`, and enforces `phase_id == current_phase` plus `generated_at == updated_at`. Creation starts at U0 with `previous_status` and `last_complete_phase` null, revision zero, validation false and tools disabled. Every CAS replacement advances revision and time by one authority step and records `previous_status == old.status`; phases and last-complete phases cannot move backwards. Only `running` enables tools. `complete` requires `phase_id == current_phase == last_complete_phase == U12`, `validation_passed == true` and `tools_allowed == false`; `cancelled` is terminal with tools disabled.
+
+Indexes must validate the complete run-status authority before rebuilding. `runs.jsonl` and pointer files contain only the closed neutral projection `run_id`, `status`, `created_at`, `updated_at` and `revision`; START-HERE files contain only those neutral values and relative navigation. No schema, binding, hash, reason, title, query or input content is copied. Lease admission reads through the complete status validator. A forged `{status: cancelled}` or `{status: complete}` object is corrupt authority, never a cancellation or completion instruction.
+
+The checkpoint schema adds required `boundary_kind`, `boundary_id` and `boundary_ordinal`. A phase boundary has `boundary_kind == "phase"`, `boundary_id == phase_id` and ordinal zero. An article-packet boundary has `boundary_kind == "article-packet"`, `phase_id == "U11"`, an identifier packet ID and ordinal at least one. Task 12 selects by `(PHASES.index(phase_id), kind_rank, boundary_ordinal)`, where packet rank is zero and phase rank is one, so the completed U11 phase boundary sorts after every U11 packet. Two different checkpoint hashes claiming the same `(phase_id, boundary_kind, boundary_ordinal)` make the run invalid rather than winning by timestamp.
+
+Create and register closed schema v1 `ultra-run-migration.schema.json` with schema ID `crossframe.ultra.v82.run-migration`. It uses the common artifact envelope for child identity and requires `parent_run_id`, `parent_checkpoint_sha256`, general `parent_version_binding`, `compatibility_result` fixed to `fork-required`, `fork_reason`, nonempty `frozen_input_refs` and nonempty `inherited_artifact_hashes`. Its only active path is `recovery/ultra-run-migration.json` inside the child run.
+
+- [ ] **Step 2: Observe focused RED**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py tests/test_ultra_status_indexes.py tests/test_ultra_locks.py
+~~~
+
+RED must be a schema or behavioral contract failure, not collection, import, syntax or environment failure. Do not add skip, xfail or optional authority fields.
+
+- [ ] **Step 3: Implement the W6 shared contracts**
+
+Update the three schemas, schema registry, status producer/validator, neutral indexes and lease admission only. Do not trust caller-selected version bindings or caller-rehashed foreign authority. Preserve the Task 6 status transition table and lease CAS/lifecycle-lock semantics.
+
+- [ ] **Step 4: Freeze the Task 12/13 handoff**
+
+Task 12 owns the only phase state machine extension. It changes `PHASE_ORDER` to `PHASES` and extends the existing `PhaseStore` through U12 while preserving this public signature exactly:
+
+~~~python
+def complete(
+    self,
+    phase_id: str,
+    *,
+    artifact_hashes: Sequence[str],
+    parent_event_sha256: str | None = None,
+    input_artifact_hashes: Sequence[str] | None = None,
+    version_binding: Mapping[str, object] | None = None,
+    source_sha256: str | None = None,
+    evidence_cutoff: str | None = None,
+    u1_authority: object | None = None,
+    retrieval_authority: object | None = None,
+    evidence_authority: EvidenceArtifactSeal | None = None,
+) -> dict[str, object]:
+~~~
+
+Task 13 must use this store and may not create a second phase machine in `materialization.py`. Task 12 exposes only these recovery entry points; none accepts a caller-supplied version binding, run hash or checkpoint hash as proof:
+
+~~~python
+def create_checkpoint(
+    layout: RunLayout,
+    phase_store: PhaseStore,
+    *,
+    boundary_kind: Literal["phase", "article-packet"],
+    boundary_id: str,
+    boundary_ordinal: int,
+    artifact_paths: Sequence[Path],
+    now: datetime,
+) -> dict[str, object]:
+
+def load_checkpoints(layout: RunLayout) -> tuple[dict[str, object], ...]:
+    ...
+
+def select_resume_checkpoint(layout: RunLayout) -> dict[str, object]:
+    ...
+
+def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
+    ...
+
+def cancel_run(
+    layout: RunLayout,
+    *,
+    reason: str,
+    now: datetime,
+) -> RunStatusRecord:
+    ...
+
+def fork_run(
+    parent_layout: RunLayout,
+    *,
+    mode: RunMode,
+    policy: RootPolicy,
+    reason: str,
+    now: datetime,
+    entropy: bytes,
+) -> ForkResult:
+    ...
+~~~
+
+Checkpoint files are immutable canonical JSON at `recovery/checkpoints/<checkpoint-file-sha256>.json`; the filename hash covers the complete canonical bytes, while `content_sha256` keeps the standard envelope payload algorithm. `load_checkpoints` validates schema, filename/file hash, disk artifact hashes, immutable run/input/source/version/cutoff authority and complete event-chain ancestry. `select_resume_checkpoint` considers only `completed_boundary == true`, `resumable == true`, exact disk hashes and compatibility result `resume`, applies the frozen sort key, and rejects duplicate logical slots. Half-written candidates move to `recovery/quarantine/` and never become active.
+
+`fork_run` is only for a compatibility result of `fork-required`; it assigns the child ID, preserves input bytes and evidence cutoff, copies inherited artifacts by verified hash, writes `recovery/ultra-run-migration.json`, and never changes the parent. The Task 13 `fork --reason` command exposes only that version-migration operation. Changed input bytes or cutoff require the existing `start` flow to create a new run and record the parent migration association through the same schema; they never add input/cutoff options to `fork` or expand the CLI.
+
+The disk validation/repair boundary is exact:
+
+~~~python
+def build_artifact_manifest(
+    layout: RunLayout,
+    *,
+    phase_chain_head_sha256: str,
+    validator_set_sha256: str,
+    generated_at: datetime,
+) -> dict[str, object]:
+    ...
+
+def validate_artifact_manifest(
+    layout: RunLayout,
+    manifest_path: Path,
+) -> dict[str, object]:
+    ...
+
+def validate_run_from_disk(
+    repo: Path,
+    mode: RunMode,
+    run_id: str,
+) -> bytes:
+    ...
+
+def commit_validation_attempt(
+    layout: RunLayout,
+    *,
+    attempt_id: str,
+    report_bytes: bytes,
+    expected_manifest_sha256: str,
+    expected_validator_set_sha256: str,
+) -> dict[str, object]:
+    ...
+
+def build_repair_plan(
+    layout: RunLayout,
+    *,
+    attempt_id: str,
+    attempt_number: int,
+    now: datetime,
+) -> dict[str, object]:
+    ...
+~~~
+
+The only fresh-checker CLI is `check_crossframe_ultra_artifacts.py --repo PATH --mode production|test --run-id RUN_ID [--json]`; the root wrapper only forwards to it. The fresh child is read-only, takes no lease, loads all proof from disk, and writes only canonical report bytes to stdout. The writer parent already holding the run lease writes those exact bytes to `validation/attempts/<attempt-id>/ultra-validator-report.json`, revalidates schema, content hash, manifest hash and validator-set hash, then atomically replaces `validation/current/ultra-validator-report.json`. The checker itself never writes `validation/current`.
+
+Publication paths are fixed:
+
+- staging transaction: `<root>/.staging/<run-id>/publish-<transaction-id>/`
+- durable journal: `<run-dir>/recovery/publish-transaction.json`
+- durable backup: `<run-dir>/recovery/publish-backups/<transaction-id>/`
+- manifest: `<run-dir>/artifacts/ultra-artifact-manifest.json`
+- partial article: `<run-dir>/work/authoring/article.partial.md`
+- final article: `<run-dir>/delivery/CrossFrame-Ultra-完整文章.md`
+- final dossier: `<run-dir>/delivery/完整推演档案.md`
+- final index: `<run-dir>/delivery/工件索引.md`
+
+The writer fsyncs the journal, stages all bytes, runs the pre-publish fresh check, creates the backup, atomically publishes the three final files plus manifest, and runs a second fresh check. A failure restores from the journal, marks `needs_attention`, and retains journal/backup audit evidence; successful completion removes only transient staging. The post-publish pass is required before U12 complete.
+
+- [ ] **Step 5: Run GREEN and boundary checks**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py tests/test_ultra_status_indexes.py tests/test_ultra_locks.py
+Get-ChildItem skills/crossframe-ultra/schemas -Filter *.json | ForEach-Object { python -m json.tool $_.FullName > $null; if ($LASTEXITCODE -ne 0) { throw "invalid JSON: $($_.FullName)" } }
+python -m py_compile skills/crossframe-ultra/scripts/ultra_runtime/schemas.py skills/crossframe-ultra/scripts/ultra_runtime/status.py skills/crossframe-ultra/scripts/ultra_runtime/indexes.py skills/crossframe-ultra/scripts/ultra_runtime/locks.py
+git diff --check
+~~~
+
+- [ ] **Step 6: Root commit**
+
+~~~powershell
+git commit -m "fix: freeze ultra W6 recovery contracts"
+~~~
+
 ## Task 12: Add checkpoints, recovery, independent validation, and bounded repair
 
 **Owner:** Worker B
 
-**Depends on:** Tasks 5–11, including the integrated W5-0 -> Task 10A -> Task 9 -> Task 10B chain
+**Depends on:** W6-0 and Tasks 5–11, including the integrated W5-0 -> Task 10A -> Task 9 -> Task 10B chain
 
 **Files:**
 
@@ -1866,18 +2055,36 @@ git commit -m "feat: add complete ultra article contract"
 - Create: tests/test_ultra_validation.py
 - Create: tests/test_ultra_repair.py
 - Create: tests/test_ultra_tamper_resistance.py
+- Modify: tests/test_ultra_state_machine.py
 - Create: skills/crossframe-ultra/scripts/ultra_runtime/recovery.py
 - Create: skills/crossframe-ultra/scripts/ultra_runtime/artifacts.py
 - Create: skills/crossframe-ultra/scripts/ultra_runtime/validation.py
 - Create: skills/crossframe-ultra/scripts/ultra_runtime/repair.py
+- Modify: skills/crossframe-ultra/scripts/ultra_runtime/state_machine.py
 - Create: skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py
 - Create: skills/crossframe-ultra/scripts/build_crossframe_ultra_repair_plan.py
 - Create: scripts/check_crossframe_ultra_artifacts.py
 - Create: scripts/build_crossframe_ultra_repair_plan.py
 
-- [ ] **Step 1: Write interruption and compatibility RED tests**
+- [ ] **Step 1: Write interruption, phase-extension, and compatibility RED tests**
 
-Interrupt after every U0–U12 phase and after every article packet. Recovery must resume only at the last full hash boundary. A half-written file is discarded from active state but preserved under validation/attempts or recovery/quarantine.
+Interrupt after every U0–U12 phase and after every article packet. Recovery resumes only at the last full hash boundary. A half-written file is discarded from active state but preserved under validation/attempts or recovery/quarantine.
+
+Set `PHASE_ORDER = PHASES` and keep `PhaseStore.complete` as the only phase-completion interface. Completed event output hashes use this exact order:
+
+| Phase | Ordered output artifact hashes |
+|---|---|
+| U4 | world volume |
+| U5 | transformation ledger, concept disposition |
+| U6 | claim-mechanism graph |
+| U7 | recursive states sorted by `node_id`, then recursive lineage |
+| U8 | order evaluation, red-team report |
+| U9 | verdict, action ranking, forecast ledger |
+| U10 | framework-gap ledger, output plan |
+| U11 | semantic coverage, article review, partial article, dossier, artifact index |
+| U12 | final manifest, post-publish validator report, final article, final dossier, final index |
+
+Every completion CAS-binds the parent event and preserves run, input, source, full version binding and evidence cutoff. U11 article packets create packet checkpoints only and never phase events. U12 completion additionally requires all three official delivery hashes, a closed manifest, a verified post-publish pass and authoritative status `current_phase == last_complete_phase == U12`, `validation_passed == true`, `tools_allowed == false`. `final-chat.json` is a projection and never enters a phase hash.
 
 Test exact outcomes:
 
@@ -1886,61 +2093,40 @@ Test exact outcomes:
 | exact versions and valid checkpoint | resume |
 | runtime/validator mismatch | read-only |
 | known migration path | fork-required |
-| changed evidence cutoff | fork-required |
-| changed input file bytes | fork-required |
-| corrupt phase hash | reject |
+| changed evidence cutoff | new `start` run plus migration association |
+| changed input file bytes | new `start` run plus migration association |
+| corrupt phase or disk artifact hash | reject |
+| duplicate checkpoint logical slot | reject |
 | user cancel | cancelled; no new tools |
 
-- [ ] **Step 2: Write validator tamper RED tests**
+- [ ] **Step 2: Write validator and publish-transaction tamper RED tests**
 
-Reject a stale report, edited overall_status, copied manifest from another run, marker stuffing, empty rival, fake read ledger, source hash mismatch, article hash mismatch, coverage excerpt not found, delivery file published before validation, simulated-as-fact, flattened world volume, lost lineage inheritance, writes outside root, secret in log, and repair plan that resets an earlier phase than necessary.
+Reject a stale report, edited overall_status, copied manifest from another run, marker stuffing, empty rival, fake read ledger, source hash mismatch, article hash mismatch, coverage excerpt not found, delivery file published before validation, simulated-as-fact, flattened world volume, lost lineage inheritance, writes outside root, secret in log, fresh child attempting a write or lease, parent changing report bytes, mixed validation generations, interrupted publish journal, and a repair plan that resets an earlier phase than necessary.
 
 - [ ] **Step 3: Observe RED**
 
 ~~~powershell
-python -B -m pytest -q tests/test_ultra_recovery.py tests/test_ultra_validation.py tests/test_ultra_repair.py tests/test_ultra_tamper_resistance.py
+python -B -m pytest -q tests/test_ultra_state_machine.py tests/test_ultra_recovery.py tests/test_ultra_validation.py tests/test_ultra_repair.py tests/test_ultra_tamper_resistance.py
 ~~~
 
-- [ ] **Step 4: Implement immutable checkpoints**
+- [ ] **Step 4: Implement immutable checkpoints, cancellation, resume, and migration**
 
-~~~python
-@dataclass(frozen=True, slots=True)
-class Checkpoint:
-    run_id: str
-    phase_id: str
-    phase_event_sha256: str
-    artifact_hashes: Mapping[str, str]
-    evidence_cutoff: str
-    version_binding: Mapping[str, object]
-    created_at: str
+Implement exactly the W6-0 checkpoint paths, selection order and public entry points. Only completed, resumable, disk-valid, exact-compatible checkpoints are candidates. Cancel writes the terminal phase/status authority before returning and prevents new phase or tool dispatch. Forks are immutable children and write the closed migration artifact without modifying their parent.
 
-def select_resume_checkpoint(
-    checkpoints: Sequence[Checkpoint],
-    current_binding: Mapping[str, object],
-) -> Checkpoint:
-    compatible = [
-        checkpoint
-        for checkpoint in checkpoints
-        if verify_checkpoint(checkpoint)
-        and resolve_compatibility(checkpoint.version_binding, current_binding) == "resume"
-    ]
-    if not compatible:
-        raise NoCompatibleCheckpointError()
-    return max(compatible, key=lambda item: PHASES.index(item.phase_id))
-~~~
+- [ ] **Step 5: Implement the unique U4–U12 phase extension**
 
-Cancel writes a final status event and prevents new phase/tool dispatch. Fork copies immutable input references and selected artifacts by hash, assigns a new run ID, records the migration ledger, and never modifies the parent.
+Extend the existing `PhaseStore`, do not add a parallel state machine. Preserve the public `complete` signature and U0–U3 behavior. Enforce the W6 ordered output table, parent CAS, immutable authorities, packet-only checkpoints and U12 completion prerequisites.
 
-- [ ] **Step 5: Implement fresh validation and bounded repair**
+- [ ] **Step 6: Implement fresh validation, transactional handoff, and bounded repair**
 
-The validator loads artifacts from disk after authoring completes; it cannot accept in-memory objects from materialization as proof. It writes validation/attempts/<attempt-id>/ultra-validator-report.json, verifies that report, then atomically updates validation/current.
+The validator loads artifacts from disk after authoring completes and cannot accept in-memory materialization objects as proof. Implement the W6 checker CLI and parent commit split exactly. The writer parent, not the fresh child, owns attempt/current publication and the run lease.
 
 Each failure has:
 
 ~~~json
 {
   "error_code": "ULTRA-COVERAGE-MISSING",
-  "artifact": "delivery/article.partial.md",
+  "artifact": "work/authoring/article.partial.md",
   "affected_phase": "U10",
   "downstream_reset": ["U10", "U11", "U12"],
   "retryable": true,
@@ -1948,16 +2134,16 @@ Each failure has:
 }
 ~~~
 
-The error example becomes a real fixture. repair.py groups failures by earliest affected phase, preserves upstream hashes, and refuses a fourth repair attempt. Repeated failure changes status to needs_attention.
+The error example becomes a real fixture. `repair.py` reads the committed disk attempt, groups failures by earliest affected phase, preserves upstream hashes, refuses a fourth repair attempt and never resets earlier than necessary. Repeated failure changes status to `needs_attention`.
 
-- [ ] **Step 6: Run GREEN**
+- [ ] **Step 7: Run GREEN**
 
 ~~~powershell
-python -B -m pytest -q tests/test_ultra_recovery.py tests/test_ultra_validation.py tests/test_ultra_repair.py tests/test_ultra_tamper_resistance.py
-python -m py_compile skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py skills/crossframe-ultra/scripts/build_crossframe_ultra_repair_plan.py scripts/check_crossframe_ultra_artifacts.py scripts/build_crossframe_ultra_repair_plan.py
+python -B -m pytest -q tests/test_ultra_state_machine.py tests/test_ultra_recovery.py tests/test_ultra_validation.py tests/test_ultra_repair.py tests/test_ultra_tamper_resistance.py
+python -m py_compile skills/crossframe-ultra/scripts/ultra_runtime/state_machine.py skills/crossframe-ultra/scripts/ultra_runtime/recovery.py skills/crossframe-ultra/scripts/ultra_runtime/artifacts.py skills/crossframe-ultra/scripts/ultra_runtime/validation.py skills/crossframe-ultra/scripts/ultra_runtime/repair.py skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py skills/crossframe-ultra/scripts/build_crossframe_ultra_repair_plan.py scripts/check_crossframe_ultra_artifacts.py scripts/build_crossframe_ultra_repair_plan.py
 ~~~
 
-- [ ] **Step 7: Root review and commit**
+- [ ] **Step 8: Root review and commit**
 
 ~~~powershell
 git commit -m "feat: add ultra validation and recovery"
@@ -2027,7 +2213,7 @@ FORBIDDEN_CLI_OPTIONS = (
 )
 ~~~
 
-start copies request bytes into the new run's input directory, records its hash, and never writes the request into an index or path name. --request-stdin prevents prompt text from entering process arguments.
+start copies request bytes into the new run's input directory, records its hash, and never writes the request into an index or path name. --request-stdin prevents prompt text from entering process arguments. `fork --reason` is restricted to a known version migration and preserves the selected parent checkpoint's input bytes and evidence cutoff exactly. Input or cutoff changes use `start` to create a new run plus the W6 migration association; no new CLI flag is added.
 
 - [ ] **Step 2: Write materialization RED tests**
 
@@ -2060,15 +2246,16 @@ work/authoring/完整推演档案.md
 2. validates every model-authored semantic artifact;
 3. assembles the partial article;
 4. builds the complete dossier and artifact index;
-5. writes a staging manifest;
-6. invokes a fresh validator from disk;
-7. on pass, atomically promotes the article to delivery/CrossFrame-Ultra-完整文章.md;
-8. writes delivery/完整推演档案.md and delivery/工件索引.md;
-9. marks complete and updates indexes.
+5. fsyncs `recovery/publish-transaction.json` and stages the three delivery files plus manifest under `<root>/.staging/<run-id>/publish-<transaction-id>/`;
+6. invokes the read-only fresh checker and has the lease-owning parent commit the pre-publish attempt/current report;
+7. writes verified backups under `recovery/publish-backups/<transaction-id>/`;
+8. atomically promotes the manifest and all three delivery files;
+9. invokes a second fresh checker and has the parent commit the post-publish report;
+10. completes U12 through the existing PhaseStore, writes the complete status, updates indexes, and removes only transient staging.
 
 Initial materialization seals immutable forecast originals and does not create a resolution. After an outcome exists, the existing Task 10B forecast behavior may append a separately validated forecast-resolution event; it never reopens or rewrites the U9 forecast ledger.
 
-On failure, the official article filename must not exist.
+On failure, no unvalidated new official bytes may remain: a first publication leaves the official filenames absent, while an interrupted replacement restores the exact prior complete bytes and preserves its journal/backup audit evidence.
 
 - [ ] **Step 3: Write a full fixture run**
 
@@ -2082,9 +2269,9 @@ python -B -m pytest -q tests/test_ultra_materialization.py tests/test_ultra_cli.
 
 - [ ] **Step 5: Implement the production boundary**
 
-Model-owned files are limited to the authoring slots returned by prepare. Runtime-owned identity, version, hash, phase, manifest, status, index and delivery fields are overwritten from verified control state, never trusted from model files.
+Model-owned files are limited to the authoring slots returned by prepare. Runtime-owned identity, version, hash, phase, manifest, status, index and delivery fields are overwritten from verified control state, never trusted from model files. Materialization uses the Task 12 extension of the existing `PhaseStore`; it cannot create another phase state machine.
 
-materialize acquires the run lease, recovers an interrupted publish transaction, revalidates the U3 evidence head by CAS, writes to run-local staging, runs the fresh checker, and promotes with durable backup/rollback. A post-publish validation failure restores the previous complete bytes.
+materialize acquires the run lease, recovers the fixed W6 publish journal, revalidates the U3 evidence head by CAS, and follows the exact journal -> staging -> precheck -> backup -> atomic publish plus manifest -> postcheck sequence. The fresh checker takes no lease and returns canonical report bytes without writing; the parent commits attempt/current bytes unchanged. A post-publish validation failure restores the previous complete bytes and marks `needs_attention`. Only a verified post-publish pass permits U12 completion.
 
 - [ ] **Step 6: Implement final-chat projection**
 
