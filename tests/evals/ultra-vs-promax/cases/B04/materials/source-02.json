@@ -1,0 +1,47 @@
+{
+  "record_type": "sanitized-synthetic-log-summary",
+  "fixture_id": "B04-EGRESS-2026-07",
+  "synthetic": true,
+  "summary_as_of": "2026-07-31T23:45:00Z",
+  "aggregation_interval": "15 minutes",
+  "raw_events_included": false,
+  "identifiers_removed": [
+    "destination identifiers",
+    "network addresses",
+    "object names",
+    "payload samples",
+    "tokens and credentials"
+  ],
+  "baseline_range_per_interval": {
+    "egress_megabytes": [180, 340],
+    "large_response_count": [4, 13],
+    "blocked_egress_count": [0, 3]
+  },
+  "intervals": [
+    {
+      "relative_time": "T-30m",
+      "egress_megabytes": 244,
+      "large_response_count": 8,
+      "blocked_egress_count": 1
+    },
+    {
+      "relative_time": "T-15m",
+      "egress_megabytes": 309,
+      "large_response_count": 11,
+      "blocked_egress_count": 2
+    },
+    {
+      "relative_time": "T+00m",
+      "egress_megabytes": 486,
+      "large_response_count": 17,
+      "blocked_egress_count": 2
+    },
+    {
+      "relative_time": "T+15m",
+      "egress_megabytes": 328,
+      "large_response_count": 12,
+      "blocked_egress_count": 1
+    }
+  ],
+  "provenance": "Project-owned synthetic aggregate; it contains no reusable destination or payload detail."
+}

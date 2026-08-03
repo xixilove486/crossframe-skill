@@ -1,0 +1,47 @@
+{
+  "record_type": "sanitized-synthetic-log-summary",
+  "fixture_id": "B04-ACCESS-2026-07",
+  "synthetic": true,
+  "summary_as_of": "2026-07-31T23:45:00Z",
+  "aggregation_interval": "15 minutes",
+  "raw_events_included": false,
+  "identifiers_removed": [
+    "account identifiers",
+    "user identifiers",
+    "network addresses",
+    "request paths",
+    "tokens and credentials"
+  ],
+  "baseline_range_per_interval": {
+    "authenticated_reads": [420, 610],
+    "access_denials": [3, 11],
+    "privilege_changes": [0, 2]
+  },
+  "intervals": [
+    {
+      "relative_time": "T-30m",
+      "authenticated_reads": 508,
+      "access_denials": 7,
+      "privilege_changes": 1
+    },
+    {
+      "relative_time": "T-15m",
+      "authenticated_reads": 574,
+      "access_denials": 9,
+      "privilege_changes": 0
+    },
+    {
+      "relative_time": "T+00m",
+      "authenticated_reads": 1198,
+      "access_denials": 8,
+      "privilege_changes": 1
+    },
+    {
+      "relative_time": "T+15m",
+      "authenticated_reads": 1014,
+      "access_denials": 10,
+      "privilege_changes": 0
+    }
+  ],
+  "provenance": "Project-owned synthetic aggregate; it is not derived from any real incident or user."
+}

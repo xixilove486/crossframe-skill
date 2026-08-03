@@ -1,0 +1,39 @@
+{
+  "record_type": "measurement-dictionary",
+  "fixture_id": "B01-METRICS-2026-07",
+  "synthetic": true,
+  "as_of": "2026-07-31T12:00:00Z",
+  "measures": [
+    {
+      "name": "task_processing_time",
+      "definition": "Active handling time for one item at one named stage.",
+      "unit": "minutes per item"
+    },
+    {
+      "name": "stage_service_capacity",
+      "definition": "Maximum items a stage can complete during one business day under the observed staffing pattern.",
+      "unit": "items per business day"
+    },
+    {
+      "name": "completed_output",
+      "definition": "Items that pass the release stage during the observation window.",
+      "unit": "items"
+    },
+    {
+      "name": "first_pass_yield",
+      "definition": "Share of items accepted at a stage without return to an earlier stage.",
+      "unit": "percent"
+    },
+    {
+      "name": "queue_age_p95",
+      "definition": "Ninety-fifth percentile elapsed wait before service begins at a stage.",
+      "unit": "hours"
+    },
+    {
+      "name": "rework_load",
+      "definition": "Stage capacity consumed by items returned from a downstream check.",
+      "unit": "items per business day"
+    }
+  ],
+  "provenance": "Project-owned synthetic measurement dictionary; it contains no benchmark verdict or real operational data."
+}

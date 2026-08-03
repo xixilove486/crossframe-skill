@@ -1,0 +1,34 @@
+{
+  "record_type": "synthetic-price-snapshot",
+  "fixture_id": "B03-PRICE-2026-07",
+  "synthetic": true,
+  "as_of": "2026-07-31T12:00:00Z",
+  "currency": "index points",
+  "offers": [
+    {
+      "supplier": "subject",
+      "offer": "standard",
+      "public_list_price": 100,
+      "annual_effective_price": 92,
+      "minimum_term_months": 12,
+      "included_usage_index": 100
+    },
+    {
+      "supplier": "competitor",
+      "offer": "standard-before-change",
+      "public_list_price": 101,
+      "annual_effective_price": 94,
+      "minimum_term_months": 12,
+      "included_usage_index": 100
+    },
+    {
+      "supplier": "competitor",
+      "offer": "standard-after-change",
+      "public_list_price": 79,
+      "annual_effective_price": 75,
+      "minimum_term_months": 1,
+      "included_usage_index": 100
+    }
+  ],
+  "provenance": "Project-owned synthetic fixture. Supplier labels, prices, terms, and usage units are invented."
+}

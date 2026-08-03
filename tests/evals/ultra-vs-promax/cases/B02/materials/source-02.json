@@ -1,0 +1,30 @@
+{
+  "record_type": "versioned-adoption-measurement",
+  "source": {
+    "publisher": "HTTP Archive",
+    "title": "Web Almanac 2024, HTTP chapter",
+    "dataset_version": "June 2024 crawl",
+    "publication_version": "2024 edition",
+    "url": "https://almanac.httparchive.org/en/2024/http",
+    "repository": "https://github.com/HTTPArchive/almanac.httparchive.org",
+    "upstream_license": "Apache-2.0"
+  },
+  "curation": {
+    "cutoff_checked_against": "2026-08-02T00:00:00Z",
+    "method": "Compact transcription of four published percentages with source attribution; no chart image or chapter prose is reproduced.",
+    "changed_from_source_format": true
+  },
+  "measurements": [
+    {
+      "client": "desktop",
+      "http3_page_load_share_percent": 7,
+      "http3_alt_svc_announcement_share_percent": 26
+    },
+    {
+      "client": "mobile",
+      "http3_page_load_share_percent": 9,
+      "http3_alt_svc_announcement_share_percent": 28
+    }
+  ],
+  "method_note": "The source uses fresh browser profiles; the measured page-load share and announced-support share are distinct quantities."
+}

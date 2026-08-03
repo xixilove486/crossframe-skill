@@ -1,0 +1,81 @@
+{
+  "record_type": "synthetic-workflow-snapshot",
+  "fixture_id": "B01-FLOW-2026-07",
+  "synthetic": true,
+  "as_of": "2026-07-31T12:00:00Z",
+  "units": {
+    "arrival_rate": "items per business day",
+    "service_capacity": "items per business day",
+    "processing_time": "minutes per item",
+    "first_pass_yield": "percent"
+  },
+  "periods": [
+    {
+      "period_id": "baseline",
+      "workflow_stages": [
+        {
+          "stage": "intake",
+          "arrival_rate": 82,
+          "service_capacity": 96,
+          "median_processing_time": 5,
+          "first_pass_yield": 97
+        },
+        {
+          "stage": "draft",
+          "arrival_rate": 80,
+          "service_capacity": 88,
+          "median_processing_time": 24,
+          "first_pass_yield": 89
+        },
+        {
+          "stage": "review",
+          "arrival_rate": 71,
+          "service_capacity": 74,
+          "median_processing_time": 18,
+          "first_pass_yield": 91
+        },
+        {
+          "stage": "release",
+          "arrival_rate": 65,
+          "service_capacity": 84,
+          "median_processing_time": 7,
+          "first_pass_yield": 99
+        }
+      ]
+    },
+    {
+      "period_id": "assisted",
+      "workflow_stages": [
+        {
+          "stage": "intake",
+          "arrival_rate": 96,
+          "service_capacity": 102,
+          "median_processing_time": 4,
+          "first_pass_yield": 96
+        },
+        {
+          "stage": "draft",
+          "arrival_rate": 94,
+          "service_capacity": 151,
+          "median_processing_time": 11,
+          "first_pass_yield": 83
+        },
+        {
+          "stage": "review",
+          "arrival_rate": 78,
+          "service_capacity": 74,
+          "median_processing_time": 19,
+          "first_pass_yield": 88
+        },
+        {
+          "stage": "release",
+          "arrival_rate": 69,
+          "service_capacity": 84,
+          "median_processing_time": 7,
+          "first_pass_yield": 99
+        }
+      ]
+    }
+  ],
+  "provenance": "Project-owned synthetic fixture. Values do not describe a real organization, customer, or deployment."
+}
