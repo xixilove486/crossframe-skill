@@ -7,21 +7,50 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["central_claim_id", "claims", "mechanisms", "edges", "explanations", "insights"],
+      "required": [
+        "evidence_ledger_artifact_sha256",
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "central_claim_id",
+        "claims",
+        "mechanisms",
+        "edges",
+        "explanations",
+        "insights"
+      ],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.claim-mechanism-graph"},
         "phase_id": {"const": "U6"},
+        "evidence_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "world_volume_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "transformation_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "concept_disposition_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "central_claim_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "claims": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/claim"}},
         "mechanisms": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mechanism"}},
         "edges": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/edge"}},
-        "explanations": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/explanation"}},
+        "explanations": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/explanation"},
+          "allOf": [
+            {"contains": {"properties": {"kind": {"const": "main"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "strongest-rival"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "mixture"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "residual"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1}
+          ]
+        },
         "insights": {"type": "array", "items": {"$ref": "#/$defs/insight"}}
       }
     }
   ],
   "unevaluatedProperties": false,
   "$defs": {
+    "evidenceIdentity": {
+      "enum": ["observed", "reported", "inferred-from-material", "competing-explanation", "user-claim", "model-candidate", "simulated-result", "unknown"]
+    },
     "claim": {
       "type": "object",
       "additionalProperties": false,
@@ -29,7 +58,7 @@
       "properties": {
         "claim_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "statement": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "identity": {"enum": ["observed", "reported", "inferred-from-material", "competing-explanation", "user-claim", "model-candidate", "simulated-result", "unknown"]},
+        "identity": {"$ref": "#/$defs/evidenceIdentity"},
         "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
         "status": {"enum": ["active", "rejected", "unknown", "withdrawn"]}
       }
@@ -47,13 +76,42 @@
         "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
       }
     },
+    "graphRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["claim_id"],
+          "properties": {"claim_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mechanism_id"],
+          "properties": {"mechanism_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["explanation_id"],
+          "properties": {"explanation_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["insight_id"],
+          "properties": {"insight_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}}
+        }
+      ]
+    },
     "edge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["from_id", "to_id", "edge_type"],
+      "required": ["edge_id", "source", "target", "edge_type"],
       "properties": {
-        "from_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
-        "to_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "edge_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "source": {"$ref": "#/$defs/graphRef"},
+        "target": {"$ref": "#/$defs/graphRef"},
         "edge_type": {"enum": ["supported-by", "causes", "competes-with", "qualifies", "reverses"]}
       }
     },

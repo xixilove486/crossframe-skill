@@ -27,6 +27,17 @@ FRAMEWORK_SEMANTIC_SHA256 = (
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
+HASH_D = "d" * 64
+HASH_E = "e" * 64
+HASH_F = "f" * 64
+HASH_0 = "0" * 64
+HASH_1 = "1" * 64
+HASH_2 = "2" * 64
+HASH_3 = "3" * 64
+HASH_4 = "4" * 64
+HASH_5 = "5" * 64
+HASH_6 = "6" * 64
+HASH_7 = "7" * 64
 SOURCE_TREE_SHA256 = (
     "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
 )
@@ -209,6 +220,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-contract-map.schema.json",
     "ultra-evidence-ledger.schema.json",
     "ultra-forecast-ledger.schema.json",
+    "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",
     "ultra-order-evaluation.schema.json",
     "ultra-output-plan.schema.json",
@@ -216,6 +228,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-read-event.schema.json",
     "ultra-recovery-checkpoint.schema.json",
     "ultra-recursive-lineage.schema.json",
+    "ultra-recursive-state.schema.json",
     "ultra-red-team-report.schema.json",
     "ultra-release-manifest.schema.json",
     "ultra-repair-plan.schema.json",
@@ -1126,6 +1139,10 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-claim-mechanism-graph.schema.json": artifact(
             "ultra-claim-mechanism-graph.schema.json",
             phase_id="U6",
+            evidence_ledger_artifact_sha256=HASH_A,
+            world_volume_artifact_sha256=HASH_B,
+            transformation_ledger_artifact_sha256=HASH_C,
+            concept_disposition_artifact_sha256=HASH_D,
             central_claim_id="CLAIM-1",
             claims=[
                 {
@@ -1148,8 +1165,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             ],
             edges=[
                 {
-                    "from_id": "CLAIM-1",
-                    "to_id": "MECHANISM-1",
+                    "edge_id": "EDGE-1",
+                    "source": {"claim_id": "CLAIM-1"},
+                    "target": {"mechanism_id": "MECHANISM-1"},
                     "edge_type": "supported-by",
                 }
             ],
@@ -1160,7 +1178,28 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "claim_ids": ["CLAIM-1"],
                     "mechanism_ids": ["MECHANISM-1"],
                     "rank": 1,
-                }
+                },
+                {
+                    "explanation_id": "EXPLANATION-RIVAL",
+                    "kind": "strongest-rival",
+                    "claim_ids": ["CLAIM-1"],
+                    "mechanism_ids": ["MECHANISM-1"],
+                    "rank": 2,
+                },
+                {
+                    "explanation_id": "EXPLANATION-MIXTURE",
+                    "kind": "mixture",
+                    "claim_ids": ["CLAIM-1"],
+                    "mechanism_ids": ["MECHANISM-1"],
+                    "rank": 3,
+                },
+                {
+                    "explanation_id": "EXPLANATION-RESIDUAL",
+                    "kind": "residual",
+                    "claim_ids": ["CLAIM-1"],
+                    "mechanism_ids": ["MECHANISM-1"],
+                    "rank": 4,
+                },
             ],
             insights=[
                 {
@@ -1170,24 +1209,47 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                 }
             ],
         ),
+        "ultra-recursive-state.schema.json": artifact(
+            "ultra-recursive-state.schema.json",
+            phase_id="U7",
+            path_id="PATH-MAIN",
+            node_id="NODE-1",
+            parent_run_id=RUN_ID,
+            parent_path_id="PATH-ROOT",
+            parent_node_id="NODE-U4-ROOT",
+            order=1,
+            world_volume_artifact_sha256=HASH_B,
+            transformation_ledger_artifact_sha256=HASH_C,
+            concept_disposition_artifact_sha256=HASH_D,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            full_state_sha256=HASH_F,
+            inherited_fact_ids=["FACT-1"],
+            inherited_evidence_ids=["EVIDENCE-1"],
+            inherited_unknown_ids=["UNKNOWN-1"],
+            inherited_loss_ids=["LOSS-1"],
+            inherited_residual_ids=["RESIDUAL-1"],
+            event_id="WORLD-EVENT-1",
+            mechanism_ids=["MECHANISM-1"],
+            state_diff_sha256=HASH_0,
+            signal_ids=["SIGNAL-1"],
+            evidence_identity="simulated-result",
+            declared_evidence_grade="low",
+        ),
         "ultra-recursive-lineage.schema.json": artifact(
             "ultra-recursive-lineage.schema.json",
             phase_id="U7",
-            parent_volume_sha256=HASH_A,
+            world_volume_artifact_sha256=HASH_B,
+            transformation_ledger_artifact_sha256=HASH_C,
+            concept_disposition_artifact_sha256=HASH_D,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            recursive_state_artifact_hashes=[HASH_F],
             nodes=[
                 {
                     "node_id": "NODE-1",
+                    "path_id": "PATH-MAIN",
                     "parent_node_ids": [],
                     "order": 1,
-                    "state_sha256": HASH_B,
-                    "inherited_unknown_ids": ["UNKNOWN-1"],
-                    "inherited_loss_ids": ["LOSS-1"],
-                    "inherited_residual_ids": ["RESIDUAL-1"],
-                    "event_id": "WORLD-EVENT-1",
-                    "mechanism_ids": ["MECHANISM-1"],
-                    "state_diff_sha256": HASH_C,
-                    "signal_refs": ["SIGNAL-1"],
-                    "evidence_identity": "simulated-result",
+                    "recursive_state_artifact_sha256": HASH_F,
                 }
             ],
             branches=[
@@ -1196,7 +1258,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "kind": "main",
                     "node_ids": ["NODE-1"],
                     "status": "active",
-                    "merge_parent_ids": [],
+                    "merge_parent_branch_ids": [],
                     "prune_reason": None,
                     "retained_residual_ids": ["RESIDUAL-1"],
                 }
@@ -1206,15 +1268,24 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-order-evaluation.schema.json": artifact(
             "ultra-order-evaluation.schema.json",
             phase_id="U8",
-            lineage_sha256=HASH_A,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            recursive_lineage_artifact_sha256=HASH_0,
             evaluations=[
                 {
                     "order": 1,
-                    "branch_kinds": [
-                        "main",
-                        "strongest-rival",
-                        "mixture",
-                        "residual",
+                    "branch_coverage": [
+                        {
+                            "branch_kind": kind,
+                            "applicability": "applicable",
+                            "branch_ids": [f"BRANCH-{kind.upper()}"],
+                            "not_applicable": None,
+                        }
+                        for kind in (
+                            "main",
+                            "strongest-rival",
+                            "mixture",
+                            "residual",
+                        )
                     ],
                     "baseline": {
                         "baseline_id": "BASELINE-1",
@@ -1225,6 +1296,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "added_assumptions": ["Delegated authority remains active."],
                     "added_losses": ["LOSS-1"],
                     "local_predictability": "bounded",
+                    "continuation_value": "none",
                     "continue_recursive": False,
                     "stop_kind": "no-material-state-change",
                     "rationale": "The next order adds no material state change.",
@@ -1234,14 +1306,17 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-red-team-report.schema.json": artifact(
             "ultra-red-team-report.schema.json",
             phase_id="U8",
-            target_graph_sha256=HASH_A,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            recursive_lineage_artifact_sha256=HASH_0,
+            order_evaluation_artifact_sha256=HASH_1,
             attacks=[
                 {
                     "attack_id": "ATTACK-1",
-                    "target_ref": "CLAIM-1",
+                    "target": {"claim_id": "CLAIM-1"},
                     "attack_kind": "strongest-counterexample",
                     "challenge": "The channel may be nominal rather than effective.",
                     "evidence_refs": ["EVIDENCE-1"],
+                    "evidence_identity": "reported",
                     "result": "revise",
                 }
             ],
@@ -1256,19 +1331,27 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             baseline_comparisons=[
                 {"order": 1, "baseline_ref": "BASELINE-1", "winner": "lineage"}
             ],
-            unresolved_attack_ids=[],
+            unresolved_items=[],
             overall_status="revised",
         ),
         "ultra-verdict.schema.json": artifact(
             "ultra-verdict.schema.json",
             phase_id="U9",
-            decidability="decidable",
+            evidence_ledger_artifact_sha256=HASH_A,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            recursive_lineage_artifact_sha256=HASH_0,
+            order_evaluation_artifact_sha256=HASH_1,
+            red_team_report_artifact_sha256=HASH_2,
+            judgment_kind="best-current",
             main_verdict={
                 "proposition": "The active channel currently best explains the action change.",
                 "scope": "The represented team position and frozen time window.",
                 "epistemic_identity": "inferred-from-material",
                 "confidence": "low",
-                "decisive_reason_ids": ["EVIDENCE-1", "MECHANISM-1"],
+                "decisive_evidence_refs": ["EVIDENCE-1"],
+                "decisive_claim_ids": ["CLAIM-1"],
+                "decisive_mechanism_ids": ["MECHANISM-1"],
+                "decisive_node_ids": ["NODE-1"],
                 "strongest_rival_id": "EXPLANATION-RIVAL",
                 "rival_rejection_reasons": ["It does not explain the reachable channel."],
                 "residual_ids": ["RESIDUAL-1"],
@@ -1286,6 +1369,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     }
                 ],
             },
+            non_decidability=None,
             explanation_ranking=[
                 {"explanation_id": "EXPLANATION-MAIN", "rank": 1},
                 {"explanation_id": "EXPLANATION-RIVAL", "rank": 2},
@@ -1296,7 +1380,10 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                 {
                     "kind": kind,
                     "proposition": f"Bounded {kind} judgment.",
-                    "basis_refs": ["EVIDENCE-1"],
+                    "evidence_refs": ["EVIDENCE-1"],
+                    "claim_ids": ["CLAIM-1"],
+                    "mechanism_ids": ["MECHANISM-1"],
+                    "recursive_node_ids": ["NODE-1"],
                     "status": "locked",
                 }
                 for kind in (
@@ -1313,32 +1400,38 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-action-ranking.schema.json": artifact(
             "ultra-action-ranking.schema.json",
             phase_id="U9",
+            verdict_artifact_sha256=HASH_3,
             requested_choice=True,
             options=[
                 {
-                    "option_id": "OPTION-PROBE",
-                    "kind": "probe",
-                    "description": "Run a reversible probe.",
+                    "option_id": f"OPTION-{kind.upper()}",
+                    "kind": kind,
+                    "description": f"Compare the {kind} option independently.",
                     "authorized": True,
                     "benefits": ["new evidence"],
                     "harms": ["small coordination cost"],
                     "requirements": ["team consent"],
                     "rollback": "Stop after one review cycle.",
-                },
-                {
-                    "option_id": "OPTION-NO-ACTION",
-                    "kind": "no-action",
-                    "description": "Take no action this cycle.",
-                    "authorized": True,
-                    "benefits": ["no immediate disruption"],
-                    "harms": ["unknown remains unresolved"],
-                    "requirements": [],
-                    "rollback": "Not applicable.",
-                },
+                }
+                for kind in (
+                    "active",
+                    "delay",
+                    "probe",
+                    "exit-or-transfer",
+                    "maintain-status-quo",
+                    "no-action",
+                )
             ],
-            ranking=["OPTION-PROBE", "OPTION-NO-ACTION"],
+            ranking=[
+                "OPTION-PROBE",
+                "OPTION-DELAY",
+                "OPTION-ACTIVE",
+                "OPTION-MAINTAIN-STATUS-QUO",
+                "OPTION-EXIT-OR-TRANSFER",
+                "OPTION-NO-ACTION",
+            ],
             preferred_option_id="OPTION-PROBE",
-            second_option_id="OPTION-NO-ACTION",
+            second_option_id="OPTION-DELAY",
             switch_conditions=["Switch if authorization is withdrawn."],
             stop_conditions=["Stop if harm exceeds the bounded threshold."],
             no_action_consequences=["The decisive unknown remains."],
@@ -1346,6 +1439,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-forecast-ledger.schema.json": artifact(
             "ultra-forecast-ledger.schema.json",
             phase_id="U9",
+            evidence_ledger_artifact_sha256=HASH_A,
+            recursive_lineage_artifact_sha256=HASH_0,
+            verdict_artifact_sha256=HASH_3,
             forecasts=[
                 {
                     "forecast_id": "FORECAST-1",
@@ -1357,23 +1453,44 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "branch_refs": ["BRANCH-MAIN"],
                     "node_refs": ["NODE-1"],
                     "status": "open",
-                    "probability": None,
-                    "reference_class": None,
-                    "calibration_basis": None,
-                    "probability_admissible": False,
                 }
             ],
-            resolutions=[],
+        ),
+        "ultra-forecast-resolution-event.schema.json": artifact(
+            "ultra-forecast-resolution-event.schema.json",
+            phase_id="U9",
+            resolution_event_id="RESOLUTION-1",
+            forecast_ledger_artifact_sha256=HASH_4,
+            forecast_id="FORECAST-1",
+            original_forecast_record_sha256=HASH_5,
+            resolution_time="2026-11-02T08:00:00Z",
+            outcome="correct",
+            observed_value="12 recorded feedback events",
+            original_probability_admissible=False,
+            brier_inputs=None,
+            brier_score=None,
         ),
         "ultra-framework-gap-ledger.schema.json": artifact(
             "ultra-framework-gap-ledger.schema.json",
-            phase_id="U9",
+            phase_id="U10",
+            evidence_ledger_artifact_sha256=HASH_A,
+            claim_mechanism_graph_artifact_sha256=HASH_E,
+            recursive_lineage_artifact_sha256=HASH_0,
+            order_evaluation_artifact_sha256=HASH_1,
+            red_team_report_artifact_sha256=HASH_2,
+            verdict_artifact_sha256=HASH_3,
+            action_ranking_artifact_sha256=HASH_4,
+            forecast_ledger_artifact_sha256=HASH_5,
             candidates=[
                 {
                     "gap_id": "GAP-1",
                     "description": "The framework has no calibrated latency prior.",
-                    "current_run_refs": ["UNKNOWN-1"],
                     "evidence_refs": ["EVIDENCE-1"],
+                    "claim_ids": ["CLAIM-1"],
+                    "mechanism_ids": ["MECHANISM-1"],
+                    "recursive_node_ids": ["NODE-1"],
+                    "route_ids": ["ROUTE-1"],
+                    "concept_ids": ["V82-CONCEPT-CHANNEL"],
                     "future_revision_proposal": "Add a latency calibration contract.",
                     "status": "candidate",
                 }
@@ -1713,7 +1830,9 @@ PRIMARY_FIELD = {
     "ultra-verdict.schema.json": "main_verdict",
     "ultra-action-ranking.schema.json": "options",
     "ultra-forecast-ledger.schema.json": "forecasts",
+    "ultra-forecast-resolution-event.schema.json": "resolution_event_id",
     "ultra-framework-gap-ledger.schema.json": "candidates",
+    "ultra-recursive-state.schema.json": "node_id",
     "ultra-output-plan.schema.json": "sections",
     "ultra-semantic-coverage.schema.json": "mappings",
     "ultra-article-review.schema.json": "blind_reader_fields",
@@ -1806,6 +1925,56 @@ def test_common_schema_current_binding_matches_runtime_constants() -> None:
             "ultra-concept-disposition.schema.json",
             "crossframe.ultra.v82.concept-disposition",
             "U5",
+        ),
+        (
+            "ultra-claim-mechanism-graph.schema.json",
+            "crossframe.ultra.v82.claim-mechanism-graph",
+            "U6",
+        ),
+        (
+            "ultra-recursive-state.schema.json",
+            "crossframe.ultra.v82.recursive-state",
+            "U7",
+        ),
+        (
+            "ultra-recursive-lineage.schema.json",
+            "crossframe.ultra.v82.recursive-lineage",
+            "U7",
+        ),
+        (
+            "ultra-order-evaluation.schema.json",
+            "crossframe.ultra.v82.order-evaluation",
+            "U8",
+        ),
+        (
+            "ultra-red-team-report.schema.json",
+            "crossframe.ultra.v82.red-team-report",
+            "U8",
+        ),
+        (
+            "ultra-verdict.schema.json",
+            "crossframe.ultra.v82.verdict",
+            "U9",
+        ),
+        (
+            "ultra-action-ranking.schema.json",
+            "crossframe.ultra.v82.action-ranking",
+            "U9",
+        ),
+        (
+            "ultra-forecast-ledger.schema.json",
+            "crossframe.ultra.v82.forecast-ledger",
+            "U9",
+        ),
+        (
+            "ultra-forecast-resolution-event.schema.json",
+            "crossframe.ultra.v82.forecast-resolution-event",
+            "U9",
+        ),
+        (
+            "ultra-framework-gap-ledger.schema.json",
+            "crossframe.ultra.v82.framework-gap-ledger",
+            "U10",
         ),
         (
             "ultra-output-plan.schema.json",
@@ -3427,6 +3596,530 @@ def test_unknown_pending_semantic_obligation_requires_condition_branch_id() -> N
 
     obligation["condition_branch_id"] = "CONDITION-1"
     runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+W5_SCHEMA_PHASES = {
+    "ultra-claim-mechanism-graph.schema.json": "U6",
+    "ultra-recursive-state.schema.json": "U7",
+    "ultra-recursive-lineage.schema.json": "U7",
+    "ultra-order-evaluation.schema.json": "U8",
+    "ultra-red-team-report.schema.json": "U8",
+    "ultra-verdict.schema.json": "U9",
+    "ultra-action-ranking.schema.json": "U9",
+    "ultra-forecast-ledger.schema.json": "U9",
+    "ultra-forecast-resolution-event.schema.json": "U9",
+    "ultra-framework-gap-ledger.schema.json": "U10",
+}
+
+
+def test_w5_artifacts_keep_schema_v1_and_exact_phase_ownership() -> None:
+    runtime = load_runtime()
+    constants = importlib.import_module("ultra_runtime.constants")
+    fixtures = minimal_instances()
+    assert constants.ARTIFACT_SCHEMA_VERSION == 1
+    for schema_name, phase_id in W5_SCHEMA_PHASES.items():
+        fixture = fixtures[schema_name]
+        assert fixture["schema_version"] == 1
+        assert fixture["version_binding"]["artifact_schema_version"] == 1
+        runtime.validate_instance(schema_name, fixture)
+
+        wrong_phase = copy.deepcopy(fixture)
+        wrong_phase["phase_id"] = "U12"
+        with pytest.raises(ValidationError):
+            runtime.validate_instance(schema_name, wrong_phase)
+
+
+def test_u6_graph_requires_named_u3_u4_u5_authorities_and_four_explanations() -> None:
+    runtime = load_runtime()
+    graph = copy.deepcopy(
+        minimal_instances()["ultra-claim-mechanism-graph.schema.json"]
+    )
+    runtime.validate_instance("ultra-claim-mechanism-graph.schema.json", graph)
+
+    authority_fields = (
+        "evidence_ledger_artifact_sha256",
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+    )
+    assert len({graph[field] for field in authority_fields}) == len(authority_fields)
+    for field in authority_fields:
+        broken = copy.deepcopy(graph)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-claim-mechanism-graph.schema.json", broken)
+
+    missing_kind = copy.deepcopy(graph)
+    missing_kind["explanations"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", missing_kind
+        )
+
+    duplicate_kind = copy.deepcopy(graph)
+    duplicate_kind["explanations"][-1]["kind"] = "main"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", duplicate_kind
+        )
+
+    invented_effect = copy.deepcopy(graph)
+    invented_effect["insights"][0]["effects"] = ["creates-framework-authority"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", invented_effect
+        )
+
+
+def test_recursive_state_seals_parent_identity_state_boundary_and_inheritance() -> None:
+    runtime = load_runtime()
+    state = copy.deepcopy(minimal_instances()["ultra-recursive-state.schema.json"])
+    runtime.validate_instance("ultra-recursive-state.schema.json", state)
+
+    required_roles = (
+        "path_id",
+        "node_id",
+        "parent_run_id",
+        "parent_path_id",
+        "parent_node_id",
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "inherited_fact_ids",
+        "inherited_evidence_ids",
+        "inherited_unknown_ids",
+        "inherited_loss_ids",
+        "inherited_residual_ids",
+        "event_id",
+        "mechanism_ids",
+        "state_diff_sha256",
+        "signal_ids",
+        "evidence_identity",
+        "declared_evidence_grade",
+    )
+    for field in required_roles:
+        broken = copy.deepcopy(state)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-recursive-state.schema.json", broken)
+
+    bounded = copy.deepcopy(state)
+    del bounded["full_state_sha256"]
+    bounded["bounded_subgraph"] = {
+        "subgraph_id": "SUBGRAPH-1",
+        "root_state_ids": ["STATE-ROOT-1"],
+        "included_state_ids": ["STATE-ROOT-1", "STATE-LOCAL-1"],
+        "excluded_state_ids": ["STATE-OUTSIDE-1"],
+        "boundary_rule": "Only positions reachable through CHANNEL-1 are included.",
+        "subgraph_sha256": HASH_6,
+    }
+    runtime.validate_instance("ultra-recursive-state.schema.json", bounded)
+
+    ambiguous = copy.deepcopy(bounded)
+    ambiguous["full_state_sha256"] = HASH_7
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-recursive-state.schema.json", ambiguous)
+
+    upgraded_by_depth = copy.deepcopy(state)
+    upgraded_by_depth["declared_evidence_grade"] = "high-by-depth"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-recursive-state.schema.json", upgraded_by_depth
+        )
+
+
+def test_recursive_lineage_binds_sealed_state_artifacts_and_typed_branches() -> None:
+    runtime = load_runtime()
+    lineage = copy.deepcopy(
+        minimal_instances()["ultra-recursive-lineage.schema.json"]
+    )
+    runtime.validate_instance("ultra-recursive-lineage.schema.json", lineage)
+
+    for field in (
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_state_artifact_hashes",
+    ):
+        broken = copy.deepcopy(lineage)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-recursive-lineage.schema.json", broken)
+
+    caller_state = copy.deepcopy(lineage)
+    caller_state["nodes"][0]["state_sha256"] = HASH_7
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-recursive-lineage.schema.json", caller_state)
+
+    unsealed_node = copy.deepcopy(lineage)
+    del unsealed_node["nodes"][0]["recursive_state_artifact_sha256"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-recursive-lineage.schema.json", unsealed_node)
+
+    invented_branch = copy.deepcopy(lineage)
+    invented_branch["branches"][0]["kind"] = "optimistic"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-recursive-lineage.schema.json", invented_branch)
+
+
+def test_order_evaluation_binds_u6_u7_and_requires_four_branch_classes() -> None:
+    runtime = load_runtime()
+    evaluation = copy.deepcopy(
+        minimal_instances()["ultra-order-evaluation.schema.json"]
+    )
+    runtime.validate_instance("ultra-order-evaluation.schema.json", evaluation)
+
+    for field in (
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+    ):
+        broken = copy.deepcopy(evaluation)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-order-evaluation.schema.json", broken)
+
+    missing_branch_class = copy.deepcopy(evaluation)
+    missing_branch_class["evaluations"][0]["branch_coverage"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-order-evaluation.schema.json", missing_branch_class
+        )
+
+    structured_na = copy.deepcopy(evaluation)
+    rival = structured_na["evaluations"][0]["branch_coverage"][1]
+    rival["applicability"] = "not-applicable"
+    rival["branch_ids"] = []
+    rival["not_applicable"] = {
+        "reason": "No independent rival branch survives the frozen evidence boundary.",
+        "evidence_refs": ["EVIDENCE-1"],
+        "residual_ids": ["RESIDUAL-RIVAL-1"],
+    }
+    runtime.validate_instance("ultra-order-evaluation.schema.json", structured_na)
+
+    unstructured_na = copy.deepcopy(structured_na)
+    unstructured_na["evaluations"][0]["branch_coverage"][1][
+        "not_applicable"
+    ] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-order-evaluation.schema.json", unstructured_na
+        )
+
+
+def test_order_evaluations_are_sequential_and_use_only_frozen_stop_kinds() -> None:
+    runtime = load_runtime()
+    evaluation = copy.deepcopy(
+        minimal_instances()["ultra-order-evaluation.schema.json"]
+    )
+    second = copy.deepcopy(evaluation["evaluations"][0])
+    second["order"] = 2
+    evaluation["evaluations"].append(second)
+    runtime.validate_instance("ultra-order-evaluation.schema.json", evaluation)
+
+    reversed_orders = copy.deepcopy(evaluation)
+    reversed_orders["evaluations"].reverse()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-order-evaluation.schema.json", reversed_orders
+        )
+
+    continuing = copy.deepcopy(evaluation)
+    continuing["evaluations"][0]["continue_recursive"] = True
+    continuing["evaluations"][0]["continuation_value"] = "bounded"
+    continuing["evaluations"][0]["stop_kind"] = None
+    runtime.validate_instance("ultra-order-evaluation.schema.json", continuing)
+
+    resource_stop = copy.deepcopy(evaluation)
+    resource_stop["evaluations"][0]["stop_kind"] = "resource-exhaustion"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-order-evaluation.schema.json", resource_stop)
+
+
+def test_red_team_report_binds_u6_u7_u8_and_preserves_evidence_identity() -> None:
+    runtime = load_runtime()
+    report = copy.deepcopy(minimal_instances()["ultra-red-team-report.schema.json"])
+    runtime.validate_instance("ultra-red-team-report.schema.json", report)
+
+    for field in (
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "order_evaluation_artifact_sha256",
+    ):
+        broken = copy.deepcopy(report)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-red-team-report.schema.json", broken)
+
+    unresolved = copy.deepcopy(report)
+    unresolved["unresolved_items"] = [
+        {
+            "unresolved_item_id": "UNRESOLVED-1",
+            "challenge_id": "ATTACK-1",
+            "description": "The effective channel remains only reported.",
+            "evidence_refs": ["EVIDENCE-1"],
+        }
+    ]
+    runtime.validate_instance("ultra-red-team-report.schema.json", unresolved)
+
+    collapsed_identity = copy.deepcopy(report)
+    collapsed_identity["attacks"][0]["evidence_identity"] = "evidence"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-red-team-report.schema.json", collapsed_identity
+        )
+
+
+def test_verdict_binds_all_authorities_and_keeps_five_verdicts_independent() -> None:
+    runtime = load_runtime()
+    verdict = copy.deepcopy(minimal_instances()["ultra-verdict.schema.json"])
+    runtime.validate_instance("ultra-verdict.schema.json", verdict)
+
+    for field in (
+        "evidence_ledger_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "order_evaluation_artifact_sha256",
+        "red_team_report_artifact_sha256",
+    ):
+        broken = copy.deepcopy(verdict)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-verdict.schema.json", broken)
+
+    duplicate_kind = copy.deepcopy(verdict)
+    duplicate_kind["five_verdicts"][-1]["kind"] = "fact"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", duplicate_kind)
+
+    coupled_basis = copy.deepcopy(verdict)
+    coupled_basis["five_verdicts"][0]["basis_refs"] = ["MIXED-ROLE-1"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", coupled_basis)
+
+
+def test_verdict_accepts_exact_non_decidability_instead_of_evasive_judgment() -> None:
+    runtime = load_runtime()
+    verdict = copy.deepcopy(minimal_instances()["ultra-verdict.schema.json"])
+    verdict["judgment_kind"] = "non-decidability"
+    verdict["main_verdict"] = None
+    verdict["non_decidability"] = {
+        "missing_proposition": "Whether CHANNEL-1 is effective rather than nominal.",
+        "missing_comparison_rule": None,
+    }
+    runtime.validate_instance("ultra-verdict.schema.json", verdict)
+
+    evasive = copy.deepcopy(verdict)
+    evasive["non_decidability"]["missing_proposition"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", evasive)
+
+    ambiguous = copy.deepcopy(verdict)
+    ambiguous["non_decidability"]["missing_comparison_rule"] = (
+        "No frozen rule compares the two remaining propositions."
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", ambiguous)
+
+
+def test_action_ranking_binds_verdict_and_compares_all_six_action_kinds() -> None:
+    runtime = load_runtime()
+    ranking = copy.deepcopy(minimal_instances()["ultra-action-ranking.schema.json"])
+    runtime.validate_instance("ultra-action-ranking.schema.json", ranking)
+
+    no_verdict = copy.deepcopy(ranking)
+    del no_verdict["verdict_artifact_sha256"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-action-ranking.schema.json", no_verdict)
+
+    missing_option_kind = copy.deepcopy(ranking)
+    missing_option_kind["options"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", missing_option_kind
+        )
+
+    coupled_to_verdict_kind = copy.deepcopy(ranking)
+    coupled_to_verdict_kind["options"][0]["verdict_kind"] = "authorization"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", coupled_to_verdict_kind
+        )
+
+
+def test_forecast_artifact_is_frozen_and_contains_no_resolution_records() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-forecast-ledger.schema.json"])
+    runtime.validate_instance("ultra-forecast-ledger.schema.json", ledger)
+
+    for field in (
+        "evidence_ledger_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "verdict_artifact_sha256",
+    ):
+        broken = copy.deepcopy(ledger)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-forecast-ledger.schema.json", broken)
+
+    mutable = copy.deepcopy(ledger)
+    mutable["resolutions"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-forecast-ledger.schema.json", mutable)
+
+    rewritten_status = copy.deepcopy(ledger)
+    rewritten_status["forecasts"][0]["status"] = "resolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-ledger.schema.json", rewritten_status
+        )
+
+
+def test_forecast_probability_requires_complete_admissible_calibration() -> None:
+    runtime = load_runtime()
+    calibrated = copy.deepcopy(
+        minimal_instances()["ultra-forecast-ledger.schema.json"]
+    )
+    forecast = calibrated["forecasts"][0]
+    forecast.update(
+        probability=0.73,
+        reference_class="Comparable reversible team probes",
+        calibration_basis="Frozen historical calibration set CALIBRATION-1",
+        probability_admissible=True,
+    )
+    runtime.validate_instance("ultra-forecast-ledger.schema.json", calibrated)
+
+    for field in (
+        "reference_class",
+        "calibration_basis",
+        "probability_admissible",
+    ):
+        incomplete = copy.deepcopy(calibrated)
+        del incomplete["forecasts"][0][field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-forecast-ledger.schema.json", incomplete)
+
+    inadmissible = copy.deepcopy(calibrated)
+    inadmissible["forecasts"][0]["probability_admissible"] = False
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-forecast-ledger.schema.json", inadmissible)
+
+
+def test_forecast_resolution_is_a_separate_later_u9_event_with_bounded_brier() -> None:
+    runtime = load_runtime()
+    resolution = copy.deepcopy(
+        minimal_instances()["ultra-forecast-resolution-event.schema.json"]
+    )
+    runtime.validate_instance("ultra-forecast-resolution-event.schema.json", resolution)
+
+    for field in (
+        "forecast_ledger_artifact_sha256",
+        "forecast_id",
+        "original_forecast_record_sha256",
+        "resolution_time",
+        "outcome",
+        "observed_value",
+    ):
+        broken = copy.deepcopy(resolution)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance(
+                "ultra-forecast-resolution-event.schema.json", broken
+            )
+
+    scored = copy.deepcopy(resolution)
+    scored["original_probability_admissible"] = True
+    scored["brier_inputs"] = {"probability": 0.73, "binary_outcome": 1}
+    scored["brier_score"] = 0.0729
+    runtime.validate_instance("ultra-forecast-resolution-event.schema.json", scored)
+
+    forbidden_score = copy.deepcopy(scored)
+    forbidden_score["original_probability_admissible"] = False
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", forbidden_score
+        )
+
+    partial_score = copy.deepcopy(scored)
+    partial_score["brier_score"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", partial_score
+        )
+
+
+def test_framework_gap_is_u10_only_true_isolated_and_bound_to_current_run() -> None:
+    runtime = load_runtime()
+    gap = copy.deepcopy(minimal_instances()["ultra-framework-gap-ledger.schema.json"])
+    runtime.validate_instance("ultra-framework-gap-ledger.schema.json", gap)
+
+    authority_fields = (
+        "evidence_ledger_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "order_evaluation_artifact_sha256",
+        "red_team_report_artifact_sha256",
+        "verdict_artifact_sha256",
+        "action_ranking_artifact_sha256",
+        "forecast_ledger_artifact_sha256",
+    )
+    assert len({gap[field] for field in authority_fields}) == len(authority_fields)
+    for field in authority_fields:
+        broken = copy.deepcopy(gap)
+        del broken[field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-framework-gap-ledger.schema.json", broken)
+
+    wrong_phase = copy.deepcopy(gap)
+    wrong_phase["phase_id"] = "U9"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-framework-gap-ledger.schema.json", wrong_phase)
+
+    captured = copy.deepcopy(gap)
+    captured["isolated_from_current_reasoning"] = False
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-framework-gap-ledger.schema.json", captured)
+
+
+def test_framework_gap_ids_have_no_u6_or_u9_reasoning_slots() -> None:
+    runtime = load_runtime()
+    fixtures = minimal_instances()
+
+    graph = copy.deepcopy(fixtures["ultra-claim-mechanism-graph.schema.json"])
+    graph["mechanisms"][0]["framework_gap_candidate_ids"] = ["GAP-1"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-claim-mechanism-graph.schema.json", graph)
+
+    verdict = copy.deepcopy(fixtures["ultra-verdict.schema.json"])
+    verdict["main_verdict"]["framework_gap_reason_ids"] = ["GAP-1"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", verdict)
+
+    ranking = copy.deepcopy(fixtures["ultra-action-ranking.schema.json"])
+    ranking["options"][0]["framework_gap_authorization_ids"] = ["GAP-1"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-action-ranking.schema.json", ranking)
+
+
+def test_w5_legacy_generic_reference_fields_are_rejected() -> None:
+    runtime = load_runtime()
+    fixtures = minimal_instances()
+    mutations = (
+        ("ultra-claim-mechanism-graph.schema.json", ("edges", 0), "from_id"),
+        ("ultra-recursive-lineage.schema.json", ("nodes", 0), "state_sha256"),
+        ("ultra-red-team-report.schema.json", ("attacks", 0), "target_ref"),
+        ("ultra-verdict.schema.json", ("main_verdict",), "decisive_reason_ids"),
+        ("ultra-framework-gap-ledger.schema.json", ("candidates", 0), "current_run_refs"),
+    )
+    for schema_name, path, field in mutations:
+        broken = copy.deepcopy(fixtures[schema_name])
+        target: Any = broken
+        for part in path:
+            target = target[part]
+        target[field] = ["MIXED-ROLE-1"] if field.endswith("s") else "MIXED-ROLE-1"
+        with pytest.raises(ValidationError):
+            runtime.validate_instance(schema_name, broken)
 
 
 def test_output_plan_freezes_design_titles_partial_path_and_u9_parent() -> None:

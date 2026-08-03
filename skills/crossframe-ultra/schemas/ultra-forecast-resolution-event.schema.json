@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-forecast-resolution-event.schema.json",
+  "title": "CrossFrame Ultra append-only forecast resolution event",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "resolution_event_id",
+        "forecast_ledger_artifact_sha256",
+        "forecast_id",
+        "original_forecast_record_sha256",
+        "resolution_time",
+        "outcome",
+        "observed_value",
+        "original_probability_admissible",
+        "brier_inputs",
+        "brier_score"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.forecast-resolution-event"},
+        "phase_id": {"const": "U9"},
+        "resolution_event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "forecast_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "forecast_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "original_forecast_record_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "resolution_time": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "outcome": {"enum": ["correct", "incorrect", "indeterminate", "partial"]},
+        "observed_value": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "original_probability_admissible": {"type": "boolean"},
+        "brier_inputs": {
+          "oneOf": [
+            {"$ref": "#/$defs/brierInputs"},
+            {"type": "null"}
+          ]
+        },
+        "brier_score": {
+          "oneOf": [
+            {"type": "number", "minimum": 0, "maximum": 1},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"original_probability_admissible": {"const": false}},
+            "required": ["original_probability_admissible"]
+          },
+          "then": {
+            "properties": {
+              "brier_inputs": {"type": "null"},
+              "brier_score": {"type": "null"}
+            }
+          },
+          "else": {
+            "oneOf": [
+              {
+                "properties": {
+                  "brier_inputs": {"type": "null"},
+                  "brier_score": {"type": "null"}
+                }
+              },
+              {
+                "properties": {
+                  "brier_inputs": {"$ref": "#/$defs/brierInputs"},
+                  "brier_score": {"type": "number", "minimum": 0, "maximum": 1}
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "brierInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["probability", "binary_outcome"],
+      "properties": {
+        "probability": {"type": "number", "minimum": 0, "maximum": 1},
+        "binary_outcome": {"enum": [0, 1]}
+      }
+    }
+  }
+}

@@ -7,12 +7,42 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["lineage_sha256", "evaluations"],
+      "required": [
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "evaluations"
+      ],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.order-evaluation"},
         "phase_id": {"const": "U8"},
-        "lineage_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
-        "evaluations": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/evaluation"}}
+        "claim_mechanism_graph_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "recursive_lineage_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "evaluations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "allOf": [
+                {"$ref": "#/$defs/evaluation"},
+                {"properties": {"order": {"const": 1}}}
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/evaluation"},
+                {"properties": {"order": {"const": 2}}}
+              ]
+            },
+            {
+              "allOf": [
+                {"$ref": "#/$defs/evaluation"},
+                {"properties": {"order": {"const": 3}}}
+              ]
+            }
+          ],
+          "items": false
+        }
       }
     }
   ],
@@ -27,16 +57,88 @@
         "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     },
+    "notApplicable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "evidence_refs", "residual_ids"],
+      "properties": {
+        "reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "residual_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "branchCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branch_kind", "applicability", "branch_ids", "not_applicable"],
+      "properties": {
+        "branch_kind": {"enum": ["main", "strongest-rival", "mixture", "residual"]},
+        "applicability": {"enum": ["applicable", "not-applicable"]},
+        "branch_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "not_applicable": {
+          "oneOf": [
+            {"$ref": "#/$defs/notApplicable"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"applicability": {"const": "applicable"}}, "required": ["applicability"]},
+          "then": {
+            "properties": {
+              "branch_ids": {"minItems": 1},
+              "not_applicable": {"type": "null"}
+            }
+          },
+          "else": {
+            "properties": {
+              "branch_ids": {"maxItems": 0},
+              "not_applicable": {"$ref": "#/$defs/notApplicable"}
+            }
+          }
+        }
+      ]
+    },
+    "stopKind": {
+      "enum": [
+        "order-limit",
+        "baseline-wins",
+        "no-material-state-change",
+        "local-predictability-exhausted",
+        "evidence-boundary"
+      ]
+    },
     "evaluation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["order", "branch_kinds", "baseline", "explanation_gain", "forecast_gain", "added_assumptions", "added_losses", "local_predictability", "continue_recursive", "stop_kind", "rationale"],
+      "required": [
+        "order",
+        "branch_coverage",
+        "baseline",
+        "explanation_gain",
+        "forecast_gain",
+        "added_assumptions",
+        "added_losses",
+        "local_predictability",
+        "continuation_value",
+        "continue_recursive",
+        "stop_kind",
+        "rationale"
+      ],
       "properties": {
         "order": {"type": "integer", "minimum": 1, "maximum": 3},
-        "branch_kinds": {
+        "branch_coverage": {
           "type": "array",
-          "uniqueItems": true,
-          "items": {"enum": ["main", "strongest-rival", "mixture", "residual"]}
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {"$ref": "#/$defs/branchCoverage"},
+          "allOf": [
+            {"contains": {"properties": {"branch_kind": {"const": "main"}}, "required": ["branch_kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"branch_kind": {"const": "strongest-rival"}}, "required": ["branch_kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"branch_kind": {"const": "mixture"}}, "required": ["branch_kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"branch_kind": {"const": "residual"}}, "required": ["branch_kind"]}, "minContains": 1, "maxContains": 1}
+          ]
         },
         "baseline": {"$ref": "#/$defs/baseline"},
         "explanation_gain": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
@@ -44,15 +146,23 @@
         "added_assumptions": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
         "added_losses": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
         "local_predictability": {"enum": ["none", "low", "bounded", "high"]},
+        "continuation_value": {"enum": ["none", "low", "bounded", "high"]},
         "continue_recursive": {"type": "boolean"},
         "stop_kind": {
           "oneOf": [
-            {"enum": ["order-limit", "baseline-wins", "no-material-state-change", "local-predictability-exhausted", "evidence-boundary"]},
+            {"$ref": "#/$defs/stopKind"},
             {"type": "null"}
           ]
         },
         "rationale": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"continue_recursive": {"const": true}}, "required": ["continue_recursive"]},
+          "then": {"properties": {"stop_kind": {"type": "null"}}},
+          "else": {"properties": {"stop_kind": {"$ref": "#/$defs/stopKind"}}}
+        }
+      ]
     }
   }
 }

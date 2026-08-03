@@ -21,11 +21,12 @@ The execution window must first read, in this order:
 
 The root agent must use these orchestration rules:
 
-- For the W4 rebuild, create a clean worktree and `codex/` branch from commit `b2e7361`. Keep the existing `codex/crossframe-ultra` dirty worktree read-only: do not clean, stage, reset, cherry-pick, or copy it wholesale.
+- All accepted implementation work is produced and integrated only from clean worktrees and branches descended from commit `b2e7361`. The old dirty implementation is discarded as an implementation source: do not copy, port, cherry-pick, or consult its uncommitted Task 9/10 code, and do not clean, stage, or reset that checkout.
 - Use at most three worker agents concurrently.
 - Every worker uses model gpt-5.6-sol with reasoning effort max.
 - Spawn workers with fork_turns set to none and give each a self-contained prompt.
 - Complete W4-0 and freeze shared schema IDs, function signatures, output paths, hash roles, phase ownership, and file ownership before dispatching Tasks 7, 8, and 11.
+- Complete the root-owned W5-0 shared-contract gate before constructing any Task 10A, Task 9, or Task 10B producer. After W5-0, execute those producers only in the order Task 10A, Task 9, Task 10B.
 - Assign disjoint write sets. Two workers never edit the same file in the same wave.
 - Workers do not commit. They report changed files, tests run, exact results, and remaining risks.
 - The root reviews diffs, runs the focused tests, stages exact files, and commits one coherent task at a time.
@@ -41,7 +42,10 @@ W2:  Task 3
 W3:  Task 4
 W4-0: Shared contract and Schema freeze
 W4:  Task 7 || Task 8 || Task 11 (develop independently; integrate 7 -> 8 -> 11)
-W5:  Task 9 || Task 10
+W5-0: Root-owned U6-U10 shared artifact contract and schema-registry freeze
+W5-A: Task 10A (U6 claim/mechanism/competitors/qualified insights)
+W5-B: Task 9 (U7 recursive state/lineage, then U8 order evaluation/red team)
+W5-C: Task 10B (U9 verdict/action/immutable forecast, plus later forecast-resolution events)
 W6:  Task 12
 W7:  Task 13
 W8:  Task 14
@@ -50,7 +54,7 @@ W10: Task 16
 W11: Task 17
 ~~~
 
-Dependencies are encoded again on every task. W4-0 is a single-writer gate owned by the root planner; no Task 7, 8, or 11 worker starts before its contract baseline is reviewed and committed. After W4-0, those three tasks may develop in separate worktrees, but the root integrates and revalidates them in Task 7, Task 8, Task 11 order. Task 10 may develop against the frozen recursive-lineage schema and fixture while Task 9 implements the recursive validator; Task 13 is the first integration point that requires both implementations. No later wave starts until all dependencies for that wave are green.
+Dependencies are encoded again on every task. W4-0 is a single-writer gate owned by the root planner; no Task 7, 8, or 11 worker starts before its contract baseline is reviewed and committed. After W4-0, those three tasks may develop in separate worktrees, but the root integrates and revalidates them in Task 7, Task 8, Task 11 order. W5-0 is the next root-owned single-writer gate: it freezes the U6-U10 shared schemas, schema tests, registry entries, phase ownership, hash roles, and upstream-artifact DAG before any producer work. The only executable producer order is W5-0 -> Task 10A -> Task 9 -> Task 10B: U6 consumes U3/U4/U5; U7 consumes U4/U5/U6 before U8 consumes U6/U7; U9 consumes U3/U6/U7/U8. Task 13 is the first materialization integration point for all of those producer outputs. No later wave starts until all dependencies for that wave are green.
 
 ## 1. Non-negotiable source and runtime constants
 
@@ -151,9 +155,9 @@ The state machine responsibility map is fixed:
 | U5 | scale, circle, translation, effective-variable, closure, loss and residual audits |
 | U6 | claims, mechanisms, competitors and qualified insights |
 | U7 | order 1–3 recursive state volumes and branch lineage |
-| U8 | red team, sensitivity, simple baseline, per-order evaluation and stop |
+| U8 | per-order evaluation and stop, then red team, sensitivity and simple-baseline challenge |
 | U9 | main judgment, five verdict locks and action ranking |
-| U10 | article/output plan and semantic coverage map |
+| U10 | isolated framework-gap ledger, article/output plan and semantic coverage map |
 | U11 | complete structured artifacts, dossier and partial article |
 | U12 | fresh validation, bounded local repair, official delivery and manifest |
 
@@ -222,9 +226,9 @@ ultra_runtime/evidence.py        evidence identities, cutoff, lineage deduplicat
 ultra_runtime/retrieval.py       eligibility, privacy, outbound and query ledger
 ultra_runtime/world_volume.py    Ω validation and event-local state differences
 ultra_runtime/transformations.py scale/circle/translation/loss/closure contracts
-ultra_runtime/recursion.py       order 1–3 lineage, branching, pruning and stopping
-ultra_runtime/judgment.py        competing explanations, verdicts and action ranking
-ultra_runtime/forecast.py        resolvable forecast ledger and outcome append
+ultra_runtime/recursion.py       U7 recursive states/lineage, then U8 order evaluation/red team
+ultra_runtime/judgment.py        U6 competing explanations, then U9 verdicts/action ranking
+ultra_runtime/forecast.py        immutable forecast records and separate append-only resolution events
 ultra_runtime/article.py         frozen chapter packets and deterministic assembly
 ultra_runtime/coverage.py        semantic coverage and blind-reader recovery
 ultra_runtime/artifacts.py       inventory, manifest and cross-artifact bindings
@@ -1235,53 +1239,219 @@ python -B -m pytest -q tests/test_ultra_world_volume.py tests/test_ultra_transfo
 git commit -m "feat: add ultra world-volume contracts"
 ~~~
 
-## Task 9: Implement order 1–3 recursive lineage and per-order evaluation
+## W5-0: Freeze shared U6–U10 artifact contracts before producer construction
 
-**Owner:** Worker B
+**Owner:** Root planner only
 
-**Depends on:** Tasks 5, 7, and 8
+**Depends on:** Tasks 5, 7, and 8, with all accepted inputs integrated from clean descendants of `b2e7361`
 
 **Files:**
 
-- Create: tests/test_ultra_recursion.py
-- Create: tests/test_ultra_order_evaluation.py
-- Create: tests/fixtures/ultra-runtime/recursive-lineage-valid.json
-- Create: tests/fixtures/ultra-runtime/recursive-lineage-invalid.json
-- Create: skills/crossframe-ultra/scripts/ultra_runtime/recursion.py
+- Modify: `docs/superpowers/plans/2026-08-02-crossframe-ultra-implementation.md`
+- Modify: `tests/test_ultra_schemas.py`
+- Modify: `skills/crossframe-ultra/scripts/ultra_runtime/schemas.py`
+- Modify: `skills/crossframe-ultra/schemas/ultra-claim-mechanism-graph.schema.json`
+- Create: `skills/crossframe-ultra/schemas/ultra-recursive-state.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-recursive-lineage.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-order-evaluation.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-red-team-report.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-verdict.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-action-ranking.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-forecast-ledger.schema.json`
+- Create: `skills/crossframe-ultra/schemas/ultra-forecast-resolution-event.schema.json`
+- Modify: `skills/crossframe-ultra/schemas/ultra-framework-gap-ledger.schema.json`
 
-- [ ] **Step 1: Write lineage RED tests**
+This list is the exact W5-0 tracked write set: the plan, the shared schema test, the schema registry, and exactly ten named schema files. All thirteen paths are root-owned during W5-0. Task 10A, Task 9, and Task 10B consume these files read-only; a producer worker may report a contract gap but may not edit any of them. No producer runtime, Task 9/10 producer test, external fixture, template, reference, constant, compatibility matrix, unrelated schema, or file from the discarded old implementation belongs to W5-0. Keep every W5-0 instance fixture as a sealed inline value in `tests/test_ultra_schemas.py`, following W4-0.
 
-Test an order-1 direct effect, order-2 action-set reversal, and order-3 institutional lock-in. Every child must bind parent run/path/node, order, full state hash or explicit bounded subgraph, inherited unknown/loss/residual IDs, event, mechanism, state diff, signals and full version binding.
+- [ ] **Step 1: Write focused shared-contract RED tests**
 
-Reject:
+Add assertion-level tests for exact phase ownership, distinct required upstream artifact hashes, closed object boundaries, valid sealed inline instances, recursive-state-before-lineage binding, order-evaluation-before-red-team binding, verdict-before-action/forecast binding, immutable forecasts versus later separate resolution events, U10 framework-gap isolation, and unchanged global schema version 1. Reject self-selected external authority, a hash field reused for two roles, an identity field reused across artifact/node/state/branch/claim/mechanism/evidence/route/concept roles, and any deeper recursive order that upgrades evidence grade.
+
+Every artifact uses the existing common envelope, exact `schema_id`, exact `schema_version`, and owning `phase_id`. Keep simulated, observed, reported, inferred, user-claim, model-candidate, competitor, and unknown identities distinct wherever the design requires evidence identity. Reuse the existing lowercase SHA-256 definition and canonical content-hash helper; W5-0 creates no public runtime function, helper signature, or business identifier.
+
+- [ ] **Step 2: Observe focused RED**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py
+~~~
+
+The RED must be an assertion-level contract failure, not collection, import, JSON syntax, or environment failure.
+
+- [ ] **Step 3: Freeze global schema version 1, phase ownership, and the artifact DAG**
+
+Keep `ARTIFACT_SCHEMA_VERSION = 1`. U6–U9 artifacts have never been released, so do not add a v1-to-v2 migration or compatibility row. Every schema remains Draft 2020-12 and closed at every object boundary.
+
+The required upstream artifact DAG is exact:
+
+| Artifact contract | Owning phase | Required upstream authority |
+|---|---|---|
+| claim/mechanism graph | U6 | U3 evidence ledger; U4 world volume; U5 transformation ledger; U5 concept disposition |
+| recursive state | U7 | U4 world volume; U5 transformation ledger; U5 concept disposition; U6 claim/mechanism graph; externally verified parent state authority—U4 for a first-order root, otherwise the sealed parent U7 recursive-state artifact |
+| recursive lineage | U7 | U4 world volume; U5 transformation ledger; U5 concept disposition; U6 claim/mechanism graph; every sealed U7 recursive-state artifact referenced by a lineage node |
+| order evaluation | U8 | U6 claim/mechanism graph; sealed U7 recursive lineage |
+| red-team report | U8 | U6 claim/mechanism graph; sealed U7 recursive lineage; sealed U8 order-evaluation artifact |
+| verdict | U9 | U3 evidence ledger; U6 claim/mechanism graph; U7 recursive lineage; U8 order evaluation; U8 red-team report |
+| action ranking | U9 | sealed U9 verdict |
+| forecast ledger | U9 | sealed U9 verdict and its already-bound U3/U6/U7/U8 authority |
+| forecast resolution event | U9 | originating immutable U9 forecast artifact; exact original forecast record |
+| framework-gap ledger | U10 | every current-run artifact cited by each candidate |
+
+Required upstream hashes are distinct explicit named fields. A model-authored document cannot select which external artifact authorizes it; orchestration supplies and verifies that authority before the producer seals the artifact. The construction order follows the DAG: each recursive-state artifact is sealed before lineage, order evaluation is sealed before red-team, and verdict is sealed before action ranking or forecast ledger.
+
+- [ ] **Step 4: Freeze the U6–U10 contract details**
+
+The U6 claim/mechanism graph retains a central claim, referenceable claims and mechanisms, typed edges, main/strongest-rival/mixture/residual competing explanations, rankings, and qualified insights. Insight effects remain exactly `changes-ranking`, `explains-residual`, `changes-observable-forecast`, `changes-counterfactual`, `changes-intervention`, and `identifies-circle-scale-channel`; an insight cannot become new framework authority.
+
+Each U7 recursive-state artifact records run/path/node and parent run/path/node identities, order 1–3, a full state hash or explicitly bounded subgraph, inherited fact/evidence/unknown/loss/residual identities, this-order event/mechanism/state-diff/signal roles, evidence identity, and the full common-envelope version binding. Seal these state artifacts first. Recursive-lineage nodes then bind their corresponding sealed artifact hashes instead of trusting a caller-declared state hash. Preserve acyclicity, order, merge, prune, and stop semantics. Branch kinds remain exactly main, strongest-rival, mixture, and residual.
+
+The U8 order-evaluation artifact is constructed next. It requires those branch classes or a structured not-applicable record for each order, compares the simple baseline on explanation gain, forecast gain, added assumptions, added losses, local predictability, and continuation value, and records only the frozen stop kinds. Only after that artifact is sealed may the red-team report bind it and record challenges, sensitivity checks, simple-baseline comparisons, unresolved items, and overall status without changing upstream evidence identity.
+
+The U9 verdict is constructed and sealed first, preserving either a best-current judgment or exact non-decidability and keeping fact, prediction, value, responsibility, and authorization verdicts independent. Action ranking and forecast production are downstream consumers of that sealed verdict. Action ranking remains independent from the five verdict kinds and retains active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action options, preferred and second choices, switch and stop conditions, rollback, and no-action consequences.
+
+The U9 forecast artifact contains only frozen original forecast records: direction, time window, indicator, resolution rule, evidence cutoff, branch/node refs, status, and optional probability only when reference class, calibration basis, and admissibility are present. It contains no mutable or nested resolution record. No resolution event is emitted while the original forecast is being sealed. After an outcome is available, a separate append-only forecast-resolution event binds the originating U9 forecast artifact hash, forecast ID, original forecast record hash, resolution time, outcome, and observed value. Brier inputs/results are permitted only when the original probability was admissible. The event retains U9 ownership while its timestamp records the later resolution.
+
+The framework-gap ledger is U10-owned, requires `isolated_from_current_reasoning` to be true, and binds every current-run artifact it cites. A candidate may propose a future document revision but cannot appear as current U6 mechanism support, U9 verdict reason, or U9 action authorization.
+
+- [ ] **Step 5: Implement the ten schema changes and two registry entries**
+
+Modify only the exact W5-0 files above. Register `ultra-recursive-state.schema.json` and `ultra-forecast-resolution-event.schema.json` in `SCHEMA_NAMES`; retain all existing registry names and all global version constants. Reuse the common envelope, schema loader, canonical content-hash helper, and phase-artifact validator. Do not add a producer API, runtime helper signature, external fixture, or compatibility row.
+
+- [ ] **Step 6: Run focused GREEN and verify the exact W5-0 boundary**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py
+Get-ChildItem skills/crossframe-ultra/schemas -Filter *.json | ForEach-Object { python -m json.tool $_.FullName > $null; if ($LASTEXITCODE -ne 0) { throw "invalid JSON: $($_.FullName)" } }
+python -m py_compile skills/crossframe-ultra/scripts/ultra_runtime/schemas.py
+git diff --check
+git status --short
+git diff --name-only 052bb442 --
+~~~
+
+Compare the tracked and untracked names from the final two commands with the exact thirteen-path W5-0 write set above. Report the exact changed files, RED and GREEN commands/results, and any genuinely unresolved plan/design decision. Do not stage or commit in this gate work package; the root integrates only after reviewing the exact boundary.
+
+## Task 10A: Implement the U6 pass of Task 10—claims, mechanisms, competitors, and qualified insights
+
+Task 10 remains the original Task 10, split into dependency-ordered passes 10A and 10B. This pass must be GREEN, root-reviewed, and integrated before Task 9 begins.
+
+**Owner:** Worker C
+
+**Depends on:** Tasks 7 and 8 plus W5-0
+
+**Files:**
+
+- Create: `tests/test_ultra_claim_mechanism.py`
+- Create: `tests/fixtures/ultra-runtime/claim-mechanism-graph-valid.json`
+- Create: `skills/crossframe-ultra/scripts/ultra_runtime/judgment.py`
+- Consume read-only: `tests/fixtures/ultra-runtime/world-volume-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/transformation-valid.json`
+- Consume read-only: `tests/test_ultra_schemas.py`
+- Consume read-only: `skills/crossframe-ultra/scripts/ultra_runtime/schemas.py`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-evidence-ledger.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-world-volume.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-transformation-ledger.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-concept-disposition.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-claim-mechanism-graph.schema.json`
+
+Task 10A owns only the three producer files listed first. It must not edit any W5-0 schema, schema-test, or schema-registry file.
+
+- [ ] **Step 1: Write U6 RED tests**
+
+The claim/mechanism graph must bind externally supplied U3 evidence-ledger, U4 world-volume, U5 transformation-ledger, and U5 concept-disposition hashes. It contains a central claim, referenceable claims and mechanisms, typed edges, main/strongest-rival/mixture/residual competitors, an explicit total or justified partial ranking, and qualified insights. Reject stale or swapped upstream hashes, self-selected external authority, an identity field reused across roles, a simulated result promoted to fact, a user claim treated as evidence, and an insight that has no frozen effect or tries to become framework authority.
+
+Build `claim-mechanism-graph-valid.json` against the accepted U3/U4/U5 fixture hashes so Task 9 receives one sealed, mutually consistent U6 authority rather than reconstructing it.
+
+- [ ] **Step 2: Observe Task 10A RED**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_claim_mechanism.py
+~~~
+
+The RED must fail at the missing U6 producer behavior or an asserted binding, not at collection or fixture parsing.
+
+- [ ] **Step 3: Implement U6 qualification and producer validation**
+
+~~~text
+INSIGHT_EFFECTS = (
+    "changes-ranking",
+    "explains-residual",
+    "changes-observable-forecast",
+    "changes-counterfactual",
+    "changes-intervention",
+    "identifies-circle-scale-channel",
+)
+
+def qualifies_as_insight(candidate: Mapping[str, object]) -> bool:
+    effects = set(candidate["effects"])
+    return bool(effects.intersection(INSIGHT_EFFECTS))
+~~~
+
+Retain this existing Task 10 helper shape. The U6 producer receives verified U3/U4/U5 artifact authority from orchestration, compares it with the named schema fields, and seals the graph only after all bindings match. It validates model-authored semantics; it does not invent claims, mechanisms, identities, or a new public function signature.
+
+- [ ] **Step 4: Run Task 10A GREEN**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_claim_mechanism.py
+~~~
+
+- [ ] **Step 5: Root review, integrate, and commit before Task 9**
+
+~~~powershell
+git commit -m "feat: add ultra claim mechanism producer"
+~~~
+
+## Task 9: Implement U7 recursive state/lineage, then U8 per-order evaluation and red team
+
+**Owner:** Worker B
+
+**Depends on:** Tasks 7 and 8, W5-0, and the integrated Task 10A U6 producer
+
+**Files:**
+
+- Create: `tests/test_ultra_recursion.py`
+- Create: `tests/test_ultra_order_evaluation.py`
+- Create: `tests/test_ultra_red_team.py`
+- Create: `tests/fixtures/ultra-runtime/recursive-state-valid.json`
+- Create: `tests/fixtures/ultra-runtime/recursive-lineage-valid.json`
+- Create: `tests/fixtures/ultra-runtime/recursive-lineage-invalid.json`
+- Create: `tests/fixtures/ultra-runtime/order-evaluation-valid.json`
+- Create: `tests/fixtures/ultra-runtime/red-team-report-valid.json`
+- Create: `skills/crossframe-ultra/scripts/ultra_runtime/recursion.py`
+- Consume read-only: `tests/fixtures/ultra-runtime/world-volume-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/transformation-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/claim-mechanism-graph-valid.json`
+- Consume read-only: `tests/test_ultra_schemas.py`
+- Consume read-only: `skills/crossframe-ultra/scripts/ultra_runtime/schemas.py`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-recursive-state.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-recursive-lineage.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-order-evaluation.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-red-team-report.schema.json`
+
+Task 9 owns only the nine producer files listed first. It must not edit W5-0's schema, schema-test, or schema-registry files. Its executable construction order is recursive state, recursive lineage, order evaluation, then red-team report.
+
+- [ ] **Step 1: Write U7 recursive-state and lineage RED tests**
+
+Test an order-1 direct effect, order-2 action-set reversal, and order-3 institutional lock-in. Each sealed recursive-state artifact binds externally supplied U4 world-volume, U5 transformation/concept, and U6 claim-graph authority; records run/path/node and parent run/path/node, order, a full state hash or explicitly bounded subgraph, inherited fact/evidence/unknown/loss/residual identities, this-order event/mechanism/state-diff/signals, evidence identity, and full version binding; and validates against the W5-0 schema.
+
+Seal the recursive-state artifacts before constructing lineage. Each lineage node references the corresponding sealed artifact hash. Reject a caller-declared state hash without that artifact, stale or swapped upstream authority, and any lineage that fails to preserve its U4/U5/U6 bindings.
+
+Also reject:
 
 - order 0 or order greater than 3;
 - order-2 node with an order-0 parent;
 - child containing only the parent's prose conclusion;
-- lost unknown, loss or residual;
+- lost fact, evidence, unknown, loss, or residual identity;
 - a simulated node marked observed;
 - merged branches without compatible state identities;
 - pruning without reason and retained residual;
 - resource exhaustion labeled theoretical early stop.
 
-- [ ] **Step 2: Write branch and baseline RED tests**
-
-Every evaluated order contains main, strongest-rival, mixture and residual branches unless a structured not-applicable reason is valid. It compares a simple baseline on explanation gain, forecast gain, added assumptions, added loss, local predictability and continuation value.
-
-~~~python
-def test_deeper_order_does_not_increase_evidence_grade():
-    result = validate_recursive_lineage(lineage)
-    assert result.nodes["N3"].evidence_grade == result.nodes["N3"].declared_evidence_grade
-    assert result.nodes["N3"].evidence_grade != "high-by-depth"
-~~~
-
-- [ ] **Step 3: Observe RED**
+- [ ] **Step 2: Observe U7 RED**
 
 ~~~powershell
-python -B -m pytest -q tests/test_ultra_recursion.py tests/test_ultra_order_evaluation.py
+python -B -m pytest -q tests/test_ultra_recursion.py
 ~~~
 
-- [ ] **Step 4: Implement lineage and stopping**
+- [ ] **Step 3: Implement recursive-state sealing before lineage validation**
 
 ~~~text
 BRANCH_KINDS = ("main", "strongest-rival", "mixture", "residual")
@@ -1306,39 +1476,103 @@ Public function signature:
 validate_recursive_lineage(lineage: Mapping[str, object], parent_volume: Mapping[str, object]) -> LineageValidation
 ~~~
 
-Implement the body to validate schema, acyclicity, order-parent relation, state/subgraph binding, identity inheritance, branch merge compatibility, pruning records and per-order evaluations. Resource/tool failure is a run status transition, not an allowed STOP_KIND.
+Retain this already-frozen public result and signature without adding fields or parameters. Before calling it, the producer verifies the U4/U5/U6 authorities and every sealed recursive-state artifact named by the lineage. The implementation validates schema, acyclicity, order-parent relation, recursive-state binding, identity inheritance, branch merge compatibility, pruning records, and stopping. Private helpers may perform the new checks. Resource/tool failure is a run status transition, not an allowed `STOP_KIND`.
 
-- [ ] **Step 5: Run GREEN**
-
-~~~powershell
-python -B -m pytest -q tests/test_ultra_recursion.py tests/test_ultra_order_evaluation.py
-~~~
-
-- [ ] **Step 6: Root review and commit**
+- [ ] **Step 4: Run U7 GREEN before starting U8**
 
 ~~~powershell
-git commit -m "feat: add ultra recursive inference lineage"
+python -B -m pytest -q tests/test_ultra_recursion.py
 ~~~
 
-## Task 10: Implement competing explanations, hard verdicts, action ranking, and forecasts
+- [ ] **Step 5: Write U8 order-evaluation RED tests**
+
+Every evaluated order contains main, strongest-rival, mixture, and residual branches unless a structured not-applicable record is valid. It binds the sealed U6 claim graph and U7 lineage, compares a simple baseline on explanation gain, forecast gain, added assumptions, added losses, local predictability, and continuation value, and accepts only the frozen stop kinds.
+
+~~~python
+def test_deeper_order_does_not_increase_evidence_grade():
+    lineage["nodes"][2]["evidence_grade"] = "high-by-depth"
+    with pytest.raises(ValidationError):
+        validate_recursive_lineage(lineage, parent_volume)
+~~~
+
+- [ ] **Step 6: Observe order-evaluation RED**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_order_evaluation.py
+~~~
+
+- [ ] **Step 7: Implement and seal order evaluation**
+
+Validate per-order branch coverage or structured not-applicability, all six simple-baseline comparison dimensions, evidence-grade preservation, and only the frozen stop kinds. Write `order-evaluation-valid.json` only after its U6/U7 hashes match the already sealed authorities. Use private validation helpers and the existing schema registry; add no public runtime signature.
+
+- [ ] **Step 8: Run order-evaluation GREEN before red-team construction**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_order_evaluation.py
+~~~
+
+- [ ] **Step 9: Write red-team RED tests against the sealed order evaluation**
+
+The red-team report binds the same U6/U7 authorities plus the exact sealed U8 order-evaluation artifact. Test challenges, sensitivity checks, simple-baseline comparisons, unresolved items, overall status, and rejection of a report that changes evidence identity, omits the order-evaluation hash, or substitutes a different evaluation.
+
+- [ ] **Step 10: Observe red-team RED**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_red_team.py
+~~~
+
+- [ ] **Step 11: Implement red-team validation after order evaluation**
+
+Validate the report through the W5-0 schema, verify its U6/U7/U8 hashes externally, and write `red-team-report-valid.json` only after those bindings match. Red-team may challenge conclusions but cannot rewrite recursive state, lineage, order evaluation, or evidence identity. Add no public runtime signature.
+
+- [ ] **Step 12: Run the complete Task 9 GREEN suite**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_recursion.py tests/test_ultra_order_evaluation.py tests/test_ultra_red_team.py
+~~~
+
+- [ ] **Step 13: Root review and commit**
+
+~~~powershell
+git commit -m "feat: add ultra recursive inference and red team"
+~~~
+
+## Task 10B: Implement the U9 pass of Task 10—verdict, action ranking, immutable forecasts, and later resolution events
+
+This is the second pass of the original Task 10. It starts only after Task 9's sealed U7/U8 fixtures and producer are integrated.
 
 **Owner:** Worker C
 
-**Depends on:** Tasks 5, 7, and 8
+**Depends on:** Integrated Task 10A and Task 9
 
 **Files:**
 
-- Create: tests/test_ultra_judgment.py
-- Create: tests/test_ultra_forecast.py
-- Create: tests/fixtures/ultra-runtime/verdict-valid.json
-- Create: tests/fixtures/ultra-runtime/verdict-evasive-invalid.json
-- Create: tests/fixtures/ultra-runtime/forecast-valid.json
-- Create: skills/crossframe-ultra/scripts/ultra_runtime/judgment.py
-- Create: skills/crossframe-ultra/scripts/ultra_runtime/forecast.py
+- Create: `tests/test_ultra_judgment.py`
+- Create: `tests/test_ultra_forecast.py`
+- Create: `tests/fixtures/ultra-runtime/verdict-valid.json`
+- Create: `tests/fixtures/ultra-runtime/verdict-evasive-invalid.json`
+- Create: `tests/fixtures/ultra-runtime/forecast-valid.json`
+- Create: `tests/fixtures/ultra-runtime/forecast-resolution-event-valid.json`
+- Modify: `skills/crossframe-ultra/scripts/ultra_runtime/judgment.py`
+- Create: `skills/crossframe-ultra/scripts/ultra_runtime/forecast.py`
+- Consume read-only: `tests/fixtures/ultra-runtime/claim-mechanism-graph-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/recursive-lineage-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/order-evaluation-valid.json`
+- Consume read-only: `tests/fixtures/ultra-runtime/red-team-report-valid.json`
+- Consume read-only: `tests/test_ultra_schemas.py`
+- Consume read-only: `skills/crossframe-ultra/scripts/ultra_runtime/schemas.py`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-claim-mechanism-graph.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-verdict.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-action-ranking.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-forecast-ledger.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-forecast-resolution-event.schema.json`
+- Consume read-only: `skills/crossframe-ultra/schemas/ultra-framework-gap-ledger.schema.json`
 
-- [ ] **Step 1: Write judgment RED tests**
+Task 10B owns only the eight producer files listed first. It must not edit W5-0's schema, schema-test, or schema-registry files. Its executable construction order is verdict, action ranking, immutable forecast ledger, then the capability to record a separate later resolution event.
 
-Every decidable case requires main, strongest-rival, mixture and residual explanations, a total or explicitly justified partial ranking, decisive reasons, rival rejection, confidence, residuals, reversal conditions, time window, action implication and cross-circle distribution.
+- [ ] **Step 1: Write U9 verdict RED tests**
+
+Every decidable case requires a best-current judgment, decisive reasons, rival rejection, confidence, residuals, reversal conditions, time window, action implication, and cross-circle distribution. A formally undecidable input receives an exact non-decidability judgment naming the missing proposition or comparison rule rather than fabricating a substantive verdict. The sealed verdict binds U3 evidence, the U6 claim graph, U7 lineage, U8 order evaluation, and U8 red-team report.
 
 Test these exact failures:
 
@@ -1349,16 +1583,72 @@ Test these exact failures:
 - factual verdict derived from a simulated node;
 - value verdict used as factual evidence;
 - responsibility used as authorization;
-- prediction used as permission;
-- no recommendation despite a direct choice request.
+- prediction used as permission.
 
-The low-evidence valid fixture must choose a best-current judgment, mark low confidence, name assumptions and state what would reverse it.
+The low-evidence valid fixture must choose a best-current judgment, mark low confidence, name assumptions, and state what would reverse it. Fact, prediction, value, responsibility, and authorization verdicts remain independently sealed.
 
-Also test framework-gap isolation: a gap candidate may cite the current run and propose a future document revision, but its ID cannot appear in canonical concept IDs, current-run mechanism support, verdict reasons or action authorization.
+- [ ] **Step 2: Observe verdict RED**
 
-- [ ] **Step 2: Write forecast RED tests**
+~~~powershell
+python -B -m pytest -q tests/test_ultra_judgment.py
+~~~
 
-Every forecast contains direction, time window, indicator, resolution rule, evidence cutoff, branch/node refs and status. Numeric probability is accepted only with a declared reference class, data/calibration basis and admissibility result.
+- [ ] **Step 3: Implement and seal verdict before action or forecast**
+
+~~~text
+VERDICT_KINDS = ("fact", "prediction", "value", "responsibility", "authorization")
+
+Public function signature:
+
+validate_verdict_bundle(verdict: Mapping[str, object], evidence: Mapping[str, object], lineage: Mapping[str, object]) -> None
+~~~
+
+Retain this already-frozen public signature. Before calling it, the producer externally verifies the U6 claim graph and both U8 artifacts in addition to the evidence and lineage arguments, then compares their hashes with the verdict schema fields. Record those extra authorities as producer requirements rather than adding positional or keyword parameters. Implement the verdict slice with independent evidence-identity, rival-strength, confidence/unknown, five-lock, and exact non-decidability checks.
+
+- [ ] **Step 4: Run verdict GREEN before writing action tests**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_judgment.py
+~~~
+
+- [ ] **Step 5: Write action-ranking and U10 isolation RED tests**
+
+Action ranking binds the sealed verdict, remains independent of the five verdict kinds, compares active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action, and records preferred and second choices, switch and stop conditions, rollback, and no-action consequences. Preserve the existing failure for no recommendation despite a direct choice request.
+
+Also test U10 framework-gap isolation: a gap candidate may cite bound current-run artifacts and propose a future document revision, but `isolated_from_current_reasoning` must be true and its ID cannot appear in canonical concept IDs, current U6 mechanism support, U9 verdict reasons, or U9 action authorization.
+
+- [ ] **Step 6: Observe action/isolation RED with verdict still GREEN**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_judgment.py
+~~~
+
+- [ ] **Step 7: Implement action validation downstream of verdict**
+
+~~~text
+ACTION_KINDS = (
+    "active",
+    "delay",
+    "probe",
+    "exit-or-transfer",
+    "maintain-status-quo",
+    "no-action",
+)
+~~~
+
+Complete the action-ranking slice behind the existing verdict-bundle entry point and validate U10 isolation through the W5-0 schemas and existing schema registry. A framework-gap candidate can be recorded for future revision but cannot authorize or support the current U6/U9 reasoning. Add no public runtime signature.
+
+- [ ] **Step 8: Run judgment/action GREEN before forecast construction**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_judgment.py
+~~~
+
+- [ ] **Step 9: Write immutable-forecast and later-resolution-event RED tests**
+
+Every original forecast contains direction, time window, indicator, resolution rule, evidence cutoff, branch/node refs, and status. Numeric probability is accepted only with a declared reference class, data/calibration basis, and admissibility result. The forecast ledger binds the sealed verdict, contains frozen originals only, and rejects a nested or mutable resolution record.
+
+A resolution is accepted only later as a separate append-only event that binds the originating U9 forecast artifact hash, forecast ID, original forecast record hash, resolution time, outcome, and observed value. It retains U9 phase ownership even though its event timestamp is later. Brier input/result fields are rejected unless the original probability was admissible.
 
 ~~~python
 def test_probability_without_calibration_is_rejected():
@@ -1371,55 +1661,23 @@ def test_resolution_appends_without_rewriting_prediction():
     assert canonical_json_bytes(load_original_forecast(ledger_path)) == before
 ~~~
 
-- [ ] **Step 3: Observe RED**
+- [ ] **Step 10: Observe forecast RED**
+
+~~~powershell
+python -B -m pytest -q tests/test_ultra_forecast.py
+~~~
+
+- [ ] **Step 11: Implement immutable forecasts and separate later resolution events**
+
+`forecast.py` validates forecast admission and freezes original records only after the sealed verdict authority matches. Retain the already-planned `append_resolution` behavior: it writes a distinct schema-validated forecast-resolution event and never rewrites or nests data in the originating forecast artifact. Direction correctness, time-window coverage, indicator resolution, and Brier score are computed from the immutable original plus the separately validated event; Brier scoring runs only when the original probability was admissible. Do not add another public entry point.
+
+- [ ] **Step 12: Run the complete Task 10B GREEN suite**
 
 ~~~powershell
 python -B -m pytest -q tests/test_ultra_judgment.py tests/test_ultra_forecast.py
 ~~~
 
-- [ ] **Step 4: Implement insight qualification and verdict validation**
-
-~~~text
-INSIGHT_EFFECTS = (
-    "changes-ranking",
-    "explains-residual",
-    "changes-observable-forecast",
-    "changes-counterfactual",
-    "changes-intervention",
-    "identifies-circle-scale-channel",
-)
-VERDICT_KINDS = ("fact", "prediction", "value", "responsibility", "authorization")
-ACTION_KINDS = (
-    "active",
-    "delay",
-    "probe",
-    "exit-or-transfer",
-    "maintain-status-quo",
-    "no-action",
-)
-
-def qualifies_as_insight(candidate: Mapping[str, object]) -> bool:
-    effects = set(candidate["effects"])
-    return bool(effects.intersection(INSIGHT_EFFECTS))
-
-Public function signature:
-
-validate_verdict_bundle(verdict: Mapping[str, object], evidence: Mapping[str, object], lineage: Mapping[str, object]) -> None
-~~~
-
-Implement independent checks for evidence identity, rival strength, confidence/unknown consistency, five verdict locks and action ranking. A formally undecidable input receives a non-decidability judgment with the exact missing proposition or comparison rule; it may not fabricate a substantive verdict.
-
-- [ ] **Step 5: Implement the append-only forecast ledger**
-
-forecast.py validates forecast admission, freezes original records, appends resolution events, computes direction correctness, time-window coverage, indicator resolution and Brier score only when probabilities were admissible.
-
-- [ ] **Step 6: Run GREEN**
-
-~~~powershell
-python -B -m pytest -q tests/test_ultra_judgment.py tests/test_ultra_forecast.py
-~~~
-
-- [ ] **Step 7: Root review and commit**
+- [ ] **Step 13: Root review and commit**
 
 ~~~powershell
 git commit -m "feat: add ultra judgment and forecast contracts"
@@ -1586,7 +1844,7 @@ git commit -m "feat: add complete ultra article contract"
 
 **Owner:** Worker B
 
-**Depends on:** Tasks 5–11
+**Depends on:** Tasks 5–11, including the integrated W5-0 -> Task 10A -> Task 9 -> Task 10B chain
 
 **Files:**
 
@@ -1695,7 +1953,7 @@ git commit -m "feat: add ultra validation and recovery"
 
 **Owner:** Worker C
 
-**Depends on:** Tasks 5–12
+**Depends on:** Tasks 5–12, including the integrated W5-0 -> Task 10A -> Task 9 -> Task 10B chain
 
 **Files:**
 
@@ -1712,6 +1970,7 @@ git commit -m "feat: add ultra validation and recovery"
 - Create: skills/crossframe-ultra/templates/ultra-transformation-ledger-output.md
 - Create: skills/crossframe-ultra/templates/ultra-concept-disposition-output.md
 - Create: skills/crossframe-ultra/templates/ultra-claim-mechanism-output.md
+- Create: skills/crossframe-ultra/templates/ultra-recursive-state-output.md
 - Create: skills/crossframe-ultra/templates/ultra-recursive-lineage-output.md
 - Create: skills/crossframe-ultra/templates/ultra-order-evaluation-output.md
 - Create: skills/crossframe-ultra/templates/ultra-retrieval-output.md
@@ -1768,21 +2027,22 @@ work/authoring/U04-world-volume.json
 work/authoring/U05-transformation-ledger.json
 work/authoring/U05-concept-disposition.json
 work/authoring/U06-claim-mechanism-graph.json
+work/authoring/U07-recursive-states/<node-id>.json
 work/authoring/U07-recursive-lineage.json
 work/authoring/U08-order-evaluation.json
 work/authoring/U08-red-team-report.json
 work/authoring/U09-verdict.json
 work/authoring/U09-action-ranking.json
 work/authoring/U09-forecast-ledger.json
+work/authoring/U10-framework-gap-ledger.json
 work/authoring/U10-output-plan.json
 work/authoring/U11-semantic-coverage.json
-work/authoring/U10-framework-gap-ledger.json
 work/authoring/article/packets/<packet-id>.md
 work/authoring/U11-article-review.json
 work/authoring/完整推演档案.md
 ~~~
 
-1. validates source and U0–U10 parent hashes;
+1. validates source and the frozen upstream-artifact DAG, including recursive state before lineage, order evaluation before red-team, and verdict before action/forecast;
 2. validates every model-authored semantic artifact;
 3. assembles the partial article;
 4. builds the complete dossier and artifact index;
@@ -1791,6 +2051,8 @@ work/authoring/完整推演档案.md
 7. on pass, atomically promotes the article to delivery/CrossFrame-Ultra-完整文章.md;
 8. writes delivery/完整推演档案.md and delivery/工件索引.md;
 9. marks complete and updates indexes.
+
+Initial materialization seals immutable forecast originals and does not create a resolution. After an outcome exists, the existing Task 10B forecast behavior may append a separately validated forecast-resolution event; it never reopens or rewrites the U9 forecast ledger.
 
 On failure, the official article filename must not exist.
 

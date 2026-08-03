@@ -7,13 +7,42 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["requested_choice", "options", "ranking", "preferred_option_id", "second_option_id", "switch_conditions", "stop_conditions", "no_action_consequences"],
+      "required": [
+        "verdict_artifact_sha256",
+        "requested_choice",
+        "options",
+        "ranking",
+        "preferred_option_id",
+        "second_option_id",
+        "switch_conditions",
+        "stop_conditions",
+        "no_action_consequences"
+      ],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.action-ranking"},
         "phase_id": {"const": "U9"},
+        "verdict_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "requested_choice": {"type": "boolean"},
-        "options": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/option"}},
-        "ranking": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "options": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {"$ref": "#/$defs/option"},
+          "allOf": [
+            {"contains": {"properties": {"kind": {"const": "active"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "delay"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "probe"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "exit-or-transfer"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "maintain-status-quo"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"kind": {"const": "no-action"}}, "required": ["kind"]}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "ranking": {
+          "allOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+            {"minItems": 6, "maxItems": 6}
+          ]
+        },
         "preferred_option_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "second_option_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "switch_conditions": {"$ref": "ultra-common.schema.json#/$defs/nonemptyStringArray"},
@@ -27,7 +56,16 @@
     "option": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["option_id", "kind", "description", "authorized", "benefits", "harms", "requirements", "rollback"],
+      "required": [
+        "option_id",
+        "kind",
+        "description",
+        "authorized",
+        "benefits",
+        "harms",
+        "requirements",
+        "rollback"
+      ],
       "properties": {
         "option_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "kind": {"enum": ["active", "delay", "probe", "exit-or-transfer", "maintain-status-quo", "no-action"]},
