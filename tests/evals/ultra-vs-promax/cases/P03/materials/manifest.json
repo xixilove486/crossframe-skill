@@ -1,12 +1,87 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "P03",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "analytic-standards-fact-card.md",
+      "sha256": "a6424fb9b77e4248eb6ab1f3d0e0526e188f3da9169d711e2c56c77bd811add5",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    },
+    {
+      "path": "source-deconfliction-fact-card.md",
+      "sha256": "89c5c61f22ac2253ed7cc8805e7bce26b03dd7a1135e35128afbaf4fc34c9138",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    }
+  ],
+  "source_count": 2,
+  "source_set_sha256": "a112223f935cc2c2a04cc70cb2cae218fbb6ee44486f3fb09db7175749bc1e94",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-license-p03-20260804",
+      "reviewed_at": "2026-08-03T22:03:00.599Z",
+      "subject_sha256": "a112223f935cc2c2a04cc70cb2cae218fbb6ee44486f3fb09db7175749bc1e94",
+      "evidence": [
+        "Independent SHA-256 checks matched a6424fb9b77e4248eb6ab1f3d0e0526e188f3da9169d711e2c56c77bd811add5 and 89c5c61f22ac2253ed7cc8805e7bce26b03dd7a1135e35128afbaf4fc34c9138.",
+        "Canonical serialization of the path-sorted source_files entries independently produced source-set SHA-256 a112223f935cc2c2a04cc70cb2cae218fbb6ee44486f3fb09db7175749bc1e94.",
+        "The current ODNI ICD 203 PDF contains ICD 203, Analytic Standards, the directive signed 2015-01-02, and its 2022-12-21 technical amendment; the summarized analytic standards are supported and predate the cutoff.",
+        "The CI Glossary PDF identifies the issuer as Defense Intelligence Agency, Defense Counterintelligence and Human Intelligence Center, Office of Counterintelligence; identifies the glossary dated 2011-05-02; and supports the deconfliction definition and DoDI S-5240.17, CI Collection, 2009-01-12 attribution.",
+        "Both files expressly dedicate any subsisting copyright under CC0 1.0. Comparison with the official sources found concise factual paraphrase and no copied passage."
+      ],
+      "source_decisions": [
+        {
+          "path": "analytic-standards-fact-card.md",
+          "sha256": "a6424fb9b77e4248eb6ab1f3d0e0526e188f3da9169d711e2c56c77bd811add5",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "Explicit CC0 1.0 dedication; original concise factual paraphrase with no copied passage; claims verified against the official ODNI document."
+        },
+        {
+          "path": "source-deconfliction-fact-card.md",
+          "sha256": "89c5c61f22ac2253ed7cc8805e7bce26b03dd7a1135e35128afbaf4fc34c9138",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "Explicit CC0 1.0 dedication; original concise factual paraphrase with no copied passage; issuer, title, date, definition, and attribution verified against the official PDF."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-privacy-v2-20260804",
+      "reviewed_at": "2026-08-03T21:56:49.124Z",
+      "subject_sha256": "a112223f935cc2c2a04cc70cb2cae218fbb6ee44486f3fb09db7175749bc1e94",
+      "evidence": [
+        "analytic-standards-fact-card.md:a6424fb9b77e4248eb6ab1f3d0e0526e188f3da9169d711e2c56c77bd811add5",
+        "source-deconfliction-fact-card.md:89c5c61f22ac2253ed7cc8805e7bce26b03dd7a1135e35128afbaf4fc34c9138",
+        "canonical-set-sha256-recomputed",
+        "privacy-policy-v2-default-deny-exact-allowlists-and-no-overlap",
+        "source-bytes-clean"
+      ],
+      "privacy_policy_sha256": "01cbc3426aba8a7816dccff4678556015966012e3447e7664552b45c1d189a43",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-outcome-v2-20260804",
+      "reviewed_at": "2026-08-03T21:56:54.937Z",
+      "subject_sha256": "a112223f935cc2c2a04cc70cb2cae218fbb6ee44486f3fb09db7175749bc1e94",
+      "evidence": [
+        "prompt.md sha256=1960a85df02a2ab18b13b92af529b4a41597179e4919e12d848bcd11ca49e3ff",
+        "analytic-standards-fact-card.md sha256=a6424fb9b77e4248eb6ab1f3d0e0526e188f3da9169d711e2c56c77bd811add5",
+        "source-deconfliction-fact-card.md sha256=89c5c61f22ac2253ed7cc8805e7bce26b03dd7a1135e35128afbaf4fc34c9138",
+        "canonical source-set hash independently recomputed and matched",
+        "evidence cutoff independently hashed; state=frozen; benchmark_cutoff=2026-08-02T00:00:00Z"
+      ],
+      "evidence_cutoff_sha256": "17a2fd28b0d207b6d204697dd49013afdd812ff9dfd8532ac295536f46cf46ef",
+      "expected_pressure_sha256": "fa3497f91aeb0e63aa9a60725011c3417a8c5b33d4d511d4d9aa52bc23713b94",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }

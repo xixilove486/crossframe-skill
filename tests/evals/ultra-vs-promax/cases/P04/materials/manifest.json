@@ -1,12 +1,71 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "P04",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "evaluation-timing-fact-card.md",
+      "sha256": "5646b3def7219aa1b7d03e5d383f58bfc72408681776f2e6d61dddcb609c8dfd",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    }
+  ],
+  "source_count": 1,
+  "source_set_sha256": "20ea7e2bdef5811852332698731a4be5cd90ad9c0ba36385429c9d9f1aa06845",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-license-20260804",
+      "reviewed_at": "2026-08-03T21:41:00.164Z",
+      "subject_sha256": "20ea7e2bdef5811852332698731a4be5cd90ad9c0ba36385429c9d9f1aa06845",
+      "evidence": [
+        "The canonical, filename-path-sorted source-set SHA-256 was independently recomputed and matched the frozen P04 hash.",
+        "The GOV.UK record identifies HM Treasury and the Evaluation Task Force and was last updated 2026-05-15; its update log records PDF replacement on 2026-05-14 and HTML addition on 2026-05-15. The linked official PDF cover says May 2026, so every relevant version marker predates the cutoff.",
+        "The official Magenta Book supports the summarized process, impact, and value-for-money distinctions; early planning; before, during, and after evidence; decision-point timing; limitation disclosure; corrective learning; and longer-term outcome considerations.",
+        "Byte inspection found clean UTF-8 concise prose, an explicit original-text and no-source-passage declaration, and a CC0 dedication. Comparison found only factual paraphrase and generic evaluation terminology, not copied creative expression."
+      ],
+      "source_decisions": [
+        {
+          "path": "evaluation-timing-fact-card.md",
+          "sha256": "5646b3def7219aa1b7d03e5d383f58bfc72408681776f2e6d61dddcb609c8dfd",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "The card contains original concise factual prose expressly dedicated under CC0 and paraphrases official evaluation guidance without reproducing an expressive passage."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-privacy-v2-20260804",
+      "reviewed_at": "2026-08-03T21:56:49.124Z",
+      "subject_sha256": "20ea7e2bdef5811852332698731a4be5cd90ad9c0ba36385429c9d9f1aa06845",
+      "evidence": [
+        "evaluation-timing-fact-card.md:5646b3def7219aa1b7d03e5d383f58bfc72408681776f2e6d61dddcb609c8dfd",
+        "canonical-set-sha256-recomputed",
+        "privacy-policy-v2-default-deny-exact-allowlists-and-no-overlap",
+        "source-bytes-clean"
+      ],
+      "privacy_policy_sha256": "a9f9991c94843a9ff0f1327781c6f309fec4b3863f8ebba51d1b37cb50207fff",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-outcome-v2-20260804",
+      "reviewed_at": "2026-08-03T21:56:54.937Z",
+      "subject_sha256": "20ea7e2bdef5811852332698731a4be5cd90ad9c0ba36385429c9d9f1aa06845",
+      "evidence": [
+        "prompt.md sha256=05ca3f8090c6a324d60aba39fe392e05cbdb6952d44abaa578829c6d78f6399a",
+        "evaluation-timing-fact-card.md sha256=5646b3def7219aa1b7d03e5d383f58bfc72408681776f2e6d61dddcb609c8dfd",
+        "canonical source-set hash independently recomputed and matched",
+        "evidence cutoff independently hashed; state=frozen; benchmark_cutoff=2026-08-02T00:00:00Z"
+      ],
+      "evidence_cutoff_sha256": "82295bb19c8cad0a6eabef80a30a7325791b741eb9a3ee64e3364bbe70685f14",
+      "expected_pressure_sha256": "9efddff516621fc5b530d90bfcc8151c7a866f82a58a28c3462268373eb4aefa",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }
