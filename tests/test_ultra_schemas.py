@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ULTRA_ROOT = ROOT / "skills/crossframe-ultra"
 SCHEMA_ROOT = ULTRA_ROOT / "schemas"
 RUNTIME_SCRIPTS = ULTRA_ROOT / "scripts"
+RUNTIME_FIXTURE_ROOT = ROOT / "tests/fixtures/ultra-runtime"
 
 FRAMEWORK_RAW_SHA256 = (
     "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
@@ -1145,6 +1146,126 @@ def test_every_ultra_schema_is_closed_and_valid() -> None:
         assert schema.get("additionalProperties") is False or schema.get(
             "unevaluatedProperties"
         ) is False
+
+
+def test_common_schema_current_binding_matches_runtime_constants() -> None:
+    runtime = load_runtime()
+    constants = importlib.import_module("ultra_runtime.constants")
+    common = runtime.load_schema("ultra-common.schema.json")
+    properties = common["$defs"]["currentVersionBinding"]["allOf"][1][
+        "properties"
+    ]
+    schema_binding = {field: definition["const"] for field, definition in properties.items()}
+    assert schema_binding == constants.current_version_binding()
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "schema_name", "schema_id", "phase_id"),
+    (
+        (
+            "evidence-ledger-valid.json",
+            "ultra-evidence-ledger.schema.json",
+            "crossframe.ultra.v82.evidence-ledger",
+            "U3",
+        ),
+        (
+            "world-volume-valid.json",
+            "ultra-world-volume.schema.json",
+            "crossframe.ultra.v82.world-volume",
+            "U4",
+        ),
+        (
+            "transformation-valid.json",
+            "ultra-transformation-ledger.schema.json",
+            "crossframe.ultra.v82.transformation-ledger",
+            "U5",
+        ),
+    ),
+)
+def test_phase_fixture_envelope_and_content_hash_bind_external_authority(
+    fixture_name: str,
+    schema_name: str,
+    schema_id: str,
+    phase_id: str,
+) -> None:
+    schemas = importlib.import_module("ultra_runtime.schemas")
+    artifact_value = json.loads(
+        (RUNTIME_FIXTURE_ROOT / fixture_name).read_text(encoding="utf-8")
+    )
+
+    validated = schemas.validate_phase_artifact(
+        schema_name,
+        artifact_value,
+        expected_schema_id=schema_id,
+        expected_run_id="ultra-task8-run",
+        expected_version_binding=version_binding(),
+        expected_phase_id=phase_id,
+    )
+    assert validated == artifact_value
+
+
+def test_phase_artifact_rejects_payload_change_with_old_hash() -> None:
+    schemas = importlib.import_module("ultra_runtime.schemas")
+    artifact_value = json.loads(
+        (RUNTIME_FIXTURE_ROOT / "evidence-ledger-valid.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    artifact_value["entries"][0]["statement"] += " changed"
+
+    with pytest.raises(schemas.UltraSchemaError, match="content_sha256"):
+        schemas.validate_phase_artifact(
+            "ultra-evidence-ledger.schema.json",
+            artifact_value,
+            expected_schema_id="crossframe.ultra.v82.evidence-ledger",
+            expected_run_id="ultra-task8-run",
+            expected_version_binding=version_binding(),
+            expected_phase_id="U3",
+        )
+
+
+@pytest.mark.parametrize("mutation", ("run", "version", "phase", "authority"))
+def test_self_rehashed_artifact_cannot_choose_its_expected_authority(
+    mutation: str,
+) -> None:
+    import hashlib
+
+    schemas = importlib.import_module("ultra_runtime.schemas")
+    artifact_value = json.loads(
+        (RUNTIME_FIXTURE_ROOT / "evidence-ledger-valid.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if mutation == "run":
+        artifact_value["run_id"] = "attacker-selected-run"
+    elif mutation == "version":
+        artifact_value["version_binding"]["source_tree_sha256"] = "e" * 64
+    elif mutation == "phase":
+        artifact_value["phase_id"] = "U4"
+    else:
+        artifact_value["schema_id"] = "crossframe.ultra.v82.world-volume"
+    payload = copy.deepcopy(artifact_value)
+    payload.pop("content_sha256")
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    artifact_value["content_sha256"] = hashlib.sha256(
+        (canonical + "\n").encode("utf-8")
+    ).hexdigest()
+
+    with pytest.raises((schemas.UltraSchemaError, ValidationError)):
+        schemas.validate_phase_artifact(
+            "ultra-evidence-ledger.schema.json",
+            artifact_value,
+            expected_schema_id="crossframe.ultra.v82.evidence-ledger",
+            expected_run_id="ultra-task8-run",
+            expected_version_binding=version_binding(),
+            expected_phase_id="U3",
+        )
 
 
 def test_schema_ids_are_unique_and_isolated_from_max_and_promax() -> None:

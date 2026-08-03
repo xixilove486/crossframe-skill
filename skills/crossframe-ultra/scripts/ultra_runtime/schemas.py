@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import json
 import re
 from collections.abc import Mapping
 from datetime import date as calendar_date
@@ -12,7 +11,15 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from referencing import Registry, Resource
 
+from . import constants as runtime_constants
 from .errors import UltraCompatibilityError, UltraSchemaError
+from .jsonio import (
+    DEFAULT_MAX_JSON_BYTES,
+    canonical_json_bytes,
+    load_json_object,
+    load_json_object_bytes,
+    sha256_bytes,
+)
 
 
 SCHEMA_NAMES = (
@@ -121,32 +128,137 @@ def _checked_schema_name(schema_name: str) -> str:
     return schema_name
 
 
-@lru_cache(maxsize=None)
+def _validate_common_current_binding(document: Mapping[str, Any]) -> None:
+    try:
+        properties = document["$defs"]["currentVersionBinding"]["allOf"][1][
+            "properties"
+        ]
+        schema_binding = {
+            field: definition["const"]
+            for field, definition in properties.items()
+        }
+    except (KeyError, TypeError) as error:
+        raise UltraSchemaError(
+            "Ultra common schema does not expose a closed current version binding"
+        ) from error
+    expected = runtime_constants.current_version_binding()
+    if tuple(schema_binding) != runtime_constants.VERSION_BINDING_FIELDS:
+        raise UltraSchemaError(
+            "Ultra common schema version binding fields drift from constants"
+        )
+    if schema_binding != expected:
+        raise UltraSchemaError(
+            "Ultra common schema current version binding drifts from constants"
+        )
+
+
+def _validate_schema_document(
+    schema_name: str,
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        Draft202012Validator.check_schema(document)
+    except (MemoryError, RecursionError) as error:
+        raise UltraSchemaError(
+            f"Ultra schema resource limit exceeded for {schema_name!r}"
+        ) from error
+    except Exception as error:
+        raise UltraSchemaError(f"invalid Ultra schema {schema_name!r}: {error}") from error
+    if schema_name == "ultra-common.schema.json":
+        _validate_common_current_binding(document)
+    return document
+
+
 def _load_schema_cached(schema_name: str) -> dict[str, Any]:
     checked_name = _checked_schema_name(schema_name)
     path = schema_root() / checked_name
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        document = load_json_object(path)
+    except (OSError, TypeError, ValueError) as error:
         raise UltraSchemaError(f"cannot load Ultra schema {checked_name!r}: {error}") from error
-    if not isinstance(document, dict):
-        raise UltraSchemaError(f"Ultra schema root must be an object: {checked_name!r}")
-    try:
-        Draft202012Validator.check_schema(document)
-    except Exception as error:
-        raise UltraSchemaError(f"invalid Ultra schema {checked_name!r}: {error}") from error
-    return document
+    return _validate_schema_document(checked_name, document)
 
 
 def load_schema(schema_name: str) -> dict[str, Any]:
-    return copy.deepcopy(_load_schema_cached(schema_name))
+    try:
+        return copy.deepcopy(_load_schema_cached(schema_name))
+    except (MemoryError, RecursionError) as error:
+        raise UltraSchemaError(
+            f"Ultra schema resource limit exceeded for {schema_name!r}"
+        ) from error
 
 
-def _make_schema_registry(*, isolate_contents: bool) -> Registry[Any]:
+def _current_binding_token() -> tuple[tuple[str, object], ...]:
+    binding = runtime_constants.current_version_binding()
+    return tuple(
+        (field, binding[field]) for field in runtime_constants.VERSION_BINDING_FIELDS
+    )
+
+
+def _read_schema_snapshot() -> tuple[tuple[str, bytes], ...]:
+    root = schema_root()
+    snapshot: list[tuple[str, bytes]] = []
+    for schema_name in SCHEMA_NAMES:
+        path = root / schema_name
+        try:
+            if path.stat().st_size > DEFAULT_MAX_JSON_BYTES:
+                raise UltraSchemaError(
+                    f"Ultra schema exceeds the JSON byte limit: {schema_name!r}"
+                )
+            raw = path.read_bytes()
+        except MemoryError as error:
+            raise UltraSchemaError(
+                f"Ultra schema resource limit exceeded for {schema_name!r}"
+            ) from error
+        except OSError as error:
+            raise UltraSchemaError(
+                f"cannot read Ultra schema {schema_name!r}: {error}"
+            ) from error
+        if len(raw) > DEFAULT_MAX_JSON_BYTES:
+            raise UltraSchemaError(
+                f"Ultra schema exceeds the JSON byte limit: {schema_name!r}"
+            )
+        snapshot.append((schema_name, raw))
+    return tuple(snapshot)
+
+
+@lru_cache(maxsize=4)
+def _schema_documents_cached(
+    binding_token: tuple[tuple[str, object], ...],
+    snapshot: tuple[tuple[str, bytes], ...],
+) -> tuple[tuple[str, dict[str, Any]], ...]:
+    if binding_token != _current_binding_token():
+        raise UltraSchemaError("schema cache key is not the current constants authority")
+    documents: list[tuple[str, dict[str, Any]]] = []
+    for schema_name, raw in snapshot:
+        try:
+            document = load_json_object_bytes(raw, source=schema_name)
+        except (TypeError, ValueError) as error:
+            raise UltraSchemaError(
+                f"cannot load Ultra schema {schema_name!r}: {error}"
+            ) from error
+        documents.append(
+            (schema_name, _validate_schema_document(schema_name, document))
+        )
+    return tuple(documents)
+
+
+def _current_schema_documents() -> tuple[tuple[str, dict[str, Any]], ...]:
+    return _schema_documents_cached(
+        _current_binding_token(),
+        _read_schema_snapshot(),
+    )
+
+
+def _make_schema_registry(
+    *,
+    isolate_contents: bool,
+    documents: tuple[tuple[str, dict[str, Any]], ...],
+) -> Registry[Any]:
     resources: list[tuple[str, Resource[Any]]] = []
     seen_ids: set[str] = set()
-    for schema_name in SCHEMA_NAMES:
-        schema = _load_schema_cached(schema_name)
+    for schema_name, stored_schema in documents:
+        schema = stored_schema
         if isolate_contents:
             schema = copy.deepcopy(schema)
         schema_id = schema.get("$id")
@@ -161,27 +273,71 @@ def _make_schema_registry(*, isolate_contents: bool) -> Registry[Any]:
     return Registry().with_resources(resources)
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
+def _internal_schema_registry_cached(
+    binding_token: tuple[tuple[str, object], ...],
+    snapshot: tuple[tuple[str, bytes], ...],
+) -> Registry[Any]:
+    documents = _schema_documents_cached(binding_token, snapshot)
+    return _make_schema_registry(isolate_contents=False, documents=documents)
+
+
 def _internal_schema_registry() -> Registry[Any]:
-    return _make_schema_registry(isolate_contents=False)
+    binding_token = _current_binding_token()
+    snapshot = _read_schema_snapshot()
+    return _internal_schema_registry_cached(binding_token, snapshot)
 
 
 def build_schema_registry() -> Registry[Any]:
-    return _make_schema_registry(isolate_contents=True)
+    return _make_schema_registry(
+        isolate_contents=True,
+        documents=_current_schema_documents(),
+    )
 
 
-@lru_cache(maxsize=None)
-def _validator_for(schema_name: str) -> Draft202012Validator:
-    checked_name = _checked_schema_name(schema_name)
+@lru_cache(maxsize=128)
+def _validator_for_cached(
+    schema_name: str,
+    binding_token: tuple[tuple[str, object], ...],
+    snapshot: tuple[tuple[str, bytes], ...],
+) -> Draft202012Validator:
+    documents = dict(_schema_documents_cached(binding_token, snapshot))
     return Draft202012Validator(
-        _load_schema_cached(checked_name),
-        registry=_internal_schema_registry(),
+        documents[schema_name],
+        registry=_internal_schema_registry_cached(binding_token, snapshot),
         format_checker=_FORMAT_CHECKER,
     )
 
 
+def _validator_for(schema_name: str) -> Draft202012Validator:
+    checked_name = _checked_schema_name(schema_name)
+    binding_token = _current_binding_token()
+    snapshot = _read_schema_snapshot()
+    return _validator_for_cached(checked_name, binding_token, snapshot)
+
+
 def validate_instance(schema_name: str, instance: Mapping[str, Any]) -> None:
-    _validator_for(schema_name).validate(instance)
+    try:
+        _validator_for(schema_name).validate(instance)
+    except ValidationError as error:
+        if "version_binding" in error.absolute_path:
+            raise ValidationError(
+                f"version authority binding mismatch: {error.message}"
+            ) from error
+        raise
+
+
+def compute_artifact_content_sha256(artifact: Mapping[str, Any]) -> str:
+    if not isinstance(artifact, Mapping):
+        raise UltraSchemaError("artifact must be an object")
+    try:
+        payload = copy.deepcopy(dict(artifact))
+        payload.pop("content_sha256", None)
+        return sha256_bytes(canonical_json_bytes(payload))
+    except (MemoryError, RecursionError, TypeError, ValueError) as error:
+        raise UltraSchemaError(
+            f"artifact payload is not bounded canonical JSON: {error}"
+        ) from error
 
 
 def _validate_compatibility_matrix_policy(document: Mapping[str, Any]) -> None:
@@ -243,32 +399,46 @@ def _validate_compatibility_matrix_policy(document: Mapping[str, Any]) -> None:
             )
 
 
-@lru_cache(maxsize=1)
 def _load_compatibility_matrix_cached() -> dict[str, Any]:
     path = _compatibility_matrix_path()
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        document = load_json_object(path)
+    except (OSError, TypeError, ValueError) as error:
         raise UltraCompatibilityError(
             f"cannot load Ultra compatibility matrix: {error}"
         ) from error
-    if not isinstance(document, dict):
-        raise UltraCompatibilityError("Ultra compatibility matrix must be an object")
     try:
         validate_instance("ultra-compatibility-matrix.schema.json", document)
-    except ValidationError as error:
+    except (ValidationError, UltraSchemaError) as error:
         raise UltraCompatibilityError(
-            f"Ultra compatibility matrix is invalid: {error.message}"
+            "Ultra compatibility matrix is invalid: "
+            f"{getattr(error, 'message', str(error))}"
         ) from error
+    if document["content_sha256"] != compute_artifact_content_sha256(document):
+        raise UltraCompatibilityError(
+            "Ultra compatibility matrix content_sha256 does not match its payload"
+        )
+    if document["version_binding"] != runtime_constants.current_version_binding():
+        raise UltraCompatibilityError(
+            "Ultra compatibility matrix version binding drifts from constants"
+        )
+    if tuple(document["binding_fields"]) != runtime_constants.VERSION_BINDING_FIELDS:
+        raise UltraCompatibilityError(
+            "Ultra compatibility matrix binding fields drift from constants"
+        )
     _validate_compatibility_matrix_policy(document)
     return document
 
 
 def load_compatibility_matrix() -> dict[str, Any]:
-    return copy.deepcopy(_load_compatibility_matrix_cached())
+    try:
+        return copy.deepcopy(_load_compatibility_matrix_cached())
+    except (MemoryError, RecursionError) as error:
+        raise UltraCompatibilityError(
+            "Ultra compatibility matrix resource limit exceeded"
+        ) from error
 
 
-@lru_cache(maxsize=1)
 def _binding_validator() -> Draft202012Validator:
     binding_schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -281,7 +451,6 @@ def _binding_validator() -> Draft202012Validator:
     )
 
 
-@lru_cache(maxsize=1)
 def _current_binding_validator() -> Draft202012Validator:
     binding_schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -298,9 +467,52 @@ def _snapshot_mapping(value: object) -> dict[str, Any] | None:
     if not isinstance(value, Mapping):
         return None
     try:
-        return dict(value)
-    except Exception:
-        return None
+        return copy.deepcopy(dict(value))
+    except (Exception, MemoryError, RecursionError):
+        try:
+            return dict(value)
+        except Exception:
+            return None
+
+
+def validate_phase_artifact(
+    schema_name: str,
+    artifact: Mapping[str, Any],
+    *,
+    expected_schema_id: str,
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, Any],
+    expected_phase_id: str,
+) -> dict[str, Any]:
+    snapshot = _snapshot_mapping(artifact)
+    expected_binding = _snapshot_mapping(expected_version_binding)
+    if snapshot is None:
+        raise UltraSchemaError("phase artifact must be an object")
+    if expected_binding is None:
+        raise UltraSchemaError("expected version binding must be an object")
+    if not isinstance(expected_schema_id, str) or not expected_schema_id:
+        raise UltraSchemaError("expected schema authority must be explicit")
+    if not isinstance(expected_run_id, str) or not expected_run_id:
+        raise UltraSchemaError("expected run_id must be explicit")
+    if expected_phase_id not in runtime_constants.PHASES:
+        raise UltraSchemaError("expected phase_id must be a current Ultra phase")
+    current_binding = runtime_constants.current_version_binding()
+    if expected_binding != current_binding:
+        raise UltraSchemaError(
+            "expected version binding differs from the current constants authority"
+        )
+    validate_instance(schema_name, snapshot)
+    if snapshot.get("schema_id") != expected_schema_id:
+        raise UltraSchemaError("phase artifact schema authority does not match expected")
+    if snapshot.get("run_id") != expected_run_id:
+        raise UltraSchemaError("phase artifact run_id does not match expected")
+    if snapshot.get("version_binding") != expected_binding:
+        raise UltraSchemaError("phase artifact full version binding does not match expected")
+    if snapshot.get("phase_id") != expected_phase_id:
+        raise UltraSchemaError("phase artifact phase_id does not match expected")
+    if snapshot.get("content_sha256") != compute_artifact_content_sha256(snapshot):
+        raise UltraSchemaError("phase artifact content_sha256 does not match its payload")
+    return snapshot
 
 
 def _is_valid_binding(value: object) -> bool:

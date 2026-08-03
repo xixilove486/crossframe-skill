@@ -12,12 +12,12 @@
     "compiler_version": "1.0.0",
     "validator_version": "1.0.0",
     "article_contract_version": "1.0.0",
-    "source_tree_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
   "generated_at": "2026-08-02T08:00:00Z",
-  "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "content_sha256": "afed13e664c01417d2b49f5851e0f5f81ec4dfc1ba5d883616249bceb1aa42dd",
   "phase_id": "U5",
-  "source_volume_sha256": "4f67d124f37e0848a89b63bb5ba151303c169102b9d7a2fdee2aca940c5b2e39",
+  "source_volume_sha256": "a10d4efcb4e644087862088da70af83ab9e04a5f7d2f7c363fda4db98deaeb6e",
   "transformations": [
     {
       "transform_id": "TRANSFORM-SCALE",

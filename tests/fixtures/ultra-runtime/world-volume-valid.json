@@ -12,10 +12,10 @@
     "compiler_version": "1.0.0",
     "validator_version": "1.0.0",
     "article_contract_version": "1.0.0",
-    "source_tree_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
   "generated_at": "2026-08-02T08:00:00Z",
-  "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "content_sha256": "31b2686705f331b85f8e4e7d3ced1bf3603e7f43b4e337156069a413fd6ab274",
   "phase_id": "U4",
   "volume_id": "OMEGA-0",
   "object_boundary": {

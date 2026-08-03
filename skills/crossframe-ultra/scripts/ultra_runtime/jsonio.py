@@ -6,9 +6,12 @@ import json
 import os
 from pathlib import Path
 import secrets
+import sys
 from threading import Lock
-from typing import BinaryIO, Iterator
+from typing import Any, BinaryIO, Iterator
 from weakref import WeakValueDictionary
+
+from check_crossframe_ultra_v82_source import MAX_ISOLATED_REQUEST_BYTES
 
 
 class _LocalPathLock:
@@ -22,6 +25,9 @@ _LOCAL_LOCKS_GUARD = Lock()
 _LOCAL_LOCKS: WeakValueDictionary[str, _LocalPathLock] = WeakValueDictionary()
 AUTHORITY_SNAPSHOT_LOCK_FILENAME = ".authority-snapshot.lock"
 RUN_LIFECYCLE_LOCK_FILENAME = ".run-lifecycle.lock"
+DEFAULT_MAX_JSON_BYTES = MAX_ISOLATED_REQUEST_BYTES
+DEFAULT_MAX_JSON_CONTAINER_ITEMS = DEFAULT_MAX_JSON_BYTES
+DEFAULT_MAX_JSON_DEPTH = sys.getrecursionlimit()
 
 
 def canonical_json_bytes(value: object) -> bytes:
@@ -107,20 +113,161 @@ def atomic_write_json(path: Path, value: object) -> None:
     atomic_write_bytes(path, canonical_json_bytes(value))
 
 
-def load_json_object(path: Path) -> dict[str, object]:
+def _strict_limit(value: object, *, name: str, default: int) -> int:
+    if value is None:
+        return default
+    if type(value) is not int or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer")
+    return value
+
+
+def _reject_json_constant(value: str) -> object:
+    raise ValueError(f"non-finite JSON constant is forbidden: {value}")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _validate_json_structure(
+    value: object,
+    *,
+    max_container_items: int,
+    max_depth: int,
+) -> None:
+    container_items = 0
+    try:
+        stack: list[tuple[Iterator[object], int]] = [(iter((value,)), 0)]
+        while stack:
+            children, depth = stack[-1]
+            try:
+                current = next(children)
+            except StopIteration:
+                stack.pop()
+                continue
+            if not isinstance(current, (dict, list)):
+                continue
+            container_items += len(current)
+            if container_items > max_container_items:
+                raise ValueError(
+                    "JSON container member count exceeds the configured container limit"
+                )
+            if depth > max_depth:
+                raise ValueError("JSON nesting depth exceeds the configured depth limit")
+            nested = current.values() if isinstance(current, dict) else current
+            stack.append((iter(nested), depth + 1))
+    except (MemoryError, RecursionError) as error:
+        raise ValueError(
+            "JSON resource/depth limit exceeded while checking structure"
+        ) from error
+
+
+def load_json_object(
+    path: Path,
+    *,
+    max_bytes: int | None = None,
+    max_container_items: int | None = None,
+    max_depth: int | None = None,
+) -> dict[str, object]:
     if not isinstance(path, Path):
         raise TypeError("path must be a pathlib.Path")
-    raw = path.read_bytes()
+    byte_limit = _strict_limit(
+        max_bytes,
+        name="max_bytes",
+        default=DEFAULT_MAX_JSON_BYTES,
+    )
+    container_limit = _strict_limit(
+        max_container_items,
+        name="max_container_items",
+        default=DEFAULT_MAX_JSON_CONTAINER_ITEMS,
+    )
+    depth_limit = _strict_limit(
+        max_depth,
+        name="max_depth",
+        default=DEFAULT_MAX_JSON_DEPTH,
+    )
     try:
-        text = raw.decode("utf-8")
+        if path.stat().st_size > byte_limit:
+            raise ValueError(
+                f"JSON byte length exceeds the configured byte limit at {path}"
+            )
+        raw = path.read_bytes()
+    except MemoryError as error:
+        raise ValueError(f"JSON memory/resource limit exceeded at {path}") from error
+    return load_json_object_bytes(
+        raw,
+        source=str(path),
+        max_bytes=byte_limit,
+        max_container_items=container_limit,
+        max_depth=depth_limit,
+    )
+
+
+def load_json_object_bytes(
+    raw: bytes,
+    *,
+    source: str,
+    max_bytes: int | None = None,
+    max_container_items: int | None = None,
+    max_depth: int | None = None,
+) -> dict[str, object]:
+    if not isinstance(raw, bytes):
+        raise TypeError("raw JSON document must be bytes")
+    if not isinstance(source, str) or not source:
+        raise TypeError("JSON source must be a non-empty string")
+    byte_limit = _strict_limit(
+        max_bytes,
+        name="max_bytes",
+        default=DEFAULT_MAX_JSON_BYTES,
+    )
+    container_limit = _strict_limit(
+        max_container_items,
+        name="max_container_items",
+        default=DEFAULT_MAX_JSON_CONTAINER_ITEMS,
+    )
+    depth_limit = _strict_limit(
+        max_depth,
+        name="max_depth",
+        default=DEFAULT_MAX_JSON_DEPTH,
+    )
+    try:
+        if len(raw) > byte_limit:
+            raise ValueError(
+                f"JSON byte length exceeds the configured byte limit at {source}"
+            )
+        if raw.startswith(b"\xef\xbb\xbf"):
+            raise ValueError(f"UTF-8 BOM is forbidden in JSON object at {source}")
+        text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as error:
-        raise ValueError(f"invalid UTF-8 JSON object at {path}: {error}") from error
+        raise ValueError(f"invalid UTF-8 JSON object at {source}: {error}") from error
+    except (MemoryError, RecursionError) as error:
+        raise ValueError(
+            f"JSON memory/resource/depth limit exceeded while preprocessing object at {source}"
+        ) from error
     try:
-        value = json.loads(text)
-    except json.JSONDecodeError as error:
-        raise ValueError(f"invalid JSON object at {path}: {error}") from error
+        value = json.loads(
+            text,
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_unique_json_object,
+        )
+    except (json.JSONDecodeError, ValueError) as error:
+        raise ValueError(f"invalid JSON object at {source}: {error}") from error
+    except (MemoryError, RecursionError) as error:
+        raise ValueError(
+            f"JSON resource/depth limit exceeded while parsing object at {source}"
+        ) from error
     if not isinstance(value, dict):
-        raise TypeError(f"JSON value at {path} must be an object")
+        raise TypeError(f"JSON value at {source} must be an object")
+    _validate_json_structure(
+        value,
+        max_container_items=container_limit,
+        max_depth=depth_limit,
+    )
     return value
 
 

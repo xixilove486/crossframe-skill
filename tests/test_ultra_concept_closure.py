@@ -25,6 +25,7 @@ from ultra_runtime.concept_closure import (
     ConceptClosureError,
     validate_concept_closure,
 )
+from ultra_runtime.constants import SOURCE_TREE_SHA256
 from ultra_runtime.article import order_and_validate_packets
 from test_ultra_article import _valid_case
 
@@ -129,7 +130,7 @@ def closure_document(
             "compiler_version": "1.0.0",
             "validator_version": "1.0.0",
             "article_contract_version": "1.0.0",
-            "source_tree_sha256": "c" * 64,
+            "source_tree_sha256": SOURCE_TREE_SHA256,
         },
         "generated_at": "2026-08-02T08:00:00Z",
         "content_sha256": "a" * 64,

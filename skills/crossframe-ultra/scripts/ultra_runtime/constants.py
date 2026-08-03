@@ -14,6 +14,21 @@ ARTIFACT_SCHEMA_VERSION = 1
 COMPILER_VERSION = "1.0.0"
 VALIDATOR_VERSION = "1.0.0"
 ARTICLE_CONTRACT_VERSION = "1.0.0"
+SOURCE_TREE_SHA256 = (
+    "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+)
+VERSION_BINDING_FIELDS = (
+    "framework_version",
+    "framework_revision",
+    "framework_raw_sha256",
+    "framework_semantic_sha256",
+    "runtime_version",
+    "artifact_schema_version",
+    "compiler_version",
+    "validator_version",
+    "article_contract_version",
+    "source_tree_sha256",
+)
 PHASES = tuple(f"U{number}" for number in range(13))
 RUN_STATUSES = (
     "created",
@@ -25,3 +40,18 @@ RUN_STATUSES = (
     "cancelled",
     "complete",
 )
+
+
+def current_version_binding() -> dict[str, object]:
+    return {
+        "framework_version": FRAMEWORK_VERSION,
+        "framework_revision": FRAMEWORK_REVISION,
+        "framework_raw_sha256": FRAMEWORK_RAW_SHA256,
+        "framework_semantic_sha256": FRAMEWORK_SEMANTIC_SHA256,
+        "runtime_version": RUNTIME_VERSION,
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "compiler_version": COMPILER_VERSION,
+        "validator_version": VALIDATOR_VERSION,
+        "article_contract_version": ARTICLE_CONTRACT_VERSION,
+        "source_tree_sha256": SOURCE_TREE_SHA256,
+    }

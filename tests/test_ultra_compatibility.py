@@ -19,7 +19,28 @@ MATRIX_PATH = ULTRA_ROOT / "references/compatibility-matrix.json"
 
 RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
 SEMANTIC_SHA256 = "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
-TREE_SHA256 = "c" * 64
+TREE_SHA256 = "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+
+
+def canonical_content_sha256(value: dict[str, Any]) -> str:
+    import hashlib
+
+    payload = json.loads(json.dumps(value))
+    payload.pop("content_sha256", None)
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256((canonical + "\n").encode("utf-8")).hexdigest()
+
+
+def clear_legacy_cache(function: object) -> None:
+    cache_clear = getattr(function, "cache_clear", None)
+    if cache_clear is not None:
+        cache_clear()
 
 
 def load_runtime():
@@ -100,6 +121,7 @@ INVALID_MATRIX_SCHEMA_CASES = (
 
 def test_frozen_constants_are_exact() -> None:
     runtime = load_runtime()
+    constants = importlib.import_module("ultra_runtime.constants")
     assert runtime.FRAMEWORK_VERSION == "8.2"
     assert runtime.FRAMEWORK_REVISION == "v8.2-r1"
     assert runtime.FRAMEWORK_RAW_SHA256 == RAW_SHA256
@@ -109,6 +131,8 @@ def test_frozen_constants_are_exact() -> None:
     assert runtime.COMPILER_VERSION == "1.0.0"
     assert runtime.VALIDATOR_VERSION == "1.0.0"
     assert runtime.ARTICLE_CONTRACT_VERSION == "1.0.0"
+    assert constants.SOURCE_TREE_SHA256 == TREE_SHA256
+    assert constants.current_version_binding() == binding()
     assert runtime.PHASES == tuple(f"U{number}" for number in range(13))
     assert runtime.RUN_STATUSES == (
         "created",
@@ -133,6 +157,9 @@ def test_compatibility_matrix_is_schema_valid_and_mechanically_loaded() -> None:
         "fork-required",
         "reject",
     ]
+    assert matrix["version_binding"] == binding()
+    assert matrix["content_sha256"] == canonical_content_sha256(matrix)
+    assert len(set(matrix["content_sha256"])) > 1
     assert [rule["priority"] for rule in matrix["rules"]] == sorted(
         rule["priority"] for rule in matrix["rules"]
     )
@@ -176,12 +203,12 @@ def test_matrix_loader_rejects_unsafe_rule_policy(
         "_compatibility_matrix_path",
         lambda: matrix_path,
     )
-    schemas_module._load_compatibility_matrix_cached.cache_clear()
+    clear_legacy_cache(schemas_module._load_compatibility_matrix_cached)
     try:
         with pytest.raises(runtime.UltraCompatibilityError):
             runtime.load_compatibility_matrix()
     finally:
-        schemas_module._load_compatibility_matrix_cached.cache_clear()
+        clear_legacy_cache(schemas_module._load_compatibility_matrix_cached)
 
 
 def test_compatibility_is_mechanical() -> None:
@@ -203,6 +230,50 @@ def test_compatibility_is_mechanical() -> None:
             )
             == expected
         )
+
+
+def test_well_formed_placeholder_tree_is_not_current_authority() -> None:
+    runtime = load_runtime()
+    placeholder = binding(source_tree_sha256="c" * 64)
+    assert runtime.resolve_compatibility(placeholder, placeholder) == "reject"
+
+
+def test_matrix_single_field_drift_is_rejected_after_cache_fill(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = load_runtime()
+    schemas_module = importlib.import_module("ultra_runtime.schemas")
+    matrix = json.loads(MATRIX_PATH.read_text(encoding="utf-8"))
+    matrix_path = tmp_path / "compatibility-matrix.json"
+    matrix_path.write_text(json.dumps(matrix), encoding="utf-8")
+    monkeypatch.setattr(
+        schemas_module,
+        "_compatibility_matrix_path",
+        lambda: matrix_path,
+    )
+    clear_legacy_cache(schemas_module._load_compatibility_matrix_cached)
+
+    runtime.load_compatibility_matrix()
+    matrix["version_binding"]["source_tree_sha256"] = "e" * 64
+    matrix["content_sha256"] = canonical_content_sha256(matrix)
+    matrix_path.write_text(json.dumps(matrix), encoding="utf-8")
+
+    with pytest.raises(runtime.UltraCompatibilityError):
+        runtime.load_compatibility_matrix()
+
+
+def test_constants_single_field_drift_invalidates_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = load_runtime()
+    constants = importlib.import_module("ultra_runtime.constants")
+    schemas_module = importlib.import_module("ultra_runtime.schemas")
+    clear_legacy_cache(schemas_module._load_compatibility_matrix_cached)
+    monkeypatch.setattr(constants, "RUNTIME_VERSION", "1.0.1")
+
+    with pytest.raises(runtime.UltraCompatibilityError):
+        runtime.load_compatibility_matrix()
 
 
 def test_reject_priority_precedes_readable_or_migration_rules() -> None:
