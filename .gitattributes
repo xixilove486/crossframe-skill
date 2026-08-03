@@ -41,6 +41,7 @@
 /skills/crossframe-ultra/schemas/** text eol=lf
 /skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py text eol=lf
 /skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py text eol=lf
+/skills/crossframe-ultra/scripts/ultra_runtime/jsonio.py text eol=lf
 /skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py text eol=lf
 /scripts/generate_crossframe_ultra_v82_source.py text eol=lf
 /scripts/check_crossframe_ultra_v82_source.py text eol=lf

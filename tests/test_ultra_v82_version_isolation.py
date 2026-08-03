@@ -328,6 +328,7 @@ def test_ultra_byte_bound_paths_are_pinned_to_lf() -> None:
         "/skills/crossframe-ultra/references/concept-contracts/** text eol=lf",
         "/skills/crossframe-ultra/references/v8.2-route-map.json text eol=lf",
         "/skills/crossframe-ultra/schemas/** text eol=lf",
+        "/skills/crossframe-ultra/scripts/ultra_runtime/jsonio.py text eol=lf",
         "/skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py text eol=lf",
         "/scripts/check_crossframe_ultra_v82_knowledge.py text eol=lf",
         "/tests/test_ultra_v82_registry_closure.py text eol=lf",
