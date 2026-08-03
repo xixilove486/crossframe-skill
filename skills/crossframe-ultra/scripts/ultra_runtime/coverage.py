@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -8,16 +9,22 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+from typing import Any
 import unicodedata
+
+from jsonschema import ValidationError
 
 from .article import (
     REQUIRED_READER_APPENDICES,
     REQUIRED_READER_SECTIONS,
     contains_machine_dump,
     extract_reader_sections,
+    validate_output_plan_artifact,
     validate_reader_article,
 )
 from .errors import UltraRuntimeError
+from .jsonio import canonical_json_bytes, sha256_bytes
+from .schemas import compute_artifact_content_sha256, validate_phase_artifact
 
 
 REQUIRED_UNIT_KINDS = (
@@ -64,6 +71,21 @@ BLIND_READER_FIELDS = (
     "residuals",
     "reversal_conditions",
 )
+U11_SEMANTIC_COVERAGE_PATH = "work/authoring/U11-semantic-coverage.json"
+U11_ARTICLE_REVIEW_PATH = "work/authoring/U11-article-review.json"
+QUALITY_CHECK_IDS = (
+    "reader-contract",
+    "repeated-paragraph",
+    "template-language",
+    "jargon-before-explanation",
+    "unresolved-pronoun",
+    "unsupported-certainty",
+    "truncation-promise",
+    "machine-dump",
+    "independent-article",
+    "semantic-coverage",
+    "blind-recovery",
+)
 _BLIND_READER_LABELS = {
     "main_verdict": "主判断",
     "confidence": "置信度",
@@ -102,6 +124,7 @@ _MAPPING_FIELDS = frozenset(
     {"unit_id", "unit_kind", "section_id", "normalized_excerpt", "source_refs"}
 )
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*\Z")
+_SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 _WHITESPACE_RE = re.compile(r"\s+")
 _TEMPLATE_LANGUAGE_RE = re.compile(
     r"在本节中[，,]?我们将|以下将从.{0,24}(?:方面|维度)(?:展开|分析)|"
@@ -199,6 +222,14 @@ class SemanticCoverageValidation:
 
 
 @dataclass(frozen=True, slots=True)
+class _CoverageSection:
+    section_id: str
+    title: str
+    ordinal: int
+    body: str
+
+
+@dataclass(frozen=True, slots=True)
 class ArticleQualityIssue:
     code: str
     evidence: str
@@ -288,6 +319,51 @@ def _plan_sections(output_plan: Mapping[str, object]) -> dict[str, tuple[str, tu
     return result
 
 
+def _extract_coverage_sections(
+    article_text: str, output_plan: Mapping[str, object]
+) -> tuple[_CoverageSection, ...]:
+    if not isinstance(article_text, str) or not article_text:
+        raise SemanticCoverageError("coverage article must be non-empty text")
+    raw_entries = tuple(
+        _sequence(output_plan.get("sections"), "output plan sections")
+    ) + tuple(_sequence(output_plan.get("appendices"), "output plan appendices"))
+    expected_titles = REQUIRED_READER_SECTIONS + REQUIRED_READER_APPENDICES
+    if len(raw_entries) != len(expected_titles):
+        raise SemanticCoverageError("coverage requires the frozen 10+5 article shape")
+    headings = list(re.finditer(r"(?m)^## ([^\n]+)$", article_text))
+    if tuple(match.group(1).strip() for match in headings) != expected_titles:
+        raise SemanticCoverageError(
+            "coverage article headings differ from the frozen 10+5 titles"
+        )
+    result: list[_CoverageSection] = []
+    for index, (raw, heading, expected_title) in enumerate(
+        zip(raw_entries, headings, expected_titles, strict=True), 1
+    ):
+        entry = _mapping(raw, f"output plan entry {index}")
+        section_id = _identifier(
+            entry.get("section_id"), f"output plan entry {index} section_id"
+        )
+        if entry.get("title") != expected_title or entry.get("ordinal") != index:
+            raise SemanticCoverageError(
+                f"output plan entry {section_id} differs from the frozen article order"
+            )
+        end = headings[index].start() if index < len(headings) else len(article_text)
+        body = article_text[heading.end() : end].strip()
+        if not body:
+            raise SemanticCoverageError(
+                f"coverage article section {section_id} has an empty body"
+            )
+        result.append(
+            _CoverageSection(
+                section_id=section_id,
+                title=expected_title,
+                ordinal=index,
+                body=body,
+            )
+        )
+    return tuple(result)
+
+
 def _contract_payload(
     *,
     article_sha256: str,
@@ -297,7 +373,7 @@ def _contract_payload(
     fields: Sequence[BlindRecoveryFieldContract],
 ) -> dict[str, object]:
     return {
-        "contract_version": "task11-blind-recovery-v1",
+        "contract_version": "ultra-blind-recovery-v1",
         "article_sha256": article_sha256,
         "output_plan_sha256": output_plan_sha256,
         "coverage_article_sha256": coverage_article_sha256,
@@ -507,13 +583,18 @@ def validate_semantic_coverage(
     output_plan: Mapping[str, object],
     substantive_units: Sequence[Mapping[str, object]],
     mappings: Sequence[Mapping[str, object]],
+    *,
+    allow_incomplete: bool = False,
 ) -> SemanticCoverageValidation:
     if not isinstance(article_text, str):
         raise TypeError("article_text must be text")
-    sections = extract_reader_sections(article_text, output_plan)
+    if type(allow_incomplete) is not bool:
+        raise TypeError("allow_incomplete must be boolean")
+    sections = _extract_coverage_sections(article_text, output_plan)
     section_by_id = {section.section_id: section for section in sections}
+    plan_sections = _plan_sections(output_plan)
 
-    units_by_id: dict[str, tuple[str, bool]] = {}
+    units_by_id: dict[str, tuple[str, bool, tuple[str, ...] | None]] = {}
     required_ids: list[str] = []
     required_kinds: set[str] = set()
     for index, raw in enumerate(_sequence(substantive_units, "substantive units")):
@@ -527,7 +608,16 @@ def validate_semantic_coverage(
                 f"substantive unit {unit_id} has unsupported unit kind {unit_kind!r}"
             )
         required = _is_substantive(unit)
-        units_by_id[unit_id] = (str(unit_kind), required)
+        frozen_source_refs: tuple[str, ...] | None = None
+        if "source_refs" in unit:
+            frozen_source_refs = _source_refs(
+                unit.get("source_refs"), f"substantive unit {unit_id} source_refs"
+            )
+            if not frozen_source_refs:
+                raise SemanticCoverageError(
+                    f"substantive unit {unit_id} source authority must not be empty"
+                )
+        units_by_id[unit_id] = (str(unit_kind), required, frozen_source_refs)
         if required:
             required_ids.append(unit_id)
             required_kinds.add(str(unit_kind))
@@ -563,7 +653,7 @@ def validate_semantic_coverage(
             raise SemanticCoverageError(
                 f"unexpected or unknown coverage unit: {unit_id}"
             )
-        expected_kind, required = unit_record
+        expected_kind, required, frozen_source_refs = unit_record
         if not required:
             raise SemanticCoverageError(
                 f"coverage mapping {unit_id} does not refer to a required substantive unit"
@@ -580,6 +670,10 @@ def validate_semantic_coverage(
         if section is None:
             raise SemanticCoverageError(
                 f"coverage mapping {unit_id} names an unknown article section"
+            )
+        if unit_id not in plan_sections[section_id][1]:
+            raise SemanticCoverageError(
+                f"coverage mapping {unit_id} is outside its frozen section semantic units"
             )
         excerpt = mapping.get("normalized_excerpt")
         if not isinstance(excerpt, str) or not excerpt:
@@ -611,21 +705,154 @@ def validate_semantic_coverage(
                 f"coverage mappings are out of normalized article occurrence order at {unit_id}"
             )
         last_position = position
-        _source_refs(mapping.get("source_refs"), f"mapping {unit_id} source_refs")
+        mapping_source_refs = _source_refs(
+            mapping.get("source_refs"), f"mapping {unit_id} source_refs"
+        )
+        if not mapping_source_refs:
+            raise SemanticCoverageError(
+                f"mapping {unit_id} source_refs must not be empty for coverage"
+            )
+        if (
+            frozen_source_refs is not None
+            and mapping_source_refs != frozen_source_refs
+        ):
+            raise SemanticCoverageError(
+                f"mapping {unit_id} source_refs do not match frozen source authority"
+            )
         covered.append(unit_id)
 
     missing = tuple(unit_id for unit_id in required_ids if unit_id not in seen_mappings)
-    if missing:
+    if missing and not allow_incomplete:
         raise SemanticCoverageError(
             f"semantic coverage is missing required units: {list(missing)}"
         )
+    coverage_percent = (
+        round((len(covered) / len(required_ids)) * 100, 6)
+        if required_ids
+        else 0.0
+    )
     return SemanticCoverageValidation(
         article_sha256=hashlib.sha256(article_text.encode("utf-8")).hexdigest(),
         covered_unit_ids=tuple(covered),
-        missing_unit_ids=(),
-        coverage_percent=100.0,
-        coverage_complete=True,
+        missing_unit_ids=missing,
+        coverage_percent=coverage_percent,
+        coverage_complete=not missing and coverage_percent == 100.0,
     )
+
+
+def _sealed_artifact_sha256(value: object) -> str:
+    return sha256_bytes(canonical_json_bytes(value))
+
+
+def _require_sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        raise SemanticCoverageError(f"{label} must be a SHA-256 digest")
+    return value
+
+
+def _validated_output_plan_authority(
+    output_plan: Mapping[str, Any],
+    *,
+    run_id: str,
+    version_binding: Mapping[str, Any],
+    expected_artifact_sha256: str,
+) -> dict[str, Any]:
+    expected_hash = _require_sha256(
+        expected_artifact_sha256, "expected output-plan artifact authority"
+    )
+    try:
+        snapshot = validate_output_plan_artifact(
+            output_plan,
+            expected_run_id=run_id,
+            expected_version_binding=version_binding,
+            expected_u9_parent_event_sha256=str(
+                output_plan.get("u9_parent_event_sha256", "")
+            ),
+            expected_required_artifacts=_sequence(
+                output_plan.get("required_artifacts"),
+                "output plan required artifacts",
+            ),
+        )
+    except (UltraRuntimeError, ValidationError, TypeError, ValueError) as error:
+        raise SemanticCoverageError(f"invalid output-plan authority: {error}") from error
+    actual_hash = _sealed_artifact_sha256(snapshot)
+    if actual_hash != expected_hash:
+        raise SemanticCoverageError(
+            "output-plan artifact authority hash does not match the frozen U10 artifact"
+        )
+    semantic_universe = list(
+        _sequence(snapshot.get("semantic_universe"), "semantic universe authority")
+    )
+    semantic_hash = _sealed_artifact_sha256(semantic_universe)
+    if snapshot.get("semantic_universe_sha256") != semantic_hash:
+        raise SemanticCoverageError(
+            "semantic universe authority hash does not match the output plan"
+        )
+    return snapshot
+
+
+def build_semantic_coverage_artifact(
+    article_text: str,
+    output_plan: Mapping[str, Any],
+    mappings: Sequence[Mapping[str, object]],
+    *,
+    run_id: str,
+    version_binding: Mapping[str, Any],
+    generated_at: str,
+    expected_output_plan_artifact_sha256: str,
+) -> dict[str, Any]:
+    if not isinstance(article_text, str):
+        raise TypeError("article_text must be text")
+    plan = _validated_output_plan_authority(
+        output_plan,
+        run_id=run_id,
+        version_binding=version_binding,
+        expected_artifact_sha256=expected_output_plan_artifact_sha256,
+    )
+    units = tuple(
+        _mapping(raw, f"semantic universe unit {index}")
+        for index, raw in enumerate(
+            _sequence(plan.get("semantic_universe"), "semantic universe")
+        )
+    )
+    frozen_mappings = copy.deepcopy(list(_sequence(mappings, "coverage mappings")))
+    validation = validate_semantic_coverage(
+        article_text,
+        plan,
+        units,
+        frozen_mappings,
+        allow_incomplete=True,
+    )
+    artifact: dict[str, Any] = {
+        "schema_id": "crossframe.ultra.v82.semantic-coverage",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": copy.deepcopy(dict(version_binding)),
+        "generated_at": generated_at,
+        "phase_id": "U11",
+        "output_plan_artifact_sha256": expected_output_plan_artifact_sha256,
+        "semantic_universe_sha256": plan["semantic_universe_sha256"],
+        "article_sha256": validation.article_sha256,
+        "required_unit_kinds": list(REQUIRED_UNIT_KINDS),
+        "mappings": frozen_mappings,
+        "missing_unit_ids": list(validation.missing_unit_ids),
+        "coverage_percent": validation.coverage_percent,
+        "coverage_complete": validation.coverage_complete,
+    }
+    artifact["content_sha256"] = compute_artifact_content_sha256(artifact)
+    try:
+        return validate_phase_artifact(
+            "ultra-semantic-coverage.schema.json",
+            artifact,
+            expected_schema_id="crossframe.ultra.v82.semantic-coverage",
+            expected_run_id=run_id,
+            expected_version_binding=version_binding,
+            expected_phase_id="U11",
+        )
+    except (UltraRuntimeError, ValidationError, TypeError, ValueError) as error:
+        raise SemanticCoverageError(
+            f"invalid U11 semantic coverage artifact: {error}"
+        ) from error
 
 
 def _paragraphs(article_text: str) -> tuple[str, ...]:
@@ -963,6 +1190,340 @@ def _validate_blind_reader_field(field_id: str, value: str) -> None:
         )
 
 
+def _validated_coverage_artifact_authority(
+    coverage_artifact: Mapping[str, Any],
+    *,
+    run_id: str,
+    version_binding: Mapping[str, Any],
+    expected_artifact_sha256: str,
+) -> dict[str, Any]:
+    expected_hash = _require_sha256(
+        expected_artifact_sha256, "expected coverage artifact authority"
+    )
+    try:
+        snapshot = validate_phase_artifact(
+            "ultra-semantic-coverage.schema.json",
+            coverage_artifact,
+            expected_schema_id="crossframe.ultra.v82.semantic-coverage",
+            expected_run_id=run_id,
+            expected_version_binding=version_binding,
+            expected_phase_id="U11",
+        )
+    except (UltraRuntimeError, ValidationError, TypeError, ValueError) as error:
+        raise SemanticCoverageError(
+            f"invalid semantic coverage authority: {error}"
+        ) from error
+    if _sealed_artifact_sha256(snapshot) != expected_hash:
+        raise SemanticCoverageError(
+            "coverage artifact authority hash does not match the frozen U11 artifact"
+        )
+    return snapshot
+
+
+def _revalidate_coverage_artifact(
+    article_text: str,
+    output_plan: Mapping[str, Any],
+    coverage_artifact: Mapping[str, Any],
+    *,
+    expected_output_plan_artifact_sha256: str,
+) -> SemanticCoverageValidation:
+    article_sha256 = hashlib.sha256(article_text.encode("utf-8")).hexdigest()
+    if coverage_artifact.get("article_sha256") != article_sha256:
+        raise SemanticCoverageError(
+            "coverage article authority does not match the current article"
+        )
+    if (
+        coverage_artifact.get("output_plan_artifact_sha256")
+        != expected_output_plan_artifact_sha256
+    ):
+        raise SemanticCoverageError(
+            "coverage output-plan authority does not match the frozen U10 plan"
+        )
+    if (
+        coverage_artifact.get("semantic_universe_sha256")
+        != output_plan.get("semantic_universe_sha256")
+    ):
+        raise SemanticCoverageError(
+            "coverage semantic universe authority does not match the output plan"
+        )
+    if coverage_artifact.get("required_unit_kinds") != list(REQUIRED_UNIT_KINDS):
+        raise SemanticCoverageError(
+            "coverage required unit kinds differ from the frozen thirteen-kind universe"
+        )
+    units = tuple(
+        _mapping(raw, f"semantic universe unit {index}")
+        for index, raw in enumerate(
+            _sequence(output_plan.get("semantic_universe"), "semantic universe")
+        )
+    )
+    mappings = tuple(
+        _mapping(raw, f"coverage artifact mapping {index}")
+        for index, raw in enumerate(
+            _sequence(coverage_artifact.get("mappings"), "coverage artifact mappings")
+        )
+    )
+    validation = validate_semantic_coverage(
+        article_text,
+        output_plan,
+        units,
+        mappings,
+        allow_incomplete=True,
+    )
+    if (
+        coverage_artifact.get("missing_unit_ids")
+        != list(validation.missing_unit_ids)
+        or coverage_artifact.get("coverage_percent")
+        != validation.coverage_percent
+        or coverage_artifact.get("coverage_complete")
+        is not validation.coverage_complete
+    ):
+        raise SemanticCoverageError(
+            "coverage artifact summary is stale relative to its mappings"
+        )
+    return validation
+
+
+def _blind_recovery_rows(
+    article_text: str,
+    output_plan: Mapping[str, Any],
+    coverage_validation: SemanticCoverageValidation,
+) -> tuple[list[dict[str, object]], str]:
+    expectations = tuple(
+        _mapping(raw, f"blind recovery expectation {index}")
+        for index, raw in enumerate(
+            _sequence(
+                output_plan.get("blind_recovery_expectations"),
+                "blind recovery expectations",
+            )
+        )
+    )
+    if len(expectations) != len(BLIND_READER_FIELDS) or tuple(
+        item.get("field_id") for item in expectations
+    ) != BLIND_READER_FIELDS:
+        raise SemanticCoverageError(
+            "output plan does not express the frozen fifteen blind recovery rows"
+        )
+    try:
+        evidence_by_id = {
+            item.field_id: item
+            for item in recover_blind_reader_field_evidence(article_text)
+        }
+        recovery_error = ""
+    except ValueError as error:
+        evidence_by_id = {}
+        recovery_error = str(error)
+    plan_sections = _plan_sections(output_plan)
+    covered_unit_ids = set(coverage_validation.covered_unit_ids)
+    failed_fields: list[str] = []
+    rows: list[dict[str, object]] = []
+    for field_id, expectation in zip(
+        BLIND_READER_FIELDS, expectations, strict=True
+    ):
+        section_id = _identifier(
+            expectation.get("section_id"),
+            f"blind recovery expectation {field_id} section_id",
+        )
+        plan_section = plan_sections.get(section_id)
+        if plan_section is None:
+            raise SemanticCoverageError(
+                f"blind recovery expectation {field_id} names an unknown section"
+            )
+        semantic_ids = _source_refs(
+            expectation.get("semantic_unit_ids"),
+            f"blind recovery expectation {field_id} semantic_unit_ids",
+        )
+        expected_value_sha256 = _require_sha256(
+            expectation.get("normalized_value_sha256"),
+            f"blind recovery expectation {field_id} normalized value authority",
+        )
+        evidence = evidence_by_id.get(field_id)
+        recovered = False
+        excerpt: str | None = None
+        if evidence is not None:
+            normalized_value = normalize_excerpt(evidence.field_excerpt)
+            actual_value_sha256 = hashlib.sha256(
+                normalized_value.encode("utf-8")
+            ).hexdigest()
+            recovered = bool(
+                evidence.section_id == plan_section[0]
+                and set(semantic_ids).issubset(plan_section[1])
+                and set(semantic_ids).issubset(covered_unit_ids)
+                and actual_value_sha256 == expected_value_sha256
+            )
+            if recovered:
+                excerpt = evidence.field_excerpt
+        if not recovered:
+            failed_fields.append(field_id)
+        rows.append(
+            {"field_id": field_id, "recovered": recovered, "excerpt": excerpt}
+        )
+    if failed_fields:
+        reason = recovery_error or (
+            "normalized value, section, or semantic authority mismatch for "
+            + ", ".join(failed_fields)
+        )
+    else:
+        reason = "all fifteen fields match their frozen normalized value authorities"
+    return rows, reason
+
+
+def _quality_check_rows(
+    article_text: str,
+    *,
+    coverage_complete: bool,
+    blind_rows: Sequence[Mapping[str, object]],
+    external_dependencies: Sequence[str],
+) -> list[dict[str, str]]:
+    issue_by_code = {
+        issue.code: issue.evidence for issue in inspect_article_quality(article_text)
+    }
+    try:
+        validate_reader_article(article_text)
+        reader_error = ""
+    except ValueError as error:
+        reader_error = str(error)
+    pass_evidence = {
+        "reader-contract": "reader article satisfies the frozen 10+5 contract",
+        "repeated-paragraph": "no repeated paragraph was detected",
+        "template-language": "no generic template language was detected",
+        "jargon-before-explanation": "no jargon precedes its plain explanation",
+        "unresolved-pronoun": "no unresolved sentence-leading pronoun was detected",
+        "unsupported-certainty": "no unsupported certainty phrase was detected",
+        "truncation-promise": "no truncation or continuation promise was detected",
+        "machine-dump": "no machine dump was detected in reader prose",
+        "independent-article": "article requires no external file for its judgment",
+        "semantic-coverage": "semantic coverage is complete and hash-bound",
+        "blind-recovery": "all fifteen blind-reader fields were recovered",
+    }
+    rows: list[dict[str, str]] = []
+    for check_id in QUALITY_CHECK_IDS:
+        failure = ""
+        if check_id == "reader-contract":
+            failure = reader_error
+        elif check_id in {
+            "repeated-paragraph",
+            "template-language",
+            "jargon-before-explanation",
+            "unresolved-pronoun",
+            "unsupported-certainty",
+            "truncation-promise",
+            "machine-dump",
+        }:
+            failure = issue_by_code.get(check_id, "")
+        elif check_id == "independent-article" and external_dependencies:
+            failure = "external dependencies: " + ", ".join(external_dependencies)
+        elif check_id == "semantic-coverage" and not coverage_complete:
+            failure = "semantic coverage is controlled-incomplete"
+        elif check_id == "blind-recovery" and not all(
+            row.get("recovered") is True for row in blind_rows
+        ):
+            failure = "one or more frozen blind-reader fields were not recovered"
+        rows.append(
+            {
+                "check_id": check_id,
+                "status": "fail" if failure else "pass",
+                "evidence": failure or pass_evidence[check_id],
+            }
+        )
+    return rows
+
+
+def build_article_review_artifact(
+    article_text: str,
+    output_plan: Mapping[str, Any],
+    coverage_artifact: Mapping[str, Any],
+    *,
+    run_id: str,
+    version_binding: Mapping[str, Any],
+    generated_at: str,
+    expected_output_plan_artifact_sha256: str,
+    expected_coverage_artifact_sha256: str,
+) -> dict[str, Any]:
+    if not isinstance(article_text, str):
+        raise TypeError("article_text must be text")
+    plan = _validated_output_plan_authority(
+        output_plan,
+        run_id=run_id,
+        version_binding=version_binding,
+        expected_artifact_sha256=expected_output_plan_artifact_sha256,
+    )
+    frozen_coverage = _validated_coverage_artifact_authority(
+        coverage_artifact,
+        run_id=run_id,
+        version_binding=version_binding,
+        expected_artifact_sha256=expected_coverage_artifact_sha256,
+    )
+    coverage_validation = _revalidate_coverage_artifact(
+        article_text,
+        plan,
+        frozen_coverage,
+        expected_output_plan_artifact_sha256=expected_output_plan_artifact_sha256,
+    )
+    blind_rows, blind_evidence = _blind_recovery_rows(
+        article_text, plan, coverage_validation
+    )
+    external_dependencies = list(detect_external_dependencies(article_text))
+    quality_rows = _quality_check_rows(
+        article_text,
+        coverage_complete=coverage_validation.coverage_complete,
+        blind_rows=blind_rows,
+        external_dependencies=external_dependencies,
+    )
+    blind_check = next(
+        row for row in quality_rows if row["check_id"] == "blind-recovery"
+    )
+    if blind_check["status"] == "fail":
+        blind_check["evidence"] = blind_evidence
+    mechanical_complete = bool(
+        all(row["recovered"] is True for row in blind_rows)
+        and all(row["status"] == "pass" for row in quality_rows)
+        and not external_dependencies
+    )
+    expectations = list(
+        _sequence(
+            plan.get("blind_recovery_expectations"),
+            "blind recovery expectations",
+        )
+    )
+    artifact: dict[str, Any] = {
+        "schema_id": "crossframe.ultra.v82.article-review",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": copy.deepcopy(dict(version_binding)),
+        "generated_at": generated_at,
+        "phase_id": "U11",
+        "output_plan_artifact_sha256": expected_output_plan_artifact_sha256,
+        "semantic_universe_sha256": plan["semantic_universe_sha256"],
+        "article_sha256": coverage_validation.article_sha256,
+        "coverage_artifact_sha256": expected_coverage_artifact_sha256,
+        "blind_recovery_contract_sha256": _sealed_artifact_sha256(expectations),
+        "blind_reader_fields": blind_rows,
+        "quality_checks": quality_rows,
+        "external_dependencies": external_dependencies,
+        "overall_status": (
+            "mechanical-complete" if mechanical_complete else "mechanical-fail"
+        ),
+        "official_filename_allowed": False,
+        "review_stage": "mechanical-precheck",
+        "needs_u12_validation": True,
+        "u12_validator_artifact_required": True,
+    }
+    artifact["content_sha256"] = compute_artifact_content_sha256(artifact)
+    try:
+        return validate_phase_artifact(
+            "ultra-article-review.schema.json",
+            artifact,
+            expected_schema_id="crossframe.ultra.v82.article-review",
+            expected_run_id=run_id,
+            expected_version_binding=version_binding,
+            expected_phase_id="U11",
+        )
+    except (UltraRuntimeError, ValidationError, TypeError, ValueError) as error:
+        raise SemanticCoverageError(
+            f"invalid U11 article review artifact: {error}"
+        ) from error
+
+
 def review_article(
     article_text: str,
     *,
@@ -971,7 +1532,7 @@ def review_article(
     blind_recovery_contract: FrozenBlindRecoveryContract,
     external_dependencies: Sequence[str] = (),
 ) -> ArticleReview:
-    """Run Task 11 mechanical prechecks; U12 remains the only semantic authority."""
+    """Run U11 mechanical prechecks; U12 remains the only semantic authority."""
     return _review_article(
         article_text,
         output_plan=output_plan,
@@ -1030,7 +1591,7 @@ def _review_article(
             ArticleQualityIssue(
                 code="semantic-coverage-unverified",
                 evidence=(
-                    "Task 11 review requires a hash-bound, complete semantic coverage "
+                    "Article review requires a hash-bound, complete semantic coverage "
                     "validation for this exact article"
                 ),
             )
@@ -1096,10 +1657,15 @@ __all__ = (
     "BlindRecoveryFieldContract",
     "FrozenBlindRecoveryContract",
     "NON_SUBSTANTIVE_STATUSES",
+    "QUALITY_CHECK_IDS",
     "REQUIRED_UNIT_KINDS",
     "SUBSTANTIVE_STATUSES",
     "SemanticCoverageError",
     "SemanticCoverageValidation",
+    "U11_ARTICLE_REVIEW_PATH",
+    "U11_SEMANTIC_COVERAGE_PATH",
+    "build_article_review_artifact",
+    "build_semantic_coverage_artifact",
     "detect_external_dependencies",
     "freeze_blind_recovery_contract",
     "inspect_article_quality",

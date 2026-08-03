@@ -1,37 +1,77 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
 import re
 from types import MappingProxyType
+from typing import Any
+
+from jsonschema import ValidationError
 
 from .errors import UltraRuntimeError
-from .jsonio import atomic_write_bytes
+from .jsonio import atomic_write_bytes, canonical_json_bytes, sha256_bytes
+from .schemas import compute_artifact_content_sha256, validate_phase_artifact
 
 
 REQUIRED_READER_SECTIONS = (
-    "主判断、范围与置信度",
+    "主判断、范围和置信度",
     "用户观点的最强重建",
-    "事实、证据与未知",
-    "立体多圈层状态",
-    "机制、通道与级联",
+    "事实、证据、来源关系和未知项",
+    "立体多圈层联合状态",
+    "机制、真实通道和跨圈层级联",
     "竞争解释与排序",
-    "一阶、二阶与三阶推演",
-    "逐阶基线、增量与停止",
-    "事实、预测、价值、责任与授权",
-    "行动、不行动、切换与反转",
+    "一阶、二阶、三阶推演",
+    "每阶简单基线、增量和停止理由",
+    "事实、预测、价值、责任、授权裁决",
+    "行动、不行动、切换和反转条件",
 )
 REQUIRED_READER_APPENDICES = (
     "圈层—角色—尺度映射",
-    "分支、合并、剪枝、残差与停止",
-    "预测、时间窗、指标与解析",
-    "概念、证据与来源",
+    "分支、合并、剪枝、残差和停止点",
+    "预测、时间窗、指标和解析条件",
+    "概念、证据和来源锚点",
     "未知项与框架缺口候选",
 )
+U10_OUTPUT_PLAN_PATH = "work/authoring/U10-output-plan.json"
+ARTICLE_PACKET_DIRECTORY = "work/authoring/article/packets"
 OFFICIAL_ARTICLE_FILENAME = "CrossFrame-Ultra-完整文章.md"
+
+SEMANTIC_UNIT_KINDS = (
+    "claim",
+    "evidence",
+    "unknown",
+    "circle-relation",
+    "scale-transform",
+    "translation-loss",
+    "mechanism",
+    "branch",
+    "residual",
+    "forecast",
+    "verdict",
+    "action",
+    "reversal-condition",
+)
+BLIND_RECOVERY_FIELD_IDS = (
+    "main_verdict",
+    "confidence",
+    "steelmanned_user_position",
+    "decisive_evidence",
+    "unknowns",
+    "circle_relations",
+    "mechanisms",
+    "strongest_rival",
+    "order_1",
+    "order_2",
+    "order_3",
+    "five_verdicts",
+    "action",
+    "residuals",
+    "reversal_conditions",
+)
 
 _PACKET_FIELDS = frozenset(
     {
@@ -207,6 +247,51 @@ def _require_string_tuple(
     return tuple(result)
 
 
+def _require_artifact_tuple(
+    value: object, label: str
+) -> tuple[Mapping[str, str], ...]:
+    items = _require_sequence(value, label)
+    if not items:
+        raise ArticleContractError(f"{label} must not be empty")
+    result: list[Mapping[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for index, raw in enumerate(items):
+        item = _require_mapping(raw, f"{label}[{index}]")
+        if frozenset(item) != {"path", "sha256", "media_type"}:
+            raise ArticleContractError(
+                f"{label}[{index}] must contain only path, sha256, and media_type"
+            )
+        path = item.get("path")
+        digest = item.get("sha256")
+        media_type = item.get("media_type")
+        if not isinstance(path, str) or not path.strip():
+            raise ArticleContractError(f"{label}[{index}] path must be non-empty")
+        if (
+            path.startswith(("/", "\\"))
+            or re.match(r"^[A-Za-z]:", path)
+            or any(part in {"", ".", ".."} for part in re.split(r"[/\\]", path))
+        ):
+            raise ArticleContractError(f"{label}[{index}] path must be relative and canonical")
+        if not isinstance(digest, str) or _SHA256_RE.fullmatch(digest) is None:
+            raise ArticleContractError(f"{label}[{index}] sha256 is invalid")
+        if (
+            not isinstance(media_type, str)
+            or not media_type.strip()
+            or "/" not in media_type
+        ):
+            raise ArticleContractError(f"{label}[{index}] media_type is invalid")
+        key = (path, digest, media_type)
+        if key in seen:
+            raise ArticleContractError(f"{label} contains duplicate artifact objects")
+        seen.add(key)
+        result.append(
+            MappingProxyType(
+                {"path": path, "sha256": digest, "media_type": media_type}
+            )
+        )
+    return tuple(result)
+
+
 def _reader_plan_entries(
     output_plan: Mapping[str, object], *, require_packet_fields: bool
 ) -> tuple[_PlanEntry, ...]:
@@ -267,7 +352,7 @@ def _reader_plan_entries(
             dependency_hashes = _require_string_tuple(
                 entry.get("dependency_hashes"),
                 f"output plan section {section_id} dependency_hashes",
-                allow_empty=True,
+                allow_empty=False,
                 hashes=True,
             )
         else:
@@ -297,10 +382,9 @@ def _validate_output_plan(output_plan: Mapping[str, object]) -> tuple[_PlanEntry
         raise ArticleContractError(
             "semantic coverage must remain required in the frozen output plan"
         )
-    _require_string_tuple(
+    required_artifacts = _require_artifact_tuple(
         plan.get("required_artifacts"),
         "output plan required_artifacts",
-        allow_empty=False,
     )
     article_path = plan.get("article_path")
     if not isinstance(article_path, str) or not article_path.strip():
@@ -317,7 +401,220 @@ def _validate_output_plan(output_plan: Mapping[str, object]) -> tuple[_PlanEntry
         raise ArticleContractError(
             "output plan article_path must use an explicit partial filename"
         )
-    return _reader_plan_entries(plan, require_packet_fields=True)
+    entries = _reader_plan_entries(plan, require_packet_fields=True)
+    required_hashes = {item["sha256"] for item in required_artifacts}
+    for entry in entries:
+        unknown_hashes = set(entry.dependency_hashes) - required_hashes
+        if unknown_hashes:
+            raise ArticleContractError(
+                f"output plan section {entry.section_id} depends on unknown artifacts: "
+                f"{sorted(unknown_hashes)}"
+            )
+    return entries
+
+
+def _validate_output_plan_relations(
+    plan: Mapping[str, object], entries: Sequence[_PlanEntry]
+) -> None:
+    required_artifacts = _require_artifact_tuple(
+        plan.get("required_artifacts"), "output plan required_artifacts"
+    )
+    required_hashes = {item["sha256"] for item in required_artifacts}
+    raw_universe = _require_sequence(
+        plan.get("semantic_universe"), "output plan semantic_universe"
+    )
+    if not raw_universe:
+        raise ArticleContractError("output plan semantic_universe must not be empty")
+    universe_by_id: dict[str, Mapping[str, object]] = {}
+    observed_kinds: set[str] = set()
+    for index, raw in enumerate(raw_universe):
+        unit = _require_mapping(raw, f"semantic_universe[{index}]")
+        unit_id = _require_identifier(
+            unit.get("unit_id"), f"semantic_universe[{index}] unit_id"
+        )
+        if unit_id in universe_by_id:
+            raise ArticleContractError(f"duplicate semantic unit_id: {unit_id}")
+        unit_kind = unit.get("unit_kind")
+        if unit_kind not in SEMANTIC_UNIT_KINDS:
+            raise ArticleContractError(
+                f"semantic unit {unit_id} has an unknown unit_kind"
+            )
+        observed_kinds.add(str(unit_kind))
+        authority_hash = unit.get("authority_artifact_sha256")
+        if (
+            not isinstance(authority_hash, str)
+            or _SHA256_RE.fullmatch(authority_hash) is None
+        ):
+            raise ArticleContractError(
+                f"semantic unit {unit_id} authority_artifact_sha256 is invalid"
+            )
+        if authority_hash not in required_hashes:
+            raise ArticleContractError(
+                f"semantic unit {unit_id} authority artifact is not required upstream authority"
+            )
+        universe_by_id[unit_id] = unit
+    missing_kinds = set(SEMANTIC_UNIT_KINDS) - observed_kinds
+    if missing_kinds:
+        raise ArticleContractError(
+            f"semantic universe is missing frozen unit kinds: {sorted(missing_kinds)}"
+        )
+
+    planned_unit_ids = {
+        unit_id for entry in entries for unit_id in entry.semantic_unit_ids
+    }
+    universe_unit_ids = set(universe_by_id)
+    if planned_unit_ids != universe_unit_ids:
+        raise ArticleContractError(
+            "section semantic_unit_ids must materialize the complete semantic universe"
+        )
+    expected_universe_hash = sha256_bytes(canonical_json_bytes(list(raw_universe)))
+    if plan.get("semantic_universe_sha256") != expected_universe_hash:
+        raise ArticleContractError(
+            "output plan semantic_universe_sha256 does not match the frozen universe"
+        )
+
+    entry_by_id = {entry.section_id: entry for entry in entries}
+    expectations = _require_sequence(
+        plan.get("blind_recovery_expectations"),
+        "output plan blind_recovery_expectations",
+    )
+    if len(expectations) != len(BLIND_RECOVERY_FIELD_IDS):
+        raise ArticleContractError(
+            "output plan must contain the frozen fifteen blind recovery fields"
+        )
+    for index, (raw, expected_field_id) in enumerate(
+        zip(expectations, BLIND_RECOVERY_FIELD_IDS, strict=True)
+    ):
+        expectation = _require_mapping(
+            raw, f"blind_recovery_expectations[{index}]"
+        )
+        if expectation.get("field_id") != expected_field_id:
+            raise ArticleContractError(
+                "blind recovery field order differs from the frozen fifteen-field contract"
+            )
+        section_id = _require_identifier(
+            expectation.get("section_id"),
+            f"blind recovery field {expected_field_id} section_id",
+        )
+        entry = entry_by_id.get(section_id)
+        if entry is None:
+            raise ArticleContractError(
+                f"blind recovery field {expected_field_id} names an unknown section"
+            )
+        semantic_ids = _require_string_tuple(
+            expectation.get("semantic_unit_ids"),
+            f"blind recovery field {expected_field_id} semantic_unit_ids",
+            allow_empty=False,
+            identifiers=True,
+        )
+        if not set(semantic_ids).issubset(entry.semantic_unit_ids):
+            raise ArticleContractError(
+                f"blind recovery field {expected_field_id} is not bound to its section units"
+            )
+        normalized_hash = expectation.get("normalized_value_sha256")
+        if (
+            not isinstance(normalized_hash, str)
+            or _SHA256_RE.fullmatch(normalized_hash) is None
+        ):
+            raise ArticleContractError(
+                f"blind recovery field {expected_field_id} normalized value hash is invalid"
+            )
+
+
+def validate_output_plan_artifact(
+    artifact: Mapping[str, Any],
+    *,
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, Any],
+    expected_u9_parent_event_sha256: str,
+    expected_required_artifacts: Sequence[Mapping[str, object]],
+) -> dict[str, Any]:
+    prevalidated_entries = _validate_output_plan(artifact)
+    try:
+        snapshot = validate_phase_artifact(
+            "ultra-output-plan.schema.json",
+            artifact,
+            expected_schema_id="crossframe.ultra.v82.output-plan",
+            expected_run_id=expected_run_id,
+            expected_version_binding=expected_version_binding,
+            expected_phase_id="U10",
+        )
+    except (UltraRuntimeError, ValidationError, TypeError, ValueError) as error:
+        raise ArticleContractError(f"invalid U10 output plan artifact: {error}") from error
+    if snapshot.get("u9_parent_event_sha256") != expected_u9_parent_event_sha256:
+        raise ArticleContractError(
+            "U10 parent authority does not match the frozen U9 event"
+        )
+    actual_required = [
+        dict(item)
+        for item in _require_artifact_tuple(
+            snapshot.get("required_artifacts"), "output plan required_artifacts"
+        )
+    ]
+    expected_required = [
+        dict(item)
+        for item in _require_artifact_tuple(
+            expected_required_artifacts, "expected required artifacts"
+        )
+    ]
+    if actual_required != expected_required:
+        raise ArticleContractError(
+            "U10 required artifact authority does not match frozen upstream authority"
+        )
+    _validate_output_plan_relations(snapshot, prevalidated_entries)
+    return snapshot
+
+
+def build_output_plan_artifact(
+    *,
+    run_id: str,
+    version_binding: Mapping[str, Any],
+    generated_at: str,
+    u9_parent_event_sha256: str,
+    article_path: str,
+    sections: Sequence[Mapping[str, object]],
+    appendices: Sequence[Mapping[str, object]],
+    required_artifacts: Sequence[Mapping[str, object]],
+    semantic_universe: Sequence[Mapping[str, object]],
+    blind_recovery_expectations: Sequence[Mapping[str, object]],
+) -> dict[str, Any]:
+    frozen_required = [
+        dict(item)
+        for item in _require_artifact_tuple(
+            required_artifacts, "output plan required_artifacts"
+        )
+    ]
+    frozen_universe = copy.deepcopy(list(semantic_universe))
+    artifact: dict[str, Any] = {
+        "schema_id": "crossframe.ultra.v82.output-plan",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": copy.deepcopy(dict(version_binding)),
+        "generated_at": generated_at,
+        "phase_id": "U10",
+        "u9_parent_event_sha256": u9_parent_event_sha256,
+        "article_path": article_path,
+        "sections": copy.deepcopy(list(sections)),
+        "appendices": copy.deepcopy(list(appendices)),
+        "required_artifacts": frozen_required,
+        "semantic_universe": frozen_universe,
+        "semantic_universe_sha256": sha256_bytes(
+            canonical_json_bytes(frozen_universe)
+        ),
+        "blind_recovery_expectations": copy.deepcopy(
+            list(blind_recovery_expectations)
+        ),
+        "coverage_required": True,
+        "official_filename_allowed": False,
+    }
+    artifact["content_sha256"] = compute_artifact_content_sha256(artifact)
+    return validate_output_plan_artifact(
+        artifact,
+        expected_run_id=run_id,
+        expected_version_binding=version_binding,
+        expected_u9_parent_event_sha256=u9_parent_event_sha256,
+        expected_required_artifacts=required_artifacts,
+    )
 
 
 def _validated_packet_copy(
@@ -661,8 +958,13 @@ def assemble_article(
 
 
 __all__ = (
+    "ARTICLE_PACKET_DIRECTORY",
     "ArticleContractError",
     "AssembledArticle",
+    "BLIND_RECOVERY_FIELD_IDS",
+    "SEMANTIC_UNIT_KINDS",
+    "U10_OUTPUT_PLAN_PATH",
+    "build_output_plan_artifact",
     "contains_machine_dump",
     "OFFICIAL_ARTICLE_FILENAME",
     "REQUIRED_READER_APPENDICES",
@@ -671,5 +973,6 @@ __all__ = (
     "assemble_article",
     "extract_reader_sections",
     "order_and_validate_packets",
+    "validate_output_plan_artifact",
     "validate_reader_article",
 )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import copy
 import importlib
 import json
 from pathlib import Path
@@ -17,6 +18,7 @@ RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 FIXTURE_ROOT = REPO_ROOT / "tests/fixtures/ultra-runtime/article-packets"
 ARTICLE_FIXTURE = FIXTURE_ROOT / "blind-reader-article.md"
 EXPECTED_FIXTURE = FIXTURE_ROOT / "blind-reader-expected.json"
+AUTHORITY_FIXTURE = FIXTURE_ROOT / "frozen-upstream-authority.json"
 
 EXPECTED_BLIND_READER_FIELDS = (
     "main_verdict",
@@ -35,12 +37,25 @@ EXPECTED_BLIND_READER_FIELDS = (
     "residuals",
     "reversal_conditions",
 )
+EXPECTED_QUALITY_CHECK_IDS = (
+    "reader-contract",
+    "repeated-paragraph",
+    "template-language",
+    "jargon-before-explanation",
+    "unresolved-pronoun",
+    "unsupported-certainty",
+    "truncation-promise",
+    "machine-dump",
+    "independent-article",
+    "semantic-coverage",
+    "blind-recovery",
+)
 
 
 def _runtime_module(name: str):
     module_file = RUNTIME_DIR / f"{name}.py"
     if not module_file.is_file():
-        pytest.skip(f"Task 11 runtime module is missing: {module_file}")
+        pytest.skip(f"Article independence runtime module is missing: {module_file}")
     scripts = str(SCRIPTS_DIR)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
@@ -64,6 +79,54 @@ def _fixture_expected() -> dict[str, str]:
     return value
 
 
+def _authority_fixture() -> dict[str, object]:
+    value = json.loads(AUTHORITY_FIXTURE.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _producer_artifacts(coverage, article_text: str):
+    article = _runtime_module("article")
+    authority = _authority_fixture()
+    output_plan = article.build_output_plan_artifact(
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u10"],
+        u9_parent_event_sha256=authority["u9_parent_event_sha256"],
+        article_path=authority["article_path"],
+        sections=authority["sections"],
+        appendices=authority["appendices"],
+        required_artifacts=authority["required_artifacts"],
+        semantic_universe=authority["semantic_universe"],
+        blind_recovery_expectations=authority["blind_recovery_expectations"],
+    )
+    output_plan_sha256 = _canonical_sha256(output_plan)
+    coverage_artifact = coverage.build_semantic_coverage_artifact(
+        article_text,
+        output_plan,
+        authority["mappings"],
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=output_plan_sha256,
+    )
+    return authority, output_plan, coverage_artifact
+
+
 def _verified_coverage(coverage, article_text: str):
     return coverage.SemanticCoverageValidation(
         article_sha256=hashlib.sha256(article_text.encode("utf-8")).hexdigest(),
@@ -76,20 +139,20 @@ def _verified_coverage(coverage, article_text: str):
 
 def _blind_output_plan() -> dict[str, object]:
     titles = (
-        "主判断、范围与置信度",
+        "主判断、范围和置信度",
         "用户观点的最强重建",
-        "事实、证据与未知",
-        "立体多圈层状态",
-        "机制、通道与级联",
+        "事实、证据、来源关系和未知项",
+        "立体多圈层联合状态",
+        "机制、真实通道和跨圈层级联",
         "竞争解释与排序",
-        "一阶、二阶与三阶推演",
-        "逐阶基线、增量与停止",
-        "事实、预测、价值、责任与授权",
-        "行动、不行动、切换与反转",
+        "一阶、二阶、三阶推演",
+        "每阶简单基线、增量和停止理由",
+        "事实、预测、价值、责任、授权裁决",
+        "行动、不行动、切换和反转条件",
         "圈层—角色—尺度映射",
-        "分支、合并、剪枝、残差与停止",
-        "预测、时间窗、指标与解析",
-        "概念、证据与来源",
+        "分支、合并、剪枝、残差和停止点",
+        "预测、时间窗、指标和解析条件",
+        "概念、证据和来源锚点",
         "未知项与框架缺口候选",
     )
     field_units_by_section = {
@@ -112,7 +175,7 @@ def _blind_output_plan() -> dict[str, object]:
             "semantic_unit_ids": field_units_by_section.get(
                 ordinal, [f"appendix-unit-{ordinal:02d}"]
             ),
-            "dependency_hashes": [],
+            "dependency_hashes": ["a" * 64],
         }
         for ordinal, title in enumerate(titles, 1)
     ]
@@ -120,8 +183,14 @@ def _blind_output_plan() -> dict[str, object]:
         "phase_id": "U10",
         "official_filename_allowed": False,
         "coverage_required": True,
-        "required_artifacts": ["semantic-coverage.json"],
-        "article_path": "article.partial.md",
+        "required_artifacts": [
+            {
+                "path": "artifacts/U09-U10-verdict/ultra-verdict.json",
+                "sha256": "a" * 64,
+                "media_type": "application/json",
+            }
+        ],
+        "article_path": "work/authoring/article.partial.md",
         "sections": entries[:10],
         "appendices": entries[10:],
     }
@@ -196,6 +265,188 @@ def test_blind_reader_contract_names_every_required_recovery_field(coverage) -> 
     assert coverage.BLIND_READER_FIELDS == EXPECTED_BLIND_READER_FIELDS
 
 
+def test_u11_article_review_producer_emits_frozen_fifteen_and_eleven_rows(
+    coverage,
+) -> None:
+    schemas = _runtime_module("schemas")
+    article_text = _fixture_article()
+    authority, output_plan, coverage_artifact = _producer_artifacts(
+        coverage, article_text
+    )
+    output_plan_sha256 = _canonical_sha256(output_plan)
+    coverage_sha256 = _canonical_sha256(coverage_artifact)
+
+    artifact = coverage.build_article_review_artifact(
+        article_text,
+        output_plan,
+        coverage_artifact,
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=output_plan_sha256,
+        expected_coverage_artifact_sha256=coverage_sha256,
+    )
+
+    assert coverage.U11_ARTICLE_REVIEW_PATH == "work/authoring/U11-article-review.json"
+    assert [row["field_id"] for row in artifact["blind_reader_fields"]] == list(
+        EXPECTED_BLIND_READER_FIELDS
+    )
+    assert len(artifact["blind_reader_fields"]) == 15
+    assert all(row["recovered"] is True for row in artifact["blind_reader_fields"])
+    assert [row["check_id"] for row in artifact["quality_checks"]] == list(
+        EXPECTED_QUALITY_CHECK_IDS
+    )
+    assert len(artifact["quality_checks"]) == 11
+    assert all(row["status"] == "pass" for row in artifact["quality_checks"])
+    assert artifact["overall_status"] == "mechanical-complete"
+    assert artifact["official_filename_allowed"] is False
+    assert artifact["needs_u12_validation"] is True
+    assert artifact["u12_validator_artifact_required"] is True
+    assert artifact["output_plan_artifact_sha256"] == output_plan_sha256
+    assert artifact["coverage_artifact_sha256"] == coverage_sha256
+    assert artifact["content_sha256"] == _canonical_sha256(
+        {key: value for key, value in artifact.items() if key != "content_sha256"}
+    )
+    validated = schemas.validate_phase_artifact(
+        "ultra-article-review.schema.json",
+        artifact,
+        expected_schema_id="crossframe.ultra.v82.article-review",
+        expected_run_id=authority["run_id"],
+        expected_version_binding=authority["version_binding"],
+        expected_phase_id="U11",
+    )
+    assert validated == artifact
+
+
+def test_u11_article_review_producer_records_controlled_fail_without_publishing(
+    coverage,
+) -> None:
+    schemas = _runtime_module("schemas")
+    repeated = (
+        "核查依据明确写出“缩小试点范围”，并把两周观察设为扩大前的条件。"
+    )
+    article_text = _fixture_article().rstrip() + f"\n\n{repeated}\n"
+    authority, output_plan, coverage_artifact = _producer_artifacts(
+        coverage, article_text
+    )
+    artifact = coverage.build_article_review_artifact(
+        article_text,
+        output_plan,
+        coverage_artifact,
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+        expected_coverage_artifact_sha256=_canonical_sha256(coverage_artifact),
+    )
+
+    checks = {row["check_id"]: row["status"] for row in artifact["quality_checks"]}
+    assert artifact["overall_status"] == "mechanical-fail"
+    assert checks["repeated-paragraph"] == "fail"
+    assert artifact["official_filename_allowed"] is False
+    assert artifact["review_stage"] == "mechanical-precheck"
+    validated = schemas.validate_phase_artifact(
+        "ultra-article-review.schema.json",
+        artifact,
+        expected_schema_id="crossframe.ultra.v82.article-review",
+        expected_run_id=authority["run_id"],
+        expected_version_binding=authority["version_binding"],
+        expected_phase_id="U11",
+    )
+    assert validated == artifact
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("article-sha256", "plan-authority", "semantic-universe-authority"),
+)
+def test_u11_article_review_rejects_stale_or_role_swapped_coverage(
+    coverage, mutation: str
+) -> None:
+    article_text = _fixture_article()
+    authority, output_plan, coverage_artifact = _producer_artifacts(
+        coverage, article_text
+    )
+    tampered = copy.deepcopy(coverage_artifact)
+    if mutation == "article-sha256":
+        tampered["article_sha256"] = "0" * 64
+    elif mutation == "plan-authority":
+        tampered["output_plan_artifact_sha256"] = tampered[
+            "semantic_universe_sha256"
+        ]
+    else:
+        tampered["semantic_universe_sha256"] = tampered[
+            "output_plan_artifact_sha256"
+        ]
+    tampered["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in tampered.items() if key != "content_sha256"}
+    )
+
+    with pytest.raises(ValueError, match="article|output-plan|semantic.*universe|authority"):
+        coverage.build_article_review_artifact(
+            article_text,
+            output_plan,
+            tampered,
+            run_id=authority["run_id"],
+            version_binding=authority["version_binding"],
+            generated_at=authority["generated_at"]["u11"],
+            expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+            expected_coverage_artifact_sha256=_canonical_sha256(tampered),
+        )
+
+
+def test_u11_blind_recovery_matches_frozen_normalized_value_hash_not_label_only(
+    coverage,
+) -> None:
+    article = _runtime_module("article")
+    authority = _authority_fixture()
+    altered = copy.deepcopy(authority)
+    altered["blind_recovery_expectations"][0]["normalized_value_sha256"] = "0" * 64
+    output_plan = article.build_output_plan_artifact(
+        run_id=altered["run_id"],
+        version_binding=altered["version_binding"],
+        generated_at=altered["generated_at"]["u10"],
+        u9_parent_event_sha256=altered["u9_parent_event_sha256"],
+        article_path=altered["article_path"],
+        sections=altered["sections"],
+        appendices=altered["appendices"],
+        required_artifacts=altered["required_artifacts"],
+        semantic_universe=altered["semantic_universe"],
+        blind_recovery_expectations=altered["blind_recovery_expectations"],
+    )
+    article_text = _fixture_article()
+    coverage_artifact = coverage.build_semantic_coverage_artifact(
+        article_text,
+        output_plan,
+        altered["mappings"],
+        run_id=altered["run_id"],
+        version_binding=altered["version_binding"],
+        generated_at=altered["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+    )
+    review = coverage.build_article_review_artifact(
+        article_text,
+        output_plan,
+        coverage_artifact,
+        run_id=altered["run_id"],
+        version_binding=altered["version_binding"],
+        generated_at=altered["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+        expected_coverage_artifact_sha256=_canonical_sha256(coverage_artifact),
+    )
+
+    rows = {row["field_id"]: row for row in review["blind_reader_fields"]}
+    checks = {row["check_id"]: row for row in review["quality_checks"]}
+    assert rows["main_verdict"] == {
+        "field_id": "main_verdict",
+        "recovered": False,
+        "excerpt": None,
+    }
+    assert checks["blind-recovery"]["status"] == "fail"
+    assert review["overall_status"] == "mechanical-fail"
+    assert review["official_filename_allowed"] is False
+
+
 def test_mechanical_review_requires_a_frozen_blind_recovery_contract(coverage) -> None:
     article_text = _fixture_article()
     contract = _blind_contract(coverage, article_text)
@@ -207,6 +458,37 @@ def test_mechanical_review_requires_a_frozen_blind_recovery_contract(coverage) -
     )
     assert review.overall_status == "mechanical-complete"
     assert review.blind_recovery_contract_sha256 == contract.contract_sha256
+
+
+def test_blind_recovery_contract_hash_uses_stable_public_version(coverage) -> None:
+    contract = _blind_contract(coverage, _fixture_article())
+    payload = {
+        "contract_version": "ultra-blind-recovery-v1",
+        "article_sha256": contract.article_sha256,
+        "output_plan_sha256": contract.output_plan_sha256,
+        "coverage_article_sha256": contract.coverage_article_sha256,
+        "coverage_validation_sha256": contract.coverage_validation_sha256,
+        "fields": [
+            {
+                "field_id": field.field_id,
+                "expected_normalized_value": field.expected_normalized_value,
+                "section_id": field.section_id,
+                "semantic_unit_ids": list(field.semantic_unit_ids),
+                "supporting_excerpts": list(field.supporting_excerpts),
+            }
+            for field in contract.fields
+        ],
+    }
+    expected_sha256 = hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert contract.contract_sha256 == expected_sha256
 
 
 def test_frozen_blind_recovery_contract_rejects_hollow_field_echoes_and_swaps(
@@ -446,7 +728,7 @@ def test_clean_room_path_runs_the_deterministic_article_only_gate(
     assert dict(review.blind_reader_fields) == _fixture_expected()
 
 
-def test_task11_review_never_authorizes_an_official_filename_or_u12_evaluator(
+def test_article_review_never_authorizes_an_official_filename_or_u12_evaluator(
     coverage,
 ) -> None:
     before_evaluation = _review(coverage, _fixture_article())

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+import copy
 import hashlib
 import importlib
 import json
@@ -15,24 +16,28 @@ ULTRA_ROOT = REPO_ROOT / "skills/crossframe-ultra"
 SCRIPTS_DIR = ULTRA_ROOT / "scripts"
 RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 ARTICLE_MODULE = RUNTIME_DIR / "article.py"
+AUTHORITY_FIXTURE = (
+    REPO_ROOT
+    / "tests/fixtures/ultra-runtime/article-packets/frozen-upstream-authority.json"
+)
 
 EXPECTED_SECTIONS = (
-    "主判断、范围与置信度",
+    "主判断、范围和置信度",
     "用户观点的最强重建",
-    "事实、证据与未知",
-    "立体多圈层状态",
-    "机制、通道与级联",
+    "事实、证据、来源关系和未知项",
+    "立体多圈层联合状态",
+    "机制、真实通道和跨圈层级联",
     "竞争解释与排序",
-    "一阶、二阶与三阶推演",
-    "逐阶基线、增量与停止",
-    "事实、预测、价值、责任与授权",
-    "行动、不行动、切换与反转",
+    "一阶、二阶、三阶推演",
+    "每阶简单基线、增量和停止理由",
+    "事实、预测、价值、责任、授权裁决",
+    "行动、不行动、切换和反转条件",
 )
 EXPECTED_APPENDICES = (
     "圈层—角色—尺度映射",
-    "分支、合并、剪枝、残差与停止",
-    "预测、时间窗、指标与解析",
-    "概念、证据与来源",
+    "分支、合并、剪枝、残差和停止点",
+    "预测、时间窗、指标和解析条件",
+    "概念、证据和来源锚点",
     "未知项与框架缺口候选",
 )
 OFFICIAL_FILENAME = "CrossFrame-Ultra-完整文章.md"
@@ -41,7 +46,7 @@ OFFICIAL_FILENAME = "CrossFrame-Ultra-完整文章.md"
 def _runtime_module(name: str):
     module_file = RUNTIME_DIR / f"{name}.py"
     if not module_file.is_file():
-        pytest.skip(f"Task 11 runtime module is missing: {module_file}")
+        pytest.skip(f"Article runtime module is missing: {module_file}")
     scripts = str(SCRIPTS_DIR)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
@@ -59,9 +64,46 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _authority_fixture() -> dict[str, object]:
+    value = json.loads(AUTHORITY_FIXTURE.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def _build_frozen_output_plan(article) -> dict[str, object]:
+    authority = _authority_fixture()
+    return article.build_output_plan_artifact(
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u10"],
+        u9_parent_event_sha256=authority["u9_parent_event_sha256"],
+        article_path=authority["article_path"],
+        sections=authority["sections"],
+        appendices=authority["appendices"],
+        required_artifacts=authority["required_artifacts"],
+        semantic_universe=authority["semantic_universe"],
+        blind_recovery_expectations=authority["blind_recovery_expectations"],
+    )
+
+
 def _valid_case() -> tuple[dict[str, object], list[dict[str, object]]]:
     entries: list[dict[str, object]] = []
     packets: list[dict[str, object]] = []
+    required_artifacts: list[dict[str, str]] = []
     for ordinal, title in enumerate(EXPECTED_SECTIONS + EXPECTED_APPENDICES, 1):
         section_id = f"reader-{ordinal:02d}"
         dependency_hash = hashlib.sha256(f"dependency-{ordinal}".encode()).hexdigest()
@@ -91,11 +133,18 @@ def _valid_case() -> tuple[dict[str, object], list[dict[str, object]]]:
                 "prose_sha256": _sha256(prose),
             }
         )
+        required_artifacts.append(
+            {
+                "path": f"artifacts/U09-U10-verdict/dependency-{ordinal:02d}.json",
+                "sha256": dependency_hash,
+                "media_type": "application/json",
+            }
+        )
     return (
         {
             "phase_id": "U10",
             "article_path": "work/authoring/article.partial.md",
-            "required_artifacts": ["artifacts/semantic-coverage.json"],
+            "required_artifacts": required_artifacts,
             "coverage_required": True,
             "official_filename_allowed": False,
             "sections": entries[:10],
@@ -110,9 +159,9 @@ def _replace_prose(packet: dict[str, object], prose: str) -> None:
     packet["prose_sha256"] = _sha256(prose)
 
 
-def test_task11_article_module_exists_for_red_gate() -> None:
+def test_article_runtime_module_exists_for_red_gate() -> None:
     assert ARTICLE_MODULE.is_file(), (
-        f"Task 11 article runtime is missing: {ARTICLE_MODULE}"
+        f"Article runtime module is missing: {ARTICLE_MODULE}"
     )
 
 
@@ -130,6 +179,103 @@ def test_reader_contract_has_exact_ten_sections_and_five_same_file_appendices(
         if line.startswith("## ")
     ]
     assert headings == list(EXPECTED_SECTIONS + EXPECTED_APPENDICES)
+
+
+def test_u10_output_plan_producer_conforms_to_public_schema_and_external_authority(
+    article,
+) -> None:
+    schemas = _runtime_module("schemas")
+    authority = _authority_fixture()
+    artifact = _build_frozen_output_plan(article)
+
+    assert article.U10_OUTPUT_PLAN_PATH == "work/authoring/U10-output-plan.json"
+    assert article.ARTICLE_PACKET_DIRECTORY == "work/authoring/article/packets"
+    assert artifact["u9_parent_event_sha256"] == authority["u9_parent_event_sha256"]
+    assert artifact["required_artifacts"] == authority["required_artifacts"]
+    assert artifact["semantic_universe_sha256"] == _canonical_sha256(
+        authority["semantic_universe"]
+    )
+    assert artifact["content_sha256"] == _canonical_sha256(
+        {key: value for key, value in artifact.items() if key != "content_sha256"}
+    )
+    validated = schemas.validate_phase_artifact(
+        "ultra-output-plan.schema.json",
+        artifact,
+        expected_schema_id="crossframe.ultra.v82.output-plan",
+        expected_run_id=authority["run_id"],
+        expected_version_binding=authority["version_binding"],
+        expected_phase_id="U10",
+    )
+    assert validated == artifact
+
+
+def test_u10_output_plan_rejects_string_artifacts_empty_dependencies_and_swapped_authority(
+    article,
+) -> None:
+    authority = _authority_fixture()
+
+    string_artifacts = copy.deepcopy(authority)
+    string_artifacts["required_artifacts"] = [
+        str(item["path"]) for item in authority["required_artifacts"]
+    ]
+    with pytest.raises(ValueError, match="required.*artifact|object|mapping"):
+        article.build_output_plan_artifact(
+            run_id=string_artifacts["run_id"],
+            version_binding=string_artifacts["version_binding"],
+            generated_at=string_artifacts["generated_at"]["u10"],
+            u9_parent_event_sha256=string_artifacts["u9_parent_event_sha256"],
+            article_path=string_artifacts["article_path"],
+            sections=string_artifacts["sections"],
+            appendices=string_artifacts["appendices"],
+            required_artifacts=string_artifacts["required_artifacts"],
+            semantic_universe=string_artifacts["semantic_universe"],
+            blind_recovery_expectations=string_artifacts[
+                "blind_recovery_expectations"
+            ],
+        )
+
+    missing_dependency = copy.deepcopy(authority)
+    missing_dependency["sections"][0]["dependency_hashes"] = []
+    with pytest.raises(ValueError, match="dependenc.*empty|dependenc.*required"):
+        article.build_output_plan_artifact(
+            run_id=missing_dependency["run_id"],
+            version_binding=missing_dependency["version_binding"],
+            generated_at=missing_dependency["generated_at"]["u10"],
+            u9_parent_event_sha256=missing_dependency["u9_parent_event_sha256"],
+            article_path=missing_dependency["article_path"],
+            sections=missing_dependency["sections"],
+            appendices=missing_dependency["appendices"],
+            required_artifacts=missing_dependency["required_artifacts"],
+            semantic_universe=missing_dependency["semantic_universe"],
+            blind_recovery_expectations=missing_dependency[
+                "blind_recovery_expectations"
+            ],
+        )
+
+    artifact = _build_frozen_output_plan(article)
+    swapped = copy.deepcopy(artifact)
+    swapped["u9_parent_event_sha256"] = "f" * 64
+    swapped["content_sha256"] = _canonical_sha256(
+        {key: value for key, value in swapped.items() if key != "content_sha256"}
+    )
+    with pytest.raises(ValueError, match="parent.*authority|authority.*parent"):
+        article.validate_output_plan_artifact(
+            swapped,
+            expected_run_id=authority["run_id"],
+            expected_version_binding=authority["version_binding"],
+            expected_u9_parent_event_sha256=authority["u9_parent_event_sha256"],
+            expected_required_artifacts=authority["required_artifacts"],
+        )
+
+
+def test_u10_rejects_plan_and_packet_that_share_an_unfrozen_dependency(article) -> None:
+    plan, packets = _valid_case()
+    forged_dependency = "f" * 64
+    plan["sections"][0]["dependency_hashes"] = [forged_dependency]
+    packets[0]["dependency_hashes"] = [forged_dependency]
+
+    with pytest.raises(ValueError, match="unknown.*artifact|required.*authority"):
+        article.order_and_validate_packets(plan, packets)
 
 
 @pytest.mark.parametrize(
@@ -311,27 +457,27 @@ def test_output_plan_must_freeze_the_complete_reader_shape(
     ("bad_prose", "message"),
     [
         (
-            '## 主判断、范围与置信度\n\n```json\n{"schema_id": "x"}\n```',
+            '## 主判断、范围和置信度\n\n```json\n{"schema_id": "x"}\n```',
             "JSON|schema|reader prose",
         ),
         (
-            '## 主判断、范围与置信度\n\n{"任意键": ["机器数据", "不是读者解释"]}',
+            '## 主判断、范围和置信度\n\n{"任意键": ["机器数据", "不是读者解释"]}',
             "JSON|machine|reader prose",
         ),
         (
-            "## 主判断、范围与置信度\n\nmain_verdict 与 dependency_hashes 如上。",
+            "## 主判断、范围和置信度\n\nmain_verdict 与 dependency_hashes 如上。",
             "internal|field",
         ),
         (
-            "## 主判断、范围与置信度\n\n篇幅所限，剩余内容将在下一篇继续。",
+            "## 主判断、范围和置信度\n\n篇幅所限，剩余内容将在下一篇继续。",
             "truncat|continu|篇幅|完整",
         ),
         (
-            "## 主判断、范围与置信度\n\nM01、M02、M03、M04、M05、M06。",
+            "## 主判断、范围和置信度\n\nM01、M02、M03、M04、M05、M06。",
             "concept|具体|stuff",
         ),
         (
-            "## 主判断、范围与置信度\n\n边界、嵌入、外溢、递归、转义、锁定、同构。",
+            "## 主判断、范围和置信度\n\n边界、嵌入、外溢、递归、转义、锁定、同构。",
             "concept|具体|stuff",
         ),
     ],
@@ -349,7 +495,7 @@ def test_reader_prose_rejects_empty_and_repeated_boilerplate_bodies(
     article, tmp_path: Path
 ) -> None:
     plan, packets = _valid_case()
-    _replace_prose(packets[0], "## 主判断、范围与置信度")
+    _replace_prose(packets[0], "## 主判断、范围和置信度")
     with pytest.raises(ValueError, match="empty|body"):
         article.assemble_article(plan, packets, tmp_path / "empty.partial.md")
 

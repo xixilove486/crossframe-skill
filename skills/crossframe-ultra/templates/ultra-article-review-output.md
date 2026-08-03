@@ -1,19 +1,45 @@
 # Ultra 独立文章复核
 
-复核者只读取完整文章，不读取运行目录、结构化档案、提示词或产品名称。复核必须从文章中恢复主判断、置信度、用户观点最强重建、决定性证据、未知项、圈层关系、机制、最强竞争解释、一至三阶推演、五类裁决、行动、残差和反转条件。
+机械复核写入 `work/authoring/U11-article-review.json`。producer 先重新核对当前文章、U10 output plan、语义宇宙和 U11 semantic coverage 的 sealed hashes；任一散列陈旧、错位或交换 authority role 都必须拒绝，不能降格为普通质量失败。
 
-| 复核项目 | 状态 | 文章内证据 |
+## 十五项盲读恢复
+
+每一行都必须把文章中实际恢复的规范化值与 U10 `normalized_value_sha256` 比较。字段标签存在不等于恢复成功。
+
+| field_id | recovered | 文章内摘录 |
 |---|---|---|
-| 十个正文章节连续完整 | pending | 待填 |
-| 五个附录位于同一文件 | pending | 待填 |
-| 实质语义覆盖完整 | pending | 待填 |
-| 删除其他工件后仍可复原 | pending | 待填 |
-| 十五项盲读字段具体且互不复用样板 | pending | 待填 |
-| 无重复段落与套话 | pending | 待填 |
-| 术语先有白话解释 | pending | 待填 |
-| 无悬空代词与无依据确定性 | pending | 待填 |
-| 无外部文件依赖 | pending | 待填 |
-| 无截断、续写承诺或机器数据倾倒 | pending | 待填 |
-| U12 fresh evaluator 的来源、隔离依据、文章散列与十五项结论 | pending | 待填 |
+| main_verdict | pending | 待填 |
+| confidence | pending | 待填 |
+| steelmanned_user_position | pending | 待填 |
+| decisive_evidence | pending | 待填 |
+| unknowns | pending | 待填 |
+| circle_relations | pending | 待填 |
+| mechanisms | pending | 待填 |
+| strongest_rival | pending | 待填 |
+| order_1 | pending | 待填 |
+| order_2 | pending | 待填 |
+| order_3 | pending | 待填 |
+| five_verdicts | pending | 待填 |
+| action | pending | 待填 |
+| residuals | pending | 待填 |
+| reversal_conditions | pending | 待填 |
 
-确定性复核只对文章内可验证的结构和反例负责，不替代主观质量判断。fresh evaluator 必须在清洁目录中只读取文章，独立评估竞争解释、公平性、具体性和论证充分性。模板文字本身不构成授权：只有 U12 产生的评估结果同时绑定当前文章散列、记录可追溯的评估来源和文章专属的隔离依据、并给出十五项字段结论，且两类复核均通过时，才允许正式文章文件名出现。
+## 十一项质量检查
+
+| check_id | 状态 | 文章内证据 |
+|---|---|---|
+| reader-contract | pending | 待填 |
+| repeated-paragraph | pending | 待填 |
+| template-language | pending | 待填 |
+| jargon-before-explanation | pending | 待填 |
+| unresolved-pronoun | pending | 待填 |
+| unsupported-certainty | pending | 待填 |
+| truncation-promise | pending | 待填 |
+| machine-dump | pending | 待填 |
+| independent-article | pending | 待填 |
+| semantic-coverage | pending | 待填 |
+| blind-recovery | pending | 待填 |
+
+重复段落、套话、术语先于解释、悬空代词、无依据确定性、截断承诺、机器数据倾倒与外部文件依赖都必须由正文真实触发。有效但不完整的 coverage 或任一质量失败应生成可通过 frozen schema 的 `mechanical-fail` 工件，而不是发布授权。
+
+U11 始终设置 `official_filename_allowed: false`、`review_stage: mechanical-precheck`、`needs_u12_validation: true` 与 `u12_validator_artifact_required: true`。只有 U12 fresh evaluator 在清洁目录中只读文章并完成独立判断后，才可能进入正式命名步骤。

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import importlib
+import json
 from pathlib import Path
 import sys
 import unicodedata
@@ -13,6 +15,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "skills/crossframe-ultra/scripts"
 RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 COVERAGE_MODULE = RUNTIME_DIR / "coverage.py"
+FIXTURE_ROOT = REPO_ROOT / "tests/fixtures/ultra-runtime/article-packets"
+AUTHORITY_FIXTURE = FIXTURE_ROOT / "frozen-upstream-authority.json"
+ARTICLE_FIXTURE = FIXTURE_ROOT / "blind-reader-article.md"
 
 EXPECTED_UNIT_KINDS = (
     "claim",
@@ -30,20 +35,20 @@ EXPECTED_UNIT_KINDS = (
     "reversal-condition",
 )
 TITLES = (
-    "主判断、范围与置信度",
+    "主判断、范围和置信度",
     "用户观点的最强重建",
-    "事实、证据与未知",
-    "立体多圈层状态",
-    "机制、通道与级联",
+    "事实、证据、来源关系和未知项",
+    "立体多圈层联合状态",
+    "机制、真实通道和跨圈层级联",
     "竞争解释与排序",
-    "一阶、二阶与三阶推演",
-    "逐阶基线、增量与停止",
-    "事实、预测、价值、责任与授权",
-    "行动、不行动、切换与反转",
+    "一阶、二阶、三阶推演",
+    "每阶简单基线、增量和停止理由",
+    "事实、预测、价值、责任、授权裁决",
+    "行动、不行动、切换和反转条件",
     "圈层—角色—尺度映射",
-    "分支、合并、剪枝、残差与停止",
-    "预测、时间窗、指标与解析",
-    "概念、证据与来源",
+    "分支、合并、剪枝、残差和停止点",
+    "预测、时间窗、指标和解析条件",
+    "概念、证据和来源锚点",
     "未知项与框架缺口候选",
 )
 STATUSES = (
@@ -58,13 +63,50 @@ STATUSES = (
 def _runtime_module(name: str):
     module_file = RUNTIME_DIR / f"{name}.py"
     if not module_file.is_file():
-        pytest.skip(f"Task 11 runtime module is missing: {module_file}")
+        pytest.skip(f"Semantic coverage runtime module is missing: {module_file}")
     scripts = str(SCRIPTS_DIR)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     importlib.invalidate_caches()
     sys.modules.pop(f"ultra_runtime.{name}", None)
     return importlib.import_module(f"ultra_runtime.{name}")
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        (
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _authority_fixture() -> dict[str, object]:
+    value = json.loads(AUTHORITY_FIXTURE.read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def _frozen_output_plan() -> dict[str, object]:
+    article = _runtime_module("article")
+    authority = _authority_fixture()
+    return article.build_output_plan_artifact(
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u10"],
+        u9_parent_event_sha256=authority["u9_parent_event_sha256"],
+        article_path=authority["article_path"],
+        sections=authority["sections"],
+        appendices=authority["appendices"],
+        required_artifacts=authority["required_artifacts"],
+        semantic_universe=authority["semantic_universe"],
+        blind_recovery_expectations=authority["blind_recovery_expectations"],
+    )
 
 
 @pytest.fixture
@@ -88,7 +130,14 @@ def _coverage_case() -> tuple[
             f"语义单元{ordinal}在本案中承担第{ordinal}项具体作用，并改变对应判断。"
         )
         plan_entries.append(
-            {"section_id": section_id, "title": title, "ordinal": ordinal}
+            {
+                "section_id": section_id,
+                "title": title,
+                "ordinal": ordinal,
+                "semantic_unit_ids": [
+                    f"semantic-{min(ordinal, len(EXPECTED_UNIT_KINDS)):02d}"
+                ],
+            }
         )
         bodies.append(f"## {title}\n\n{excerpt}")
         if ordinal <= len(EXPECTED_UNIT_KINDS):
@@ -117,9 +166,9 @@ def _coverage_case() -> tuple[
     return article_text, output_plan, units, mappings
 
 
-def test_task11_coverage_module_exists_for_red_gate() -> None:
+def test_semantic_coverage_runtime_module_exists_for_red_gate() -> None:
     assert COVERAGE_MODULE.is_file(), (
-        f"Task 11 coverage runtime is missing: {COVERAGE_MODULE}"
+        f"Semantic coverage runtime module is missing: {COVERAGE_MODULE}"
     )
 
 
@@ -138,6 +187,104 @@ def test_semantic_coverage_requires_all_thirteen_substantive_unit_kinds(
     assert result.missing_unit_ids == ()
     assert result.coverage_percent == 100.0
     assert result.coverage_complete is True
+
+
+def test_u11_semantic_coverage_producer_conforms_to_public_schema_and_hash_authority(
+    coverage,
+) -> None:
+    schemas = _runtime_module("schemas")
+    authority = _authority_fixture()
+    output_plan = _frozen_output_plan()
+    output_plan_sha256 = _canonical_sha256(output_plan)
+    article_text = ARTICLE_FIXTURE.read_text(encoding="utf-8")
+
+    artifact = coverage.build_semantic_coverage_artifact(
+        article_text,
+        output_plan,
+        authority["mappings"],
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=output_plan_sha256,
+    )
+
+    assert coverage.U11_SEMANTIC_COVERAGE_PATH == (
+        "work/authoring/U11-semantic-coverage.json"
+    )
+    assert artifact["output_plan_artifact_sha256"] == output_plan_sha256
+    assert artifact["semantic_universe_sha256"] == output_plan[
+        "semantic_universe_sha256"
+    ]
+    assert artifact["article_sha256"] == hashlib.sha256(
+        article_text.encode("utf-8")
+    ).hexdigest()
+    assert artifact["required_unit_kinds"] == list(EXPECTED_UNIT_KINDS)
+    assert artifact["coverage_complete"] is True
+    assert artifact["coverage_percent"] == 100
+    assert artifact["missing_unit_ids"] == []
+    assert artifact["content_sha256"] == _canonical_sha256(
+        {key: value for key, value in artifact.items() if key != "content_sha256"}
+    )
+    validated = schemas.validate_phase_artifact(
+        "ultra-semantic-coverage.schema.json",
+        artifact,
+        expected_schema_id="crossframe.ultra.v82.semantic-coverage",
+        expected_run_id=authority["run_id"],
+        expected_version_binding=authority["version_binding"],
+        expected_phase_id="U11",
+    )
+    assert validated == artifact
+
+
+def test_u11_semantic_coverage_producer_records_controlled_incomplete_without_publishing(
+    coverage,
+) -> None:
+    schemas = _runtime_module("schemas")
+    authority = _authority_fixture()
+    output_plan = _frozen_output_plan()
+    article_text = ARTICLE_FIXTURE.read_text(encoding="utf-8")
+    mappings = list(authority["mappings"][:-1])
+
+    artifact = coverage.build_semantic_coverage_artifact(
+        article_text,
+        output_plan,
+        mappings,
+        run_id=authority["run_id"],
+        version_binding=authority["version_binding"],
+        generated_at=authority["generated_at"]["u11"],
+        expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+    )
+
+    assert artifact["coverage_complete"] is False
+    assert artifact["coverage_percent"] < 100
+    assert artifact["missing_unit_ids"] == [
+        authority["semantic_universe"][-1]["unit_id"]
+    ]
+    assert "official_filename_allowed" not in artifact
+    validated = schemas.validate_phase_artifact(
+        "ultra-semantic-coverage.schema.json",
+        artifact,
+        expected_schema_id="crossframe.ultra.v82.semantic-coverage",
+        expected_run_id=authority["run_id"],
+        expected_version_binding=authority["version_binding"],
+        expected_phase_id="U11",
+    )
+    assert validated == artifact
+
+
+def test_u11_semantic_coverage_rejects_stale_output_plan_hash(coverage) -> None:
+    authority = _authority_fixture()
+    output_plan = _frozen_output_plan()
+    with pytest.raises(ValueError, match="output-plan.*hash|hash.*output-plan|authority"):
+        coverage.build_semantic_coverage_artifact(
+            ARTICLE_FIXTURE.read_text(encoding="utf-8"),
+            output_plan,
+            authority["mappings"],
+            run_id=authority["run_id"],
+            version_binding=authority["version_binding"],
+            generated_at=authority["generated_at"]["u11"],
+            expected_output_plan_artifact_sha256="0" * 64,
+        )
 
 
 def test_coverage_cannot_self_report_complete_when_a_required_kind_is_absent(
@@ -264,6 +411,42 @@ def test_coverage_validates_normalized_prose_occurrence_and_article_order(
 
     with pytest.raises(ValueError, match=message):
         coverage.validate_semantic_coverage(article_text, output_plan, units, mappings)
+
+
+def test_coverage_mapping_unit_must_belong_to_its_frozen_section(coverage) -> None:
+    article_text, output_plan, units, mappings = _coverage_case()
+    mappings[0]["section_id"] = "reader-02"
+    mappings[0]["normalized_excerpt"] = mappings[1]["normalized_excerpt"]
+
+    with pytest.raises(ValueError, match="section.*semantic|semantic.*section|frozen"):
+        coverage.validate_semantic_coverage(article_text, output_plan, units, mappings)
+
+
+def test_complete_coverage_mapping_requires_nonempty_source_refs(coverage) -> None:
+    article_text, output_plan, units, mappings = _coverage_case()
+    mappings[0]["source_refs"] = []
+
+    with pytest.raises(ValueError, match="source.*empty|source.*required"):
+        coverage.validate_semantic_coverage(article_text, output_plan, units, mappings)
+
+
+def test_u11_mapping_source_refs_are_bound_to_frozen_semantic_unit(coverage) -> None:
+    authority = _authority_fixture()
+    output_plan = _frozen_output_plan()
+    article_text = ARTICLE_FIXTURE.read_text(encoding="utf-8")
+    mappings = copy.deepcopy(authority["mappings"])
+    mappings[0]["source_refs"] = ["FORGED-SOURCE"]
+
+    with pytest.raises(ValueError, match="source.*frozen|source.*authority"):
+        coverage.build_semantic_coverage_artifact(
+            article_text,
+            output_plan,
+            mappings,
+            run_id=authority["run_id"],
+            version_binding=authority["version_binding"],
+            generated_at=authority["generated_at"]["u11"],
+            expected_output_plan_artifact_sha256=_canonical_sha256(output_plan),
+        )
 
 
 def test_normalized_excerpt_can_match_whitespace_variation_without_marker_stuffing(
