@@ -1,12 +1,94 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "H01",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "record-01.txt",
+      "sha256": "bb8462f04594679adda89d2976c5116337aa9f3791ca112209de252b9ab6c289",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-02.txt",
+      "sha256": "08600155676617261719a20dee7c26ba3c8c95edf77e26b58365ca1b3e8feb75",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-03.txt",
+      "sha256": "2d8bff579b8ca87743494213ecbe8ba4afe0f3942f9f1b342f005c4dbbc75f98",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "a5fd0e5add2932ea7ebd96bdef29a2aa8523c1e731a842937ce7a4261c1b3a7e",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:00:17.032Z",
+      "subject_sha256": "a5fd0e5add2932ea7ebd96bdef29a2aa8523c1e731a842937ce7a4261c1b3a7e",
+      "evidence": [
+        "Exact-byte SHA-256 recomputation matched all three supplied record bindings.",
+        "Canonical SHA-256 recomputation over the path-sorted source-item array, using paths record-01.txt through record-03.txt and the specified media_type and license values, matched the subject binding.",
+        "The American Presidency Project identifies the respective 1877 and 1881 presidential texts. U.S. Copyright Office Circular 15A states that all works published in the United States before January 1, 1931 are in the public domain: https://www.copyright.gov/circs/circ15a.pdf"
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.txt",
+          "sha256": "bb8462f04594679adda89d2976c5116337aa9f3791ca112209de252b9ab6c289",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "Excerpt provenance is Rutherford B. Hayes, First Annual Message, December 3, 1877: https://www.presidency.ucsb.edu/documents/first-annual-message-12. Its 1877 U.S. publication predates 1931 and is public domain under https://www.copyright.gov/circs/circ15a.pdf."
+        },
+        {
+          "path": "record-02.txt",
+          "sha256": "08600155676617261719a20dee7c26ba3c8c95edf77e26b58365ca1b3e8feb75",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "Excerpt provenance is James A. Garfield, Inaugural Address, March 4, 1881: https://www.presidency.ucsb.edu/documents/inaugural-address-39. Its 1881 U.S. publication predates 1931 and is public domain under https://www.copyright.gov/circs/circ15a.pdf."
+        },
+        {
+          "path": "record-03.txt",
+          "sha256": "2d8bff579b8ca87743494213ecbe8ba4afe0f3942f9f1b342f005c4dbbc75f98",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "Excerpt provenance is Chester A. Arthur, First Annual Message, December 6, 1881: https://www.presidency.ucsb.edu/documents/first-annual-message-13. Its 1881 U.S. publication predates 1931 and is public domain under https://www.copyright.gov/circs/circ15a.pdf."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T21:59:16.673Z",
+      "subject_sha256": "a5fd0e5add2932ea7ebd96bdef29a2aa8523c1e731a842937ce7a4261c1b3a7e",
+      "evidence": [
+        "Canonical source-set recomputation from path-sorted record-01.txt through record-03.txt entries matched a5fd0e5add2932ea7ebd96bdef29a2aa8523c1e731a842937ce7a4261c1b3a7e; actual record SHA-256 values were bb8462f04594679adda89d2976c5116337aa9f3791ca112209de252b9ab6c289, 08600155676617261719a20dee7c26ba3c8c95edf77e26b58365ca1b3e8feb75, and 2d8bff579b8ca87743494213ecbe8ba4afe0f3942f9f1b342f005c4dbbc75f98.",
+        "privacy-policy.json had exactly the eight required top keys in order, schema version 2, matching case_id, boolean default_deny=true, identical exact five-path product/grader allowlists, exact rubric/article-a/article-b slots, and manifest/privacy/expected audit-only ordering. Its SHA-256 matched 2ba842eb6cfb171529f3169702c0999d9910def232a0b560a47dc28847125e2e.",
+        "All five product-packet files plus the policy were regular non-link files, 88–3127 bytes, strict UTF-8 with LF only and no BOM/NUL. Every declared path was relative, forward-slash normalized, dot-segment-free, and resolved inside H01. Inspection found only public historical officeholder material, with no secrets, credentials, private personal data, URLs, or outbound commands."
+      ],
+      "privacy_policy_sha256": "2ba842eb6cfb171529f3169702c0999d9910def232a0b560a47dc28847125e2e",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:15:28.583Z",
+      "subject_sha256": "a5fd0e5add2932ea7ebd96bdef29a2aa8523c1e731a842937ce7a4261c1b3a7e",
+      "evidence": [
+        "Canonical path-sorted source-set recomputation over record-01.txt through record-03.txt matched the bound subject SHA-256; the raw evidence-cutoff.json SHA-256 also matched its binding.",
+        "The three source dates—1877-12-03, 1881-03-04, and 1881-12-06—are strictly before 1883-01-16T00:00:00Z. Their bodies and dates match https://www.presidency.ucsb.edu/documents/first-annual-message-12, https://www.presidency.ucsb.edu/documents/inaugural-address-39, and https://www.presidency.ucsb.edu/documents/first-annual-message-13.",
+        "The National Archives dates Arthur's approval of the Pendleton Act to 1883-01-16 at https://www.archives.gov/milestone-documents/pendleton-act. None of the inspected materials states that realized outcome."
+      ],
+      "evidence_cutoff_sha256": "87db2357dfc9a0cb5af2b806005ffdc9f9109fa92d2f1082fec4f5c4c9058a6f",
+      "expected_pressure_sha256": "29d85ce8dbfef102a437623fd6932f947bc1df881faed664051238b3fe5e786a",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }

@@ -1,12 +1,94 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "H03",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "record-01.txt",
+      "sha256": "ad3b265236fdbd0ee94c171f0d938d1a62cf03ef86648eb6c39a8071ec8a7d68",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-02.txt",
+      "sha256": "b669b41068939f7b5ddacf552f47672f58cddf885c0cd8c56dadc8a9e56883fd",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-03.txt",
+      "sha256": "802813dc2950d3b88e35c1e9eaaf0cf4719da50376acf5886d32b18732cba43a",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "a0c22dfb63ae06361c11996414f5c30eaf2bf750aba6fc305dca3dc5f34618fa",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:00:17.032Z",
+      "subject_sha256": "a0c22dfb63ae06361c11996414f5c30eaf2bf750aba6fc305dca3dc5f34618fa",
+      "evidence": [
+        "Exact-byte SHA-256 recomputation matched all three supplied record bindings.",
+        "Canonical SHA-256 recomputation over the path-sorted source-item array, using paths record-01.txt through record-03.txt and the specified media_type and license values, matched the subject binding.",
+        "Each source is a page from a U.S. newspaper published April 16, 1912 in the Library of Congress Chronicling America collection. LOC states that U.S. newspapers published more than 95 years ago are public domain in their entirety: https://www.loc.gov/collections/chronicling-america/about-this-collection/rights-and-access/"
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.txt",
+          "sha256": "ad3b265236fdbd0ee94c171f0d938d1a62cf03ef86648eb6c39a8071ec8a7d68",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "LOC page-level provenance is New-York Tribune, April 16, 1912, page 1: https://www.loc.gov/resource/sn83030214/1912-04-16/ed-1/?sp=1. The issue exceeds 95 years in age and falls under LOC's public-domain statement: https://www.loc.gov/collections/chronicling-america/about-this-collection/rights-and-access/."
+        },
+        {
+          "path": "record-02.txt",
+          "sha256": "b669b41068939f7b5ddacf552f47672f58cddf885c0cd8c56dadc8a9e56883fd",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "LOC page-level provenance is The San Francisco Call, April 16, 1912, page 2: https://www.loc.gov/resource/sn85066387/1912-04-16/ed-1/?sp=2. The issue exceeds 95 years in age and falls under LOC's public-domain statement: https://www.loc.gov/collections/chronicling-america/about-this-collection/rights-and-access/."
+        },
+        {
+          "path": "record-03.txt",
+          "sha256": "802813dc2950d3b88e35c1e9eaaf0cf4719da50376acf5886d32b18732cba43a",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "LOC page-level provenance is The Times-Dispatch, April 16, 1912, page 1: https://www.loc.gov/chroniclingamerica/lccn/sn85038615/1912-04-16/ed-1/seq-1/. The issue exceeds 95 years in age and falls under LOC's public-domain statement: https://www.loc.gov/collections/chronicling-america/about-this-collection/rights-and-access/."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T21:59:16.673Z",
+      "subject_sha256": "a0c22dfb63ae06361c11996414f5c30eaf2bf750aba6fc305dca3dc5f34618fa",
+      "evidence": [
+        "Canonical source-set recomputation from path-sorted record-01.txt through record-03.txt entries matched a0c22dfb63ae06361c11996414f5c30eaf2bf750aba6fc305dca3dc5f34618fa; actual record SHA-256 values were ad3b265236fdbd0ee94c171f0d938d1a62cf03ef86648eb6c39a8071ec8a7d68, b669b41068939f7b5ddacf552f47672f58cddf885c0cd8c56dadc8a9e56883fd, and 802813dc2950d3b88e35c1e9eaaf0cf4719da50376acf5886d32b18732cba43a.",
+        "privacy-policy.json had exactly the eight required top keys in order, schema version 2, matching case_id, boolean default_deny=true, identical exact five-path product/grader allowlists, exact rubric/article-a/article-b slots, and manifest/privacy/expected audit-only ordering. Its SHA-256 matched 2dd385d8c429c0117a9763c59efad94d6d3dd31737406280bccc7041e703442a.",
+        "All five product-packet files plus the policy were regular non-link files, 73–1173 bytes, strict UTF-8 with LF only and no BOM/NUL. Every declared path was relative, forward-slash normalized, dot-segment-free, and resolved inside H03. Inspection found only public 1912 newspaper and vessel facts; vessel positions are non-sensitive, and no secrets, credentials, private personal data, URLs, or outbound commands were present."
+      ],
+      "privacy_policy_sha256": "2dd385d8c429c0117a9763c59efad94d6d3dd31737406280bccc7041e703442a",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:15:28.583Z",
+      "subject_sha256": "a0c22dfb63ae06361c11996414f5c30eaf2bf750aba6fc305dca3dc5f34618fa",
+      "evidence": [
+        "Canonical path-sorted source-set recomputation over record-01.txt through record-03.txt matched the bound subject SHA-256; the raw evidence-cutoff.json SHA-256 also matched its binding.",
+        "All three newspaper records are dated 1912-04-16, strictly before 1912-04-18T00:00:00Z. Their bodies and editions match https://www.loc.gov/resource/sn83030214/1912-04-16/ed-1/?sp=1, https://www.loc.gov/resource/sn85066387/1912-04-16/ed-1/?sp=2, and https://www.loc.gov/resource/sn85038615/1912-04-16/ed-1/?sp=1.",
+        "The National Archives records Carpathia's New York arrival on 1912-04-18 at https://www.archives.gov/research/immigration/titanic-survivors-to-ny.html. Applying the mandated interpretation, prompt.md was not classified as disclosure. Inspection of only the new record files found no curator-added same-source or non-independent answer label; contemporaneous wording such as “The Olympic's dispatch follows” is natural source attribution and does not disclose Carpathia's later arrival or first-hand survivor confirmation."
+      ],
+      "evidence_cutoff_sha256": "a0b96f6ca9c960950b2465085c76158e8beee524280cbc61d20278d50122abb7",
+      "expected_pressure_sha256": "bbc598302ea2a5bc7a9c7178e5c27c2291c95f3250222887ffe666844a707320",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }

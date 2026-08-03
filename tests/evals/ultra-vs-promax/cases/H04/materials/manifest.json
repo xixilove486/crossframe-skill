@@ -1,12 +1,94 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "H04",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "record-01.txt",
+      "sha256": "7d14ba6fede3ea3ef661a58767142695861f7c46b465b4bc7c4e6fb6408e960f",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-02.txt",
+      "sha256": "696bac5522d9d642004e438d907e8410a588e21082766f9a545e3b7552772afd",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-03.txt",
+      "sha256": "748529f066dd2e2c8d5f8c83bcd121f3f60ca5b3d850ebfab4f64effc5b3ba83",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "ab3bc7eedead30185458bddc4bebdcd344c7c4bf433f46ee831a04094ea51599",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:00:17.032Z",
+      "subject_sha256": "ab3bc7eedead30185458bddc4bebdcd344c7c4bf433f46ee831a04094ea51599",
+      "evidence": [
+        "Exact-byte SHA-256 recomputation matched all three supplied record bindings.",
+        "Canonical SHA-256 recomputation over the path-sorted source-item array, using paths record-01.txt through record-03.txt and the specified media_type and license values, matched the subject binding.",
+        "The Truman Library and GovInfo substantiate the official federal texts. 17 U.S.C. §105 denies copyright protection to U.S. Government works: https://www.govinfo.gov/content/pkg/USCODE-2024-title17/pdf/USCODE-2024-title17-chap1-sec105.pdf. The U.S. Copyright Office Compendium expressly includes works created by the President and Congress while acting within official duties: https://www.copyright.gov/comp3/docs/compendium.pdf."
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.txt",
+          "sha256": "7d14ba6fede3ea3ef661a58767142695861f7c46b465b4bc7c4e6fb6408e960f",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "The Truman Library provides Executive Order 9621, issued by President Truman on September 20, 1945: https://www.trumanlibrary.gov/library/executive-orders/9621/executive-order-9621. It is an official presidential work covered by 17 U.S.C. §105: https://www.govinfo.gov/content/pkg/USCODE-2024-title17/pdf/USCODE-2024-title17-chap1-sec105.pdf."
+        },
+        {
+          "path": "record-02.txt",
+          "sha256": "696bac5522d9d642004e438d907e8410a588e21082766f9a545e3b7552772afd",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "The Truman Library provides the January 22, 1946 Directive on Coordination of Foreign Intelligence Activities: https://www.trumanlibrary.gov/library/public-papers/19/directive-coordination-foreign-intelligence-activities. It is an official presidential work covered by 17 U.S.C. §105: https://www.govinfo.gov/content/pkg/USCODE-2024-title17/pdf/USCODE-2024-title17-chap1-sec105.pdf."
+        },
+        {
+          "path": "record-03.txt",
+          "sha256": "748529f066dd2e2c8d5f8c83bcd121f3f60ca5b3d850ebfab4f64effc5b3ba83",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "GovInfo's official March 14, 1947 Congressional Record granule contains the Senate address and the cited material on pages 2068–2069: https://www.govinfo.gov/content/pkg/GPO-CRECB-1947-pt2/pdf/GPO-CRECB-1947-pt2-13-1.pdf. The excerpt is official congressional authorship covered by 17 U.S.C. §105, with Congress expressly included by the Copyright Office Compendium: https://www.copyright.gov/comp3/docs/compendium.pdf."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T21:59:16.673Z",
+      "subject_sha256": "ab3bc7eedead30185458bddc4bebdcd344c7c4bf433f46ee831a04094ea51599",
+      "evidence": [
+        "Canonical source-set recomputation from path-sorted record-01.txt through record-03.txt entries matched ab3bc7eedead30185458bddc4bebdcd344c7c4bf433f46ee831a04094ea51599; actual record SHA-256 values were 7d14ba6fede3ea3ef661a58767142695861f7c46b465b4bc7c4e6fb6408e960f, 696bac5522d9d642004e438d907e8410a588e21082766f9a545e3b7552772afd, and 748529f066dd2e2c8d5f8c83bcd121f3f60ca5b3d850ebfab4f64effc5b3ba83.",
+        "privacy-policy.json had exactly the eight required top keys in order, schema version 2, matching case_id, boolean default_deny=true, identical exact five-path product/grader allowlists, exact rubric/article-a/article-b slots, and manifest/privacy/expected audit-only ordering. Its SHA-256 matched f2465f2ba07fc4e2ae6b5624bc705d7c840e21395697d2ae81ccc79bb982d704.",
+        "All five product-packet files plus the policy were regular non-link files, 55–3729 bytes, strict UTF-8 with LF only and no BOM/NUL. Every declared path was relative, forward-slash normalized, dot-segment-free, and resolved inside H04. Inspection found only public government records and historical officeholder names, with no secrets, credentials, private personal data, URLs, or outbound commands."
+      ],
+      "privacy_policy_sha256": "f2465f2ba07fc4e2ae6b5624bc705d7c840e21395697d2ae81ccc79bb982d704",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:15:28.583Z",
+      "subject_sha256": "ab3bc7eedead30185458bddc4bebdcd344c7c4bf433f46ee831a04094ea51599",
+      "evidence": [
+        "Canonical path-sorted source-set recomputation over record-01.txt through record-03.txt matched the bound subject SHA-256; the raw evidence-cutoff.json SHA-256 also matched its binding.",
+        "The three source dates—1945-09-20, 1946-01-22, and 1947-03-14—are strictly before 1947-07-26T00:00:00Z. Their bodies and dates match https://www.trumanlibrary.gov/library/executive-orders/9621/executive-order-9621, https://www.trumanlibrary.gov/library/public-papers/19/directive-coordination-foreign-intelligence-activities, and https://www.congress.gov/80/crecb/1947/03/14/GPO-CRECB-1947-pt2-13-1.pdf.",
+        "The National Archives dates the National Security Act becoming law to 1947-07-26 at https://www.archives.gov/research/military/ww2/oss/timeline. The inspected materials describe antecedent and proposed intelligence arrangements but do not state Truman's later signing or enactment of the Act."
+      ],
+      "evidence_cutoff_sha256": "fe3d074ed465ea60674e660e50b857db79310b27bebaee593611cb32adc1ae54",
+      "expected_pressure_sha256": "5dc9c68467c638e86585ea653eeb66de5c7f020e1eb6bbf8de63363dd77a4a2a",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }
