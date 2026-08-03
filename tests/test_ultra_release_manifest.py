@@ -146,9 +146,9 @@ def test_fixed_exclusions_do_not_change_the_manifest_and_links_fail_closed(
     baseline = builder.build_release_manifest(repo)
 
     (skill / "references/.v8-full-source.lock").write_text("ignored", encoding="utf-8")
-    (skill / "scripts/__pycache__").mkdir()
+    (skill / "scripts/__pycache__").mkdir(exist_ok=True)
     (skill / "scripts/__pycache__/ignored.pyc").write_bytes(b"ignored")
-    (skill / ".pytest_cache").mkdir()
+    (skill / ".pytest_cache").mkdir(exist_ok=True)
     (skill / ".pytest_cache/ignored").write_bytes(b"ignored")
     assert builder.build_release_manifest(repo) == baseline
 
