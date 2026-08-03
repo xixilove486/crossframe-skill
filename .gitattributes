@@ -50,3 +50,5 @@
 /tests/test_ultra_v82_source_integrity.py text eol=lf
 /tests/test_ultra_v82_registry_closure.py text eol=lf
 /tests/test_ultra_v82_version_isolation.py text eol=lf
+/skills/crossframe-ultra/** text eol=lf
+/.claude/skills/crossframe-ultra/** text eol=lf
