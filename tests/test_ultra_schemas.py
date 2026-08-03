@@ -1144,6 +1144,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             transformation_ledger_artifact_sha256=HASH_C,
             concept_disposition_artifact_sha256=HASH_D,
             central_claim_id="CLAIM-1",
+            partial_ranking_justification=None,
             claims=[
                 {
                     "claim_id": "CLAIM-1",
@@ -3668,6 +3669,52 @@ def test_u6_graph_requires_named_u3_u4_u5_authorities_and_four_explanations() ->
     with pytest.raises(ValidationError):
         runtime.validate_instance(
             "ultra-claim-mechanism-graph.schema.json", invented_effect
+        )
+
+
+def test_u6_graph_distinguishes_total_from_justified_partial_ranking() -> None:
+    runtime = load_runtime()
+    total = copy.deepcopy(
+        minimal_instances()["ultra-claim-mechanism-graph.schema.json"]
+    )
+    runtime.validate_instance("ultra-claim-mechanism-graph.schema.json", total)
+
+    missing_justification_role = copy.deepcopy(total)
+    del missing_justification_role["partial_ranking_justification"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", missing_justification_role
+        )
+
+    unjustified_partial = copy.deepcopy(total)
+    unjustified_partial["explanations"][-1]["rank"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", unjustified_partial
+        )
+
+    justified_partial = copy.deepcopy(unjustified_partial)
+    justified_partial["partial_ranking_justification"] = (
+        "The residual explanation remains incomparable on frozen evidence."
+    )
+    runtime.validate_instance(
+        "ultra-claim-mechanism-graph.schema.json", justified_partial
+    )
+
+    empty_justification = copy.deepcopy(justified_partial)
+    empty_justification["partial_ranking_justification"] = ""
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", empty_justification
+        )
+
+    reason_without_partial_ranking = copy.deepcopy(total)
+    reason_without_partial_ranking["partial_ranking_justification"] = (
+        "A partial ranking was not actually recorded."
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-claim-mechanism-graph.schema.json", reason_without_partial_ranking
         )
 
 
