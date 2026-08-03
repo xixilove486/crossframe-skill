@@ -52,3 +52,5 @@
 /tests/test_ultra_v82_version_isolation.py text eol=lf
 /skills/crossframe-ultra/** text eol=lf
 /.claude/skills/crossframe-ultra/** text eol=lf
+/tests/evals/ultra-vs-promax/** text eol=lf
+/tests/evals/ultra-forward/** text eol=lf
