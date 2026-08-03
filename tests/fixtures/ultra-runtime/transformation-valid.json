@@ -1,7 +1,7 @@
 {
   "schema_id": "crossframe.ultra.v82.transformation-ledger",
   "schema_version": 1,
-  "run_id": "ultra-task8-run",
+  "run_id": "ultra-world-fixture-run",
   "version_binding": {
     "framework_version": "8.2",
     "framework_revision": "v8.2-r1",
@@ -14,106 +14,867 @@
     "article_contract_version": "1.0.0",
     "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
-  "generated_at": "2026-08-02T08:00:00Z",
-  "content_sha256": "afed13e664c01417d2b49f5851e0f5f81ec4dfc1ba5d883616249bceb1aa42dd",
+  "generated_at": "2026-08-02T08:30:00Z",
+  "content_sha256": "7b8cd6d0e45d8adb807667cc4e768206890661f7fb8484eb012ed7ea01e68208",
   "phase_id": "U5",
-  "source_volume_sha256": "a10d4efcb4e644087862088da70af83ab9e04a5f7d2f7c363fda4db98deaeb6e",
+  "evidence_artifact_sha256": "b2e92cdb80bc8c497b8d215ac490a418d68c7142484f6af0f073c18df8794981",
+  "evidence_content_sha256": "3b59c571ff33f09c23704b4f3ada5f4941c718b6f28e7225f5de1f804dc94985",
+  "world_volume_artifact_sha256": "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5",
+  "world_volume_content_sha256": "0d0b71596320e3fe26babbe42e1a87507d873a905ce0d20b75427054753a1f07",
   "transformations": [
     {
-      "transform_id": "TRANSFORM-SCALE",
+      "transform_id": "TRANSFORM-SCALE-PRIMARY",
       "kind": "scale",
-      "input_identity": "POS-TEAM-MANAGER@interaction",
-      "output_identity": "CIRCLE-TEAM@organizational",
-      "preserved": ["actor identity", "team mandate"],
-      "changed": ["time horizon", "unit of observation"],
-      "folded": ["individual scheduling detail"],
-      "omitted": ["private household content"],
-      "unknown": ["long-term adaptation"],
-      "task_relative_loss": [
+      "input_identity": {
+        "identity_type": "scale-state",
+        "location_ref": "POS-TEAM-MANAGER",
+        "axis_id": null,
+        "value": "manager scale state before the identity comparison",
+        "evidence_ids": [
+          "EVIDENCE-ROSTER-ATLAS"
+        ]
+      },
+      "output_identity": {
+        "identity_type": "scale-state",
+        "location_ref": "POS-TEAM-MANAGER",
+        "axis_id": null,
+        "value": "manager scale state after the identity comparison",
+        "evidence_ids": [
+          "EVIDENCE-ROSTER-ATLAS"
+        ]
+      },
+      "axis_differences": [
         {
-          "loss_id": "LOSS-SCALE-DETAIL",
-          "description": "Interaction timing is not recoverable at the organizational representation.",
-          "location_ref": "POS-TEAM-MANAGER"
-        }
-      ],
-      "location_effects": [
-        {
-          "effect_id": "EFFECT-SCALE-GAIN",
-          "location_ref": "CIRCLE-TEAM",
-          "effect_kind": "gain",
-          "description": "The team view gains an explicit quarterly resource total."
+          "axis_id": "A",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-A-SOURCE",
+            "normalized_state_sha256": "3010126dc4d83758b0fe8f850ad7ae8a16ad0ce1b028c203d9b10c5cdf1a8da4",
+            "description": "Frozen source A state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-A-TARGET",
+            "normalized_state_sha256": "3010126dc4d83758b0fe8f850ad7ae8a16ad0ce1b028c203d9b10c5cdf1a8da4",
+            "description": "Frozen target A state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-A",
+            "payload_sha256": "2d50abc9051e4818f7a99277adf6a1ec558bf1913bc96b56155e2f912dac4a05",
+              "description": "Deep-equality payload for axis A."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-A",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-A",
+          "verification_hash": "c072b9d65e11e4eccbe0988a2ff74486e57e284cb8a8391d666751d5ab4fdd2b",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
         },
         {
-          "effect_id": "EFFECT-SCALE-DAMAGE",
-          "location_ref": "POS-FAMILY-MEMBER",
-          "effect_kind": "damage",
-          "description": "The family scheduling detail is folded and cannot support a local decision."
+          "axis_id": "X",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-X-SOURCE",
+            "normalized_state_sha256": "48884ebed5958901042934fc8acfa87e8a70fdae2b0c40d5f6d944aec39e6f04",
+            "description": "Frozen source X state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-X-TARGET",
+            "normalized_state_sha256": "48884ebed5958901042934fc8acfa87e8a70fdae2b0c40d5f6d944aec39e6f04",
+            "description": "Frozen target X state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-X",
+            "payload_sha256": "c0db1efb29d8f4020443c57d50d9ad013b9779c10e1ea3d342ffe4dc2963cf28",
+              "description": "Deep-equality payload for axis X."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-X",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-X",
+          "verification_hash": "0171673401b54012c4a2082bff2bb83d759f36fb96cdbfc32cc748080e9a6e18",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "T",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-T-SOURCE",
+            "normalized_state_sha256": "101dd337fdfa5cd953dc213f1c12bb4b995de23174b62087b44dea5db37b0bf7",
+            "description": "Frozen source T state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-T-TARGET",
+            "normalized_state_sha256": "101dd337fdfa5cd953dc213f1c12bb4b995de23174b62087b44dea5db37b0bf7",
+            "description": "Frozen target T state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-T",
+            "payload_sha256": "70ce6f0d7b5062ff15f86657c8600b2c710108ad7551e8c936bef8764f2efdb4",
+              "description": "Deep-equality payload for axis T."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-T",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-T",
+          "verification_hash": "b331429547baa7f8a081c11df86f05f60d565bd573e0e664da72347515c2e132",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "O",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-O-SOURCE",
+            "normalized_state_sha256": "b46a51b68d9091244ee77baa74162efb0befca19277ad038d36de37b1781a9e8",
+            "description": "Frozen source O state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-O-TARGET",
+            "normalized_state_sha256": "b46a51b68d9091244ee77baa74162efb0befca19277ad038d36de37b1781a9e8",
+            "description": "Frozen target O state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-O",
+            "payload_sha256": "bb35780dcc147fd5ff610100f3665202cd1fe335a3bbc9a8d8d067b7f8d2bec4",
+              "description": "Deep-equality payload for axis O."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-O",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-O",
+          "verification_hash": "33ed7b1fad26e092842fc1314f297482b013bf4f72f34a10aa74361384c64aae",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "C",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-C-SOURCE",
+            "normalized_state_sha256": "e233c81e8a109a3eb2a80e87c297741dea24251c9d759d0f5639a3be5efb8485",
+            "description": "Frozen source C state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-C-TARGET",
+            "normalized_state_sha256": "e233c81e8a109a3eb2a80e87c297741dea24251c9d759d0f5639a3be5efb8485",
+            "description": "Frozen target C state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-C",
+            "payload_sha256": "aeaf6508d057a5bdc0717cceb42bc05ddd0b0d687e0f3ad5ba07acbec3f067e5",
+              "description": "Deep-equality payload for axis C."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-C",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-C",
+          "verification_hash": "4c17aff631847104cef3579b8314192948c5ae681d2a5c885e5029502819ad06",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "R",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-R-SOURCE",
+            "normalized_state_sha256": "ff8beaafa76d5d9cf46e83039a2c9a034861e1e943a01dc80e0f0c8363d94be5",
+            "description": "Frozen source R state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-R-TARGET",
+            "normalized_state_sha256": "ff8beaafa76d5d9cf46e83039a2c9a034861e1e943a01dc80e0f0c8363d94be5",
+            "description": "Frozen target R state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-R",
+            "payload_sha256": "2ebeff57beb910fbca6ba60c898cc7d2c8e26c9cd624f6808d03aa300977628e",
+              "description": "Deep-equality payload for axis R."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-R",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-R",
+          "verification_hash": "934b17185207f09680b01edb00774debf036a8286316d9929c59f9c27e0d09b6",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "I",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-I-SOURCE",
+            "normalized_state_sha256": "fe39a546e26970b3031229a4d5d6475300eb3e4c0dab36292fe87142935e9f0b",
+            "description": "Frozen source I state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-I-TARGET",
+            "normalized_state_sha256": "fe39a546e26970b3031229a4d5d6475300eb3e4c0dab36292fe87142935e9f0b",
+            "description": "Frozen target I state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-I",
+            "payload_sha256": "24bf76348997e01ee9a406f9e69f78fa108f7348caef99f988ba3d4e05752fcd",
+              "description": "Deep-equality payload for axis I."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-I",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-I",
+          "verification_hash": "f47534962064f6fc9aa556ba4e59f0a55b892658f41f76c9463dc6e1590d1ae5",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "N",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-N-SOURCE",
+            "normalized_state_sha256": "e0bff420f98d9d0d9c43525f50eafbb34cec4c284a23794dda716567d63fa807",
+            "description": "Frozen source N state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-N-TARGET",
+            "normalized_state_sha256": "e0bff420f98d9d0d9c43525f50eafbb34cec4c284a23794dda716567d63fa807",
+            "description": "Frozen target N state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-N",
+            "payload_sha256": "df75b74ea75323d3d69bd6797c5fec01bee22ab089580ed2372a7fba11d2da0d",
+              "description": "Deep-equality payload for axis N."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-N",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-N",
+          "verification_hash": "7110fc92efce46795b3c69dd7346d72516a53194b0b30d51dfeca85d5b96df2a",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
+        },
+        {
+          "axis_id": "J",
+          "source_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-J-SOURCE",
+            "normalized_state_sha256": "1da84be882aa9e09c843e234c9af455f623f968a1816e7bbfa71a265c548a990",
+            "description": "Frozen source J state at the manager position."
+          },
+          "target_state": {
+            "status": "recorded",
+            "normalized_state_ref": "NSTATE-SCALE-PRIMARY-J-TARGET",
+            "normalized_state_sha256": "1da84be882aa9e09c843e234c9af455f623f968a1816e7bbfa71a265c548a990",
+            "description": "Frozen target J state at the same manager position."
+          },
+          "relation": "equal",
+          "order_witness": {
+            "comparator_id": "builtin:deep-equality",
+            "comparator_version": "1.0.0",
+            "verifier_id": "VERIFIER-DEEP-EQUALITY",
+            "evidence_refs": [
+              "EVIDENCE-ROSTER-ATLAS"
+            ],
+            "comparison_payload": {
+              "payload_kind": "deep-equality",
+              "payload_ref": "PAYLOAD-SCALE-PRIMARY-J",
+            "payload_sha256": "394c4a12a160dc273cc24ec4b014c569f8ca7edb7f4af367576ada1aecf58943",
+              "description": "Deep-equality payload for axis J."
+            },
+            "comparator_result_ref": "RESULT-SCALE-PRIMARY-J",
+            "verification_artifact_ref": "VERIFY-SCALE-PRIMARY-J",
+          "verification_hash": "b13879a0e694cb036e68f5525a7f28f66d2f892c42998d1120263c6b5c93819e",
+            "validation_status": "valid"
+          },
+          "information_loss": [],
+          "uncertainty": []
         }
       ],
-      "effective_variables": ["decision-budget", "care-load"],
+      "transformation_class": "all_equal",
+      "preserved": [
+        {
+          "component_id": "COMP-SCALE-MANAGER-IDENTITY",
+          "location_ref": "POS-TEAM-MANAGER",
+          "source_refs": [
+            "POS-TEAM-MANAGER"
+          ],
+          "target_refs": [
+            "POS-TEAM-MANAGER"
+          ],
+          "description": "The frozen manager position identity is preserved.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "changed": [],
+      "folded": [],
+      "omitted": [],
+      "unknown": [],
+      "task_relative_loss": [],
+      "location_effects": [],
+      "effective_variables": [
+        {
+          "variable_ref": "VAR-SCALE-MANAGER-BUDGET",
+          "location_ref": "POS-TEAM-MANAGER",
+          "state_kind": "M",
+          "state_id": "M-POS-TEAM",
+          "variable_name": "budget-share",
+          "clock_id": "CLOCK-INTERACTION",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ]
+        }
+      ],
       "closure_status": "bounded",
-      "residual_ids": ["RESIDUAL-ASSOCIATION-RESPONSE"],
-      "return_conditions": ["Return when household timing changes the team-level verdict."]
+      "residuals": [
+        {
+          "residual_id": "RESIDUAL-PEER-EFFECT",
+          "location_ref": "CIRCLE-TEAM",
+          "description": "The declared comparison does not remove the peer-effect residual.",
+          "evidence_ids": [],
+          "return_condition_ids": [
+            "RETURN-SCALE-PEER-EFFECT"
+          ]
+        }
+      ],
+      "return_conditions": [
+        {
+          "condition_id": "RETURN-SCALE-PEER-EFFECT",
+          "description": "Return if the peer-effect residual changes the manager budget state.",
+          "trigger_refs": [
+            "RESIDUAL-PEER-EFFECT"
+          ],
+          "required_variable_refs": [
+            "VAR-SCALE-MANAGER-BUDGET"
+          ],
+          "evidence_ids": []
+        }
+      ]
     },
     {
       "transform_id": "TRANSFORM-CIRCLE-RELATION",
       "kind": "circle-relation",
-      "input_identity": "REL-TEAM-ASSOCIATION-RESOURCE",
-      "output_identity": "REL-TEAM-ASSOCIATION-INFORMATION",
-      "preserved": ["directed endpoint pair"],
-      "changed": ["relation type", "effective channel"],
+      "input_identity": {
+        "identity_type": "circle-relation",
+        "location_ref": "RELATION-AUTHORITY-04",
+        "axis_id": null,
+        "value": "e8c0168b535a2e33d3508b12af9f51706dd32fddfb6d0590731e4c56153f7f62",
+        "evidence_ids": [
+          "EVIDENCE-ROSTER-ATLAS",
+          "EVIDENCE-ASSOCIATION-CHARTER"
+        ]
+      },
+      "output_identity": {
+        "identity_type": "circle-relation",
+        "location_ref": "RELATION-AUTHORITY-05",
+        "axis_id": null,
+        "value": "bc586591a2109ed7bb787a4803be6b00b2cab5b6b762e0f81756230fd9791c9a",
+        "evidence_ids": [
+          "EVIDENCE-INTERVIEW-ONE",
+          "EVIDENCE-ASSOCIATION-CHARTER"
+        ]
+      },
+      "axis_differences": [],
+      "transformation_class": null,
+      "preserved": [
+        {
+          "component_id": "COMP-CIRCLE-SHARED-ACTOR",
+          "location_ref": "ACTOR-ONE",
+          "source_refs": [
+            "RELATION-AUTHORITY-04"
+          ],
+          "target_refs": [
+            "RELATION-AUTHORITY-05"
+          ],
+          "description": "The shared actor interface remains explicitly represented.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "changed": [
+        {
+          "component_id": "COMP-CIRCLE-RELATION-TYPE",
+          "location_ref": "CIRCLE-ASSOCIATION",
+          "source_refs": [
+            "RELATION-AUTHORITY-04"
+          ],
+          "target_refs": [
+            "RELATION-AUTHORITY-05"
+          ],
+          "description": "The explicit Rcc relation type changes without flattening either circle.",
+          "evidence_ids": [
+            "EVIDENCE-ASSOCIATION-CHARTER"
+          ],
+          "unknown_id": null
+        }
+      ],
       "folded": [],
-      "omitted": ["unobserved informal contacts"],
-      "unknown": ["association response delay"],
+      "omitted": [
+        {
+          "component_id": "COMP-CIRCLE-DELAY-DETAIL",
+          "location_ref": "CHANNEL-TEAM-ASSOCIATION",
+          "source_refs": [
+            "RELATION-AUTHORITY-04"
+          ],
+          "target_refs": [
+            "RELATION-AUTHORITY-05"
+          ],
+          "description": "Fine-grained delay detail is omitted from the target relation view.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "unknown": [
+        {
+          "component_id": "COMP-CIRCLE-ADAPTATION",
+          "location_ref": "POS-ASSOCIATION-DELEGATE",
+          "source_refs": [
+            "RELATION-AUTHORITY-04"
+          ],
+          "target_refs": [
+            "RELATION-AUTHORITY-05"
+          ],
+          "description": "Long-term cross-circle adaptation remains unknown.",
+          "evidence_ids": [],
+          "unknown_id": "UNKNOWN-ADAPTATION"
+        }
+      ],
       "task_relative_loss": [
         {
-          "loss_id": "LOSS-RELATION-INFORMAL",
-          "description": "Informal contacts are outside the declared relation transform.",
-          "location_ref": "REL-TEAM-ASSOCIATION-INFORMATION"
+          "loss_id": "LOSS-CIRCLE-DELAY",
+          "loss_kind": "detail",
+          "description": "Fine-grained delay detail is not recoverable from the transformed relation view.",
+          "location_ref": "CHANNEL-TEAM-ASSOCIATION",
+          "affected_component_ids": [
+            "COMP-CIRCLE-DELAY-DETAIL"
+          ],
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "recoverable": false
         }
       ],
       "location_effects": [
         {
-          "effect_id": "EFFECT-RELATION-SPILLOVER",
-          "location_ref": "PSI-POS-TEAM",
-          "effect_kind": "spillover",
-          "description": "Team-only review visibility may reach the association through the declared reporting relation."
+          "effect_id": "EFFECT-CIRCLE-TEAM-GAIN",
+          "location_ref": "CIRCLE-TEAM",
+          "effect_kind": "gain",
+          "description": "The explicit relation comparison preserves a reviewable team-side gain.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "variable_refs": [
+            "VAR-CIRCLE-TEAM-BUDGET"
+          ]
         }
       ],
-      "effective_variables": ["review-visibility", "mandate-dispute"],
+      "effective_variables": [
+        {
+          "variable_ref": "VAR-CIRCLE-TEAM-BUDGET",
+          "location_ref": "CIRCLE-TEAM",
+          "state_kind": "M",
+          "state_id": "M-CIRCLE-TEAM",
+          "variable_name": "budget-share",
+          "clock_id": "CLOCK-INTERACTION",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ]
+        }
+      ],
       "closure_status": "open",
-      "residual_ids": ["RESIDUAL-ASSOCIATION-RESPONSE"],
-      "return_conditions": ["Return when a second verified relation channel becomes available."]
+      "residuals": [
+        {
+          "residual_id": "RESIDUAL-PEER-EFFECT",
+          "location_ref": "CIRCLE-TEAM",
+          "description": "Peer effects remain outside the explicit Rcc transformation.",
+          "evidence_ids": [],
+          "return_condition_ids": [
+            "RETURN-CIRCLE-PEER-EFFECT"
+          ]
+        }
+      ],
+      "return_conditions": [
+        {
+          "condition_id": "RETURN-CIRCLE-PEER-EFFECT",
+          "description": "Return if peer effects alter the team material state.",
+          "trigger_refs": [
+            "RESIDUAL-PEER-EFFECT"
+          ],
+          "required_variable_refs": [
+            "VAR-CIRCLE-TEAM-BUDGET"
+          ],
+          "evidence_ids": []
+        }
+      ]
     },
     {
-      "transform_id": "TRANSFORM-REPRESENTATION",
+      "transform_id": "TRANSFORM-REPRESENTATION-FAMILY",
       "kind": "representation-translation",
-      "input_identity": "SOURCE-INTERVIEW-ONE@reported",
-      "output_identity": "ARTICLE-UNIT-M02@model-candidate",
-      "preserved": ["source lineage", "information identity"],
-      "changed": ["representation form"],
-      "folded": ["repeated wording"],
-      "omitted": ["personally identifying detail"],
-      "unknown": ["withheld context"],
+      "input_identity": {
+        "identity_type": "source-representation",
+        "location_ref": "EVIDENCE-INTERVIEW-ONE",
+        "axis_id": null,
+        "value": "reported",
+        "evidence_ids": [
+          "EVIDENCE-INTERVIEW-ONE"
+        ]
+      },
+      "output_identity": {
+        "identity_type": "represented-state",
+        "location_ref": "POS-FAMILY-MEMBER",
+        "axis_id": null,
+        "value": "Actor one acting under the frozen household care commitment.",
+        "evidence_ids": [
+          "EVIDENCE-INTERVIEW-ONE"
+        ]
+      },
+      "axis_differences": [],
+      "transformation_class": null,
+      "preserved": [
+        {
+          "component_id": "COMP-REPRESENTATION-FAMILY-LINEAGE",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "source_refs": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "target_refs": [
+            "POS-FAMILY-MEMBER"
+          ],
+          "description": "The source evidence lineage remains explicit in the represented state.",
+          "evidence_ids": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "changed": [
+        {
+          "component_id": "COMP-REPRESENTATION-FAMILY-FORM",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "source_refs": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "target_refs": [
+            "M-POS-FAMILY"
+          ],
+          "description": "The source representation is translated into one local state variable.",
+          "evidence_ids": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "folded": [],
+      "omitted": [],
+      "unknown": [
+        {
+          "component_id": "COMP-REPRESENTATION-FAMILY-UNKNOWN",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "source_refs": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "target_refs": [
+            "POS-FAMILY-MEMBER"
+          ],
+          "description": "The represented state retains the declared adaptation unknown.",
+          "evidence_ids": [],
+          "unknown_id": "UNKNOWN-ADAPTATION"
+        }
+      ],
       "task_relative_loss": [
         {
-          "loss_id": "LOSS-REPRESENTATION-CONTEXT",
-          "description": "Withheld context cannot be reconstructed from the article unit.",
-          "location_ref": "POS-FAMILY-MEMBER"
+          "loss_id": "LOSS-REPRESENTATION-FAMILY",
+          "loss_kind": "uncertainty",
+          "description": "The local representation cannot eliminate source uncertainty.",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "affected_component_ids": [
+            "COMP-REPRESENTATION-FAMILY-UNKNOWN"
+          ],
+          "evidence_ids": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "recoverable": true
         }
       ],
       "location_effects": [
         {
-          "effect_id": "EFFECT-REPRESENTATION-EXIT-COST",
-          "location_ref": "MEMBERSHIP-TEAM",
-          "effect_kind": "exit-cost",
-          "description": "The article must retain the contractual notice cost at the exact membership."
+          "effect_id": "EFFECT-REPRESENTATION-FAMILY",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "effect_kind": "spillover",
+          "description": "The translated representation has a local, reviewable spillover.",
+          "evidence_ids": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ],
+          "variable_refs": [
+            "VAR-REPRESENTATION-FAMILY"
+          ]
         }
       ],
-      "effective_variables": ["information identity", "source lineage", "visibility"],
+      "effective_variables": [
+        {
+          "variable_ref": "VAR-REPRESENTATION-FAMILY",
+          "location_ref": "POS-FAMILY-MEMBER",
+          "state_kind": "M",
+          "state_id": "M-POS-FAMILY",
+          "variable_name": "care-load",
+          "clock_id": "CLOCK-IMMEDIATE",
+          "evidence_ids": [
+            "EVIDENCE-INTERVIEW-ONE"
+          ]
+        }
+      ],
       "closure_status": "bounded",
-      "residual_ids": ["RESIDUAL-ASSOCIATION-RESPONSE"],
-      "return_conditions": ["Return to the source when the omitted context becomes decision-relevant."]
+      "residuals": [
+        {
+          "residual_id": "RESIDUAL-PEER-EFFECT",
+          "location_ref": "CIRCLE-TEAM",
+          "description": "The representation does not absorb the peer-effect residual.",
+          "evidence_ids": [],
+          "return_condition_ids": [
+            "RETURN-REPRESENTATION-FAMILY"
+          ]
+        }
+      ],
+      "return_conditions": [
+        {
+          "condition_id": "RETURN-REPRESENTATION-FAMILY",
+          "description": "Return if the residual changes the represented local variable.",
+          "trigger_refs": [
+            "RESIDUAL-PEER-EFFECT"
+          ],
+          "required_variable_refs": [
+            "VAR-REPRESENTATION-FAMILY"
+          ],
+          "evidence_ids": []
+        }
+      ]
+    },
+    {
+      "transform_id": "TRANSFORM-REPRESENTATION-TEAM",
+      "kind": "representation-translation",
+      "input_identity": {
+        "identity_type": "source-representation",
+        "location_ref": "EVIDENCE-ROSTER-ATLAS",
+        "axis_id": null,
+        "value": "observed",
+        "evidence_ids": [
+          "EVIDENCE-ROSTER-ATLAS"
+        ]
+      },
+      "output_identity": {
+        "identity_type": "represented-state",
+        "location_ref": "POS-TEAM-MANAGER",
+        "axis_id": null,
+        "value": "Actor one acting under the frozen Atlas manager mandate.",
+        "evidence_ids": [
+          "EVIDENCE-ROSTER-ATLAS"
+        ]
+      },
+      "axis_differences": [],
+      "transformation_class": null,
+      "preserved": [
+        {
+          "component_id": "COMP-REPRESENTATION-TEAM-LINEAGE",
+          "location_ref": "POS-TEAM-MANAGER",
+          "source_refs": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "target_refs": [
+            "POS-TEAM-MANAGER"
+          ],
+          "description": "The source evidence lineage remains explicit in the represented state.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "changed": [
+        {
+          "component_id": "COMP-REPRESENTATION-TEAM-FORM",
+          "location_ref": "POS-TEAM-MANAGER",
+          "source_refs": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "target_refs": [
+            "PSI-POS-TEAM"
+          ],
+          "description": "The source representation is translated into one local state variable.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "unknown_id": null
+        }
+      ],
+      "folded": [],
+      "omitted": [],
+      "unknown": [
+        {
+          "component_id": "COMP-REPRESENTATION-TEAM-UNKNOWN",
+          "location_ref": "POS-TEAM-MANAGER",
+          "source_refs": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "target_refs": [
+            "POS-TEAM-MANAGER"
+          ],
+          "description": "The represented state retains the declared adaptation unknown.",
+          "evidence_ids": [],
+          "unknown_id": "UNKNOWN-ADAPTATION"
+        }
+      ],
+      "task_relative_loss": [
+        {
+          "loss_id": "LOSS-REPRESENTATION-TEAM",
+          "loss_kind": "uncertainty",
+          "description": "The local representation cannot eliminate source uncertainty.",
+          "location_ref": "POS-TEAM-MANAGER",
+          "affected_component_ids": [
+            "COMP-REPRESENTATION-TEAM-UNKNOWN"
+          ],
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "recoverable": true
+        }
+      ],
+      "location_effects": [
+        {
+          "effect_id": "EFFECT-REPRESENTATION-TEAM",
+          "location_ref": "POS-TEAM-MANAGER",
+          "effect_kind": "spillover",
+          "description": "The translated representation has a local, reviewable spillover.",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ],
+          "variable_refs": [
+            "VAR-REPRESENTATION-TEAM"
+          ]
+        }
+      ],
+      "effective_variables": [
+        {
+          "variable_ref": "VAR-REPRESENTATION-TEAM",
+          "location_ref": "POS-TEAM-MANAGER",
+          "state_kind": "Psi",
+          "state_id": "PSI-POS-TEAM",
+          "variable_name": "review-rule",
+          "clock_id": "CLOCK-INTERACTION",
+          "evidence_ids": [
+            "EVIDENCE-ROSTER-ATLAS"
+          ]
+        }
+      ],
+      "closure_status": "bounded",
+      "residuals": [
+        {
+          "residual_id": "RESIDUAL-PEER-EFFECT",
+          "location_ref": "CIRCLE-TEAM",
+          "description": "The representation does not absorb the peer-effect residual.",
+          "evidence_ids": [],
+          "return_condition_ids": [
+            "RETURN-REPRESENTATION-TEAM"
+          ]
+        }
+      ],
+      "return_conditions": [
+        {
+          "condition_id": "RETURN-REPRESENTATION-TEAM",
+          "description": "Return if the residual changes the represented local variable.",
+          "trigger_refs": [
+            "RESIDUAL-PEER-EFFECT"
+          ],
+          "required_variable_refs": [
+            "VAR-REPRESENTATION-TEAM"
+          ],
+          "evidence_ids": []
+        }
+      ]
     }
   ]
 }
