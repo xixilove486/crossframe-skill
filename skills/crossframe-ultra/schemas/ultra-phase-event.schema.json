@@ -10,7 +10,7 @@
       "required": ["event_type", "parent_event_sha256", "input_artifact_hashes", "output_artifact_hashes", "source_sha256", "evidence_cutoff", "run_contract_sha256", "timestamp", "status", "failure_code", "invalidated_phases", "event_sha256"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.phase-event"},
-        "event_type": {"enum": ["phase-completed", "phase-failed"]},
+        "event_type": {"enum": ["phase-completed", "phase-failed", "phase-blocked", "phase-cancelled"]},
         "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "input_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
         "output_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
@@ -18,7 +18,7 @@
         "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "run_contract_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "timestamp": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
-        "status": {"enum": ["complete", "failed"]},
+        "status": {"enum": ["complete", "failed", "blocked", "cancelled"]},
         "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
         "invalidated_phases": {"$ref": "ultra-common.schema.json#/$defs/phaseArray"},
         "event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
@@ -39,6 +39,26 @@
       "then": {
         "properties": {
           "event_type": {"const": "phase-failed"},
+          "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+          "output_artifact_hashes": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "blocked"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "event_type": {"const": "phase-blocked"},
+          "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+          "output_artifact_hashes": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "cancelled"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "event_type": {"const": "phase-cancelled"},
           "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
           "output_artifact_hashes": {"maxItems": 0}
         }

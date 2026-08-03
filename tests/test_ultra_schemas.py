@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
 import importlib
 import json
 import sys
@@ -18,7 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 ULTRA_ROOT = ROOT / "skills/crossframe-ultra"
 SCHEMA_ROOT = ULTRA_ROOT / "schemas"
 RUNTIME_SCRIPTS = ULTRA_ROOT / "scripts"
-RUNTIME_FIXTURE_ROOT = ROOT / "tests/fixtures/ultra-runtime"
 
 FRAMEWORK_RAW_SHA256 = (
     "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
@@ -34,6 +32,170 @@ SOURCE_TREE_SHA256 = (
 )
 STAMP = "2026-08-02T08:00:00Z"
 RUN_ID = "ultra-run-20260802-0001"
+
+OUTPUT_PLAN_SECTION_TITLES = (
+    "主判断、范围和置信度",
+    "用户观点的最强重建",
+    "事实、证据、来源关系和未知项",
+    "立体多圈层联合状态",
+    "机制、真实通道和跨圈层级联",
+    "竞争解释与排序",
+    "一阶、二阶、三阶推演",
+    "每阶简单基线、增量和停止理由",
+    "事实、预测、价值、责任、授权裁决",
+    "行动、不行动、切换和反转条件",
+)
+OUTPUT_PLAN_APPENDIX_TITLES = (
+    "圈层—角色—尺度映射",
+    "分支、合并、剪枝、残差和停止点",
+    "预测、时间窗、指标和解析条件",
+    "概念、证据和来源锚点",
+    "未知项与框架缺口候选",
+)
+BLIND_RECOVERY_FIELD_IDS = (
+    "main_verdict",
+    "confidence",
+    "steelmanned_user_position",
+    "decisive_evidence",
+    "unknowns",
+    "circle_relations",
+    "mechanisms",
+    "strongest_rival",
+    "order_1",
+    "order_2",
+    "order_3",
+    "five_verdicts",
+    "action",
+    "residuals",
+    "reversal_conditions",
+)
+SEMANTIC_UNIT_KINDS = (
+    "claim",
+    "evidence",
+    "unknown",
+    "circle-relation",
+    "scale-transform",
+    "translation-loss",
+    "mechanism",
+    "branch",
+    "residual",
+    "forecast",
+    "verdict",
+    "action",
+    "reversal-condition",
+)
+QUALITY_CHECK_IDS = (
+    "reader-contract",
+    "repeated-paragraph",
+    "template-language",
+    "jargon-before-explanation",
+    "unresolved-pronoun",
+    "unsupported-certainty",
+    "truncation-promise",
+    "machine-dump",
+    "independent-article",
+    "semantic-coverage",
+    "blind-recovery",
+)
+RETRIEVAL_TRIGGER_KINDS = (
+    "real-world",
+    "time-sensitive",
+    "legal",
+    "medical",
+    "financial",
+    "political",
+    "product",
+    "policy",
+    "institutional",
+    "current-fact",
+)
+RETRIEVAL_BLOCK_CLASSES = (
+    "network-unavailable",
+    "outbound-denied",
+    "retry-exhaustion",
+    "rate-limit",
+    "timeout",
+    "resource-condition",
+)
+PROMOTED_RAC_FIELDS = (
+    "actor_ref",
+    "circle_ref",
+    "membership_basis",
+    "start_time",
+    "end_time",
+    "roles",
+    "commitment_strength",
+    "actual_participation",
+    "exit_ability",
+    "dispute_status",
+    "evidence_status",
+    "source_refs",
+)
+PROMOTED_RCC_FIELDS = (
+    "source_circle_ref",
+    "target_circle_ref",
+    "direction",
+    "relation_type",
+    "shared_members_or_interfaces",
+    "channel",
+    "strength_or_scope",
+    "time_window",
+    "delay",
+    "threshold",
+    "evidence_refs",
+    "counterexample_refs",
+    "failure_conditions",
+)
+SCALE_AXIS_IDS = ("A", "X", "T", "O", "C", "R", "I", "N", "J")
+AXIS_RELATIONS = ("equal", "expands", "contracts", "incomparable", "unknown")
+AXIS_MISSING_STATUSES = (
+    "unknown",
+    "not_applicable",
+    "not_observable",
+    "withheld_for_protection",
+)
+COMPARISON_PAYLOAD_KINDS = (
+    "mapping",
+    "set",
+    "interval",
+    "graph",
+    "authorization-difference",
+    "deep-equality",
+)
+TRANSFORMATION_CLASSES = (
+    "horizontal_or_incomparable",
+    "mixed",
+    "unresolved",
+    "all_equal",
+    "elevation",
+    "reduction",
+)
+AXIS_DIFFERENCE_FIELDS = (
+    "axis_id",
+    "source_state",
+    "target_state",
+    "relation",
+    "order_witness",
+    "information_loss",
+    "uncertainty",
+)
+ORDER_WITNESS_FIELDS = (
+    "comparator_id",
+    "comparator_version",
+    "verifier_id",
+    "evidence_refs",
+    "comparison_payload",
+    "comparator_result_ref",
+    "verification_artifact_ref",
+    "verification_hash",
+    "validation_status",
+)
+COMPARISON_PAYLOAD_FIELDS = (
+    "payload_kind",
+    "payload_ref",
+    "payload_sha256",
+    "description",
+)
 
 EXPECTED_SCHEMA_NAMES = (
     "ultra-action-ranking.schema.json",
@@ -129,21 +291,28 @@ def artifact(
 def local_state(state_id: str, name: str, value: str) -> dict[str, Any]:
     return {
         "state_id": state_id,
-        "variables": [{"name": name, "value": value, "unit": "category"}],
+        "variables": [
+            {
+                "name": name,
+                "value": value,
+                "unit": "category",
+                "clock_id": "CLOCK-INTERACTION",
+            }
+        ],
     }
 
 
 def scale_profile(*, organizational: str) -> dict[str, str]:
     return {
-        "spatial": "local",
-        "temporal": "interaction",
-        "organizational": organizational,
-        "institutional": "informal",
-        "material": "bounded",
-        "informational": "partial",
-        "relational": "direct",
-        "power": "delegated",
-        "risk": "reversible",
+        "A": "local actor partition",
+        "X": "local",
+        "T": "interaction",
+        "O": organizational,
+        "C": "bounded channel",
+        "R": "visible record",
+        "I": "declared impact",
+        "N": "local graph",
+        "J": "delegated authority",
     }
 
 
@@ -153,6 +322,175 @@ def evidence_status(*, identity: str = "reported") -> dict[str, Any]:
         "information_identity": identity,
         "source_lineage": ["SOURCE-1"],
         "visibility": "visible in the supplied record",
+    }
+
+
+def normalized_axis_state(
+    suffix: str, *, normalized_state_sha256: str = HASH_A
+) -> dict[str, Any]:
+    return {
+        "status": "recorded",
+        "normalized_state_ref": f"AXIS-STATE-{suffix}",
+        "normalized_state_sha256": normalized_state_sha256,
+        "description": "The normalized axis state is frozen for comparison.",
+    }
+
+
+def missing_axis_state(status: str) -> dict[str, Any]:
+    assert status in AXIS_MISSING_STATUSES
+    return {
+        "status": status,
+        "normalized_state_ref": None,
+        "normalized_state_sha256": None,
+        "description": f"The axis state is explicitly {status}.",
+    }
+
+
+def comparison_payload(
+    suffix: str,
+    *,
+    payload_kind: str | None,
+    missing: bool = False,
+) -> dict[str, Any]:
+    return {
+        "payload_kind": payload_kind,
+        "payload_ref": None if missing else f"COMPARISON-PAYLOAD-{suffix}",
+        "payload_sha256": None if missing else HASH_B,
+        "description": (
+            "The comparison payload is unavailable for the stated reason."
+            if missing
+            else "The frozen comparison payload is independently reviewable."
+        ),
+    }
+
+
+def order_witness(suffix: str, relation: str) -> dict[str, Any]:
+    assert relation in AXIS_RELATIONS
+    missing = relation == "unknown"
+    return {
+        "comparator_id": (
+            None
+            if missing
+            else (
+                "builtin:deep-equality"
+                if relation == "equal"
+                else f"AXIS-COMPARATOR-{suffix}"
+            )
+        ),
+        "comparator_version": None if missing else "1.0.0",
+        "verifier_id": None if missing else f"AXIS-VERIFIER-{suffix}",
+        "evidence_refs": [] if missing else ["EVIDENCE-1"],
+        "comparison_payload": comparison_payload(
+            suffix,
+            payload_kind=(
+                None
+                if missing
+                else "mapping" if relation != "equal" else "deep-equality"
+            ),
+            missing=missing,
+        ),
+        "comparator_result_ref": (
+            None if missing else f"COMPARATOR-RESULT-{suffix}"
+        ),
+        "verification_artifact_ref": (
+            None if missing else f"VERIFICATION-ARTIFACT-{suffix}"
+        ),
+        "verification_hash": None if missing else HASH_C,
+        "validation_status": "missing" if missing else "valid",
+    }
+
+
+def axis_difference(suffix: str, axis_id: str, relation: str) -> dict[str, Any]:
+    source_state = normalized_axis_state(f"{suffix}-{axis_id}-SOURCE")
+    target_state = (
+        copy.deepcopy(source_state)
+        if relation == "equal"
+        else normalized_axis_state(
+            f"{suffix}-{axis_id}-TARGET", normalized_state_sha256=HASH_B
+        )
+    )
+    return {
+        "axis_id": axis_id,
+        "source_state": source_state,
+        "target_state": target_state,
+        "relation": relation,
+        "order_witness": order_witness(f"{suffix}-{axis_id}", relation),
+        "information_loss": [],
+        "uncertainty": [],
+    }
+
+
+def scale_relations_for_class(transformation_class: str) -> dict[str, str]:
+    assert transformation_class in TRANSFORMATION_CLASSES
+    relations = dict.fromkeys(SCALE_AXIS_IDS, "equal")
+    if transformation_class == "horizontal_or_incomparable":
+        relations.update(A="incomparable", X="unknown", T="expands", O="contracts")
+    elif transformation_class == "mixed":
+        relations.update(A="expands", X="contracts", T="unknown")
+    elif transformation_class == "unresolved":
+        relations.update(A="expands", X="unknown")
+    elif transformation_class == "elevation":
+        relations["A"] = "expands"
+    elif transformation_class == "reduction":
+        relations["A"] = "contracts"
+    return relations
+
+
+def transformation_record(
+    suffix: str,
+    kind: str,
+    *,
+    transformation_class: str = "all_equal",
+) -> dict[str, Any]:
+    if kind == "scale":
+        input_type = output_type = "scale-state"
+        input_axis = output_axis = None
+        relations = scale_relations_for_class(transformation_class)
+        axis_differences = [
+            axis_difference(suffix, axis_id, relations[axis_id])
+            for axis_id in SCALE_AXIS_IDS
+        ]
+        class_value: str | None = transformation_class
+    elif kind == "circle-relation":
+        input_type = output_type = "circle-relation"
+        input_axis = output_axis = None
+        axis_differences = []
+        class_value = None
+    else:
+        input_type, output_type = "source-representation", "represented-state"
+        input_axis = output_axis = None
+        axis_differences = []
+        class_value = None
+    return {
+        "transform_id": f"TRANSFORM-{suffix}",
+        "kind": kind,
+        "input_identity": {
+            "identity_type": input_type,
+            "location_ref": "POS-TEAM-MANAGER",
+            "axis_id": input_axis,
+            "value": f"input-{suffix}",
+            "evidence_ids": ["EVIDENCE-1"],
+        },
+        "output_identity": {
+            "identity_type": output_type,
+            "location_ref": "CIRCLE-TEAM",
+            "axis_id": output_axis,
+            "value": f"output-{suffix}",
+            "evidence_ids": ["EVIDENCE-1"],
+        },
+        "axis_differences": axis_differences,
+        "transformation_class": class_value,
+        "preserved": [],
+        "changed": [],
+        "folded": [],
+        "omitted": [],
+        "unknown": [],
+        "task_relative_loss": [],
+        "location_effects": [],
+        "effective_variables": [],
+        "closure_status": "bounded",
+        "residuals": [],
+        "return_conditions": [],
     }
 
 
@@ -337,7 +675,14 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             phase_id="U1",
             source_release_id="ultra-v8.2-r1",
             source_manifest_sha256=HASH_A,
+            release_manifest_sha256=HASH_B,
+            compatibility_matrix_sha256=HASH_C,
+            knowledge_report_sha256=HASH_A,
+            skill_tree_sha256=HASH_B,
+            input_snapshot_sha256=HASH_C,
+            parent_event_sha256=HASH_A,
             evidence_cutoff=STAMP,
+            acl_status="verified-current-user",
             lock_status="locked",
             inputs=[
                 {
@@ -355,6 +700,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             source_ordinal=1,
             source_manifest_sha256=HASH_A,
             promoted_semantic_snapshot_sha256=HASH_B,
+            source_lock_sha256=HASH_C,
+            parent_event_sha256=HASH_A,
+            receipt_sha256=HASH_B,
             reader_mode="full-source",
             execution_identity={
                 "kind": "host-process",
@@ -397,23 +745,48 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-retrieval-ledger.schema.json": artifact(
             "ultra-retrieval-ledger.schema.json",
             phase_id="U2",
-            network_available=False,
+            decision_sha256=HASH_A,
+            u1_parent_event_sha256=HASH_B,
+            request_sha256=HASH_C,
+            decision={
+                "status": "not-applicable",
+                "reason": "pure-logic",
+                "run_id": RUN_ID,
+                "u1_parent_event_sha256": HASH_B,
+                "request_sha256": HASH_C,
+                "version_binding": version_binding(),
+                "claim_sha256": HASH_A,
+                "basis_sha256": HASH_C,
+                "eligibility_basis": {
+                    "analysis_kind": "pure-logic",
+                    "claim": "If A then B.",
+                    "claim_sha256": HASH_A,
+                    "run_id": RUN_ID,
+                    "u1_parent_event_sha256": HASH_B,
+                    "request_sha256": HASH_C,
+                    "version_binding": version_binding(),
+                    "material_inventory": [],
+                    "material_universe_sha256": None,
+                    "basis_sha256": HASH_C,
+                },
+                "decision_sha256": HASH_A,
+            },
+            retrieval_status="not-applicable",
+            block_result=None,
+            authorization_sha256=None,
+            query_count=0,
+            queries=[],
+            sources=[],
+            network_available=True,
             outbound_authorized=False,
-            entries=[
-                {
-                    "query_id": "QUERY-1",
-                    "query_sha256": HASH_B,
-                    "direction": "counterexample",
-                    "result_summary": "Retrieval was not authorized.",
-                    "source_refs": [],
-                    "stop_reason": "outbound-not-authorized",
-                }
-            ],
-            saturation={"rounds": 0, "stop_reason": "outbound-not-authorized"},
+            entries=[],
+            saturation={"rounds": 0, "stop_reason": "not-applicable"},
         ),
         "ultra-world-volume.schema.json": artifact(
             "ultra-world-volume.schema.json",
             phase_id="U4",
+            evidence_artifact_sha256=HASH_A,
+            evidence_content_sha256=HASH_B,
             volume_id="OMEGA-0",
             object_boundary={
                 "object_ids": ["ACTOR-1", "CIRCLE-FAMILY", "CIRCLE-TEAM"],
@@ -436,6 +809,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "label": "Family",
                     "boundary_rule": "Household membership",
                     "membership_basis": "declared household role",
+                    "reification_risks": [
+                        "Naming the family circle does not establish a separate entity."
+                    ],
                     "identity_criteria": "The same household boundary and membership rule.",
                     "M_state": local_state("M-CIRCLE-FAMILY", "resources", "shared"),
                     "Psi_state": local_state("PSI-CIRCLE-FAMILY", "meaning", "familial"),
@@ -447,6 +823,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "label": "Team",
                     "boundary_rule": "Current project membership",
                     "membership_basis": "active work assignment",
+                    "reification_risks": [
+                        "Naming the team circle does not establish a separate entity."
+                    ],
                     "identity_criteria": "The same project boundary and active assignment rule.",
                     "M_state": local_state("M-CIRCLE-TEAM", "resources", "allocated"),
                     "Psi_state": local_state("PSI-CIRCLE-TEAM", "rule", "review"),
@@ -464,13 +843,23 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "M_state": {
                         "state_id": "M-POS-1",
                         "variables": [
-                            {"name": "budget", "value": 1, "unit": "share"}
+                            {
+                                "name": "budget",
+                                "value": 1,
+                                "unit": "share",
+                                "clock_id": "CLOCK-INTERACTION",
+                            }
                         ],
                     },
                     "Psi_state": {
                         "state_id": "PSI-POS-1",
                         "variables": [
-                            {"name": "rule", "value": "review", "unit": "text"}
+                            {
+                                "name": "rule",
+                                "value": "review",
+                                "unit": "text",
+                                "clock_id": "CLOCK-INTERACTION",
+                            }
                         ],
                     },
                     "scale_profile": scale_profile(organizational="team"),
@@ -479,40 +868,87 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             ],
             memberships=[
                 {
-                    "membership_id": "MEMBERSHIP-1",
-                    "actor_id": "ACTOR-1",
-                    "circle_id": "CIRCLE-TEAM",
-                    "role_id": "ROLE-MANAGER",
-                    "basis": "active work assignment",
-                    "role_conditions": "Decision authority is limited to the active project.",
-                    "exit_conditions": "The actor may leave after handing off active work.",
-                    "power_distribution": "DIST-POWER-1",
+                    "actor_ref": "ACTOR-1",
+                    "circle_ref": "CIRCLE-TEAM",
+                    "membership_basis": "active work assignment",
+                    "start_time": STAMP,
+                    "end_time": None,
+                    "roles": ["ROLE-MANAGER"],
+                    "commitment_strength": "active",
+                    "actual_participation": "current",
+                    "exit_ability": "handoff",
+                    "dispute_status": "none",
+                    "evidence_status": evidence_status(identity="observed"),
+                    "source_refs": ["SOURCE-1"],
                 }
             ],
             containment_relations=[
                 {
                     "child_circle_id": "CIRCLE-TEAM",
                     "parent_circle_id": "CIRCLE-FAMILY",
-                    "basis": "shared resource dependency",
+                    "basis": "资源会计",
                 }
+            ],
+            containment_closure=[
+                {"circle_id": "CIRCLE-FAMILY", "ancestor_circle_ids": []},
+                {
+                    "circle_id": "CIRCLE-TEAM",
+                    "ancestor_circle_ids": ["CIRCLE-FAMILY"],
+                },
             ],
             circle_relations=[
                 {
-                    "relation_id": "REL-1",
-                    "from_circle_id": "CIRCLE-FAMILY",
-                    "to_circle_id": "CIRCLE-TEAM",
-                    "relation_type": "resource-transfer",
+                    "source_circle_ref": "CIRCLE-FAMILY",
+                    "target_circle_ref": "CIRCLE-TEAM",
                     "direction": "directed",
+                    "relation_type": "嵌套",
+                    "shared_members_or_interfaces": ["ACTOR-1"],
+                    "channel": "CHANNEL-1",
+                    "strength_or_scope": "shared resource dependency",
+                    "time_window": "current",
+                    "delay": "one review cycle",
+                    "threshold": "manager approval",
+                    "evidence_refs": ["EVIDENCE-1"],
+                    "counterexample_refs": [],
+                    "failure_conditions": [],
                 }
             ],
             clocks=[
                 {
-                    "clock_id": "CLOCK-1",
+                    "clock_id": "CLOCK-IMMEDIATE",
+                    "scope_id": "CIRCLE-TEAM",
+                    "kind": "immediate",
+                    "current_time": STAMP,
+                    "horizon": "PT1H",
+                },
+                {
+                    "clock_id": "CLOCK-INTERACTION",
+                    "scope_id": "CIRCLE-TEAM",
+                    "kind": "interaction",
+                    "current_time": STAMP,
+                    "horizon": "P1D",
+                },
+                {
+                    "clock_id": "CLOCK-ORGANIZATIONAL",
                     "scope_id": "CIRCLE-TEAM",
                     "kind": "organizational",
                     "current_time": STAMP,
                     "horizon": "P90D",
-                }
+                },
+                {
+                    "clock_id": "CLOCK-INSTITUTIONAL",
+                    "scope_id": "CIRCLE-TEAM",
+                    "kind": "institutional",
+                    "current_time": STAMP,
+                    "horizon": "P1Y",
+                },
+                {
+                    "clock_id": "CLOCK-LONG-TERM",
+                    "scope_id": "CIRCLE-TEAM",
+                    "kind": "long-term",
+                    "current_time": STAMP,
+                    "horizon": "P5Y",
+                },
             ],
             channels=[
                 {
@@ -526,21 +962,62 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "threshold": "manager approval",
                     "constraint_distribution": "DIST-CONSTRAINT-1",
                     "access_distribution": "Only the represented manager position can transmit.",
+                    "identity_mapping": {
+                        "source_k_ref": "POS-TEAM-MANAGER",
+                        "target_k_ref": "POS-TEAM-MANAGER",
+                        "mapping_rule": "Preserve the declared position identity.",
+                        "preserves_identity": True,
+                    },
+                    "acl": {
+                        "authorized_position_ids": ["POS-TEAM-MANAGER"],
+                        "authorization_evidence_ids": ["EVIDENCE-1"],
+                    },
+                    "evidence_ids": ["EVIDENCE-1"],
                 }
             ],
             events=[
                 {
                     "event_id": "WORLD-EVENT-1",
+                    "target_volume_id": "OMEGA-0",
+                    "origin_kind": "endogenous",
                     "source_position_id": "POS-TEAM-MANAGER",
                     "target_position_ids": ["POS-TEAM-MANAGER"],
                     "channel_ids": ["CHANNEL-1"],
+                    "channel_conditions": [
+                        {
+                            "channel_id": "CHANNEL-1",
+                            "threshold_met": True,
+                            "identity_preserved": True,
+                            "acl_authorized": True,
+                            "evidence_ids": ["EVIDENCE-1"],
+                        }
+                    ],
+                    "M_updates": [
+                        {
+                            "position_id": "POS-TEAM-MANAGER",
+                            "state_id": "M-POS-1",
+                            "variable_changes": [
+                                {
+                                    "name": "budget",
+                                    "source_value": 1,
+                                    "target_value": 2,
+                                    "unit": "share",
+                                    "clock_id": "CLOCK-INTERACTION",
+                                }
+                            ],
+                            "via_channel_id": "CHANNEL-1",
+                        }
+                    ],
+                    "Psi_updates": [],
+                    "relation_updates": [],
+                    "clock_deltas": [],
                 }
             ],
             local_distributions=[
                 {
                     "distribution_id": "DIST-POWER-1",
                     "kind": "power",
-                    "location_ref": "MEMBERSHIP-1",
+                    "location_ref": "RAC-ACTOR-1-CIRCLE-TEAM",
                     "description": "Decision power is local to the team membership.",
                 },
                 {
@@ -552,7 +1029,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                 {
                     "distribution_id": "DIST-EXIT-1",
                     "kind": "exit",
-                    "location_ref": "MEMBERSHIP-1",
+                    "location_ref": "RAC-ACTOR-1-CIRCLE-TEAM",
                     "description": "Exit requires a handoff at this membership.",
                 },
                 {
@@ -586,62 +1063,31 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-transformation-ledger.schema.json": artifact(
             "ultra-transformation-ledger.schema.json",
             phase_id="U5",
-            source_volume_sha256=HASH_A,
+            evidence_artifact_sha256=HASH_A,
+            evidence_content_sha256=HASH_B,
+            world_volume_artifact_sha256=HASH_C,
+            world_volume_content_sha256=HASH_A,
             transformations=[
-                {
-                    "transform_id": "TRANSFORM-1",
-                    "kind": "scale",
-                    "input_identity": "POS-TEAM-MANAGER@interaction",
-                    "output_identity": "POS-TEAM-MANAGER@organizational",
-                    "preserved": ["actor identity"],
-                    "changed": ["time horizon"],
-                    "folded": [],
-                    "omitted": [],
-                    "unknown": ["long-term response"],
-                    "task_relative_loss": [
-                        {
-                            "loss_id": "LOSS-1",
-                            "description": "Interaction detail is aggregated.",
-                            "location_ref": "POS-TEAM-MANAGER",
-                        }
-                    ],
-                    "location_effects": [
-                        {
-                            "effect_id": "EFFECT-GAIN-1",
-                            "location_ref": "POS-TEAM-MANAGER",
-                            "effect_kind": "gain",
-                            "description": "The organizational view exposes the decision mandate.",
-                        },
-                        {
-                            "effect_id": "EFFECT-DAMAGE-1",
-                            "location_ref": "POS-TEAM-MANAGER",
-                            "effect_kind": "damage",
-                            "description": "Interaction detail is obscured at the position.",
-                        },
-                        {
-                            "effect_id": "EFFECT-EXIT-1",
-                            "location_ref": "MEMBERSHIP-1",
-                            "effect_kind": "exit-cost",
-                            "description": "A handoff is required before exit.",
-                        },
-                        {
-                            "effect_id": "EFFECT-SPILLOVER-1",
-                            "location_ref": "CIRCLE-FAMILY",
-                            "effect_kind": "spillover",
-                            "description": "Organizational delay can consume shared time.",
-                        },
-                    ],
-                    "effective_variables": ["budget", "rule"],
-                    "closure_status": "bounded",
-                    "residual_ids": ["RESIDUAL-1"],
-                    "return_conditions": ["material residual changes verdict"],
-                }
+                transformation_record("SCALE-1", "scale"),
+                transformation_record("CIRCLE-1", "circle-relation"),
+                transformation_record("REP-1", "representation-translation"),
             ],
         ),
         "ultra-concept-disposition.schema.json": artifact(
             "ultra-concept-disposition.schema.json",
             phase_id="U5",
+            evidence_artifact_sha256=HASH_A,
+            evidence_content_sha256=HASH_B,
+            world_volume_artifact_sha256=HASH_C,
+            world_volume_content_sha256=HASH_A,
+            transformation_ledger_artifact_sha256=HASH_B,
+            transformation_ledger_content_sha256=HASH_C,
             registry_sha256=HASH_A,
+            route_map_sha256=HASH_B,
+            contract_map_sha256=HASH_C,
+            required_route_ids=["ROUTE-1"],
+            required_contract_ids=["CONTRACT-1"],
+            required_requirement_ids=["REQ-1"],
             dispositions=[
                 {
                     "concept_id": "V82-CONCEPT-CHANNEL",
@@ -649,9 +1095,29 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "rationale": "A concrete decision channel reaches the position.",
                     "route_required": True,
                     "neighbor_concept_ids": [],
-                    "semantic_unit_ids": ["UNIT-CHANNEL-1"],
+                    "route_ids": ["ROUTE-1"],
+                    "contract_ids": ["CONTRACT-1"],
+                    "requirement_ids": ["REQ-1"],
+                    "obligation_ids": ["OBLIGATION-1"],
+                    "evidence_ids": ["EVIDENCE-1"],
+                    "unknown_ids": [],
+                    "transformation_ids": ["TRANSFORM-SCALE-1"],
                     "condition_branch": None,
-                    "evidence_plan": None,
+                }
+            ],
+            semantic_obligations=[
+                {
+                    "obligation_id": "OBLIGATION-1",
+                    "concept_id": "V82-CONCEPT-CHANNEL",
+                    "status": "applied",
+                    "semantic_unit_id": "UNIT-CHANNEL-1",
+                    "evidence_ids": ["EVIDENCE-1"],
+                    "unknown_ids": [],
+                    "transformation_ids": ["TRANSFORM-SCALE-1"],
+                    "route_ids": ["ROUTE-1"],
+                    "contract_ids": ["CONTRACT-1"],
+                    "requirement_ids": ["REQ-1"],
+                    "condition_branch_id": None,
                 }
             ],
             unvisited_concept_ids=[],
@@ -917,56 +1383,89 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-output-plan.schema.json": artifact(
             "ultra-output-plan.schema.json",
             phase_id="U10",
+            u9_parent_event_sha256=HASH_C,
             article_path="delivery/CrossFrame-Ultra-完整文章.partial.md",
             sections=[
                 {
-                    "section_id": "SECTION-1",
-                    "title": "主判断、范围与置信度",
-                    "ordinal": 1,
-                    "semantic_unit_ids": ["UNIT-VERDICT-1"],
+                    "section_id": f"SECTION-{ordinal:02d}",
+                    "title": title,
+                    "ordinal": ordinal,
+                    "semantic_unit_ids": [
+                        f"UNIT-{((ordinal - 1) % len(SEMANTIC_UNIT_KINDS)) + 1:02d}"
+                    ],
                     "dependency_hashes": [HASH_A],
                 }
+                for ordinal, title in enumerate(OUTPUT_PLAN_SECTION_TITLES, start=1)
             ],
             appendices=[
                 {
-                    "section_id": "APPENDIX-1",
-                    "title": "未知项与框架缺口候选",
-                    "ordinal": 11,
-                    "semantic_unit_ids": ["UNIT-GAP-1"],
+                    "section_id": f"APPENDIX-{ordinal:02d}",
+                    "title": title,
+                    "ordinal": ordinal,
+                    "semantic_unit_ids": [
+                        f"UNIT-{((ordinal - 1) % len(SEMANTIC_UNIT_KINDS)) + 1:02d}"
+                    ],
                     "dependency_hashes": [HASH_B],
                 }
+                for ordinal, title in enumerate(OUTPUT_PLAN_APPENDIX_TITLES, start=11)
             ],
-            required_artifacts=["ultra-verdict.json", "ultra-action-ranking.json"],
+            required_artifacts=[
+                {
+                    "path": "artifacts/U09-U10-output/ultra-verdict.json",
+                    "sha256": HASH_A,
+                    "media_type": "application/json",
+                }
+            ],
+            semantic_universe=[
+                {
+                    "unit_id": f"UNIT-{ordinal:02d}",
+                    "unit_kind": unit_kind,
+                    "status": "applied",
+                    "affects_ranking": True,
+                    "used_in_reasoning": True,
+                    "promised_to_reader": True,
+                    "source_refs": ["EVIDENCE-1"],
+                    "authority_artifact_sha256": HASH_A,
+                    "authority_locator": f"unit:{ordinal:02d}",
+                    "normalized_semantic_text_sha256": HASH_B,
+                }
+                for ordinal, unit_kind in enumerate(SEMANTIC_UNIT_KINDS, start=1)
+            ],
+            semantic_universe_sha256=HASH_C,
+            blind_recovery_expectations=[
+                {
+                    "field_id": field_id,
+                    "section_id": (
+                        f"SECTION-{ordinal:02d}"
+                        if ordinal <= 10
+                        else f"APPENDIX-{ordinal:02d}"
+                    ),
+                    "semantic_unit_ids": [
+                        f"UNIT-{((ordinal - 1) % len(SEMANTIC_UNIT_KINDS)) + 1:02d}"
+                    ],
+                    "normalized_value_sha256": HASH_A,
+                }
+                for ordinal, field_id in enumerate(BLIND_RECOVERY_FIELD_IDS, start=1)
+            ],
             coverage_required=True,
             official_filename_allowed=False,
         ),
         "ultra-semantic-coverage.schema.json": artifact(
             "ultra-semantic-coverage.schema.json",
-            phase_id="U10",
+            phase_id="U11",
+            output_plan_artifact_sha256=HASH_B,
+            semantic_universe_sha256=HASH_C,
             article_sha256=HASH_A,
-            required_unit_kinds=[
-                "claim",
-                "evidence",
-                "unknown",
-                "circle-relation",
-                "scale-transform",
-                "translation-loss",
-                "mechanism",
-                "branch",
-                "residual",
-                "forecast",
-                "verdict",
-                "action",
-                "reversal-condition",
-            ],
+            required_unit_kinds=list(SEMANTIC_UNIT_KINDS),
             mappings=[
                 {
-                    "unit_id": "UNIT-VERDICT-1",
-                    "unit_kind": "verdict",
-                    "section_id": "SECTION-1",
-                    "normalized_excerpt": "当前主判断是可逆探测优先。",
-                    "source_refs": ["CLAIM-1", "EVIDENCE-1"],
+                    "unit_id": f"UNIT-{ordinal:02d}",
+                    "unit_kind": unit_kind,
+                    "section_id": f"SECTION-{min(ordinal, 10):02d}",
+                    "normalized_excerpt": f"Semantic unit {ordinal} is present.",
+                    "source_refs": ["EVIDENCE-1"],
                 }
+                for ordinal, unit_kind in enumerate(SEMANTIC_UNIT_KINDS, start=1)
             ],
             missing_unit_ids=[],
             coverage_percent=100,
@@ -975,25 +1474,33 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
         "ultra-article-review.schema.json": artifact(
             "ultra-article-review.schema.json",
             phase_id="U11",
+            output_plan_artifact_sha256=HASH_C,
+            semantic_universe_sha256=HASH_A,
             article_sha256=HASH_A,
-            coverage_sha256=HASH_B,
+            coverage_artifact_sha256=HASH_B,
+            blind_recovery_contract_sha256=HASH_C,
             blind_reader_fields=[
                 {
-                    "field_id": "main_verdict",
+                    "field_id": field_id,
                     "recovered": True,
-                    "excerpt": "当前主判断是可逆探测优先。",
+                    "excerpt": f"Recovered field {field_id}.",
                 }
+                for field_id in BLIND_RECOVERY_FIELD_IDS
             ],
             quality_checks=[
                 {
-                    "check_id": "no-external-dependency",
+                    "check_id": check_id,
                     "status": "pass",
-                    "evidence": "All decisive units occur in the article.",
+                    "evidence": f"Mechanical check {check_id} passed.",
                 }
+                for check_id in QUALITY_CHECK_IDS
             ],
             external_dependencies=[],
-            overall_status="pass",
+            overall_status="mechanical-complete",
             official_filename_allowed=False,
+            review_stage="mechanical-precheck",
+            needs_u12_validation=True,
+            u12_validator_artifact_required=True,
         ),
         "ultra-recovery-checkpoint.schema.json": artifact(
             "ultra-recovery-checkpoint.schema.json",
@@ -1074,8 +1581,116 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             status="planned",
         ),
     }
+    load_runtime()
+    schemas = importlib.import_module("ultra_runtime.schemas")
+    for schema_name, fixture in fixtures.items():
+        if schema_name not in {
+            "ultra-phase-event.schema.json",
+            "ultra-read-event.schema.json",
+        }:
+            fixture["content_sha256"] = schemas.compute_artifact_content_sha256(
+                fixture
+            )
     assert set(fixtures) == set(ARTIFACT_SCHEMAS)
     return fixtures
+
+
+def required_retrieval_instance() -> dict[str, Any]:
+    value = copy.deepcopy(minimal_instances()["ultra-retrieval-ledger.schema.json"])
+    value["decision"] = {
+        "status": "required",
+        "reason": "A current factual claim needs external evidence.",
+        "run_id": RUN_ID,
+        "u1_parent_event_sha256": HASH_B,
+        "request_sha256": HASH_C,
+        "version_binding": version_binding(),
+        "claim_sha256": HASH_A,
+        "basis_sha256": HASH_C,
+        "eligibility_basis": {
+            "trigger_kinds": ["current-fact", "time-sensitive"],
+            "claim": "A current factual claim needs external evidence.",
+            "claim_sha256": HASH_A,
+            "run_id": RUN_ID,
+            "u1_parent_event_sha256": HASH_B,
+            "request_sha256": HASH_C,
+            "version_binding": version_binding(),
+            "basis_sha256": HASH_C,
+        },
+        "decision_sha256": HASH_A,
+    }
+    value["retrieval_status"] = "required-complete"
+    value["block_result"] = None
+    value["authorization_sha256"] = HASH_B
+    value["query_count"] = 1
+    value["queries"] = [
+        {
+            "eligibility_status": "required",
+            "redacted_query": "current factual claim counterexample",
+            "query_sha256": HASH_C,
+            "eligibility_decision_sha256": HASH_A,
+            "authorization_sha256": HASH_B,
+            "u1_parent_event_sha256": HASH_B,
+            "request_sha256": HASH_C,
+            "run_id": RUN_ID,
+            "version_binding": version_binding(),
+        }
+    ]
+    value["sources"] = [
+        {
+            "record": {
+                "source_id": "SOURCE-RETRIEVED-1",
+                "url": "https://example.test/source",
+                "event_date": None,
+                "publication_date": None,
+                "interest": "No declared interest is available.",
+                "upstream_lineage": [],
+                "supported_claim": "The source supports a bounded claim.",
+                "cannot_prove": "The source cannot prove the universal claim.",
+            },
+            "source_record_sha256": HASH_A,
+            "query_sha256": HASH_C,
+            "authorization_sha256": HASH_B,
+            "decision_sha256": HASH_A,
+            "run_id": RUN_ID,
+            "u1_parent_event_sha256": HASH_B,
+            "request_sha256": HASH_C,
+            "version_binding": version_binding(),
+            "inventory_item_sha256": HASH_C,
+        }
+    ]
+    value["network_available"] = True
+    value["outbound_authorized"] = True
+    value["entries"] = [
+        {
+            "query_id": "QUERY-1",
+            "query_sha256": HASH_C,
+            "direction": "counterexample",
+            "result_summary": "One bounded source was recorded.",
+            "source_refs": ["SOURCE-RETRIEVED-1"],
+            "stop_reason": "bounded-result-recorded",
+        }
+    ]
+    value["saturation"] = {"rounds": 1, "stop_reason": "bounded-result-recorded"}
+    return value
+
+
+def blocked_retrieval_instance(
+    block_class: str = "network-unavailable",
+) -> dict[str, Any]:
+    value = required_retrieval_instance()
+    value["retrieval_status"] = "required-blocked"
+    value["block_result"] = {
+        "block_class": block_class,
+        "detail": "Required retrieval could not complete within the frozen boundary.",
+    }
+    value["query_count"] = 0
+    value["queries"] = []
+    value["sources"] = []
+    value["network_available"] = False
+    value["outbound_authorized"] = True
+    value["entries"] = []
+    value["saturation"] = {"rounds": 0, "stop_reason": block_class}
+    return value
 
 
 PRIMARY_FIELD = {
@@ -1160,44 +1775,69 @@ def test_common_schema_current_binding_matches_runtime_constants() -> None:
 
 
 @pytest.mark.parametrize(
-    ("fixture_name", "schema_name", "schema_id", "phase_id"),
+    ("schema_name", "schema_id", "phase_id"),
     (
         (
-            "evidence-ledger-valid.json",
+            "ultra-source-lock.schema.json",
+            "crossframe.ultra.v82.source-lock",
+            "U1",
+        ),
+        (
+            "ultra-retrieval-ledger.schema.json",
+            "crossframe.ultra.v82.retrieval-ledger",
+            "U2",
+        ),
+        (
             "ultra-evidence-ledger.schema.json",
             "crossframe.ultra.v82.evidence-ledger",
             "U3",
         ),
         (
-            "world-volume-valid.json",
             "ultra-world-volume.schema.json",
             "crossframe.ultra.v82.world-volume",
             "U4",
         ),
         (
-            "transformation-valid.json",
             "ultra-transformation-ledger.schema.json",
             "crossframe.ultra.v82.transformation-ledger",
             "U5",
         ),
+        (
+            "ultra-concept-disposition.schema.json",
+            "crossframe.ultra.v82.concept-disposition",
+            "U5",
+        ),
+        (
+            "ultra-output-plan.schema.json",
+            "crossframe.ultra.v82.output-plan",
+            "U10",
+        ),
+        (
+            "ultra-semantic-coverage.schema.json",
+            "crossframe.ultra.v82.semantic-coverage",
+            "U11",
+        ),
+        (
+            "ultra-article-review.schema.json",
+            "crossframe.ultra.v82.article-review",
+            "U11",
+        ),
     ),
 )
-def test_phase_fixture_envelope_and_content_hash_bind_external_authority(
-    fixture_name: str,
+def test_self_contained_generic_artifacts_bind_external_authority(
     schema_name: str,
     schema_id: str,
     phase_id: str,
 ) -> None:
+    load_runtime()
     schemas = importlib.import_module("ultra_runtime.schemas")
-    artifact_value = json.loads(
-        (RUNTIME_FIXTURE_ROOT / fixture_name).read_text(encoding="utf-8")
-    )
+    artifact_value = copy.deepcopy(minimal_instances()[schema_name])
 
     validated = schemas.validate_phase_artifact(
         schema_name,
         artifact_value,
         expected_schema_id=schema_id,
-        expected_run_id="ultra-task8-run",
+        expected_run_id=RUN_ID,
         expected_version_binding=version_binding(),
         expected_phase_id=phase_id,
     )
@@ -1205,11 +1845,10 @@ def test_phase_fixture_envelope_and_content_hash_bind_external_authority(
 
 
 def test_phase_artifact_rejects_payload_change_with_old_hash() -> None:
+    load_runtime()
     schemas = importlib.import_module("ultra_runtime.schemas")
-    artifact_value = json.loads(
-        (RUNTIME_FIXTURE_ROOT / "evidence-ledger-valid.json").read_text(
-            encoding="utf-8"
-        )
+    artifact_value = copy.deepcopy(
+        minimal_instances()["ultra-evidence-ledger.schema.json"]
     )
     artifact_value["entries"][0]["statement"] += " changed"
 
@@ -1218,7 +1857,7 @@ def test_phase_artifact_rejects_payload_change_with_old_hash() -> None:
             "ultra-evidence-ledger.schema.json",
             artifact_value,
             expected_schema_id="crossframe.ultra.v82.evidence-ledger",
-            expected_run_id="ultra-task8-run",
+            expected_run_id=RUN_ID,
             expected_version_binding=version_binding(),
             expected_phase_id="U3",
         )
@@ -1228,13 +1867,10 @@ def test_phase_artifact_rejects_payload_change_with_old_hash() -> None:
 def test_self_rehashed_artifact_cannot_choose_its_expected_authority(
     mutation: str,
 ) -> None:
-    import hashlib
-
+    load_runtime()
     schemas = importlib.import_module("ultra_runtime.schemas")
-    artifact_value = json.loads(
-        (RUNTIME_FIXTURE_ROOT / "evidence-ledger-valid.json").read_text(
-            encoding="utf-8"
-        )
+    artifact_value = copy.deepcopy(
+        minimal_instances()["ultra-evidence-ledger.schema.json"]
     )
     if mutation == "run":
         artifact_value["run_id"] = "attacker-selected-run"
@@ -1244,25 +1880,16 @@ def test_self_rehashed_artifact_cannot_choose_its_expected_authority(
         artifact_value["phase_id"] = "U4"
     else:
         artifact_value["schema_id"] = "crossframe.ultra.v82.world-volume"
-    payload = copy.deepcopy(artifact_value)
-    payload.pop("content_sha256")
-    canonical = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
+    artifact_value["content_sha256"] = schemas.compute_artifact_content_sha256(
+        artifact_value
     )
-    artifact_value["content_sha256"] = hashlib.sha256(
-        (canonical + "\n").encode("utf-8")
-    ).hexdigest()
 
     with pytest.raises((schemas.UltraSchemaError, ValidationError)):
         schemas.validate_phase_artifact(
             "ultra-evidence-ledger.schema.json",
             artifact_value,
             expected_schema_id="crossframe.ultra.v82.evidence-ledger",
-            expected_run_id="ultra-task8-run",
+            expected_run_id=RUN_ID,
             expected_version_binding=version_binding(),
             expected_phase_id="U3",
         )
@@ -1291,6 +1918,1846 @@ def test_each_artifact_schema_has_a_real_minimal_valid_instance() -> None:
     assert len({fixture["schema_id"] for fixture in fixtures.values()}) == len(fixtures)
     for schema_name, fixture in fixtures.items():
         runtime.validate_instance(schema_name, fixture)
+
+
+@pytest.mark.parametrize(
+    ("status", "event_type", "failure_code", "output_hashes"),
+    (
+        ("complete", "phase-completed", None, [HASH_B]),
+        ("failed", "phase-failed", "ULTRA-FAILED", []),
+        ("blocked", "phase-blocked", "ULTRA-BLOCKED", []),
+        ("cancelled", "phase-cancelled", "ULTRA-CANCELLED", []),
+    ),
+)
+def test_phase_event_pairs_all_four_states_and_failure_outputs(
+    status: str,
+    event_type: str,
+    failure_code: str | None,
+    output_hashes: list[str],
+) -> None:
+    runtime = load_runtime()
+    event = copy.deepcopy(minimal_instances()["ultra-phase-event.schema.json"])
+    event.update(
+        status=status,
+        event_type=event_type,
+        failure_code=failure_code,
+        output_artifact_hashes=output_hashes,
+    )
+    runtime.validate_instance("ultra-phase-event.schema.json", event)
+
+    wrong_pair = copy.deepcopy(event)
+    wrong_pair["event_type"] = (
+        "phase-failed" if event_type != "phase-failed" else "phase-completed"
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-phase-event.schema.json", wrong_pair)
+
+    if status == "complete":
+        with_code = copy.deepcopy(event)
+        with_code["failure_code"] = "ULTRA-UNEXPECTED"
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-phase-event.schema.json", with_code)
+    else:
+        with_output = copy.deepcopy(event)
+        with_output["output_artifact_hashes"] = [HASH_A]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-phase-event.schema.json", with_output)
+
+        without_code = copy.deepcopy(event)
+        without_code["failure_code"] = ""
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-phase-event.schema.json", without_code)
+
+
+def test_phase_event_artifact_hash_arrays_remain_bare_sha256_strings() -> None:
+    runtime = load_runtime()
+    event = copy.deepcopy(minimal_instances()["ultra-phase-event.schema.json"])
+    event["input_artifact_hashes"] = [{"sha256": HASH_A}]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-phase-event.schema.json", event)
+
+
+@pytest.mark.parametrize(
+    "authority_field",
+    (
+        "source_manifest_sha256",
+        "release_manifest_sha256",
+        "compatibility_matrix_sha256",
+        "knowledge_report_sha256",
+        "skill_tree_sha256",
+        "input_snapshot_sha256",
+        "parent_event_sha256",
+        "evidence_cutoff",
+        "acl_status",
+        "inputs",
+    ),
+)
+def test_source_lock_requires_complete_u1_authority(authority_field: str) -> None:
+    runtime = load_runtime()
+    source_lock = copy.deepcopy(minimal_instances()["ultra-source-lock.schema.json"])
+    del source_lock[authority_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-source-lock.schema.json", source_lock)
+
+
+def test_source_lock_records_unknown_acl_without_claiming_verification() -> None:
+    runtime = load_runtime()
+    source_lock = copy.deepcopy(minimal_instances()["ultra-source-lock.schema.json"])
+    source_lock["acl_status"] = "unknown"
+    runtime.validate_instance("ultra-source-lock.schema.json", source_lock)
+
+    source_lock["acl_status"] = "verified"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-source-lock.schema.json", source_lock)
+
+
+@pytest.mark.parametrize(
+    "authority_field",
+    (
+        "source_manifest_sha256",
+        "promoted_semantic_snapshot_sha256",
+        "source_lock_sha256",
+        "parent_event_sha256",
+        "receipt_sha256",
+        "execution_identity",
+        "read_event_sha256",
+    ),
+)
+def test_read_event_requires_manifest_owned_authority(authority_field: str) -> None:
+    runtime = load_runtime()
+    read_event = copy.deepcopy(minimal_instances()["ultra-read-event.schema.json"])
+    del read_event[authority_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-read-event.schema.json", read_event)
+
+
+def test_read_event_keeps_one_source_content_hash_and_real_host_identity() -> None:
+    runtime = load_runtime()
+    read_event = copy.deepcopy(minimal_instances()["ultra-read-event.schema.json"])
+    read_event["source_unit_content_sha256"] = HASH_A
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-read-event.schema.json", read_event)
+
+    read_event = copy.deepcopy(minimal_instances()["ultra-read-event.schema.json"])
+    read_event["execution_identity"]["process_id"] = 0
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-read-event.schema.json", read_event)
+
+
+def test_retrieval_not_applicable_is_structured_without_magic_authority() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-retrieval-ledger.schema.json"])
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+
+    magic_authority = copy.deepcopy(ledger)
+    magic_authority["authorization_sha256"] = "0" * 64
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", magic_authority)
+
+    fabricated_universe = copy.deepcopy(ledger)
+    fabricated_universe["decision"]["eligibility_basis"][
+        "material_universe_sha256"
+    ] = HASH_A
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", fabricated_universe
+        )
+
+
+@pytest.mark.parametrize(
+    ("network_available", "outbound_authorized"),
+    ((False, False), (False, True), (True, False), (True, True)),
+)
+def test_retrieval_not_applicable_records_actual_capability_flags(
+    network_available: bool, outbound_authorized: bool
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-retrieval-ledger.schema.json"])
+    ledger["network_available"] = network_available
+    ledger["outbound_authorized"] = outbound_authorized
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    "executed_field",
+    ("authorization", "query-count", "queries", "sources", "entries", "rounds"),
+)
+def test_retrieval_not_applicable_forbids_execution_artifacts(
+    executed_field: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-retrieval-ledger.schema.json"])
+    executed = required_retrieval_instance()
+    if executed_field == "authorization":
+        ledger["authorization_sha256"] = HASH_B
+    elif executed_field == "query-count":
+        ledger["query_count"] = 1
+    elif executed_field == "queries":
+        ledger["queries"] = executed["queries"]
+    elif executed_field == "sources":
+        ledger["sources"] = executed["sources"]
+    elif executed_field == "entries":
+        ledger["entries"] = executed["entries"]
+    else:
+        ledger["saturation"]["rounds"] = 1
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+
+
+def test_retrieval_closed_input_na_binds_material_inventory() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-retrieval-ledger.schema.json"])
+    basis = ledger["decision"]["eligibility_basis"]
+    basis["analysis_kind"] = "closed-input"
+    basis["material_inventory"] = [
+        {
+            "path": "input/closed-material.md",
+            "sha256": HASH_A,
+            "media_type": "text/markdown",
+        }
+    ]
+    basis["material_universe_sha256"] = HASH_B
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+
+    basis["material_inventory"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+
+
+def test_required_retrieval_uses_closed_multi_trigger_eligibility_basis() -> None:
+    runtime = load_runtime()
+    required = required_retrieval_instance()
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", required)
+
+    unknown_trigger = copy.deepcopy(required)
+    unknown_trigger["decision"]["eligibility_basis"]["trigger_kinds"] = [
+        "editorial-preference"
+    ]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", unknown_trigger
+        )
+
+    open_basis = copy.deepcopy(required)
+    open_basis["decision"]["eligibility_basis"]["business_policy"] = "invented"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", open_basis)
+
+    missing_basis = copy.deepcopy(required)
+    missing_basis["decision"]["eligibility_basis"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", missing_basis)
+
+
+def test_retrieval_eligibility_status_never_encodes_execution_blocking() -> None:
+    runtime = load_runtime()
+    blocked_decision = blocked_retrieval_instance()
+    blocked_decision["decision"]["status"] = "blocked"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", blocked_decision
+        )
+
+
+def test_required_complete_retrieval_binds_authority_and_allows_no_sources() -> None:
+    runtime = load_runtime()
+    required = required_retrieval_instance()
+
+    missing_authority = copy.deepcopy(required)
+    missing_authority["authorization_sha256"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", missing_authority
+        )
+
+    no_sources = copy.deepcopy(required)
+    no_sources["sources"] = []
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", no_sources)
+
+
+@pytest.mark.parametrize("block_class", RETRIEVAL_BLOCK_CLASSES)
+def test_required_blocked_retrieval_preserves_basis_and_closed_block_result(
+    block_class: str,
+) -> None:
+    runtime = load_runtime()
+    blocked = blocked_retrieval_instance(block_class)
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", blocked)
+
+    missing_result = copy.deepcopy(blocked)
+    missing_result["block_result"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", missing_result)
+
+
+def test_required_blocked_retrieval_allows_honest_partial_progress() -> None:
+    runtime = load_runtime()
+    blocked = blocked_retrieval_instance("timeout")
+    partial = required_retrieval_instance()
+    blocked["query_count"] = partial["query_count"]
+    blocked["queries"] = partial["queries"]
+    blocked["entries"] = partial["entries"]
+    blocked["saturation"] = {"rounds": 1, "stop_reason": "timeout"}
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", blocked)
+
+
+def test_retrieval_status_and_block_result_cannot_confuse_execution_states() -> None:
+    runtime = load_runtime()
+
+    complete_with_block = required_retrieval_instance()
+    complete_with_block["block_result"] = {
+        "block_class": "timeout",
+        "detail": "A timeout was observed.",
+    }
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", complete_with_block
+        )
+
+    na_as_complete = copy.deepcopy(
+        minimal_instances()["ultra-retrieval-ledger.schema.json"]
+    )
+    na_as_complete["retrieval_status"] = "required-complete"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-retrieval-ledger.schema.json", na_as_complete)
+
+    unknown_block_class = blocked_retrieval_instance()
+    unknown_block_class["block_result"]["block_class"] = "business-policy"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-retrieval-ledger.schema.json", unknown_block_class
+        )
+
+
+def test_retrieval_source_inventory_allows_honest_unknown_dates() -> None:
+    runtime = load_runtime()
+    required = required_retrieval_instance()
+    record = required["sources"][0]["record"]
+    assert record["event_date"] is None
+    assert record["publication_date"] is None
+    runtime.validate_instance("ultra-retrieval-ledger.schema.json", required)
+
+
+@pytest.mark.parametrize(
+    "authority_field", ("evidence_artifact_sha256", "evidence_content_sha256")
+)
+def test_world_volume_requires_named_u3_hash_roles(authority_field: str) -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del volume[authority_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+@pytest.mark.parametrize("required_field", PROMOTED_RAC_FIELDS)
+def test_world_volume_uses_exact_promoted_rac_fields(required_field: str) -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del volume["memberships"][0][required_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    legacy = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    legacy["memberships"][0]["membership_id"] = "MEMBERSHIP-1"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", legacy)
+
+
+@pytest.mark.parametrize("required_field", PROMOTED_RCC_FIELDS)
+def test_world_volume_uses_exact_promoted_rcc_fields(required_field: str) -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del volume["circle_relations"][0][required_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    legacy = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    legacy["circle_relations"][0]["relation_id"] = "REL-1"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", legacy)
+
+
+def test_world_volume_requires_exact_axes_and_all_five_clock_kinds() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["actors"][0]["scale_profile"]["spatial"] = volume["actors"][0][
+        "scale_profile"
+    ].pop("A")
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["clocks"] = [
+        clock for clock in volume["clocks"] if clock["kind"] != "institutional"
+    ]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_required_arrays_may_be_honestly_empty() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["memberships"][0]["roles"] = []
+    volume["memberships"][0]["source_refs"] = []
+    volume["circle_relations"][0]["shared_members_or_interfaces"] = []
+    volume["circle_relations"][0]["evidence_refs"] = []
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_circle_requires_nonempty_reification_risks() -> None:
+    runtime = load_runtime()
+    missing = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del missing["circles"][0]["reification_risks"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", missing)
+
+    empty = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    empty["circles"][0]["reification_risks"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", empty)
+
+
+def test_world_volume_event_requires_closed_origin_kind() -> None:
+    runtime = load_runtime()
+    missing = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del missing["events"][0]["origin_kind"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", missing)
+
+    unknown = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    unknown["events"][0]["origin_kind"] = "unknown"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", unknown)
+
+
+def test_world_volume_exogenous_event_accepts_null_or_boundary_source() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    event = volume["events"][0]
+    event["origin_kind"] = "exogenous"
+    event["source_position_id"] = None
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    event["source_position_id"] = "POS-TEAM-MANAGER"
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_endogenous_event_rejects_null_source() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["events"][0]["source_position_id"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_containment_basis_is_closed_to_design_six() -> None:
+    runtime = load_runtime()
+    for basis in ("成员", "角色", "合同", "资源会计", "制度管辖", "空间"):
+        volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+        volume["containment_relations"][0]["basis"] = basis
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["containment_relations"][0]["basis"] = "shared resource dependency"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_local_distributions_allow_honest_empty_or_partial() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    power_distribution = copy.deepcopy(volume["local_distributions"][0])
+    volume["local_distributions"] = []
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    volume["local_distributions"] = [power_distribution]
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_represents_missing_channel_authority_as_noop_shape() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    channel = volume["channels"][0]
+    channel["threshold"] = None
+    channel["identity_mapping"] = None
+    channel["acl"] = None
+    channel["evidence_ids"] = []
+    event = volume["events"][0]
+    event["target_position_ids"] = []
+    event["channel_conditions"] = [
+        {
+            "channel_id": "CHANNEL-1",
+            "threshold_met": False,
+            "identity_preserved": False,
+            "acl_authorized": False,
+            "evidence_ids": [],
+        }
+    ]
+    event["M_updates"] = []
+    event["Psi_updates"] = []
+    event["relation_updates"] = []
+    event["clock_deltas"] = []
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_event_with_no_channel_rejects_updates() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["events"][0]["channel_ids"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+@pytest.mark.parametrize(
+    ("condition_field", "invalid_value"),
+    (
+        ("threshold_met", False),
+        ("identity_preserved", False),
+        ("acl_authorized", False),
+        ("evidence_ids", []),
+    ),
+)
+def test_world_volume_event_without_any_fully_valid_condition_rejects_updates(
+    condition_field: str, invalid_value: object
+) -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    volume["events"][0]["channel_conditions"][0][condition_field] = invalid_value
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_event_allows_mixed_valid_and_invalid_conditions() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    invalid_condition = copy.deepcopy(volume["events"][0]["channel_conditions"][0])
+    invalid_condition["threshold_met"] = False
+    volume["events"][0]["channel_conditions"].append(invalid_condition)
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_no_channel_noop_allows_only_empty_updates() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    event = volume["events"][0]
+    event["channel_ids"] = []
+    event["channel_conditions"] = []
+    event["M_updates"] = []
+    event["Psi_updates"] = []
+    event["relation_updates"] = []
+    event["clock_deltas"] = []
+    runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+def test_world_volume_events_use_target_volume_and_value_level_updates() -> None:
+    runtime = load_runtime()
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    del volume["events"][0]["target_volume_id"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+    volume = copy.deepcopy(minimal_instances()["ultra-world-volume.schema.json"])
+    update = volume["events"][0]["M_updates"][0]
+    update["changed_variable_names"] = ["budget"]
+    del update["variable_changes"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-world-volume.schema.json", volume)
+
+
+@pytest.mark.parametrize(
+    "authority_field",
+    (
+        "evidence_artifact_sha256",
+        "evidence_content_sha256",
+        "world_volume_artifact_sha256",
+        "world_volume_content_sha256",
+    ),
+)
+def test_transformation_ledger_requires_two_named_upstream_pairs(
+    authority_field: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    del ledger[authority_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    "missing_kind", ("scale", "circle-relation", "representation-translation")
+)
+def test_transformation_ledger_requires_each_transform_class(
+    missing_kind: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"] = [
+        item for item in ledger["transformations"] if item["kind"] != missing_kind
+    ]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_transformation_ledger_allows_multiple_records_and_empty_audit_arrays() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"].append(transformation_record("SCALE-2", "scale"))
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_transformation_kind_label_cannot_be_swapped_over_identity_shape() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"].append(transformation_record("SCALE-KEEP", "scale"))
+    ledger["transformations"][0]["kind"] = "circle-relation"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("transform_index", "identity_side", "wrong_identity_type"),
+    (
+        (0, "input_identity", "circle-relation"),
+        (0, "output_identity", "represented-state"),
+        (1, "input_identity", "scale-state"),
+        (1, "output_identity", "source-representation"),
+        (2, "input_identity", "scale-state"),
+        (2, "output_identity", "circle-relation"),
+    ),
+)
+def test_transformation_kind_rejects_swapped_identity_type(
+    transform_index: int, identity_side: str, wrong_identity_type: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][transform_index][identity_side][
+        "identity_type"
+    ] = wrong_identity_type
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("transform_index", "identity_side", "wrong_axis"),
+    (
+        (0, "input_identity", "T"),
+        (0, "output_identity", "O"),
+        (1, "input_identity", "A"),
+        (1, "output_identity", "J"),
+        (2, "input_identity", "T"),
+        (2, "output_identity", "O"),
+    ),
+)
+def test_transformation_kind_binds_identity_axis_shape(
+    transform_index: int, identity_side: str, wrong_axis: str | None
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][transform_index][identity_side]["axis_id"] = (
+        wrong_axis
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_rejects_legacy_single_axis_t_to_o_shape() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    scale["input_identity"]["axis_id"] = "T"
+    scale["output_identity"]["axis_id"] = "O"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_accepts_exact_nine_axis_profile() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    axis_ids = [
+        item["axis_id"] for item in ledger["transformations"][0]["axis_differences"]
+    ]
+    assert tuple(axis_ids) == SCALE_AXIS_IDS
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("mutation", ("missing", "duplicate", "unknown"))
+def test_scale_transformation_rejects_nonexact_axis_set(mutation: str) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    differences = ledger["transformations"][0]["axis_differences"]
+    if mutation == "missing":
+        differences.pop()
+    elif mutation == "duplicate":
+        differences[-1]["axis_id"] = "A"
+        assert differences[0] != differences[-1]
+    else:
+        differences[-1]["axis_id"] = "Z"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("container", "extra_field"),
+    (("witness", "explanation"), ("payload", "raw_text")),
+)
+def test_scale_transformation_rejects_open_witness_objects(
+    container: str, extra_field: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    witness = ledger["transformations"][0]["axis_differences"][0]["order_witness"]
+    target = witness if container == "witness" else witness["comparison_payload"]
+    target[extra_field] = "free text"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("required_field", AXIS_DIFFERENCE_FIELDS)
+def test_scale_axis_difference_requires_every_promoted_field(
+    required_field: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    difference = ledger["transformations"][0]["axis_differences"][0]
+    del difference[required_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("required_field", ORDER_WITNESS_FIELDS)
+def test_scale_transformation_witness_requires_every_promoted_field(
+    required_field: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    witness = ledger["transformations"][0]["axis_differences"][0]["order_witness"]
+    del witness[required_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_nonunknown_relation_rejects_missing_witness() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    difference = ledger["transformations"][0]["axis_differences"][0]
+    difference["order_witness"] = order_witness("MISSING-A", "unknown")
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_unknown_relation_rejects_valid_witness() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["relation"] = "unknown"
+    scale["transformation_class"] = "unresolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("authority_path", "bad_value"),
+    (
+        (("comparator_id",), None),
+        (("comparator_version",), None),
+        (("verifier_id",), None),
+        (("evidence_refs",), []),
+        (("comparison_payload", "payload_kind"), None),
+        (("comparison_payload", "payload_ref"), None),
+        (("comparison_payload", "payload_sha256"), None),
+        (("comparator_result_ref",), None),
+        (("verification_artifact_ref",), None),
+        (("verification_hash",), None),
+        (("validation_status",), "invalid"),
+    ),
+)
+def test_nonunknown_axis_relation_rejects_null_or_nonvalid_authority(
+    authority_path: tuple[str, ...], bad_value: object
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    target: dict[str, Any] = ledger["transformations"][0]["axis_differences"][0][
+        "order_witness"
+    ]
+    for part in authority_path[:-1]:
+        target = target[part]
+    target[authority_path[-1]] = bad_value
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("authority_path", "stolen_value"),
+    (
+        (("comparator_id",), "AXIS-COMPARATOR-STOLEN"),
+        (("comparator_version",), "1.0.0"),
+        (("verifier_id",), "AXIS-VERIFIER-STOLEN"),
+        (("evidence_refs",), ["EVIDENCE-1"]),
+        (("comparison_payload", "payload_kind"), "mapping"),
+        (("comparison_payload", "payload_ref"), "COMPARISON-PAYLOAD-STOLEN"),
+        (("comparison_payload", "payload_sha256"), HASH_B),
+        (("comparator_result_ref",), "COMPARATOR-RESULT-STOLEN"),
+        (("verification_artifact_ref",), "VERIFICATION-ARTIFACT-STOLEN"),
+        (("verification_hash",), HASH_C),
+        (("validation_status",), "valid"),
+    ),
+)
+def test_unknown_axis_relation_rejects_stolen_authority(
+    authority_path: tuple[str, ...], stolen_value: object
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    target: dict[str, Any] = difference["order_witness"]
+    for part in authority_path[:-1]:
+        target = target[part]
+    target[authority_path[-1]] = stolen_value
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("payload_kind", "axis_id", "relation"),
+    (
+        ("mapping", "C", "expands"),
+        ("set", "A", "expands"),
+        ("interval", "T", "expands"),
+        ("graph", "N", "expands"),
+        ("authorization-difference", "J", "expands"),
+        ("deep-equality", "A", "equal"),
+    ),
+)
+def test_scale_transformation_accepts_representative_comparison_payload_kinds(
+    payload_kind: str, axis_id: str, relation: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    axis_index = SCALE_AXIS_IDS.index(axis_id)
+    scale["axis_differences"][axis_index] = axis_difference(
+        "PAYLOAD-KIND", axis_id, relation
+    )
+    scale["transformation_class"] = "all_equal" if relation == "equal" else "elevation"
+    payload = scale["axis_differences"][axis_index]["order_witness"][
+        "comparison_payload"
+    ]
+    payload["payload_kind"] = payload_kind
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_rejects_deep_equality_for_expansion() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = axis_difference("DEEP-EXPANDS", "A", "expands")
+    difference["order_witness"]["comparison_payload"][
+        "payload_kind"
+    ] = "deep-equality"
+    scale["axis_differences"][0] = difference
+    scale["transformation_class"] = "elevation"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_j_expansion_requires_authorization_difference() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    j_index = SCALE_AXIS_IDS.index("J")
+    difference = axis_difference("J-EXPANDS", "J", "expands")
+    assert difference["order_witness"]["comparison_payload"]["payload_kind"] == (
+        "mapping"
+    )
+    scale["axis_differences"][j_index] = difference
+    scale["transformation_class"] = "elevation"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_rejects_unknown_comparison_payload_kind() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][0]["axis_differences"][0]["order_witness"][
+        "comparison_payload"
+    ]["payload_kind"] = "free-text"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("required_field", COMPARISON_PAYLOAD_FIELDS)
+def test_scale_comparison_payload_requires_every_envelope_field(
+    required_field: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    payload = ledger["transformations"][0]["axis_differences"][0][
+        "order_witness"
+    ]["comparison_payload"]
+    del payload[required_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("missing_status", "missing_side"),
+    tuple(
+        (status, side)
+        for status in ("unknown", "not_observable", "withheld_for_protection")
+        for side in ("source", "target")
+    ),
+)
+def test_scale_transformation_accepts_materially_missing_axis_as_unknown(
+    missing_status: str, missing_side: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference[f"{missing_side}_state"] = missing_axis_state(missing_status)
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("missing_side", ("source", "target"))
+def test_scale_one_sided_not_applicable_axis_is_incomparable(
+    missing_side: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference[f"{missing_side}_state"] = missing_axis_state("not_applicable")
+    difference["relation"] = "incomparable"
+    difference["order_witness"] = order_witness("NA-INCOMPARABLE-A", "incomparable")
+    scale["transformation_class"] = "horizontal_or_incomparable"
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("missing_side", ("source", "target"))
+def test_scale_one_sided_not_applicable_axis_cannot_be_unknown(
+    missing_side: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference[f"{missing_side}_state"] = missing_axis_state("not_applicable")
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("NA-UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("missing_status", "missing_side", "wrong_relation"),
+    tuple(
+        (status, side, relation)
+        for status in ("unknown", "not_observable", "withheld_for_protection")
+        for side in ("source", "target")
+        for relation in ("equal", "expands")
+    ),
+)
+def test_materially_missing_axis_rejects_nonunknown_relation(
+    missing_status: str, missing_side: str, wrong_relation: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference[f"{missing_side}_state"] = missing_axis_state(missing_status)
+    difference["relation"] = wrong_relation
+    difference["order_witness"] = order_witness(
+        "MISSING-NONUNKNOWN-A", wrong_relation
+    )
+    scale["transformation_class"] = (
+        "all_equal" if wrong_relation == "equal" else "elevation"
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_bilateral_not_applicable_axis_is_equal_with_valid_witness() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    difference = ledger["transformations"][0]["axis_differences"][0]
+    difference["source_state"] = missing_axis_state("not_applicable")
+    difference["target_state"] = copy.deepcopy(difference["source_state"])
+    difference["relation"] = "equal"
+    difference["order_witness"] = order_witness("NA-EQUAL-A", "equal")
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_bilateral_not_applicable_axis_allows_unresolved_unknown() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["source_state"] = missing_axis_state("not_applicable")
+    difference["target_state"] = copy.deepcopy(difference["source_state"])
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("NA-UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("relation", "transformation_class"),
+    (
+        ("expands", "elevation"),
+        ("contracts", "reduction"),
+        ("incomparable", "horizontal_or_incomparable"),
+    ),
+)
+def test_scale_bilateral_not_applicable_axis_rejects_directional_relations(
+    relation: str, transformation_class: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["source_state"] = missing_axis_state("not_applicable")
+    difference["target_state"] = copy.deepcopy(difference["source_state"])
+    difference["relation"] = relation
+    difference["order_witness"] = order_witness(f"NA-{relation}-A", relation)
+    scale["transformation_class"] = transformation_class
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_missing_axis_state_requires_a_nonempty_reason() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["target_state"] = missing_axis_state("unknown")
+    difference["target_state"]["description"] = ""
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_missing_order_witness_requires_a_nonempty_reason() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("UNKNOWN-A", "unknown")
+    difference["order_witness"]["comparison_payload"]["description"] = ""
+    scale["transformation_class"] = "unresolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("mutation", ("unknown-status", "open", "null"))
+def test_scale_axis_state_rejects_unknown_open_or_null_shape(mutation: str) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    difference = ledger["transformations"][0]["axis_differences"][0]
+    if mutation == "unknown-status":
+        difference["target_state"]["status"] = "absent"
+    elif mutation == "open":
+        difference["target_state"]["raw_state"] = "free text"
+    else:
+        difference["target_state"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("status", "authority_field"),
+    (("recorded", "normalized_state_ref"), ("recorded", "normalized_state_sha256")),
+)
+def test_recorded_axis_state_rejects_null_authority(
+    status: str, authority_field: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    state = ledger["transformations"][0]["axis_differences"][0]["target_state"]
+    assert state["status"] == status
+    state[authority_field] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("authority_field", "stolen_value"),
+    (("normalized_state_ref", "AXIS-STATE-STOLEN"), ("normalized_state_sha256", HASH_B)),
+)
+def test_missing_axis_state_rejects_normalized_authority(
+    authority_field: str, stolen_value: object
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = ledger["transformations"][0]
+    difference = scale["axis_differences"][0]
+    difference["target_state"] = missing_axis_state("unknown")
+    difference["target_state"][authority_field] = stolen_value
+    difference["relation"] = "unknown"
+    difference["order_witness"] = order_witness("UNKNOWN-A", "unknown")
+    scale["transformation_class"] = "unresolved"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize("transformation_class", TRANSFORMATION_CLASSES)
+def test_scale_transformation_accepts_authority_classification_precedence(
+    transformation_class: str,
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][0] = transformation_record(
+        "SCALE-CLASS",
+        "scale",
+        transformation_class=transformation_class,
+    )
+    for difference in ledger["transformations"][0]["axis_differences"]:
+        if difference["relation"] in {"expands", "contracts"}:
+            assert difference["source_state"]["normalized_state_sha256"] != (
+                difference["target_state"]["normalized_state_sha256"]
+            )
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("transformation_class", "masked_relations"),
+    (
+        ("horizontal_or_incomparable", {"incomparable", "unknown"}),
+        ("mixed", {"expands", "contracts", "unknown"}),
+    ),
+)
+def test_scale_classification_precedence_masks_lower_priority_relations(
+    transformation_class: str, masked_relations: set[str]
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = transformation_record(
+        "SCALE-PRECEDENCE",
+        "scale",
+        transformation_class=transformation_class,
+    )
+    assert masked_relations.issubset(
+        {item["relation"] for item in scale["axis_differences"]}
+    )
+    ledger["transformations"][0] = scale
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("authority_class", "wrong_class"),
+    (
+        ("horizontal_or_incomparable", "mixed"),
+        ("horizontal_or_incomparable", "unresolved"),
+        ("mixed", "unresolved"),
+        ("unresolved", "elevation"),
+    ),
+)
+def test_scale_classification_rejects_precedence_bypass(
+    authority_class: str, wrong_class: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    scale = transformation_record(
+        "SCALE-PRECEDENCE-BYPASS",
+        "scale",
+        transformation_class=authority_class,
+    )
+    scale["transformation_class"] = wrong_class
+    ledger["transformations"][0] = scale
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_all_equal_accepts_builtin_deep_equality_witness() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    difference = ledger["transformations"][0]["axis_differences"][0]
+    assert difference["source_state"] == difference["target_state"]
+    assert difference["order_witness"]["comparator_id"] == "builtin:deep-equality"
+    runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    ("transform_index", "overflow_kind"),
+    ((1, "axis-difference"), (1, "classification"), (2, "axis-difference"), (2, "classification")),
+)
+def test_non_scale_transformations_reject_scale_profile_fields(
+    transform_index: int, overflow_kind: str
+) -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    transform = ledger["transformations"][transform_index]
+    if overflow_kind == "axis-difference":
+        transform["axis_differences"] = [
+            axis_difference("NON-SCALE", "A", "equal")
+        ]
+    else:
+        transform["transformation_class"] = "all_equal"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_scale_transformation_rejects_wrong_classification() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][0]["transformation_class"] = "elevation"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+def test_u5_transform_identity_cannot_jump_to_article_semantic_unit() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(
+        minimal_instances()["ultra-transformation-ledger.schema.json"]
+    )
+    ledger["transformations"][0]["output_identity"][
+        "identity_type"
+    ] = "article-semantic-unit"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-transformation-ledger.schema.json", ledger)
+
+
+@pytest.mark.parametrize(
+    "authority_field",
+    (
+        "evidence_artifact_sha256",
+        "evidence_content_sha256",
+        "world_volume_artifact_sha256",
+        "world_volume_content_sha256",
+        "transformation_ledger_artifact_sha256",
+        "transformation_ledger_content_sha256",
+        "registry_sha256",
+        "route_map_sha256",
+        "contract_map_sha256",
+    ),
+)
+def test_concept_disposition_requires_u5_upstreams_and_knowledge_authority(
+    authority_field: str,
+) -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    del closure[authority_field]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_concept_disposition_is_u5_and_has_no_article_section_assignment() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    closure["phase_id"] = "U6"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_concept_disposition_allows_empty_authoritative_required_id_sets() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    closure["required_route_ids"] = []
+    closure["required_contract_ids"] = []
+    closure["required_requirement_ids"] = []
+    runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    closure["semantic_obligations"][0]["section_id"] = "SECTION-01"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_unknown_pending_requires_structured_condition_and_evidence_plan() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    obligation = closure["semantic_obligations"][0]
+    disposition["status"] = "unknown-pending"
+    disposition["condition_branch"] = None
+    obligation["status"] = "unknown-pending"
+    obligation["condition_branch_id"] = "CONDITION-1"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+    disposition["condition_branch"] = {
+        "branch_id": "CONDITION-1",
+        "condition": "A named evidence gap is resolved.",
+        "evidence_plan": {
+            "plan_id": "EVIDENCE-PLAN-1",
+            "required_evidence": ["Observe the named source condition."],
+        },
+    }
+    runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+    disposition["condition_branch"]["evidence_plan"][
+        "target_section_id"
+    ] = "SECTION-01"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+@pytest.mark.parametrize("status", ("applied", "unknown-pending"))
+def test_applied_and_unknown_pending_dispositions_require_an_obligation(
+    status: str,
+) -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    disposition["status"] = status
+    if status == "unknown-pending":
+        disposition["condition_branch"] = {
+            "branch_id": "CONDITION-1",
+            "condition": "A named evidence gap is resolved.",
+            "evidence_plan": {
+                "plan_id": "EVIDENCE-PLAN-1",
+                "required_evidence": ["Observe the named source condition."],
+            },
+        }
+        obligation = closure["semantic_obligations"][0]
+        obligation["status"] = "unknown-pending"
+        obligation["condition_branch_id"] = "CONDITION-1"
+    disposition["obligation_ids"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+@pytest.mark.parametrize("status", ("not-applicable", "tested-rejected"))
+def test_nonsemantic_dispositions_allow_empty_obligation_sets(status: str) -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    disposition["status"] = status
+    disposition["obligation_ids"] = []
+    disposition["condition_branch"] = None
+    closure["semantic_obligations"] = []
+    runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+@pytest.mark.parametrize("status", ("applied", "unknown-pending"))
+def test_semantic_dispositions_require_top_level_obligation_records(
+    status: str,
+) -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    disposition["status"] = status
+    if status == "unknown-pending":
+        disposition["condition_branch"] = {
+            "branch_id": "CONDITION-1",
+            "condition": "A named evidence gap is resolved.",
+            "evidence_plan": {
+                "plan_id": "EVIDENCE-PLAN-1",
+                "required_evidence": ["Observe the named source condition."],
+            },
+        }
+    assert disposition["obligation_ids"]
+    closure["semantic_obligations"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+@pytest.mark.parametrize(
+    ("disposition_status", "obligation_status"),
+    (
+        ("unknown-pending", "applied"),
+        ("applied", "tested-rejected"),
+    ),
+)
+def test_semantic_obligation_status_category_covers_disposition_status(
+    disposition_status: str, obligation_status: str
+) -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    disposition["status"] = disposition_status
+    if disposition_status == "unknown-pending":
+        disposition["condition_branch"] = {
+            "branch_id": "CONDITION-1",
+            "condition": "A named evidence gap is resolved.",
+            "evidence_plan": {
+                "plan_id": "EVIDENCE-PLAN-1",
+                "required_evidence": ["Observe the named source condition."],
+            },
+        }
+    closure["semantic_obligations"][0]["status"] = obligation_status
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_complete_concept_closure_rejects_unvisited_concepts() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    closure["unvisited_concept_ids"] = ["V82-CONCEPT-UNVISITED"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_incomplete_concept_closure_preserves_unvisited_concepts() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    closure["closure_complete"] = False
+    closure["unvisited_concept_ids"] = ["V82-CONCEPT-UNVISITED"]
+    runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_unknown_pending_semantic_obligation_requires_condition_branch_id() -> None:
+    runtime = load_runtime()
+    closure = copy.deepcopy(
+        minimal_instances()["ultra-concept-disposition.schema.json"]
+    )
+    disposition = closure["dispositions"][0]
+    disposition["status"] = "unknown-pending"
+    disposition["condition_branch"] = {
+        "branch_id": "CONDITION-1",
+        "condition": "A named evidence gap is resolved.",
+        "evidence_plan": {
+            "plan_id": "EVIDENCE-PLAN-1",
+            "required_evidence": ["Observe the named source condition."],
+        },
+    }
+    obligation = closure["semantic_obligations"][0]
+    obligation["status"] = "unknown-pending"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+    obligation["condition_branch_id"] = "CONDITION-1"
+    runtime.validate_instance("ultra-concept-disposition.schema.json", closure)
+
+
+def test_output_plan_freezes_design_titles_partial_path_and_u9_parent() -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    assert tuple(item["title"] for item in plan["sections"]) == OUTPUT_PLAN_SECTION_TITLES
+    assert tuple(item["title"] for item in plan["appendices"]) == (
+        OUTPUT_PLAN_APPENDIX_TITLES
+    )
+    runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+    wrong_title = copy.deepcopy(plan)
+    wrong_title["sections"][0]["title"] = "主判断、范围与置信度"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", wrong_title)
+
+    wrong_path = copy.deepcopy(plan)
+    wrong_path["article_path"] = "delivery/CrossFrame-Ultra-完整文章.md"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", wrong_path)
+
+    official = copy.deepcopy(plan)
+    official["official_filename_allowed"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", official)
+
+
+def test_output_plan_requires_10_plus_5_and_structured_artifact_dependencies() -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["sections"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["appendices"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["required_artifacts"] = ["ultra-verdict.json"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["sections"][0]["dependency_hashes"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+@pytest.mark.parametrize("collection", ("sections", "appendices"))
+def test_output_plan_rejects_extra_reader_contract_entry(collection: str) -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan[collection].append(copy.deepcopy(plan[collection][-1]))
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+@pytest.mark.parametrize("collection", ("sections", "appendices"))
+def test_output_plan_rejects_swapped_reader_contract_entries(collection: str) -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan[collection][0], plan[collection][1] = (
+        plan[collection][1],
+        plan[collection][0],
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+@pytest.mark.parametrize("collection", ("sections", "appendices"))
+def test_output_plan_rejects_wrong_reader_contract_ordinal(collection: str) -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan[collection][0]["ordinal"] += 1
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+def test_output_plan_freezes_complete_semantic_universe_and_blind_contract() -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["semantic_universe"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    plan["blind_recovery_expectations"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+def test_output_plan_rejects_same_length_duplicate_or_unknown_unit_kind() -> None:
+    runtime = load_runtime()
+    duplicate_kind = copy.deepcopy(
+        minimal_instances()["ultra-output-plan.schema.json"]
+    )
+    duplicate_kind["semantic_universe"][-1]["unit_kind"] = "claim"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-output-plan.schema.json", duplicate_kind
+        )
+
+    unknown_kind = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    unknown_kind["semantic_universe"][0]["unit_kind"] = "unknown-kind"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", unknown_kind)
+
+
+def test_output_plan_allows_extra_semantic_unit_of_existing_kind() -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    extra = copy.deepcopy(plan["semantic_universe"][0])
+    extra["unit_id"] = "UNIT-CLAIM-EXTRA"
+    extra["authority_locator"] = "unit:claim-extra"
+    plan["semantic_universe"].append(extra)
+    runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+@pytest.mark.parametrize("mutation", ("duplicate", "unknown", "extra"))
+def test_output_plan_blind_contract_rejects_set_mutations(mutation: str) -> None:
+    runtime = load_runtime()
+    plan = copy.deepcopy(minimal_instances()["ultra-output-plan.schema.json"])
+    fields = plan["blind_recovery_expectations"]
+    if mutation == "duplicate":
+        fields[1]["field_id"] = fields[0]["field_id"]
+    elif mutation == "unknown":
+        fields[0]["field_id"] = "unknown-field"
+    else:
+        fields.append(copy.deepcopy(fields[-1]))
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-output-plan.schema.json", plan)
+
+
+def test_semantic_coverage_is_u11_and_allows_honest_incomplete_state() -> None:
+    runtime = load_runtime()
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["phase_id"] = "U10"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+    incomplete = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    missing = incomplete["mappings"].pop()["unit_id"]
+    incomplete["missing_unit_ids"] = [missing]
+    incomplete["coverage_percent"] = 92
+    incomplete["coverage_complete"] = False
+    runtime.validate_instance("ultra-semantic-coverage.schema.json", incomplete)
+
+
+def test_semantic_coverage_allows_controlled_zero_percent_incomplete_state() -> None:
+    runtime = load_runtime()
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["mappings"] = []
+    coverage["missing_unit_ids"] = [
+        f"UNIT-{ordinal:02d}"
+        for ordinal in range(1, len(SEMANTIC_UNIT_KINDS) + 1)
+    ]
+    coverage["coverage_percent"] = 0
+    coverage["coverage_complete"] = False
+    runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+
+def test_incomplete_coverage_may_record_mapping_without_source_location() -> None:
+    runtime = load_runtime()
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["mappings"][0]["source_refs"] = []
+    coverage["missing_unit_ids"] = ["UNIT-SOURCE-LOCATION-PENDING"]
+    coverage["coverage_percent"] = 92
+    coverage["coverage_complete"] = False
+    runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+
+def test_complete_semantic_coverage_requires_all_kinds_100_and_no_missing() -> None:
+    runtime = load_runtime()
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["missing_unit_ids"] = ["UNIT-MISSING"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["coverage_percent"] = 99
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["mappings"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+    coverage = copy.deepcopy(
+        minimal_instances()["ultra-semantic-coverage.schema.json"]
+    )
+    coverage["mappings"][0]["source_refs"] = []
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-semantic-coverage.schema.json", coverage)
+
+
+def test_article_review_is_u11_mechanical_only_with_exact_contracts() -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    runtime.validate_instance("ultra-article-review.schema.json", review)
+
+    wrong_phase = copy.deepcopy(review)
+    wrong_phase["phase_id"] = "U12"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", wrong_phase)
+
+    missing_field = copy.deepcopy(review)
+    missing_field["blind_reader_fields"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", missing_field)
+
+    missing_check = copy.deepcopy(review)
+    missing_check["quality_checks"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", missing_check)
+
+
+@pytest.mark.parametrize(
+    ("collection", "id_field"),
+    (("blind_reader_fields", "field_id"), ("quality_checks", "check_id")),
+)
+@pytest.mark.parametrize("mutation", ("duplicate", "unknown", "extra"))
+def test_article_review_exact_sets_reject_duplicate_unknown_and_extra(
+    collection: str, id_field: str, mutation: str
+) -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    records = review[collection]
+    if mutation == "duplicate":
+        records[1][id_field] = records[0][id_field]
+    elif mutation == "unknown":
+        records[0][id_field] = "unknown-contract-id"
+    else:
+        records.append(copy.deepcopy(records[-1]))
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", review)
+
+
+def test_article_review_records_mechanical_failure_without_fabricated_excerpt() -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    review["blind_reader_fields"][0]["recovered"] = False
+    review["blind_reader_fields"][0]["excerpt"] = None
+    review["quality_checks"][0]["status"] = "fail"
+    review["external_dependencies"] = ["outside-report.json"]
+    review["overall_status"] = "mechanical-fail"
+    runtime.validate_instance("ultra-article-review.schema.json", review)
+
+    fabricated = copy.deepcopy(review)
+    fabricated["blind_reader_fields"][0]["excerpt"] = "Invented recovery prose."
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", fabricated)
+
+
+@pytest.mark.parametrize(
+    "failed_condition", ("blind-recovery", "quality-check", "dependency")
+)
+def test_article_review_complete_rejects_each_single_failed_condition(
+    failed_condition: str,
+) -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    if failed_condition == "blind-recovery":
+        review["blind_reader_fields"][0]["recovered"] = False
+        review["blind_reader_fields"][0]["excerpt"] = None
+    elif failed_condition == "quality-check":
+        review["quality_checks"][0]["status"] = "fail"
+    else:
+        review["external_dependencies"] = ["outside-report.json"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", review)
+
+
+@pytest.mark.parametrize(
+    "failed_condition", ("blind-recovery", "quality-check", "dependency")
+)
+def test_article_review_fail_accepts_each_single_failed_condition(
+    failed_condition: str,
+) -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    if failed_condition == "blind-recovery":
+        review["blind_reader_fields"][0]["recovered"] = False
+        review["blind_reader_fields"][0]["excerpt"] = None
+    elif failed_condition == "quality-check":
+        review["quality_checks"][0]["status"] = "fail"
+    else:
+        review["external_dependencies"] = ["outside-report.json"]
+    review["overall_status"] = "mechanical-fail"
+    runtime.validate_instance("ultra-article-review.schema.json", review)
+
+
+def test_article_review_completion_requires_no_dependencies_and_later_u12() -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    review["external_dependencies"] = ["outside-report.json"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", review)
+
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    review["official_filename_allowed"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", review)
+
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    review["needs_u12_validation"] = False
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-article-review.schema.json", review)
+
+
+def test_article_review_has_no_prose_length_cap() -> None:
+    runtime = load_runtime()
+    review = copy.deepcopy(minimal_instances()["ultra-article-review.schema.json"])
+    review["blind_reader_fields"][0]["excerpt"] = "evidence " * 5000
+    runtime.validate_instance("ultra-article-review.schema.json", review)
 
 
 def test_every_artifact_requires_envelope_and_its_primary_payload() -> None:
@@ -1402,67 +3869,6 @@ def test_world_volume_and_forecast_nested_negative_cases() -> None:
     forecast["probability_admissible"] = True
     with pytest.raises(ValidationError):
         runtime.validate_instance("ultra-forecast-ledger.schema.json", uncalibrated)
-
-
-def test_task7_runtime_phase_and_read_events_conform_to_public_schemas() -> None:
-    runtime = load_runtime()
-    state_machine = importlib.import_module("ultra_runtime.state_machine")
-    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
-    contract = {
-        "trigger": "crossframe-ultra",
-        "request_sha256": HASH_A,
-        "run_mode": "test",
-        "sensitivity": "public",
-        "retention": "retain",
-        "outbound_permission": "denied",
-        "evidence_cutoff": STAMP,
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "available",
-            "network": "unavailable",
-            "retrieval": "not-applicable",
-            "validators": "available",
-            "subagents": "unavailable",
-            "model_context": "available",
-        },
-        "resource_limits": {
-            "maximum_branches": 8,
-            "maximum_retrieval_rounds_without_material_novelty": 2,
-            "maximum_tool_retries": 3,
-            "maximum_repair_attempts": 3,
-        },
-    }
-    store = state_machine.PhaseStore(
-        run_id=RUN_ID,
-        version_binding=version_binding(),
-        source_sha256=HASH_B,
-        input_artifact_hashes=(HASH_C,),
-        evidence_cutoff=STAMP,
-        now=datetime(2026, 8, 2, 8, tzinfo=timezone.utc),
-        run_contract=contract,
-    )
-    phase_event = store.complete("U0", artifact_hashes=(HASH_A,))
-    runtime.validate_instance("ultra-phase-event.schema.json", phase_event)
-
-    source_manifest = source_integrity.load_source_manifest(
-        ULTRA_ROOT / "references" / "source-manifest.json"
-    )
-    read_receipt = source_integrity.capture_committed_read_receipts(
-        ROOT,
-        manifest=source_manifest,
-    )[0]
-    read_event = source_integrity.make_read_event(
-        run_id=RUN_ID,
-        version_binding=version_binding(),
-        source_unit=read_receipt.source_unit,
-        promoted_semantic_snapshot_sha256=source_manifest.semantic_sha256,
-        source_manifest_sha256=source_manifest.sha256,
-        reader_mode="full-source",
-        execution_identity=source_integrity.execution_identity(),
-        read_at=STAMP,
-        receipt=read_receipt,
-    )
-    runtime.validate_instance("ultra-read-event.schema.json", read_event)
 
 
 def test_local_ref_registry_resolves_without_network() -> None:

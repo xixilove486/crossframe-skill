@@ -7,10 +7,28 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["network_available", "outbound_authorized", "entries", "saturation"],
+      "required": ["decision_sha256", "u1_parent_event_sha256", "request_sha256", "decision", "retrieval_status", "block_result", "authorization_sha256", "query_count", "queries", "sources", "network_available", "outbound_authorized", "entries", "saturation"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.retrieval-ledger"},
         "phase_id": {"const": "U2"},
+        "decision_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "decision": {"$ref": "#/$defs/decision"},
+        "retrieval_status": {"enum": ["not-applicable", "required-complete", "required-blocked"]},
+        "block_result": {"$ref": "#/$defs/nullableBlockResult"},
+        "authorization_sha256": {"$ref": "#/$defs/nullableNonzeroSha256"},
+        "query_count": {"type": "integer", "minimum": 0},
+        "queries": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/query"}
+        },
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sourceInventoryItem"}
+        },
         "network_available": {"type": "boolean"},
         "outbound_authorized": {"type": "boolean"},
         "entries": {
@@ -19,10 +37,242 @@
         },
         "saturation": {"$ref": "#/$defs/saturation"}
       }
+    },
+    {
+      "if": {
+        "properties": {"retrieval_status": {"const": "not-applicable"}},
+        "required": ["retrieval_status"]
+      },
+      "then": {
+        "properties": {
+          "decision": {"properties": {"status": {"const": "not-applicable"}}, "required": ["status"]},
+          "block_result": {"type": "null"},
+          "authorization_sha256": {"type": "null"},
+          "query_count": {"const": 0},
+          "queries": {"maxItems": 0},
+          "sources": {"maxItems": 0},
+          "entries": {"maxItems": 0},
+          "saturation": {"properties": {"rounds": {"const": 0}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"retrieval_status": {"const": "required-complete"}},
+        "required": ["retrieval_status"]
+      },
+      "then": {
+        "properties": {
+          "decision": {"properties": {"status": {"const": "required"}}, "required": ["status"]},
+          "block_result": {"type": "null"},
+          "authorization_sha256": {"$ref": "#/$defs/nonzeroSha256"},
+          "query_count": {"minimum": 1},
+          "queries": {"minItems": 1},
+          "network_available": {"const": true},
+          "outbound_authorized": {"const": true},
+          "entries": {"minItems": 1},
+          "saturation": {"properties": {"rounds": {"minimum": 1}}}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"retrieval_status": {"const": "required-blocked"}},
+        "required": ["retrieval_status"]
+      },
+      "then": {
+        "properties": {
+          "decision": {"properties": {"status": {"const": "required"}}, "required": ["status"]},
+          "block_result": {"$ref": "#/$defs/blockResult"},
+          "authorization_sha256": {"$ref": "#/$defs/nonzeroSha256"}
+        }
+      }
     }
   ],
   "unevaluatedProperties": false,
   "$defs": {
+    "nonzeroSha256": {
+      "allOf": [
+        {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        {"not": {"const": "0000000000000000000000000000000000000000000000000000000000000000"}}
+      ]
+    },
+    "nullableNonzeroSha256": {
+      "oneOf": [
+        {"$ref": "#/$defs/nonzeroSha256"},
+        {"type": "null"}
+      ]
+    },
+    "nullableBlockResult": {
+      "oneOf": [
+        {"$ref": "#/$defs/blockResult"},
+        {"type": "null"}
+      ]
+    },
+    "blockResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_class", "detail"],
+      "properties": {
+        "block_class": {"enum": ["network-unavailable", "outbound-denied", "retry-exhaustion", "rate-limit", "timeout", "resource-condition"]},
+        "detail": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "run_id", "u1_parent_event_sha256", "request_sha256", "version_binding", "claim_sha256", "basis_sha256", "eligibility_basis", "decision_sha256"],
+      "properties": {
+        "status": {"enum": ["required", "not-applicable"]},
+        "reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"},
+        "claim_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "basis_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "eligibility_basis": {
+          "oneOf": [
+            {"$ref": "#/$defs/notApplicableEligibilityBasis"},
+            {"$ref": "#/$defs/requiredEligibilityBasis"}
+          ]
+        },
+        "decision_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "not-applicable"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "basis_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+              "eligibility_basis": {"$ref": "#/$defs/notApplicableEligibilityBasis"}
+            }
+          },
+          "else": {
+            "properties": {
+              "basis_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+              "eligibility_basis": {"$ref": "#/$defs/requiredEligibilityBasis"}
+            }
+          }
+        }
+      ]
+    },
+    "requiredEligibilityBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trigger_kinds", "claim", "claim_sha256", "run_id", "u1_parent_event_sha256", "request_sha256", "version_binding", "basis_sha256"],
+      "properties": {
+        "trigger_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["real-world", "time-sensitive", "legal", "medical", "financial", "political", "product", "policy", "institutional", "current-fact"]}
+        },
+        "claim": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "claim_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"},
+        "basis_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      }
+    },
+    "notApplicableEligibilityBasis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analysis_kind", "claim", "claim_sha256", "run_id", "u1_parent_event_sha256", "request_sha256", "version_binding", "material_inventory", "material_universe_sha256", "basis_sha256"],
+      "properties": {
+        "analysis_kind": {"enum": ["pure-logic", "closed-input"]},
+        "claim": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "claim_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"},
+        "material_inventory": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "ultra-common.schema.json#/$defs/artifactHash"}
+        },
+        "material_universe_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
+        "basis_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"analysis_kind": {"const": "pure-logic"}}, "required": ["analysis_kind"]},
+          "then": {
+            "properties": {
+              "material_inventory": {"maxItems": 0},
+              "material_universe_sha256": {"type": "null"}
+            }
+          },
+          "else": {
+            "properties": {
+              "material_inventory": {"minItems": 1},
+              "material_universe_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+            }
+          }
+        }
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eligibility_status", "redacted_query", "query_sha256", "eligibility_decision_sha256", "authorization_sha256", "u1_parent_event_sha256", "request_sha256", "run_id", "version_binding"],
+      "properties": {
+        "eligibility_status": {"const": "required"},
+        "redacted_query": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "query_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "eligibility_decision_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "authorization_sha256": {"$ref": "#/$defs/nonzeroSha256"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"}
+      }
+    },
+    "sourceInventoryItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record", "source_record_sha256", "query_sha256", "authorization_sha256", "decision_sha256", "run_id", "u1_parent_event_sha256", "request_sha256", "version_binding", "inventory_item_sha256"],
+      "properties": {
+        "record": {"$ref": "#/$defs/sourceRecord"},
+        "source_record_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "query_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "authorization_sha256": {"$ref": "#/$defs/nonzeroSha256"},
+        "decision_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
+        "u1_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"},
+        "inventory_item_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      }
+    },
+    "sourceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "url", "event_date", "publication_date", "interest", "upstream_lineage", "supported_claim", "cannot_prove"],
+      "properties": {
+        "source_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "url": {"type": "string", "format": "uri", "minLength": 1},
+        "event_date": {
+          "oneOf": [
+            {"type": "string", "format": "date"},
+            {"type": "null"}
+          ]
+        },
+        "publication_date": {
+          "oneOf": [
+            {"type": "string", "format": "date"},
+            {"type": "null"}
+          ]
+        },
+        "interest": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "upstream_lineage": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "supported_claim": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "cannot_prove": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
     "retrievalEntry": {
       "type": "object",
       "additionalProperties": false,

@@ -21,11 +21,11 @@ The execution window must first read, in this order:
 
 The root agent must use these orchestration rules:
 
-- Create or switch to branch codex/crossframe-ultra before implementation.
+- For the W4 rebuild, create a clean worktree and `codex/` branch from commit `b2e7361`. Keep the existing `codex/crossframe-ultra` dirty worktree read-only: do not clean, stage, reset, cherry-pick, or copy it wholesale.
 - Use at most three worker agents concurrently.
 - Every worker uses model gpt-5.6-sol with reasoning effort max.
 - Spawn workers with fork_turns set to none and give each a self-contained prompt.
-- Freeze shared schema IDs, function signatures, output paths, and file ownership before the first worker wave.
+- Complete W4-0 and freeze shared schema IDs, function signatures, output paths, hash roles, phase ownership, and file ownership before dispatching Tasks 7, 8, and 11.
 - Assign disjoint write sets. Two workers never edit the same file in the same wave.
 - Workers do not commit. They report changed files, tests run, exact results, and remaining risks.
 - The root reviews diffs, runs the focused tests, stages exact files, and commits one coherent task at a time.
@@ -39,7 +39,8 @@ W0:  Task 1
 W1:  Task 2 || Task 5 || Task 6
 W2:  Task 3
 W3:  Task 4
-W4:  Task 7 || Task 8 || Task 11
+W4-0: Shared contract and Schema freeze
+W4:  Task 7 || Task 8 || Task 11 (develop independently; integrate 7 -> 8 -> 11)
 W5:  Task 9 || Task 10
 W6:  Task 12
 W7:  Task 13
@@ -49,7 +50,7 @@ W10: Task 16
 W11: Task 17
 ~~~
 
-Dependencies are encoded again on every task. Task 10 may develop against the frozen recursive-lineage schema and fixture while Task 9 implements the recursive validator; Task 13 is the first integration point that requires both implementations. No wave starts until all dependencies for that wave are green.
+Dependencies are encoded again on every task. W4-0 is a single-writer gate owned by the root planner; no Task 7, 8, or 11 worker starts before its contract baseline is reviewed and committed. After W4-0, those three tasks may develop in separate worktrees, but the root integrates and revalidates them in Task 7, Task 8, Task 11 order. Task 10 may develop against the frozen recursive-lineage schema and fixture while Task 9 implements the recursive validator; Task 13 is the first integration point that requires both implementations. No later wave starts until all dependencies for that wave are green.
 
 ## 1. Non-negotiable source and runtime constants
 
@@ -928,11 +929,89 @@ python -m py_compile skills/crossframe-ultra/scripts/ultra_runtime/jsonio.py ski
 git commit -m "feat: add fixed ultra run storage"
 ~~~
 
+## W4-0: Freeze shared W4 contracts before consumer rebuilds
+
+**Owner:** Root planner only
+
+**Depends on:** Tasks 1–6 at clean commit `b2e7361`
+
+**Files:**
+
+- Modify: docs/superpowers/plans/2026-08-02-crossframe-ultra-implementation.md
+- Modify: tests/test_ultra_schemas.py
+- Modify: skills/crossframe-ultra/schemas/ultra-phase-event.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-source-lock.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-read-event.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-retrieval-ledger.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-world-volume.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-transformation-ledger.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-concept-disposition.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-output-plan.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-semantic-coverage.schema.json
+- Modify: skills/crossframe-ultra/schemas/ultra-article-review.schema.json
+
+All Ultra schemas and `tests/test_ultra_schemas.py` become root-owned shared files after this gate. Task workers may report a contract gap but may not edit those files. W4-0 changes only the ten schemas above; unchanged schemas, shared runtime modules, task runtimes, task tests, fixtures, templates and references remain outside its write set.
+
+- [ ] **Step 1: Write contract RED tests**
+
+Add self-contained schema tests that fail on `b2e7361` for:
+
+- terminal blocked/cancelled phase events and their no-output rule;
+- U1 source, release, compatibility, knowledge, skill-tree, input-snapshot, parent-event, explicit verified-or-unknown ACL, named source-unit content hash and read-receipt authority;
+- U2 eligibility, request, conditional real authorization, query and source-inventory authority, including structured required and N/A bases and honest unknown source dates;
+- U4/U5 input cardinality and named content versus sealed-artifact hash roles;
+- complete non-flattened Omega structure, exact A/X/T/O/C/R/I/N/J scale axes, promoted closed Rac/Rcc record fields, local channel authority and deterministic no-op boundaries;
+- at least one scale, circle-relation and representation/expression transformation, each kept as a separately classified record with structured identity, loss, effective variables, residuals and return conditions;
+- U5 concept disposition bound to evidence, volume, transformation, registry, route and contract authority, including structured unknown-pending obligations without U10-owned article-section assignments;
+- the exact U10 10-section plus 5-appendix partial output plan, complete 13-kind semantic universe, dependencies and 15 blind-recovery expectations;
+- U11 article-bound semantic coverage with honest incomplete/complete states and a non-publishing mechanical article review that can record failure dependencies.
+
+W4-0 schema fixtures stay inside `tests/test_ultra_schemas.py` and do not require the old Task 7, 8, or 11 producers or fixtures to conform before their rebuilds. Do not use skip, xfail, optional authority fields or weakened assertions to hide migration work.
+
+Replace external Task 8 fixture reads in the focused schema suite with sealed `minimal_instances()` values. Phase-event and read-event use their special hash algorithms and are not routed through the generic phase-artifact content validator. Remove the old Task 7 producer-conformance assertion from this focused file and transfer equivalent producer tests to the Task 7 completion gate; Task 8 and Task 11 receive the corresponding public-schema conformance gates below.
+
+- [ ] **Step 2: Observe focused RED**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py
+~~~
+
+The RED must be an assertion-level contract failure, not collection, import, JSON syntax or environment failure.
+
+- [ ] **Step 3: Freeze the corrected contracts**
+
+Keep all existing schema IDs, version bindings, Draft 2020-12 closure and canonical envelope/hash algorithms. Generic artifacts hash canonical payloads with `content_sha256` removed. Phase-event content hashes exclude both self-hash fields before `event_sha256` seals the event; read-event `content_sha256` remains the manifest-owned source-unit hash and `read_event_sha256` seals the event. Phase input/output arrays remain bare SHA-256 strings. Schemas name external authority roles, while later runtime validators recompute and compare roles that JSON Schema cannot equate.
+
+A read receipt uses the separate `receipt_sha256` role. An unverifiable ACL is recorded as `unknown`, never asserted as verified, while Task 7 owns the downstream fail-closed decision.
+
+Phase ownership is fixed as follows: world volume U4; transformation ledger and concept disposition U5; output plan U10; semantic coverage and article review U11. Dirty-tree evidence cannot override these approved design phases.
+
+Do not add new StateDiff, semantic-inventory, article-packet or final-chat schemas, and do not add a shared `contracts.py`. Those concepts remain in their approved Task 8, 11 and 13 forms. Do not create a production release manifest: Task 7 must fail closed until Task 14 creates it, while tests use explicit temporary authority values.
+
+- [ ] **Step 4: Run focused GREEN and boundary checks**
+
+~~~powershell
+python -B -m pytest -q -p no:cacheprovider tests/test_ultra_schemas.py tests/test_ultra_compatibility.py
+Get-ChildItem skills/crossframe-ultra/schemas -Filter *.json | ForEach-Object { python -m json.tool $_.FullName > $null; if ($LASTEXITCODE -ne 0) { throw "invalid JSON: $($_.FullName)" } }
+git diff --check
+git diff --name-only b2e7361 --
+~~~
+
+Run `python -B -m pytest -q -p no:cacheprovider tests/test_ultra_*.py` once and record the exact downstream migration failures. W4-0 acceptance requires the focused shared-contract suite and write boundary to pass; old Task 7, 8 and 11 consumer failures are assigned to their independent rebuilds rather than repaired across the boundary.
+
+- [ ] **Step 5: Independent review and root commit**
+
+The reviewer verifies the approved design phase table, hash-role separation, closed authority fields, the absence of dirty-tree wholesale copying, and the exact write set. The root alone stages and commits W4-0.
+
+~~~powershell
+git commit -m "fix: freeze ultra W4 shared contracts"
+~~~
+
 ## Task 7: Implement U0–U3 source lock, evidence freeze, retrieval eligibility, and privacy
 
 **Owner:** Worker C
 
-**Depends on:** Tasks 3, 4, 5, and 6
+**Depends on:** Tasks 3, 4, 6, and W4-0
 
 **Files:**
 
@@ -957,6 +1036,8 @@ def test_new_evidence_after_u3_requires_fork(phase_store, frozen_evidence):
 ~~~
 
 Every event contains run_id, phase_id, event_type, parent_event_sha256, input_artifact_hashes, output_artifact_hashes, version binding, timestamp, status, failure code, invalidated phases, and event_sha256.
+
+Task 7 completion must construct real phase-event, source-lock, read-event and retrieval-ledger producer outputs and validate each against its W4-0 public schema under externally supplied run/version/phase/parent authority. The tests recompute the special phase-event and read-event hashes, reject stale or swapped upstream hashes, and live in `test_ultra_state_machine.py`, `test_ultra_source_read_coverage.py` and `test_ultra_retrieval_privacy.py`, not the shared schema suite.
 
 Source-read coverage requires exactly 4,753 unique source units: 4,631 paragraph anchors and 122 table anchors. Each read event binds source-unit content hash, promoted semantic snapshot hash, reader mode, real execution identity available to the host and timestamp. The runtime may create a read plan but may not mark units read on the model's behalf.
 
@@ -1044,7 +1125,7 @@ git commit -m "feat: freeze ultra evidence plane"
 
 **Owner:** Worker B
 
-**Depends on:** Tasks 4, 5, and 6
+**Depends on:** Tasks 4, 6, and W4-0. Development may use a W4-0-owned sealed U3 fixture; root integration still follows Task 7.
 
 **Files:**
 
@@ -1077,6 +1158,8 @@ The valid fixture must contain:
 Reject a global M, global Psi, one global scale label, single parent_id, averaged circle state, missing membership basis, relation without direction, channel without endpoints, and a state position without identity criteria.
 
 The concept-closure test traverses every registry concept and permits only applied, tested-rejected, not-applicable or unknown-pending. It rejects an unvisited concept, missing route-required/neighbor concept, copied boilerplate rationale, applied concept without an article semantic unit, and unknown-pending without a condition branch or evidence plan.
+
+Task 8 completion must construct real world-volume, transformation-ledger and concept-disposition artifacts that validate against the W4-0 public schemas. Its tests recompute content and sealed-artifact hashes from externally supplied U3/U4/U5 authority, reject stale or self-selected authority, and keep its task fixtures read-only consumers of the frozen shared contract.
 
 - [ ] **Step 2: Write event-locality and transform RED tests**
 
@@ -1346,7 +1429,7 @@ git commit -m "feat: add ultra judgment and forecast contracts"
 
 **Owner:** Worker A
 
-**Depends on:** Task 5
+**Depends on:** W4-0. Development may use the frozen U10 semantic universe and upstream authority fixtures; root integration still follows Tasks 7 and 8.
 
 **Files:**
 
@@ -1368,16 +1451,16 @@ The primary article has ten continuous sections:
 
 ~~~python
 REQUIRED_READER_SECTIONS = (
-    "主判断、范围与置信度",
+    "主判断、范围和置信度",
     "用户观点的最强重建",
-    "事实、证据与未知",
-    "立体多圈层状态",
-    "机制、通道与级联",
+    "事实、证据、来源关系和未知项",
+    "立体多圈层联合状态",
+    "机制、真实通道和跨圈层级联",
     "竞争解释与排序",
-    "一阶、二阶与三阶推演",
-    "逐阶基线、增量与停止",
-    "事实、预测、价值、责任与授权",
-    "行动、不行动、切换与反转",
+    "一阶、二阶、三阶推演",
+    "每阶简单基线、增量和停止理由",
+    "事实、预测、价值、责任、授权裁决",
+    "行动、不行动、切换和反转条件",
 )
 ~~~
 
@@ -1386,9 +1469,9 @@ The same file then contains five reader appendices:
 ~~~python
 REQUIRED_READER_APPENDICES = (
     "圈层—角色—尺度映射",
-    "分支、合并、剪枝、残差与停止",
-    "预测、时间窗、指标与解析",
-    "概念、证据与来源",
+    "分支、合并、剪枝、残差和停止点",
+    "预测、时间窗、指标和解析条件",
+    "概念、证据和来源锚点",
     "未知项与框架缺口候选",
 )
 ~~~
@@ -1422,6 +1505,8 @@ def test_packet_assembly_is_deterministic(tmp_path):
 - [ ] **Step 3: Write semantic coverage and deletion tests**
 
 Every substantive unit marked applied, retained, unresolved, used in reasoning or promised to the reader must map to an exact section ID and a normalized prose excerpt that occurs in the assembled article. Required unit kinds are claim, evidence, unknown, circle relation, scale transform, translation loss, mechanism, branch, residual, forecast, verdict, action and reversal condition.
+
+Task 11 completion must construct sealed U10 output-plan and U11 semantic-coverage/article-review artifacts and validate them through the W4-0 public schemas under external upstream authority. Dataclass-only or plain-mapping validation is insufficient. Tests cover both controlled incomplete/fail records and the complete non-publishing precheck; only U12 may authorize the official filename.
 
 The deletion test copies only the article to a clean temporary directory. A deterministic recovery fixture and a fresh-context blind-reader evaluator must recover:
 
@@ -1690,10 +1775,10 @@ work/authoring/U09-verdict.json
 work/authoring/U09-action-ranking.json
 work/authoring/U09-forecast-ledger.json
 work/authoring/U10-output-plan.json
-work/authoring/U10-semantic-coverage.json
+work/authoring/U11-semantic-coverage.json
 work/authoring/U10-framework-gap-ledger.json
 work/authoring/article/packets/<packet-id>.md
-work/authoring/ultra-article-review.json
+work/authoring/U11-article-review.json
 work/authoring/完整推演档案.md
 ~~~
 

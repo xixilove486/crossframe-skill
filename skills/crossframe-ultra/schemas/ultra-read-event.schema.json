@@ -7,7 +7,7 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["source_unit_id", "source_kind", "source_ordinal", "source_manifest_sha256", "promoted_semantic_snapshot_sha256", "reader_mode", "execution_identity", "read_at", "read_event_sha256"],
+      "required": ["source_unit_id", "source_kind", "source_ordinal", "source_manifest_sha256", "promoted_semantic_snapshot_sha256", "source_lock_sha256", "parent_event_sha256", "receipt_sha256", "reader_mode", "execution_identity", "read_at", "read_event_sha256"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.read-event"},
         "phase_id": {"const": "U1"},
@@ -16,6 +16,9 @@
         "source_ordinal": {"type": "integer", "minimum": 1},
         "source_manifest_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "promoted_semantic_snapshot_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "source_lock_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "receipt_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "reader_mode": {"enum": ["full-source", "paragraph", "table", "assistive"]},
         "execution_identity": {"$ref": "#/$defs/executionIdentity"},
         "read_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
