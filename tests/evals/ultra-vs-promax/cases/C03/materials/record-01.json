@@ -1,0 +1,17 @@
+{
+  "record_id": "event-031",
+  "recorded_at": "2026-07-22T11:30:00Z",
+  "environment_id": "env-lab-09",
+  "event_scope": "shared-environment",
+  "event_type": "configuration-token-published",
+  "event_payload": {
+    "token_id": "palette-3",
+    "value": "amber"
+  },
+  "target_id": "target-07",
+  "observation_window": {
+    "start": "2026-07-22T11:25:00Z",
+    "end": "2026-07-22T12:00:00Z"
+  },
+  "channel_inventory_ref": "record-02.json"
+}

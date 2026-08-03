@@ -1,12 +1,86 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "C01",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "prohibited",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "record-01.md",
+      "sha256": "38102206ab5dc3535e85899fa64310fe7989b37000d5b863fef5adec76df2e7e",
+      "media_type": "text/markdown",
+      "license": "MIT"
+    },
+    {
+      "path": "record-02.md",
+      "sha256": "971deac3ac3f22b1f0343964705a51dc3adfb759b021ed8745fcd07c1de7e3b3",
+      "media_type": "text/markdown",
+      "license": "MIT"
+    }
+  ],
+  "source_count": 2,
+  "source_set_sha256": "8be5611737adb4912a7ba6e5d785442bb163ba80768c23a652ab9ca6706310b4",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-r1",
+      "reviewed_at": "2026-08-03T21:34:35.238Z",
+      "subject_sha256": "8be5611737adb4912a7ba6e5d785442bb163ba80768c23a652ab9ca6706310b4",
+      "evidence": [
+        "Actual-byte SHA-256 matches both declared sources.",
+        "source_files contains 2/2 ordinally sorted, unique relative paths; both remain inside materials, are regular non-reparse files, and have distinct hashes.",
+        "build_results.py sha256_json(source_files)=8be5611737adb4912a7ba6e5d785442bb163ba80768c23a652ab9ca6706310b4, matching source_set_sha256 and license subject_sha256.",
+        "Both source bytes explicitly identify synthetic-project units, use constructed R-/S-/profile identifiers, and contain no third-party attribution.",
+        "MIT is a valid SPDX identifier; root LICENSE SHA-256 dd6cd13aa980e08faabf660a453f5e773111e54e47b31866aa7f955f72a2fc3 contains the MIT redistribution and sublicensing grant subject to notice retention.",
+        "2/2 source_decisions have the exact five-field shape and one-to-one path+sha256+license bindings, boolean redistribution_allowed=true, and a project-authored-synthetic/root-MIT basis."
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.md",
+          "sha256": "38102206ab5dc3535e85899fa64310fe7989b37000d5b863fef5adec76df2e7e",
+          "license": "MIT",
+          "redistribution_allowed": true,
+          "basis": "Project-authored synthetic material covered by the repository root MIT LICENSE."
+        },
+        {
+          "path": "record-02.md",
+          "sha256": "971deac3ac3f22b1f0343964705a51dc3adfb759b021ed8745fcd07c1de7e3b3",
+          "license": "MIT",
+          "redistribution_allowed": true,
+          "basis": "Project-authored synthetic material covered by the repository root MIT LICENSE."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-r2",
+      "reviewed_at": "2026-08-03T21:34:05Z",
+      "subject_sha256": "8be5611737adb4912a7ba6e5d785442bb163ba80768c23a652ab9ca6706310b4",
+      "evidence": [
+        "Canonical source-set hash and both declared source-file hashes matched the manifest.",
+        "Privacy-policy v2 fields, default_deny=true, both exact packet allowlists, injected slots, and audit-only paths passed.",
+        "Policy SHA binding matched; all referenced paths existed.",
+        "Manual content and filename inspection found only synthetic operational data, with no secrets, PII, real-person data, unsafe outbound material, or hidden paths."
+      ],
+      "privacy_policy_sha256": "8796d74d782d04ed947a05b1a7e0b536fa3a7cd705e746537de571c6e59564b7",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-r3",
+      "reviewed_at": "2026-08-03T21:36:55Z",
+      "subject_sha256": "8be5611737adb4912a7ba6e5d785442bb163ba80768c23a652ab9ca6706310b4",
+      "evidence": [
+        "Both source byte hashes match the manifest; build_results.py sha256_json(source_files) equals subject_sha256.",
+        "Cutoff schema v1 is frozen at 2026-08-02T00:00:00Z; latest source evidence is 2026-07-18T16:40:00Z.",
+        "Cutoff and expected-pressure bindings match; expected-pressure raw Git blob 8c023469e49cb63bcc96721703fec620d52bf260 equals HEAD.",
+        "Prompt and two memos contain competing factual claims and explicit evidence gaps, without grading, answer-key, evaluator, or post-cutoff language."
+      ],
+      "evidence_cutoff_sha256": "f11d0320e3f02afaf16e1026452d9e451498bdec59f4844b841a021d4e78af40",
+      "expected_pressure_sha256": "77cb28abaa37219fc64b55ec2569db8a6d55809ab3052801db28dbff25083b1e",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }
