@@ -138,6 +138,7 @@ class RecoveryResult:
     compatibility_result: str
     checkpoint: Mapping[str, object] | None
     status: RunStatusRecord | None
+    phase_store: PhaseStore | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -716,6 +717,134 @@ def _status_if_present(layout: RunLayout) -> RunStatusRecord | None:
         raise RecoveryIntegrityError("run status authority is invalid") from error
 
 
+def _restore_phase_store(
+    layout: RunLayout,
+    authority: Mapping[str, object],
+    events: Sequence[Mapping[str, object]],
+    checkpoints: Sequence[Mapping[str, object]],
+) -> PhaseStore:
+    contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+    try:
+        raw = contract_path.read_bytes()
+        artifact = load_json_object_bytes(raw, source=str(contract_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError("run contract artifact is unavailable") from error
+    if (
+        raw != canonical_json_bytes(artifact)
+        or sha256_bytes(raw) != authority.get("run_contract_sha256")
+        or artifact.get("schema_id") != "crossframe.ultra.v82.run-contract"
+        or artifact.get("schema_version") != 1
+        or artifact.get("run_id") != authority.get("run_id")
+        or artifact.get("version_binding") != authority.get("version_binding")
+        or artifact.get("phase_id") != "U0"
+    ):
+        raise RecoveryIntegrityError("run contract artifact authority differs from recovery")
+    try:
+        validate_instance("ultra-run-contract.schema.json", artifact)
+        generated_at = _parse_canonical_utc(
+            artifact.get("generated_at"),
+            "run contract generated_at",
+        )
+    except Exception as error:
+        raise RecoveryIntegrityError("run contract artifact is invalid") from error
+    contract_fields = (
+        "trigger",
+        "request_sha256",
+        "run_mode",
+        "sensitivity",
+        "retention",
+        "outbound_permission",
+        "evidence_cutoff",
+        "capabilities",
+        "resource_limits",
+    )
+    contract = {field: copy.deepcopy(artifact[field]) for field in contract_fields}
+    capabilities = contract.get("capabilities")
+    availability = {
+        str(name): "available"
+        for name, state in (
+            capabilities.items() if isinstance(capabilities, Mapping) else ()
+        )
+        if state in {"available", "required"}
+    }
+    try:
+        store = PhaseStore(
+            run_id=str(authority["run_id"]),
+            version_binding=authority["version_binding"],
+            source_sha256=str(authority["source_sha256"]),
+            input_artifact_hashes=authority["input_artifact_hashes"],
+            input_snapshot_sha256=authority.get("input_snapshot_sha256"),
+            evidence_cutoff=str(authority["evidence_cutoff"]),
+            now=generated_at,
+            run_contract=contract,
+            capability_availability=availability,
+            run_layout=layout,
+        )
+        if store.run_contract_artifact_sha256 != authority["run_contract_sha256"]:
+            raise RecoveryIntegrityError("restored run contract hash differs")
+        u3_event = next(
+            (
+                event
+                for event in events
+                if event.get("phase_id") == "U3" and event.get("status") == "complete"
+            ),
+            None,
+        )
+        if u3_event is not None:
+            u3_checkpoint = next(
+                (
+                    item
+                    for item in checkpoints
+                    if item.get("boundary_kind") == "phase"
+                    and item.get("phase_id") == "U3"
+                ),
+                None,
+            )
+            if u3_checkpoint is None:
+                raise RecoveryIntegrityError("U3 recovery checkpoint is unavailable")
+            outputs = u3_event.get("output_artifact_hashes")
+            refs = u3_checkpoint.get("artifact_hashes")
+            if not isinstance(outputs, list) or not isinstance(refs, list):
+                raise RecoveryIntegrityError("U3 recovery authority is invalid")
+            evidence_refs = [
+                item
+                for item in refs
+                if isinstance(item, Mapping) and item.get("sha256") in outputs
+            ]
+            if len(evidence_refs) != 1:
+                raise RecoveryIntegrityError("U3 evidence artifact authority is ambiguous")
+            evidence_path = layout.run_dir / Path(str(evidence_refs[0]["path"]))
+            evidence_document = load_json_object(evidence_path)
+            validate_phase_artifact(
+                "ultra-evidence-ledger.schema.json",
+                evidence_document,
+                expected_schema_id="crossframe.ultra.v82.evidence-ledger",
+                expected_run_id=store.run_id,
+                expected_version_binding=current_version_binding(),
+                expected_phase_id="U3",
+            )
+            entries = evidence_document.get("entries")
+            unknowns = evidence_document.get("unknowns")
+            if not isinstance(entries, list) or not isinstance(unknowns, list):
+                raise RecoveryIntegrityError("U3 evidence artifact payload is invalid")
+            for entry in entries:
+                store._evidence_ledger.append(entry)
+            for unknown in unknowns:
+                store._evidence_ledger.append_unknown(unknown)
+            store._evidence_ledger.freeze()
+            if (
+                store.evidence_artifact != evidence_document
+                or store.evidence_sha256 not in outputs
+            ):
+                raise RecoveryIntegrityError("restored U3 evidence hash differs")
+        store._restore_validated_recovery_events(events)
+    except RecoveryIntegrityError:
+        raise
+    except Exception as error:
+        raise RecoveryIntegrityError("PhaseStore recovery hydration failed") from error
+    return store
+
+
 def create_checkpoint(
     layout: RunLayout,
     phase_store: PhaseStore,
@@ -850,7 +979,7 @@ def select_resume_checkpoint(layout: RunLayout) -> dict[str, object]:
 def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
     _validate_layout(layout)
     _require_utc(now, "now")
-    checkpoints, _, compatibility, _ = _load_checkpoints_unlocked(layout)
+    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
     status = _status_if_present(layout)
     if compatibility in {"read-only", "fork-required"}:
         return RecoveryResult(
@@ -858,6 +987,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
             compatibility_result=compatibility,
             checkpoint=None,
             status=status,
+            phase_store=None,
         )
     if compatibility != "resume":
         raise RecoveryCompatibilityError("checkpoint compatibility rejects recovery")
@@ -887,6 +1017,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
         compatibility_result="resume",
         checkpoint=checkpoint,
         status=resumed,
+        phase_store=_restore_phase_store(layout, authority, events, checkpoints),
     )
 
 

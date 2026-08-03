@@ -12,13 +12,17 @@ from .schemas import compute_artifact_content_sha256, validate_phase_artifact
 
 
 MANIFEST_FILENAME = "ultra-artifact-manifest.json"
+MATERIALIZATION_CONTROL_FILENAME = "ultra-materialization-control.json"
 PARTIAL_ARTICLE_PATH = "work/authoring/article.partial.md"
+DOSSIER_PATH = "work/authoring/完整推演档案.md"
+ARTIFACT_INDEX_PATH = "artifacts/ultra-artifact-index.md"
 READ_EVENTS_PATH = "artifacts/U00-U03-evidence/ultra-read-events.jsonl"
 OFFICIAL_DELIVERY_PATHS = (
     "delivery/CrossFrame-Ultra-完整文章.md",
     "delivery/完整推演档案.md",
     "delivery/工件索引.md",
 )
+_CANDIDATE_STATES = frozenset({"staged", "prechecked"})
 
 
 class ArtifactManifestError(ValueError):
@@ -118,8 +122,10 @@ def _metadata_for_file(layout: RunLayout, path: Path) -> tuple[str, str]:
         return schema_id, phase_id
     if relative == PARTIAL_ARTICLE_PATH:
         return "crossframe.ultra.v82.article-partial", "U11"
-    if relative.startswith("work/authoring/"):
-        return "crossframe.ultra.v82.authoring-document", "U11"
+    if relative == DOSSIER_PATH:
+        return "crossframe.ultra.v82.complete-dossier", "U11"
+    if relative == ARTIFACT_INDEX_PATH:
+        return "crossframe.ultra.v82.artifact-index", "U11"
     raise _fail(
         "ULTRA-MANIFEST-INVALID",
         f"unrecognized artifact type in validation inventory: {relative}",
@@ -130,22 +136,117 @@ def _metadata_for_file(layout: RunLayout, path: Path) -> tuple[str, str]:
 def _inventory_files(layout: RunLayout) -> tuple[Path, ...]:
     files: list[Path] = []
     manifest_path = layout.artifacts_dir / MANIFEST_FILENAME
-    for directory in (layout.artifacts_dir, layout.authoring_dir):
-        if not directory.exists():
-            continue
-        for path in directory.rglob("*"):
-            if not path.is_file() or path == manifest_path:
+    control_path = layout.artifacts_dir / MATERIALIZATION_CONTROL_FILENAME
+    if layout.artifacts_dir.exists():
+        for path in layout.artifacts_dir.rglob("*"):
+            if not path.is_file() or path in {manifest_path, control_path}:
                 continue
+            _relative_run_path(layout, path)
+            files.append(path)
+    for relative in (PARTIAL_ARTICLE_PATH, DOSSIER_PATH):
+        path = layout.run_dir / Path(relative)
+        if path.is_file():
             _relative_run_path(layout, path)
             files.append(path)
     return tuple(sorted(files, key=lambda item: _relative_run_path(layout, item)))
 
 
+def _active_candidate_files(layout: RunLayout) -> dict[str, Path] | None:
+    journal_path = layout.recovery_dir / "publish-transaction.json"
+    if not journal_path.is_file():
+        return None
+    journal = load_json_object(journal_path)
+    if journal.get("state") not in _CANDIDATE_STATES:
+        return None
+    if journal.get("run_id") != layout.run_dir.name:
+        raise _fail(
+            "ULTRA-MANIFEST-INVALID",
+            "publication candidate belongs to another run",
+            "recovery/publish-transaction.json",
+        )
+    files = journal.get("files")
+    if not isinstance(files, list):
+        raise _fail(
+            "ULTRA-MANIFEST-INVALID",
+            "publication candidate file authority is invalid",
+            "recovery/publish-transaction.json",
+        )
+    expected = {
+        f"artifacts/{MANIFEST_FILENAME}",
+        *OFFICIAL_DELIVERY_PATHS,
+    }
+    result: dict[str, Path] = {}
+    for record in files:
+        if not isinstance(record, Mapping):
+            raise _fail(
+                "ULTRA-MANIFEST-INVALID",
+                "publication candidate file record is invalid",
+                "recovery/publish-transaction.json",
+            )
+        official = record.get("official_path")
+        staged_text = record.get("staged_path")
+        digest = record.get("new_sha256")
+        if (
+            not isinstance(official, str)
+            or official not in expected
+            or not isinstance(staged_text, str)
+            or not isinstance(digest, str)
+        ):
+            raise _fail(
+                "ULTRA-MANIFEST-INVALID",
+                "publication candidate path authority is invalid",
+                "recovery/publish-transaction.json",
+            )
+        staged = layout.root / Path(staged_text)
+        try:
+            assert_safe_descendant(layout.root, staged)
+            staged.relative_to(layout.root_staging_dir)
+        except (OSError, TypeError, ValueError) as error:
+            raise _fail(
+                "ULTRA-PATH-ESCAPE",
+                "publication candidate escapes fixed staging",
+                staged_text,
+            ) from error
+        if not staged.is_file() or sha256_bytes(staged.read_bytes()) != digest:
+            raise _fail(
+                "ULTRA-ARTIFACT-HASH",
+                "publication candidate differs from its journal hash",
+                official,
+            )
+        if official in result:
+            raise _fail(
+                "ULTRA-MANIFEST-INVALID",
+                "publication candidate repeats an official path",
+                official,
+            )
+        result[official] = staged
+    if set(result) != expected:
+        raise _fail(
+            "ULTRA-MANIFEST-INVALID",
+            "publication candidate does not contain the fixed final set",
+            "recovery/publish-transaction.json",
+        )
+    return result
+
+
+def validation_manifest_path(layout: RunLayout) -> Path:
+    _validate_layout(layout)
+    candidate = _active_candidate_files(layout)
+    if candidate is not None:
+        return candidate[f"artifacts/{MANIFEST_FILENAME}"]
+    return layout.artifacts_dir / MANIFEST_FILENAME
+
+
 def _delivery_inventory(layout: RunLayout) -> tuple[dict[str, str], ...]:
     records: list[dict[str, str]] = []
     existing: list[str] = []
+    candidate = _active_candidate_files(layout)
     for relative in OFFICIAL_DELIVERY_PATHS:
-        path = layout.run_dir / Path(relative)
+        path = (
+            candidate[relative]
+            if candidate is not None
+            else layout.run_dir / Path(relative)
+        )
         assert_safe_descendant(layout.root, path)
         if not path.exists():
             continue
@@ -170,6 +271,43 @@ def _delivery_inventory(layout: RunLayout) -> tuple[dict[str, str], ...]:
             "delivery",
         )
     return tuple(records)
+
+
+def build_candidate_artifact_manifest(
+    layout: RunLayout,
+    *,
+    phase_chain_head_sha256: str,
+    validator_set_sha256: str,
+    generated_at: datetime,
+    delivery_payloads: Mapping[str, bytes],
+) -> dict[str, object]:
+    if set(delivery_payloads) != set(OFFICIAL_DELIVERY_PATHS):
+        raise ValueError("candidate manifest requires the fixed delivery payload set")
+    value = build_artifact_manifest(
+        layout,
+        phase_chain_head_sha256=phase_chain_head_sha256,
+        validator_set_sha256=validator_set_sha256,
+        generated_at=generated_at,
+    )
+    value["delivery_artifacts"] = [
+        {
+            "path": relative,
+            "sha256": sha256_bytes(delivery_payloads[relative]),
+            "media_type": "text/markdown",
+        }
+        for relative in OFFICIAL_DELIVERY_PATHS
+    ]
+    value["official_delivery_published"] = True
+    value["content_sha256"] = compute_artifact_content_sha256(value)
+    validate_phase_artifact(
+        "ultra-artifact-manifest.schema.json",
+        value,
+        expected_schema_id="crossframe.ultra.v82.artifact-manifest",
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_phase_id="U12",
+    )
+    return value
 
 
 def build_artifact_manifest(
@@ -324,7 +462,7 @@ def validate_artifact_manifest(
     manifest_path: Path,
 ) -> dict[str, object]:
     _validate_layout(layout)
-    expected_path = layout.artifacts_dir / MANIFEST_FILENAME
+    expected_path = validation_manifest_path(layout)
     if manifest_path != expected_path:
         raise _fail(
             "ULTRA-PATH-ESCAPE",

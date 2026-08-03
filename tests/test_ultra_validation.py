@@ -242,7 +242,7 @@ def build_valid_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuiltRun
     }
     article = _article_bytes()
     files["work/authoring/article.partial.md"] = article
-    files["work/authoring/U11-semantic-coverage.json"] = canonical_bytes(
+    files["artifacts/U09-U10-verdict/U11-semantic-coverage.json"] = canonical_bytes(
         _coverage(modules, article)
     )
     for relative, raw in files.items():

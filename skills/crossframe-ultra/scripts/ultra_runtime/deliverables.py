@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import copy
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 import shutil
@@ -199,8 +200,17 @@ def _validate_report_bytes(report_bytes: bytes, stage: str) -> bytes:
         raise TypeError(f"{stage} fresh checker must return bytes")
     report = load_json_object_bytes(report_bytes, source=f"{stage} fresh checker stdout")
     if report.get("overall_status") != "pass":
+        failures = [
+            {
+                "validator_id": check.get("validator_id"),
+                "error_codes": check.get("error_codes"),
+                "artifact_refs": check.get("artifact_refs"),
+            }
+            for check in report.get("checks", [])
+            if isinstance(check, Mapping) and check.get("status") != "pass"
+        ]
         raise RuntimeError(
-            f"{stage} fresh checker did not report overall_status=pass"
+            f"{stage} fresh checker did not report overall_status=pass: {failures}"
         )
     return report_bytes
 
@@ -242,6 +252,7 @@ def publish_delivery(
     fresh_check: Callable[[str], bytes],
     commit_report: Callable[[str, bytes], object],
     mark_needs_attention: Callable[[str], object],
+    defer_completion: bool = False,
 ) -> PublicationResult:
     """Publish the fixed final set with durable rollback evidence.
 
@@ -254,6 +265,8 @@ def publish_delivery(
         raise TypeError("fresh_check and commit_report must be callable")
     if not callable(mark_needs_attention):
         raise TypeError("mark_needs_attention must be callable")
+    if type(defer_completion) is not bool:
+        raise TypeError("defer_completion must be boolean")
     paths = publication_paths(layout, transaction_id)
     payloads = _payload_by_target(
         paths,
@@ -359,14 +372,15 @@ def publish_delivery(
             layout,
             paths,
             transaction_id=transaction_id,
-            state="complete",
+            state="postchecked" if defer_completion else "complete",
             payloads=payloads,
             previous=previous,
             precheck_passed=precheck_passed,
             postcheck_passed=postcheck_passed,
             failure=None,
         )
-        _remove_staging(layout, paths)
+        if not defer_completion:
+            _remove_staging(layout, paths)
         return PublicationResult(
             paths=paths,
             precheck_report_bytes=precheck_report,
@@ -416,6 +430,172 @@ def publish_delivery(
         raise
 
 
+def _journal_official_hashes(
+    layout: RunLayout,
+    journal: Mapping[str, object],
+) -> dict[Path, str]:
+    files = journal.get("files")
+    if not isinstance(files, list):
+        raise ValueError("publish journal files must be an array")
+    result: dict[Path, str] = {}
+    for record in files:
+        if not isinstance(record, Mapping):
+            raise ValueError("publish journal file entry must be an object")
+        relative = record.get("official_path")
+        digest = record.get("new_sha256")
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            raise ValueError("publish journal file authority is invalid")
+        official = layout.run_dir / Path(relative)
+        assert_safe_descendant(layout.root, official)
+        if official in result:
+            raise ValueError("publish journal repeats an official path")
+        result[official] = digest
+    return result
+
+
+def _verify_published_generation(
+    layout: RunLayout,
+    paths: PublicationPaths,
+    journal: Mapping[str, object],
+) -> None:
+    expected = set(paths.official_paths)
+    observed = _journal_official_hashes(layout, journal)
+    if set(observed) != expected:
+        raise RuntimeError("publish journal does not bind the fixed official set")
+    for official, digest in observed.items():
+        if not official.is_file() or sha256_bytes(official.read_bytes()) != digest:
+            raise RuntimeError(
+                f"published generation differs from journal for {official.name}"
+            )
+
+
+def _durable_u12_checkpoint(
+    layout: RunLayout,
+    journal: Mapping[str, object],
+) -> Mapping[str, object] | None:
+    from .recovery import load_checkpoints
+
+    checkpoints = load_checkpoints(layout)
+    matches = [
+        item
+        for item in checkpoints
+        if item.get("boundary_kind") == "phase"
+        and item.get("phase_id") == "U12"
+        and item.get("completed_boundary") is True
+    ]
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise RuntimeError("multiple durable U12 checkpoints are present")
+    checkpoint = matches[0]
+    event_sha256 = journal.get("u12_event_sha256")
+    checkpoint_sha256 = journal.get("u12_checkpoint_content_sha256")
+    if event_sha256 is not None and event_sha256 != checkpoint.get(
+        "phase_event_sha256"
+    ):
+        raise RuntimeError("publish journal U12 event differs from recovery")
+    if checkpoint_sha256 is not None and checkpoint_sha256 != checkpoint.get(
+        "content_sha256"
+    ):
+        raise RuntimeError("publish journal U12 checkpoint differs from recovery")
+    return checkpoint
+
+
+def _mark_u12_durable(
+    layout: RunLayout,
+    paths: PublicationPaths,
+    *,
+    event: Mapping[str, object],
+    checkpoint: Mapping[str, object],
+) -> None:
+    journal = load_json_object(paths.journal_path)
+    if journal.get("state") != "postchecked":
+        raise RuntimeError("U12 durability requires a postchecked publish journal")
+    if (
+        event.get("phase_id") != "U12"
+        or event.get("status") != "complete"
+        or checkpoint.get("phase_id") != "U12"
+        or checkpoint.get("phase_event_sha256") != event.get("event_sha256")
+    ):
+        raise RuntimeError("U12 event and checkpoint authority differ")
+    _verify_published_generation(layout, paths, journal)
+    updated = dict(journal)
+    updated["state"] = "u12-durable"
+    updated["u12_event_sha256"] = event["event_sha256"]
+    updated["u12_checkpoint_content_sha256"] = checkpoint["content_sha256"]
+    atomic_write_json(paths.journal_path, updated)
+
+
+def _roll_forward_u12_transaction(
+    layout: RunLayout,
+    paths: PublicationPaths,
+    journal: Mapping[str, object],
+) -> dict[str, object]:
+    checkpoint = _durable_u12_checkpoint(layout, journal)
+    if checkpoint is None:
+        raise RuntimeError("U12 transaction has no durable checkpoint")
+    _verify_published_generation(layout, paths, journal)
+
+    from .indexes import IndexStore
+    from .status import RunStatusStore
+
+    status_store = RunStatusStore(layout)
+    current = status_store.read()
+    if current.status != "complete":
+        previous = datetime.fromisoformat(current.updated_at[:-1] + "+00:00")
+        transition_at = max(
+            datetime.now(timezone.utc),
+            previous + timedelta(microseconds=1),
+        )
+        if current.status == "needs_attention":
+            current = status_store.transition(
+                current,
+                "running",
+                transition_at,
+                current_phase=current.current_phase,
+                last_complete_phase=current.last_complete_phase,
+                reason="durable U12 transaction roll-forward admitted",
+                validation_passed=False,
+            )
+            transition_at = transition_at + timedelta(microseconds=1)
+        current = status_store.transition(
+            current,
+            "complete",
+            transition_at,
+            current_phase="U12",
+            last_complete_phase="U12",
+            reason="durable U12 transaction roll-forward",
+            validation_passed=True,
+        )
+    if (
+        current.current_phase != "U12"
+        or current.last_complete_phase != "U12"
+        or current.validation_passed is not True
+        or current.tools_allowed is not False
+    ):
+        raise RuntimeError("durable U12 status authority is inconsistent")
+
+    verdict_path = layout.artifacts_dir / "U09-U10-verdict/U09-verdict.json"
+    verdict = load_json_object(verdict_path)
+    build_final_chat_projection(layout, verdict, current)
+    write_final_chat_projection(layout, verdict, current)
+    IndexStore(layout.root).rebuild()
+
+    reread = load_json_object(paths.journal_path)
+    durable = _durable_u12_checkpoint(layout, reread)
+    if durable is None or durable.get("content_sha256") != checkpoint.get(
+        "content_sha256"
+    ):
+        raise RuntimeError("U12 checkpoint changed before journal completion")
+    _verify_published_generation(layout, paths, reread)
+    final = dict(reread)
+    final["state"] = "complete"
+    final["postcheck_passed"] = True
+    atomic_write_json(paths.journal_path, final)
+    _remove_staging(layout, paths)
+    return final
+
+
 def recover_publish_transaction(
     layout: RunLayout,
     *,
@@ -433,6 +613,13 @@ def recover_publish_transaction(
         raise ValueError("publish journal has no valid transaction_id")
     paths = publication_paths(layout, transaction_id)
     state = journal.get("state")
+    durable_u12 = _durable_u12_checkpoint(layout, journal)
+    if durable_u12 is not None:
+        return _roll_forward_u12_transaction(layout, paths, journal)
+    if state == "u12-durable":
+        raise RuntimeError(
+            "publish journal declares durable U12 without a valid checkpoint"
+        )
     if state in {"complete", "rolled-back"}:
         _remove_staging(layout, paths)
         return journal

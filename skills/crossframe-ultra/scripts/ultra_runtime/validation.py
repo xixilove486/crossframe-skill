@@ -12,6 +12,7 @@ from .artifacts import (
     PARTIAL_ARTICLE_PATH,
     READ_EVENTS_PATH,
     ArtifactManifestError,
+    validation_manifest_path,
     validate_artifact_manifest,
 )
 from .constants import current_version_binding
@@ -37,12 +38,24 @@ from .schemas import (
 
 
 _SCHEMAS_BY_ID = {
+    "crossframe.ultra.v82.run-contract": "ultra-run-contract.schema.json",
+    "crossframe.ultra.v82.retrieval-ledger": "ultra-retrieval-ledger.schema.json",
     "crossframe.ultra.v82.evidence-ledger": "ultra-evidence-ledger.schema.json",
     "crossframe.ultra.v82.world-volume": "ultra-world-volume.schema.json",
+    "crossframe.ultra.v82.transformation-ledger": "ultra-transformation-ledger.schema.json",
+    "crossframe.ultra.v82.concept-disposition": "ultra-concept-disposition.schema.json",
     "crossframe.ultra.v82.claim-mechanism-graph": "ultra-claim-mechanism-graph.schema.json",
     "crossframe.ultra.v82.recursive-state": "ultra-recursive-state.schema.json",
     "crossframe.ultra.v82.recursive-lineage": "ultra-recursive-lineage.schema.json",
+    "crossframe.ultra.v82.order-evaluation": "ultra-order-evaluation.schema.json",
+    "crossframe.ultra.v82.red-team-report": "ultra-red-team-report.schema.json",
+    "crossframe.ultra.v82.verdict": "ultra-verdict.schema.json",
+    "crossframe.ultra.v82.action-ranking": "ultra-action-ranking.schema.json",
+    "crossframe.ultra.v82.forecast-ledger": "ultra-forecast-ledger.schema.json",
+    "crossframe.ultra.v82.framework-gap-ledger": "ultra-framework-gap-ledger.schema.json",
+    "crossframe.ultra.v82.output-plan": "ultra-output-plan.schema.json",
     "crossframe.ultra.v82.semantic-coverage": "ultra-semantic-coverage.schema.json",
+    "crossframe.ultra.v82.article-review": "ultra-article-review.schema.json",
 }
 _CHECK_ORDER = (
     "manifest-integrity",
@@ -135,7 +148,8 @@ def _load_structured_artifacts(
         if schema_id in {
             "crossframe.ultra.v82.read-event",
             "crossframe.ultra.v82.article-partial",
-            "crossframe.ultra.v82.authoring-document",
+            "crossframe.ultra.v82.complete-dossier",
+            "crossframe.ultra.v82.artifact-index",
         }:
             continue
         relative = str(record["path"])
@@ -434,7 +448,9 @@ def _validate_article_coverage(
             PARTIAL_ARTICLE_PATH,
         )
     try:
-        article = _normalized(article_bytes.decode("utf-8", errors="strict"))
+        from .coverage import normalize_excerpt
+
+        article = normalize_excerpt(article_bytes.decode("utf-8", errors="strict"))
     except UnicodeDecodeError:
         article = ""
     mappings = coverage.get("mappings", [])
@@ -443,7 +459,7 @@ def _validate_article_coverage(
         for item in mappings
         if not isinstance(item, Mapping)
         or not isinstance(item.get("normalized_excerpt"), str)
-        or _normalized(str(item["normalized_excerpt"])) not in article
+        or normalize_excerpt(str(item["normalized_excerpt"])) not in article
     ]
     if (
         coverage.get("coverage_complete") is not True
@@ -455,7 +471,7 @@ def _validate_article_coverage(
             issues,
             "article-coverage",
             "ULTRA-COVERAGE-MISSING",
-            "work/authoring/U11-semantic-coverage.json",
+            "artifacts/U09-U10-verdict/U11-semantic-coverage.json",
         )
 
 
@@ -513,7 +529,7 @@ def validate_run_from_disk(
     if not isinstance(mode, RunMode):
         raise TypeError("mode must be a RunMode")
     layout = build_run_layout(mode, run_id, default_root_policy())
-    manifest_path = layout.artifacts_dir / MANIFEST_FILENAME
+    manifest_path = validation_manifest_path(layout)
     issues: dict[str, list[tuple[str, str]]] = {
         check_id: [] for check_id in _CHECK_ORDER
     }
@@ -665,7 +681,7 @@ def commit_validation_attempt(
         if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
             raise ValueError(f"{name} must be a SHA-256 digest")
 
-    manifest_path = layout.artifacts_dir / MANIFEST_FILENAME
+    manifest_path = validation_manifest_path(layout)
     manifest = validate_artifact_manifest(layout, manifest_path)
     current_manifest_sha = sha256_bytes(manifest_path.read_bytes())
     if current_manifest_sha != expected_manifest_sha256:

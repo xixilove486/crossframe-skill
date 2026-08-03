@@ -1183,23 +1183,6 @@ class PhaseStore:
         if validated_time < manifest_time:
             raise PhaseIntegrityError("U12 validator report predates the published manifest")
 
-        from .status import RunStatusStore
-
-        try:
-            status = RunStatusStore(self._run_layout).read()
-        except Exception as error:
-            raise PhaseIntegrityError("U12 run status authority is unavailable") from error
-        if (
-            status.status != "complete"
-            or status.current_phase != "U12"
-            or status.last_complete_phase != "U12"
-            or status.validation_passed is not True
-            or status.tools_allowed is not False
-        ):
-            raise PhaseIntegrityError(
-                "U12 completion requires terminal validated status with tools disabled"
-            )
-
     def complete(
         self,
         phase_id: str,
@@ -1537,6 +1520,67 @@ class PhaseStore:
         if status in {"failed", "blocked", "cancelled"}:
             self._terminal = True
         return appended
+
+    def _restore_validated_recovery_events(
+        self,
+        events: Sequence[Mapping[str, object]],
+    ) -> None:
+        """Restore an already disk-validated chain without reissuing U1-U3 seals."""
+
+        if self._events:
+            raise PhaseIntegrityError("recovery restore requires a fresh PhaseStore")
+        for event in events:
+            snapshot = copy.deepcopy(dict(event))
+            phase_id = snapshot.get("phase_id")
+            status = snapshot.get("status")
+            if phase_id not in {"U1", "U2", "U3"} or status != "complete":
+                self.replay_event(snapshot)
+                continue
+            self._check_phase(str(phase_id))
+            expected_parent = self._check_bindings(
+                parent_event_sha256=(
+                    snapshot.get("parent_event_sha256")
+                    if isinstance(snapshot.get("parent_event_sha256"), str)
+                    else ""
+                ),
+                input_artifact_hashes=(
+                    snapshot.get("input_artifact_hashes")
+                    if isinstance(snapshot.get("input_artifact_hashes"), list)
+                    else ()
+                ),
+                version_binding=(
+                    snapshot.get("version_binding")
+                    if isinstance(snapshot.get("version_binding"), Mapping)
+                    else {}
+                ),
+                source_sha256=(
+                    snapshot.get("source_sha256")
+                    if isinstance(snapshot.get("source_sha256"), str)
+                    else ""
+                ),
+                evidence_cutoff=(
+                    snapshot.get("evidence_cutoff")
+                    if isinstance(snapshot.get("evidence_cutoff"), str)
+                    else ""
+                ),
+            )
+            outputs = snapshot.get("output_artifact_hashes")
+            if (
+                snapshot.get("parent_event_sha256") != expected_parent
+                or snapshot.get("run_id") != self.run_id
+                or snapshot.get("run_contract_sha256") != self._run_contract_sha256
+                or snapshot.get("event_type") != "phase-completed"
+                or snapshot.get("failure_code") is not None
+                or snapshot.get("invalidated_phases") != []
+                or not isinstance(outputs, list)
+            ):
+                raise PhaseIntegrityError("recovered sealed phase event authority differs")
+            validated_outputs = _validate_hashes(
+                outputs,
+                field="output_artifact_hashes",
+            )
+            _validate_phase_output_contract(str(phase_id), validated_outputs)
+            self._append_event(snapshot)
 
     def append_evidence(self, entry: Mapping[str, object]) -> dict[str, object]:
         if self._terminal:

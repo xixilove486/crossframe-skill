@@ -313,10 +313,9 @@ def _phase_store_from_recovery(result: object) -> object:
 def _matching_artifact_paths(
     layout: RunLayout, phase_store: object, phase_id: str
 ) -> tuple[Path, ...]:
-    events_method = getattr(phase_store, "events", None)
-    if not callable(events_method):
-        raise RuntimeError("existing PhaseStore does not expose events()")
-    events = events_method()
+    events = getattr(phase_store, "events", None)
+    if not isinstance(events, tuple):
+        raise RuntimeError("existing PhaseStore does not expose its events property")
     matching = [
         event
         for event in events

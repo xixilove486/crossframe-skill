@@ -84,7 +84,11 @@ def _coverage_excerpt_missing(run) -> None:
     def mutate(coverage):
         coverage["mappings"][0]["normalized_excerpt"] = "This excerpt is absent from the article."
 
-    _rewrite_json(run, "work/authoring/U11-semantic-coverage.json", mutate)
+    _rewrite_json(
+        run,
+        "artifacts/U09-U10-verdict/U11-semantic-coverage.json",
+        mutate,
+    )
 
 
 def _premature_publish(run) -> None:

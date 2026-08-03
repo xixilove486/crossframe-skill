@@ -318,6 +318,7 @@ def seal_authoring_artifact(
     timestamp = _canonical_utc(generated_at)
     authored = load_json_object(path)
     sealed: dict[str, Any] = copy.deepcopy(dict(authored))
+    recursive_state_replacements: dict[str, str] = {}
     if authority_documents is not None:
         aliases = {
             "evidence": "evidence",
@@ -363,9 +364,42 @@ def seal_authoring_artifact(
                     )
                 sealed[field] = content_sha256
     if authority_values is not None:
+        supplied_replacements = authority_values.get(
+            "recursive_state_hash_replacements"
+        )
+        if (
+            spec.relative_path == "U07-recursive-lineage.json"
+            and isinstance(supplied_replacements, Mapping)
+        ):
+            recursive_state_replacements = {
+                str(prior): str(current)
+                for prior, current in supplied_replacements.items()
+            }
         for field, value in authority_values.items():
             if field in sealed:
+                if (
+                    spec.relative_path == "U07-recursive-lineage.json"
+                    and field == "recursive_state_artifact_hashes"
+                    and isinstance(sealed[field], list)
+                    and isinstance(value, list)
+                    and len(sealed[field]) == len(value)
+                ):
+                    if not recursive_state_replacements:
+                        recursive_state_replacements = dict(
+                            zip(sealed[field], value, strict=True)
+                        )
                 sealed[field] = copy.deepcopy(value)
+    if recursive_state_replacements:
+        nodes = sealed.get("nodes")
+        if isinstance(nodes, list):
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                prior = node.get("recursive_state_artifact_sha256")
+                if isinstance(prior, str) and prior in recursive_state_replacements:
+                    node["recursive_state_artifact_sha256"] = (
+                        recursive_state_replacements[prior]
+                    )
     if "parent_run_id" in sealed:
         sealed["parent_run_id"] = layout.run_dir.name
     if spec.relative_path == "U10-output-plan.json":
@@ -512,7 +546,6 @@ def record_materialized_phase(
     result = complete(
         phase_id,
         artifact_hashes=tuple(hashes),
-        input_artifact_hashes=inputs,
     )
     if not isinstance(result, Mapping):
         raise TypeError("PhaseStore.complete must return an event object")
@@ -534,6 +567,9 @@ def checkpoint_article_packets(
     packets = tuple(sorted(packet_paths, key=lambda path: path.name))
     results: list[object] = []
     packet_dir = layout.authoring_dir / "article" / "packets"
+    partial_path = layout.authoring_dir / PARTIAL_ARTICLE_RELATIVE_PATH
+    if not partial_path.is_file():
+        raise ValueError("article packet checkpoints require the assembled partial article")
     for ordinal, packet in enumerate(packets, start=1):
         if not isinstance(packet, Path) or not packet.is_file():
             raise ValueError(f"article packet is not a file: {packet}")
@@ -547,7 +583,7 @@ def checkpoint_article_packets(
                 boundary_kind="article-packet",
                 boundary_id=packet.stem,
                 boundary_ordinal=ordinal,
-                artifact_paths=(packet,),
+                artifact_paths=(partial_path, packet),
                 now=now,
             )
         )
@@ -637,12 +673,12 @@ def _authority_name(spec: ArtifactSpec) -> str:
 
 
 def _completed_phase_event(phase_store: object, phase_id: str) -> dict[str, object] | None:
-    events_method = getattr(phase_store, "events", None)
-    if not callable(events_method):
+    events = getattr(phase_store, "events", None)
+    if not isinstance(events, tuple):
         return None
     matching = [
         dict(event)
-        for event in events_method()
+        for event in events
         if isinstance(event, Mapping)
         and event.get("phase_id") == phase_id
         and event.get("status") == "complete"
@@ -797,6 +833,7 @@ def _seal_json_phase(
     destinations: list[Path] = []
     for source in sources:
         spec = _spec_for_path(layout, source)
+        authored_artifact_sha256 = _full_artifact_sha256(load_json_object(source))
         sealed = seal_authoring_artifact(
             layout,
             source,
@@ -812,7 +849,13 @@ def _seal_json_phase(
         if name == "recursive_state" and isinstance(authority_values, dict):
             recursive_hashes = authority_values.get("recursive_state_artifact_hashes")
             if isinstance(recursive_hashes, list):
-                recursive_hashes.append(_full_artifact_sha256(sealed))
+                sealed_sha256 = _full_artifact_sha256(sealed)
+                recursive_hashes.append(sealed_sha256)
+                replacements = authority_values.get(
+                    "recursive_state_hash_replacements"
+                )
+                if isinstance(replacements, dict):
+                    replacements[authored_artifact_sha256] = sealed_sha256
         else:
             authority_documents[name] = sealed
     validate_documents(documents)
@@ -927,7 +970,9 @@ def build_artifact_index_bytes(
     paths = [
         path
         for path in layout.artifacts_dir.rglob("*")
-        if path.is_file() and path.name != "ultra-artifact-manifest.json"
+        if path.is_file()
+        and path.name
+        not in {"ultra-artifact-manifest.json", "ultra-artifact-index.md"}
     ]
     paths.extend(additional_paths)
     unique = sorted(set(paths), key=lambda path: path.relative_to(layout.run_dir).as_posix())
@@ -1139,7 +1184,10 @@ def materialize_u4_u11(
         u7_sources,
         generated_at=now,
         authority_documents=documents,
-        authority_values={"recursive_state_artifact_hashes": recursive_hashes},
+        authority_values={
+            "recursive_state_artifact_hashes": recursive_hashes,
+            "recursive_state_hash_replacements": {},
+        },
         input_artifact_hashes=_phase_input_hashes(
             documents,
             "world_volume",
@@ -1317,22 +1365,37 @@ def materialize_u4_u11(
             key=lambda path: path.name,
         )
     )
-    checkpoint_article_packets(
-        layout,
-        phase_store,
-        packet_paths,
-        now=now,
-        create_checkpoint=create_checkpoint,
-    )
     packets = _packet_mappings(documents["output_plan"], packet_paths)
     partial_path = prepared.authoring_dir / PARTIAL_ARTICLE_RELATIVE_PATH
     assembled = article.assemble_article(documents["output_plan"], packets, partial_path)
+    u11_event = _completed_phase_event(phase_store, "U11")
+    u11_generated_at = now
+    if u11_event is not None:
+        existing_coverage_path = artifact_destination(
+            layout,
+            prepared.authoring_dir / "U11-semantic-coverage.json",
+        )
+        existing_coverage = load_json_object(existing_coverage_path)
+        existing_timestamp = existing_coverage.get("generated_at")
+        if not isinstance(existing_timestamp, str) or not existing_timestamp.endswith("Z"):
+            raise ValueError("completed U11 coverage has no canonical generated_at")
+        u11_generated_at = datetime.fromisoformat(
+            existing_timestamp[:-1] + "+00:00"
+        )
+    else:
+        checkpoint_article_packets(
+            layout,
+            phase_store,
+            packet_paths,
+            now=now,
+            create_checkpoint=create_checkpoint,
+        )
 
     coverage_source = prepared.authoring_dir / "U11-semantic-coverage.json"
     coverage_document = seal_authoring_artifact(
         layout,
         coverage_source,
-        generated_at=now,
+        generated_at=u11_generated_at,
         authority_documents=documents,
         authority_values={
             "article_sha256": assembled.article_sha256,
@@ -1353,7 +1416,7 @@ def materialize_u4_u11(
     authored_review = seal_authoring_artifact(
         layout,
         review_source,
-        generated_at=now,
+        generated_at=u11_generated_at,
         authority_documents=documents,
         authority_values={
             "article_sha256": assembled.article_sha256,
@@ -1366,7 +1429,7 @@ def materialize_u4_u11(
         coverage_document,
         run_id=layout.run_dir.name,
         version_binding=current_version_binding(),
-        generated_at=_canonical_utc(now),
+        generated_at=_canonical_utc(u11_generated_at),
         expected_output_plan_artifact_sha256=_full_artifact_sha256(documents["output_plan"]),
         expected_coverage_artifact_sha256=_full_artifact_sha256(coverage_document),
     )
@@ -1390,7 +1453,6 @@ def materialize_u4_u11(
         dossier_path,
         artifact_index_path,
     )
-    u11_event = _completed_phase_event(phase_store, "U11")
     if u11_event is None:
         u11_event = record_materialized_phase(
             layout,
@@ -1457,21 +1519,131 @@ def _strictly_later(now: datetime, timestamp: str) -> datetime:
     return now if now > previous else previous + timedelta(microseconds=1)
 
 
-def _validator_set_authority(*modules: object) -> str:
-    for module in modules:
-        for name in (
-            "VALIDATOR_SET_SHA256",
-            "validator_set_sha256",
-            "compute_validator_set_sha256",
-        ):
-            value = getattr(module, name, None)
-            if callable(value):
-                value = value()
-            if isinstance(value, str) and len(value) == 64 and all(
-                character in "0123456789abcdef" for character in value
-            ):
-                return value
-    raise RuntimeError("Task 12 does not expose its validator-set hash authority")
+def _validator_set_authority(repo: Path, validation: object) -> str:
+    authority = getattr(validation, "validator_set_sha256", None)
+    if not callable(authority):
+        raise RuntimeError("Task 12 does not expose its validator-set hash authority")
+    value = authority(repo)
+    if not isinstance(value, str) or len(value) != 64 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise RuntimeError("Task 12 returned an invalid validator-set hash")
+    return value
+
+
+def _close_u12_transaction(
+    layout: RunLayout,
+    phase_store: object,
+    publication: object,
+    *,
+    recovery: object,
+    status_store: object,
+    now: datetime,
+    mark_needs_attention: Callable[[str], object],
+) -> tuple[dict[str, object], object, Path]:
+    from .deliverables import (
+        _mark_u12_durable,
+        _roll_forward_u12_transaction,
+        recover_publish_transaction,
+    )
+
+    paths = getattr(publication, "paths", None)
+    if paths is None:
+        raise TypeError("publication must expose its fixed publication paths")
+    report_path = layout.validation_current_dir / "ultra-validator-report.json"
+    durable = False
+    try:
+        event = complete_u12(
+            layout,
+            phase_store,
+            manifest_path=paths.manifest_path,
+            postcheck_report_path=report_path,
+            delivery_paths=(
+                paths.article_path,
+                paths.dossier_path,
+                paths.artifact_index_path,
+            ),
+            postcheck_passed=getattr(publication, "postcheck_passed", False),
+        )
+        checkpoint = recovery.create_checkpoint(
+            layout,
+            phase_store,
+            boundary_kind="phase",
+            boundary_id="U12",
+            boundary_ordinal=0,
+            artifact_paths=(
+                paths.manifest_path,
+                report_path,
+                paths.article_path,
+                paths.dossier_path,
+                paths.artifact_index_path,
+            ),
+            now=now,
+        )
+        durable = True
+        _mark_u12_durable(
+            layout,
+            paths,
+            event=event,
+            checkpoint=checkpoint,
+        )
+
+        current = status_store.read()
+        complete_status = status_store.transition(
+            current,
+            "complete",
+            _strictly_later(now, current.updated_at),
+            current_phase="U12",
+            last_complete_phase="U12",
+            reason="post-publish validation passed",
+            validation_passed=True,
+        )
+        journal = load_json_object(paths.journal_path)
+        completed_journal = _roll_forward_u12_transaction(
+            layout,
+            paths,
+            journal,
+        )
+        if completed_journal.get("state") != "complete":
+            raise RuntimeError("U12 publish journal did not complete")
+        reread_status = status_store.read()
+        checkpoints = recovery.load_checkpoints(layout)
+        matching = [
+            item
+            for item in checkpoints
+            if item.get("phase_id") == "U12"
+            and item.get("phase_event_sha256") == event.get("event_sha256")
+        ]
+        if reread_status != complete_status or matching != [checkpoint]:
+            raise RuntimeError("U12 event, checkpoint, and status reread differ")
+        return event, reread_status, layout.run_dir / "final-chat.json"
+    except BaseException as error:
+        if durable:
+            try:
+                current = status_store.read()
+                if current.status not in {"complete", "needs_attention"}:
+                    mark_needs_attention(
+                        "durable U12 transaction requires roll-forward: "
+                        f"{type(error).__name__}: {error}"
+                    )
+            except BaseException as attention_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "failed to hold durable U12 as needs_attention: "
+                        f"{attention_error}"
+                    )
+        else:
+            try:
+                recover_publish_transaction(
+                    layout,
+                    mark_needs_attention=mark_needs_attention,
+                )
+            except BaseException as rollback_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(f"failed to roll back pre-U12 publication: {rollback_error}")
+        raise
 
 
 def materialize_complete_run(
@@ -1514,12 +1686,10 @@ def materialize_complete_run(
         raise RuntimeError("Task 12 recovery/validation dependencies are not integrated") from error
 
     from .deliverables import (
-        build_final_chat_projection,
         publish_delivery,
+        publication_paths,
         recover_publish_transaction,
-        write_final_chat_projection,
     )
-    from .indexes import IndexStore
     from .locks import acquire_run_lease, release_run_lease
     from .status import RunStatusStore
 
@@ -1551,6 +1721,33 @@ def materialize_complete_run(
 
     try:
         current = status_store.read()
+        recovered_publication = recover_publish_transaction(
+            layout, mark_needs_attention=mark_needs_attention
+        )
+        if attention_marked:
+            raise RuntimeError(
+                "an incomplete publication was rolled back; operator attention is required"
+            )
+        current = status_store.read()
+        if current.status == "complete":
+            if not isinstance(recovered_publication, Mapping) or recovered_publication.get(
+                "state"
+            ) != "complete":
+                raise RuntimeError("terminal complete run has no complete publish journal")
+            paths = publication_paths(
+                layout,
+                str(recovered_publication["transaction_id"]),
+            )
+            return CompleteMaterializationResult(
+                run_id=run_id,
+                status="complete",
+                manifest_path=paths.manifest_path,
+                article_path=paths.article_path,
+                dossier_path=paths.dossier_path,
+                artifact_index_path=paths.artifact_index_path,
+                final_chat_path=layout.run_dir / "final-chat.json",
+                postcheck_passed=True,
+            )
         if current.status != "running":
             if current.status not in {
                 "created",
@@ -1571,14 +1768,6 @@ def materialize_complete_run(
                 validation_passed=False,
             )
 
-        recover_publish_transaction(
-            layout, mark_needs_attention=mark_needs_attention
-        )
-        if attention_marked:
-            raise RuntimeError(
-                "an incomplete publication was rolled back; operator attention is required"
-            )
-
         resumed = recovery.resume_run(layout, now=now)
         phase_store = _resume_phase_store(resumed)
         bundle = materialize_u4_u11(
@@ -1592,16 +1781,23 @@ def materialize_complete_run(
         if u11_event.get("phase_id") != "U11":
             raise RuntimeError("materialization did not end at a complete U11 event")
 
-        validator_set_sha256 = _validator_set_authority(artifacts, validation)
+        validator_set_sha256 = _validator_set_authority(repo, validation)
         manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"
         previous_manifest = (
             manifest_path.read_bytes() if manifest_path.is_file() else None
         )
-        manifest = artifacts.build_artifact_manifest(
+        article_bytes = bundle.partial_article_path.read_bytes()
+        dossier_bytes = bundle.dossier_path.read_bytes()
+        manifest = artifacts.build_candidate_artifact_manifest(
             layout,
             phase_chain_head_sha256=_event_sha256(u11_event),
             validator_set_sha256=validator_set_sha256,
             generated_at=now,
+            delivery_payloads={
+                "delivery/CrossFrame-Ultra-完整文章.md": article_bytes,
+                "delivery/完整推演档案.md": dossier_bytes,
+                "delivery/工件索引.md": bundle.artifact_index_bytes,
+            },
         )
         if not isinstance(manifest, Mapping):
             raise TypeError("build_artifact_manifest must return an object")
@@ -1618,13 +1814,14 @@ def materialize_complete_run(
         publication = publish_delivery(
             layout,
             transaction_id=transaction_id,
-            article_bytes=bundle.partial_article_path.read_bytes(),
-            dossier_bytes=bundle.dossier_path.read_bytes(),
+            article_bytes=article_bytes,
+            dossier_bytes=dossier_bytes,
             artifact_index_bytes=bundle.artifact_index_bytes,
             manifest_bytes=manifest_bytes,
             fresh_check=fresh_check,
             commit_report=commit_report,
             mark_needs_attention=mark_needs_attention,
+            defer_completion=True,
         )
         current_report_path = (
             layout.validation_current_dir / "ultra-validator-report.json"
@@ -1637,54 +1834,17 @@ def materialize_complete_run(
             raise RuntimeError(
                 "committed post-publish report differs from fresh checker stdout"
             )
-        u12_event = complete_u12(
+        u12_event, complete_status, final_chat_path = _close_u12_transaction(
             layout,
             phase_store,
-            manifest_path=publication.paths.manifest_path,
-            postcheck_report_path=current_report_path,
-            delivery_paths=(
-                publication.paths.article_path,
-                publication.paths.dossier_path,
-                publication.paths.artifact_index_path,
-            ),
-            postcheck_passed=publication.postcheck_passed,
-        )
-        recovery.create_checkpoint(
-            layout,
-            phase_store,
-            boundary_kind="phase",
-            boundary_id="U12",
-            boundary_ordinal=0,
-            artifact_paths=(
-                publication.paths.manifest_path,
-                current_report_path,
-                publication.paths.article_path,
-                publication.paths.dossier_path,
-                publication.paths.artifact_index_path,
-            ),
+            publication,
+            recovery=recovery,
+            status_store=status_store,
             now=now,
+            mark_needs_attention=mark_needs_attention,
         )
         if u12_event.get("phase_id") != "U12":
             raise RuntimeError("PhaseStore did not complete U12")
-
-        current = status_store.read()
-        complete_status = status_store.transition(
-            current,
-            "complete",
-            _strictly_later(now, current.updated_at),
-            current_phase="U12",
-            last_complete_phase="U12",
-            reason="post-publish validation passed",
-            validation_passed=True,
-        )
-        verdict = bundle.documents.get("verdict")
-        if not isinstance(verdict, Mapping):
-            raise RuntimeError("complete materialization has no locked verdict")
-        build_final_chat_projection(layout, verdict, complete_status)
-        final_chat_path = write_final_chat_projection(
-            layout, verdict, complete_status
-        )
-        IndexStore(layout.root).rebuild()
         return CompleteMaterializationResult(
             run_id=run_id,
             status="complete",
