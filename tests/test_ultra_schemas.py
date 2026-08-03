@@ -1371,6 +1371,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                 ],
             },
             non_decidability=None,
+            partial_ranking_justification=None,
             explanation_ranking=[
                 {"explanation_id": "EXPLANATION-MAIN", "rank": 1},
                 {"explanation_id": "EXPLANATION-RIVAL", "rank": 2},
@@ -1379,6 +1380,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             ],
             five_verdicts=[
                 {
+                    "verdict_id": f"VERDICT-{kind.upper()}",
                     "kind": kind,
                     "proposition": f"Bounded {kind} judgment.",
                     "evidence_refs": ["EVIDENCE-1"],
@@ -1402,6 +1404,13 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             "ultra-action-ranking.schema.json",
             phase_id="U9",
             verdict_artifact_sha256=HASH_3,
+            considered_verdict_ids=[
+                "VERDICT-FACT",
+                "VERDICT-PREDICTION",
+                "VERDICT-VALUE",
+                "VERDICT-RESPONSIBILITY",
+                "VERDICT-AUTHORIZATION",
+            ],
             requested_choice=True,
             options=[
                 {
@@ -1409,6 +1418,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "kind": kind,
                     "description": f"Compare the {kind} option independently.",
                     "authorized": True,
+                    "authorization_verdict_id": "VERDICT-AUTHORIZATION",
                     "benefits": ["new evidence"],
                     "harms": ["small coordination cost"],
                     "requirements": ["team consent"],
@@ -1446,10 +1456,20 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             forecasts=[
                 {
                     "forecast_id": "FORECAST-1",
+                    "prediction_verdict_id": "VERDICT-PREDICTION",
                     "direction": "increase",
                     "time_window": "P90D",
                     "indicator": "recorded feedback events",
+                    "indicator_id": "INDICATOR-1",
+                    "window_start": STAMP,
+                    "window_end": "2026-11-02T08:00:00Z",
                     "resolution_rule": "Resolve increase if count exceeds the frozen baseline.",
+                    "resolution_predicate": {
+                        "operator": "gt",
+                        "baseline_value": 8,
+                        "target_value": 10,
+                        "tolerance": 0,
+                    },
                     "evidence_cutoff": STAMP,
                     "branch_refs": ["BRANCH-MAIN"],
                     "node_refs": ["NODE-1"],
@@ -1463,10 +1483,15 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             resolution_event_id="RESOLUTION-1",
             forecast_ledger_artifact_sha256=HASH_4,
             forecast_id="FORECAST-1",
+            indicator_id="INDICATOR-1",
             original_forecast_record_sha256=HASH_5,
             resolution_time="2026-11-02T08:00:00Z",
+            observation_time="2026-11-02T08:00:00Z",
+            indicator_resolved=True,
+            direction_correct=True,
+            time_window_covered=True,
             outcome="correct",
-            observed_value="12 recorded feedback events",
+            observed_value=12,
             original_probability_admissible=False,
             brier_inputs=None,
             brier_score=None,
@@ -3940,6 +3965,38 @@ def test_verdict_binds_all_authorities_and_keeps_five_verdicts_independent() -> 
     with pytest.raises(ValidationError):
         runtime.validate_instance("ultra-verdict.schema.json", duplicate_kind)
 
+    without_ranking_justification_role = copy.deepcopy(verdict)
+    del without_ranking_justification_role["partial_ranking_justification"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-verdict.schema.json", without_ranking_justification_role
+        )
+
+    lock_ids = [lock["verdict_id"] for lock in verdict["five_verdicts"]]
+    assert len(lock_ids) == len(set(lock_ids)) == 5
+    without_lock_id = copy.deepcopy(verdict)
+    del without_lock_id["five_verdicts"][0]["verdict_id"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", without_lock_id)
+
+    malformed_lock_id = copy.deepcopy(verdict)
+    malformed_lock_id["five_verdicts"][0]["verdict_id"] = "not an identifier"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", malformed_lock_id)
+
+    partial_best_current = copy.deepcopy(verdict)
+    partial_best_current["explanation_ranking"][-1]["rank"] = None
+    partial_best_current["partial_ranking_justification"] = (
+        "A best-current judgment cannot leave the ranking partial."
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", partial_best_current)
+
+    duplicate_total_rank = copy.deepcopy(verdict)
+    duplicate_total_rank["explanation_ranking"][-1]["rank"] = 1
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", duplicate_total_rank)
+
     coupled_basis = copy.deepcopy(verdict)
     coupled_basis["five_verdicts"][0]["basis_refs"] = ["MIXED-ROLE-1"]
     with pytest.raises(ValidationError):
@@ -3955,7 +4012,35 @@ def test_verdict_accepts_exact_non_decidability_instead_of_evasive_judgment() ->
         "missing_proposition": "Whether CHANNEL-1 is effective rather than nominal.",
         "missing_comparison_rule": None,
     }
+    verdict["partial_ranking_justification"] = (
+        "The frozen material ranks the first two explanations only."
+    )
+    verdict["explanation_ranking"][2]["rank"] = None
+    verdict["explanation_ranking"][3]["rank"] = None
     runtime.validate_instance("ultra-verdict.schema.json", verdict)
+
+    pseudo_total = copy.deepcopy(verdict)
+    pseudo_total["explanation_ranking"][2]["rank"] = 3
+    pseudo_total["explanation_ranking"][3]["rank"] = 4
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", pseudo_total)
+
+    unjustified_partial = copy.deepcopy(verdict)
+    unjustified_partial["partial_ranking_justification"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", unjustified_partial)
+
+    empty_partial_justification = copy.deepcopy(verdict)
+    empty_partial_justification["partial_ranking_justification"] = ""
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-verdict.schema.json", empty_partial_justification
+        )
+
+    gapped_partial = copy.deepcopy(verdict)
+    gapped_partial["explanation_ranking"][1]["rank"] = 3
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-verdict.schema.json", gapped_partial)
 
     evasive = copy.deepcopy(verdict)
     evasive["non_decidability"]["missing_proposition"] = None
@@ -3980,6 +4065,29 @@ def test_action_ranking_binds_verdict_and_compares_all_six_action_kinds() -> Non
     with pytest.raises(ValidationError):
         runtime.validate_instance("ultra-action-ranking.schema.json", no_verdict)
 
+    no_considered_locks = copy.deepcopy(ranking)
+    del no_considered_locks["considered_verdict_ids"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", no_considered_locks
+        )
+
+    duplicate_considered_lock = copy.deepcopy(ranking)
+    duplicate_considered_lock["considered_verdict_ids"][-1] = (
+        duplicate_considered_lock["considered_verdict_ids"][0]
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", duplicate_considered_lock
+        )
+
+    too_few_considered_locks = copy.deepcopy(ranking)
+    too_few_considered_locks["considered_verdict_ids"].pop()
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", too_few_considered_locks
+        )
+
     missing_option_kind = copy.deepcopy(ranking)
     missing_option_kind["options"].pop()
     with pytest.raises(ValidationError):
@@ -3992,6 +4100,34 @@ def test_action_ranking_binds_verdict_and_compares_all_six_action_kinds() -> Non
     with pytest.raises(ValidationError):
         runtime.validate_instance(
             "ultra-action-ranking.schema.json", coupled_to_verdict_kind
+        )
+
+    missing_authorization_lock = copy.deepcopy(ranking)
+    del missing_authorization_lock["options"][0]["authorization_verdict_id"]
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", missing_authorization_lock
+        )
+
+    authorized_without_lock = copy.deepcopy(ranking)
+    authorized_without_lock["options"][0]["authorization_verdict_id"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", authorized_without_lock
+        )
+
+    unauthorized = copy.deepcopy(ranking)
+    unauthorized["options"][0]["authorized"] = False
+    unauthorized["options"][0]["authorization_verdict_id"] = None
+    runtime.validate_instance("ultra-action-ranking.schema.json", unauthorized)
+
+    unauthorized_with_lock = copy.deepcopy(unauthorized)
+    unauthorized_with_lock["options"][0]["authorization_verdict_id"] = (
+        "VERDICT-AUTHORIZATION"
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-action-ranking.schema.json", unauthorized_with_lock
         )
 
 
@@ -4020,6 +4156,79 @@ def test_forecast_artifact_is_frozen_and_contains_no_resolution_records() -> Non
     with pytest.raises(ValidationError):
         runtime.validate_instance(
             "ultra-forecast-ledger.schema.json", rewritten_status
+        )
+
+
+def test_forecast_requires_executable_lock_indicator_window_and_predicate() -> None:
+    runtime = load_runtime()
+    ledger = copy.deepcopy(minimal_instances()["ultra-forecast-ledger.schema.json"])
+    runtime.validate_instance("ultra-forecast-ledger.schema.json", ledger)
+
+    for field in (
+        "prediction_verdict_id",
+        "indicator_id",
+        "window_start",
+        "window_end",
+        "resolution_predicate",
+    ):
+        broken = copy.deepcopy(ledger)
+        del broken["forecasts"][0][field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-forecast-ledger.schema.json", broken)
+
+    for field in (
+        "operator",
+        "baseline_value",
+        "target_value",
+        "tolerance",
+    ):
+        broken = copy.deepcopy(ledger)
+        del broken["forecasts"][0]["resolution_predicate"][field]
+        with pytest.raises(ValidationError):
+            runtime.validate_instance("ultra-forecast-ledger.schema.json", broken)
+
+    open_predicate = copy.deepcopy(ledger)
+    open_predicate["forecasts"][0]["resolution_predicate"]["caller_note"] = (
+        "This must not become executable authority."
+    )
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-forecast-ledger.schema.json", open_predicate)
+
+    branch_dependent = copy.deepcopy(ledger)
+    branch_dependent["forecasts"][0]["direction"] = "branch-dependent"
+    branch_dependent["forecasts"][0]["resolution_predicate"] = {
+        "operator": "branch-equals",
+        "baseline_value": None,
+        "target_value": "BRANCH-MAIN",
+        "tolerance": None,
+    }
+    runtime.validate_instance("ultra-forecast-ledger.schema.json", branch_dependent)
+
+    branch_with_numeric_target = copy.deepcopy(branch_dependent)
+    branch_with_numeric_target["forecasts"][0]["resolution_predicate"][
+        "target_value"
+    ] = 1
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-ledger.schema.json", branch_with_numeric_target
+        )
+
+    numeric_with_branch_operator = copy.deepcopy(ledger)
+    numeric_with_branch_operator["forecasts"][0]["resolution_predicate"][
+        "operator"
+    ] = "branch-equals"
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-ledger.schema.json", numeric_with_branch_operator
+        )
+
+    numeric_with_null_tolerance = copy.deepcopy(ledger)
+    numeric_with_null_tolerance["forecasts"][0]["resolution_predicate"][
+        "tolerance"
+    ] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-ledger.schema.json", numeric_with_null_tolerance
         )
 
 
@@ -4063,8 +4272,13 @@ def test_forecast_resolution_is_a_separate_later_u9_event_with_bounded_brier() -
     for field in (
         "forecast_ledger_artifact_sha256",
         "forecast_id",
+        "indicator_id",
         "original_forecast_record_sha256",
         "resolution_time",
+        "observation_time",
+        "indicator_resolved",
+        "direction_correct",
+        "time_window_covered",
         "outcome",
         "observed_value",
     ):
@@ -4081,6 +4295,13 @@ def test_forecast_resolution_is_a_separate_later_u9_event_with_bounded_brier() -
     scored["brier_score"] = 0.0729
     runtime.validate_instance("ultra-forecast-resolution-event.schema.json", scored)
 
+    wrong_binary_outcome = copy.deepcopy(scored)
+    wrong_binary_outcome["brier_inputs"]["binary_outcome"] = 0
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", wrong_binary_outcome
+        )
+
     forbidden_score = copy.deepcopy(scored)
     forbidden_score["original_probability_admissible"] = False
     with pytest.raises(ValidationError):
@@ -4094,6 +4315,61 @@ def test_forecast_resolution_is_a_separate_later_u9_event_with_bounded_brier() -
         runtime.validate_instance(
             "ultra-forecast-resolution-event.schema.json", partial_score
         )
+
+    partial = copy.deepcopy(scored)
+    partial["outcome"] = "partial"
+    partial["time_window_covered"] = False
+    partial["brier_inputs"]["binary_outcome"] = 0
+    partial["brier_score"] = 0.5329
+    runtime.validate_instance("ultra-forecast-resolution-event.schema.json", partial)
+
+    partial_inside_window = copy.deepcopy(partial)
+    partial_inside_window["time_window_covered"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", partial_inside_window
+        )
+
+    incorrect = copy.deepcopy(partial)
+    incorrect["outcome"] = "incorrect"
+    incorrect["direction_correct"] = False
+    runtime.validate_instance("ultra-forecast-resolution-event.schema.json", incorrect)
+
+    incorrect_with_correct_direction = copy.deepcopy(incorrect)
+    incorrect_with_correct_direction["direction_correct"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json",
+            incorrect_with_correct_direction,
+        )
+
+    unresolved = copy.deepcopy(resolution)
+    unresolved["indicator_resolved"] = False
+    unresolved["direction_correct"] = None
+    unresolved["observed_value"] = None
+    unresolved["outcome"] = "indeterminate"
+    runtime.validate_instance("ultra-forecast-resolution-event.schema.json", unresolved)
+
+    unresolved_with_observation = copy.deepcopy(unresolved)
+    unresolved_with_observation["observed_value"] = 12
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", unresolved_with_observation
+        )
+
+    resolved_without_observation = copy.deepcopy(resolution)
+    resolved_without_observation["observed_value"] = None
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(
+            "ultra-forecast-resolution-event.schema.json", resolved_without_observation
+        )
+
+    indeterminate_admissible_original = copy.deepcopy(unresolved)
+    indeterminate_admissible_original["original_probability_admissible"] = True
+    runtime.validate_instance(
+        "ultra-forecast-resolution-event.schema.json",
+        indeterminate_admissible_original,
+    )
 
 
 def test_framework_gap_is_u10_only_true_isolated_and_bound_to_current_run() -> None:

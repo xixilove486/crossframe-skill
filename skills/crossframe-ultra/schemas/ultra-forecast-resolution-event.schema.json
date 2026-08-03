@@ -11,8 +11,13 @@
         "resolution_event_id",
         "forecast_ledger_artifact_sha256",
         "forecast_id",
+        "indicator_id",
         "original_forecast_record_sha256",
         "resolution_time",
+        "observation_time",
+        "indicator_resolved",
+        "direction_correct",
+        "time_window_covered",
         "outcome",
         "observed_value",
         "original_probability_admissible",
@@ -25,10 +30,15 @@
         "resolution_event_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "forecast_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "forecast_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "indicator_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "original_forecast_record_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "resolution_time": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "observation_time": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "indicator_resolved": {"type": "boolean"},
+        "direction_correct": {"type": ["boolean", "null"]},
+        "time_window_covered": {"type": "boolean"},
         "outcome": {"enum": ["correct", "incorrect", "indeterminate", "partial"]},
-        "observed_value": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "observed_value": {"type": ["number", "string", "null"]},
         "original_probability_admissible": {"type": "boolean"},
         "brier_inputs": {
           "oneOf": [
@@ -45,31 +55,90 @@
       },
       "allOf": [
         {
+          "oneOf": [
+            {
+              "properties": {
+                "indicator_resolved": {"const": false},
+                "direction_correct": {"type": "null"},
+                "observed_value": {"type": "null"},
+                "outcome": {"const": "indeterminate"}
+              }
+            },
+            {
+              "properties": {
+                "indicator_resolved": {"const": true},
+                "direction_correct": {"const": true},
+                "time_window_covered": {"const": true},
+                "observed_value": {"not": {"type": "null"}},
+                "outcome": {"const": "correct"}
+              }
+            },
+            {
+              "properties": {
+                "indicator_resolved": {"const": true},
+                "direction_correct": {"const": true},
+                "time_window_covered": {"const": false},
+                "observed_value": {"not": {"type": "null"}},
+                "outcome": {"const": "partial"}
+              }
+            },
+            {
+              "properties": {
+                "indicator_resolved": {"const": true},
+                "direction_correct": {"const": false},
+                "observed_value": {"not": {"type": "null"}},
+                "outcome": {"const": "incorrect"}
+              }
+            }
+          ]
+        },
+        {
           "if": {
-            "properties": {"original_probability_admissible": {"const": false}},
-            "required": ["original_probability_admissible"]
+            "properties": {
+              "original_probability_admissible": {"const": true},
+              "outcome": {"enum": ["correct", "incorrect", "partial"]}
+            },
+            "required": ["original_probability_admissible", "outcome"]
           },
           "then": {
+            "properties": {
+              "brier_inputs": {"$ref": "#/$defs/brierInputs"},
+              "brier_score": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          },
+          "else": {
             "properties": {
               "brier_inputs": {"type": "null"},
               "brier_score": {"type": "null"}
             }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "original_probability_admissible": {"const": true},
+              "outcome": {"const": "correct"}
+            },
+            "required": ["original_probability_admissible", "outcome"]
           },
-          "else": {
-            "oneOf": [
-              {
-                "properties": {
-                  "brier_inputs": {"type": "null"},
-                  "brier_score": {"type": "null"}
-                }
-              },
-              {
-                "properties": {
-                  "brier_inputs": {"$ref": "#/$defs/brierInputs"},
-                  "brier_score": {"type": "number", "minimum": 0, "maximum": 1}
-                }
-              }
-            ]
+          "then": {
+            "properties": {
+              "brier_inputs": {"$ref": "#/$defs/correctBrierInputs"}
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "original_probability_admissible": {"const": true},
+              "outcome": {"enum": ["incorrect", "partial"]}
+            },
+            "required": ["original_probability_admissible", "outcome"]
+          },
+          "then": {
+            "properties": {
+              "brier_inputs": {"$ref": "#/$defs/incorrectBrierInputs"}
+            }
           }
         }
       ]
@@ -85,6 +154,24 @@
         "probability": {"type": "number", "minimum": 0, "maximum": 1},
         "binary_outcome": {"enum": [0, 1]}
       }
+    },
+    "correctBrierInputs": {
+      "allOf": [
+        {"$ref": "#/$defs/brierInputs"},
+        {
+          "type": "object",
+          "properties": {"binary_outcome": {"const": 1}}
+        }
+      ]
+    },
+    "incorrectBrierInputs": {
+      "allOf": [
+        {"$ref": "#/$defs/brierInputs"},
+        {
+          "type": "object",
+          "properties": {"binary_outcome": {"const": 0}}
+        }
+      ]
     }
   }
 }

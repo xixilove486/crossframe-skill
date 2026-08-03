@@ -34,10 +34,15 @@
       "additionalProperties": false,
       "required": [
         "forecast_id",
+        "prediction_verdict_id",
         "direction",
         "time_window",
         "indicator",
+        "indicator_id",
+        "window_start",
+        "window_end",
         "resolution_rule",
+        "resolution_predicate",
         "evidence_cutoff",
         "branch_refs",
         "node_refs",
@@ -45,10 +50,15 @@
       ],
       "properties": {
         "forecast_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "prediction_verdict_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "direction": {"enum": ["increase", "decrease", "stable", "threshold-crossing", "branch-dependent"]},
         "time_window": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "indicator": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "indicator_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "window_start": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "window_end": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "resolution_rule": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "resolution_predicate": {"$ref": "#/$defs/resolutionPredicate"},
         "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "branch_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
         "node_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
@@ -76,6 +86,78 @@
             "calibration_basis",
             "probability_admissible"
           ]
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {"direction": {"const": "branch-dependent"}},
+            "required": ["direction"]
+          },
+          "then": {
+            "properties": {
+              "resolution_predicate": {"$ref": "#/$defs/branchPredicate"}
+            }
+          },
+          "else": {
+            "properties": {
+              "resolution_predicate": {"$ref": "#/$defs/numericPredicate"}
+            }
+          }
+        }
+      ]
+    },
+    "resolutionPredicate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator",
+        "baseline_value",
+        "target_value",
+        "tolerance"
+      ],
+      "properties": {
+        "operator": {"enum": ["gt", "gte", "lt", "lte", "eq", "neq", "within", "branch-equals"]},
+        "baseline_value": {"type": ["number", "null"]},
+        "target_value": {
+          "oneOf": [
+            {"type": "number"},
+            {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+          ]
+        },
+        "tolerance": {
+          "oneOf": [
+            {"type": "number", "minimum": 0},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "branchPredicate": {
+      "allOf": [
+        {"$ref": "#/$defs/resolutionPredicate"},
+        {
+          "type": "object",
+          "properties": {
+            "operator": {"const": "branch-equals"},
+            "baseline_value": {"type": "null"},
+            "target_value": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+            "tolerance": {"type": "null"}
+          }
+        }
+      ]
+    },
+    "numericPredicate": {
+      "allOf": [
+        {"$ref": "#/$defs/resolutionPredicate"},
+        {
+          "type": "object",
+          "properties": {
+            "operator": {"enum": ["gt", "gte", "lt", "lte", "eq", "neq", "within"]},
+            "baseline_value": {"type": "number"},
+            "target_value": {"type": "number"},
+            "tolerance": {"type": "number", "minimum": 0}
+          }
         }
       ]
     }

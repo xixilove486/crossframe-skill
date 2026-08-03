@@ -9,6 +9,7 @@
       "type": "object",
       "required": [
         "verdict_artifact_sha256",
+        "considered_verdict_ids",
         "requested_choice",
         "options",
         "ranking",
@@ -22,6 +23,12 @@
         "schema_id": {"const": "crossframe.ultra.v82.action-ranking"},
         "phase_id": {"const": "U9"},
         "verdict_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "considered_verdict_ids": {
+          "allOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+            {"minItems": 5, "maxItems": 5}
+          ]
+        },
         "requested_choice": {"type": "boolean"},
         "options": {
           "type": "array",
@@ -61,6 +68,7 @@
         "kind",
         "description",
         "authorized",
+        "authorization_verdict_id",
         "benefits",
         "harms",
         "requirements",
@@ -71,11 +79,35 @@
         "kind": {"enum": ["active", "delay", "probe", "exit-or-transfer", "maintain-status-quo", "no-action"]},
         "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "authorized": {"type": "boolean"},
+        "authorization_verdict_id": {
+          "oneOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+            {"type": "null"}
+          ]
+        },
         "benefits": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
         "harms": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
         "requirements": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
         "rollback": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"authorized": {"const": true}},
+            "required": ["authorized"]
+          },
+          "then": {
+            "properties": {
+              "authorization_verdict_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+            }
+          },
+          "else": {
+            "properties": {
+              "authorization_verdict_id": {"type": "null"}
+            }
+          }
+        }
+      ]
     }
   }
 }

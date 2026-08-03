@@ -1306,9 +1306,13 @@ Each U7 recursive-state artifact records run/path/node and parent run/path/node 
 
 The U8 order-evaluation artifact is constructed next. It requires those branch classes or a structured not-applicable record for each order, compares the simple baseline on explanation gain, forecast gain, added assumptions, added losses, local predictability, and continuation value, and records only the frozen stop kinds. Only after that artifact is sealed may the red-team report bind it and record challenges, sensitivity checks, simple-baseline comparisons, unresolved items, and overall status without changing upstream evidence identity.
 
-The U9 verdict is constructed and sealed first, preserving either a best-current judgment or exact non-decidability and keeping fact, prediction, value, responsibility, and authorization verdicts independent. Action ranking and forecast production are downstream consumers of that sealed verdict. Action ranking remains independent from the five verdict kinds and retains active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action options, preferred and second choices, switch and stop conditions, rollback, and no-action consequences.
+The U9 verdict is constructed and sealed first, preserving either a best-current judgment or exact non-decidability and keeping fact, prediction, value, responsibility, and authorization verdicts independent. Every kind verdict has its own required `verdict_id`. The top-level `partial_ranking_justification` is always present: best-current requires it to be null and requires the unique total ranks 1 through 4; non-decidability requires a non-empty justification, a unique continuous non-null prefix 1 through k where 1 <= k < 4, and null for every remaining rank. The schema enforces the available structural cases, while Task 10B rechecks continuity and set equality, ensures all five verdict IDs are mutually distinct and disjoint from every other identity domain, and does not infer authority from a caller-authored ID.
 
-The U9 forecast artifact contains only frozen original forecast records: direction, time window, indicator, resolution rule, evidence cutoff, branch/node refs, status, and optional probability only when reference class, calibration basis, and admissibility are present. It contains no mutable or nested resolution record. No resolution event is emitted while the original forecast is being sealed. After an outcome is available, a separate append-only forecast-resolution event binds the originating U9 forecast artifact hash, forecast ID, original forecast record hash, resolution time, outcome, and observed value. Brier inputs/results are permitted only when the original probability was admissible. The event retains U9 ownership while its timestamp records the later resolution.
+Action ranking and forecast production are downstream consumers of that sealed verdict. Action ranking remains independent from the five verdict kinds and retains active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action options, preferred and second choices, switch and stop conditions, rollback, and no-action consequences. Its required `considered_verdict_ids` contains exactly five unique identifiers. Every option has a required nullable `authorization_verdict_id`: an authorized option requires an identifier and an unauthorized option requires null. Task 10B verifies that the considered set equals the five bound verdict lock IDs, resolves every non-null authorization reference to the authorization lock, and rejects prediction or responsibility locks presented as permission. Action ranking adds no public API.
+
+The U9 forecast artifact contains only frozen original forecast records. It retains the prose `time_window`, `indicator`, and `resolution_rule`, and also requires `prediction_verdict_id`, `indicator_id`, `window_start`, `window_end`, and a closed `resolution_predicate`. The predicate records `operator`, `baseline_value`, `target_value`, and non-negative nullable `tolerance`; operators are exactly `gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `within`, and `branch-equals`. A branch-dependent forecast requires `branch-equals`, null baseline, an identifier target, and null tolerance. Every other direction forbids `branch-equals` and requires numeric baseline, target, and tolerance. Task 10B additionally verifies `evidence_cutoff <= window_start <= window_end`, exact direction/operator compatibility, that `prediction_verdict_id` resolves to the prediction lock, and that a branch-equals target belongs to `branch_refs`.
+
+The forecast ledger contains no mutable or nested resolution record, and no resolution event is emitted while an original is sealed. After an outcome is available, a separate append-only forecast-resolution event binds the originating U9 forecast artifact hash, forecast ID, matching `indicator_id`, original forecast record hash, resolution time, observation time, indicator resolution, direction correctness, time-window coverage, outcome, and observed value. The outcome mapping is exact: `correct` means resolved with correct direction inside the window; `partial` means resolved with correct direction outside the window; `incorrect` means resolved with incorrect direction; and `indeterminate` means unresolved. Unresolved events require null observed value and direction correctness; resolved events require a non-null observed value and a boolean direction result. Task 10B recomputes these fields from the immutable original and rejects caller mismatch. Brier fields exist only when the original probability was admissible and the outcome is binary-resolvable; the binary outcome is 1 only for correct and 0 for incorrect or partial, the score is `(p - y) ** 2`, and indeterminate events are never scored. The event retains U9 ownership while its timestamps record the later observation and resolution.
 
 The framework-gap ledger is U10-owned, requires `isolated_from_current_reasoning` to be true, and binds every current-run artifact it cites. A candidate may propose a future document revision but cannot appear as current U6 mechanism support, U9 verdict reason, or U9 action authorization.
 
@@ -1585,7 +1589,7 @@ Test these exact failures:
 - responsibility used as authorization;
 - prediction used as permission.
 
-The low-evidence valid fixture must choose a best-current judgment, mark low confidence, name assumptions, and state what would reverse it. Fact, prediction, value, responsibility, and authorization verdicts remain independently sealed.
+The low-evidence valid fixture must choose a best-current judgment, mark low confidence, name assumptions, and state what would reverse it. Fact, prediction, value, responsibility, and authorization verdicts remain independently sealed and each carries a unique `verdict_id`. Best-current uses a total unique 1-through-4 explanation ranking with null `partial_ranking_justification`. Exact non-decidability uses a non-empty justification and only a unique continuous ranked prefix 1 through k, where 1 <= k < 4; every remaining rank is null. Runtime validation must recheck those rank and lock-ID sets and keep all five IDs disjoint from other identity domains.
 
 - [ ] **Step 2: Observe verdict RED**
 
@@ -1613,7 +1617,7 @@ python -B -m pytest -q tests/test_ultra_judgment.py
 
 - [ ] **Step 5: Write action-ranking and U10 isolation RED tests**
 
-Action ranking binds the sealed verdict, remains independent of the five verdict kinds, compares active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action, and records preferred and second choices, switch and stop conditions, rollback, and no-action consequences. Preserve the existing failure for no recommendation despite a direct choice request.
+Action ranking binds the sealed verdict, remains independent of the five verdict kinds, compares active, delay, probe, exit-or-transfer, maintain-status-quo, and no-action, and records preferred and second choices, switch and stop conditions, rollback, and no-action consequences. It must carry exactly the five bound lock IDs in `considered_verdict_ids`. Every option carries `authorization_verdict_id`, which is an authorization-lock identifier exactly when `authorized` is true and otherwise is null. Runtime validation resolves the reference to kind authorization and rejects a prediction or responsibility lock presented as permission. Preserve the existing failure for no recommendation despite a direct choice request.
 
 Also test U10 framework-gap isolation: a gap candidate may cite bound current-run artifacts and propose a future document revision, but `isolated_from_current_reasoning` must be true and its ID cannot appear in canonical concept IDs, current U6 mechanism support, U9 verdict reasons, or U9 action authorization.
 
@@ -1646,9 +1650,9 @@ python -B -m pytest -q tests/test_ultra_judgment.py
 
 - [ ] **Step 9: Write immutable-forecast and later-resolution-event RED tests**
 
-Every original forecast contains direction, time window, indicator, resolution rule, evidence cutoff, branch/node refs, and status. Numeric probability is accepted only with a declared reference class, data/calibration basis, and admissibility result. The forecast ledger binds the sealed verdict, contains frozen originals only, and rejects a nested or mutable resolution record.
+Every original forecast retains direction, prose time window, prose indicator, prose resolution rule, evidence cutoff, branch/node refs, and status. It also requires `prediction_verdict_id`, `indicator_id`, `window_start`, `window_end`, and a closed `resolution_predicate` with operator, baseline value, target value, and tolerance. Branch-dependent forecasts use only `branch-equals`, null baseline, an identifier target, and null tolerance; all other directions forbid `branch-equals` and use numeric baseline, target, and non-negative tolerance. Runtime validation resolves the prediction lock, checks `evidence_cutoff <= window_start <= window_end`, enforces direction/operator compatibility, and requires every branch-equals target to belong to `branch_refs`. Numeric probability is accepted only with a declared reference class, data/calibration basis, and admissibility result. The forecast ledger binds the sealed verdict, contains frozen originals only, and rejects a nested or mutable resolution record.
 
-A resolution is accepted only later as a separate append-only event that binds the originating U9 forecast artifact hash, forecast ID, original forecast record hash, resolution time, outcome, and observed value. It retains U9 phase ownership even though its event timestamp is later. Brier input/result fields are rejected unless the original probability was admissible.
+A resolution is accepted only later as a separate append-only event that binds the originating U9 forecast artifact hash, forecast ID, matching indicator ID, original forecast record hash, resolution time, observation time, indicator-resolved state, direction correctness, time-window coverage, outcome, and observed value. It retains U9 phase ownership even though its event timestamps are later. Correct means resolved, direction-correct, and inside the time window; partial means resolved and direction-correct but outside the time window; incorrect means resolved and direction-incorrect; indeterminate means unresolved. Runtime validation recomputes every result and rejects a caller mismatch. Brier fields exist only when the immutable original probability was admissible and the outcome is binary-resolvable: y is 1 only for correct, 0 for incorrect or partial, and the score is `(p - y) ** 2`; indeterminate events are unscored.
 
 ~~~python
 def test_probability_without_calibration_is_rejected():
@@ -1658,7 +1662,9 @@ def test_probability_without_calibration_is_rejected():
 def test_resolution_appends_without_rewriting_prediction():
     before = canonical_json_bytes(forecast)
     append_resolution(ledger_path, resolution)
-    assert canonical_json_bytes(load_original_forecast(ledger_path)) == before
+    assert canonical_json_bytes(
+        load_original_forecast(ledger_path, forecast["forecast_id"])
+    ) == before
 ~~~
 
 - [ ] **Step 10: Observe forecast RED**
@@ -1669,7 +1675,15 @@ python -B -m pytest -q tests/test_ultra_forecast.py
 
 - [ ] **Step 11: Implement immutable forecasts and separate later resolution events**
 
-`forecast.py` validates forecast admission and freezes original records only after the sealed verdict authority matches. Retain the already-planned `append_resolution` behavior: it writes a distinct schema-validated forecast-resolution event and never rewrites or nests data in the originating forecast artifact. Direction correctness, time-window coverage, indicator resolution, and Brier score are computed from the immutable original plus the separately validated event; Brier scoring runs only when the original probability was admissible. Do not add another public entry point.
+`forecast.py` validates forecast admission and freezes original records only after the sealed verdict authority matches. Its complete public surface is exactly:
+
+~~~text
+validate_forecast(forecast: Mapping[str, object]) -> None
+load_original_forecast(ledger_path: Path, forecast_id: str) -> dict[str, object]
+append_resolution(ledger_path: Path, resolution: Mapping[str, object]) -> None
+~~~
+
+The resolution sidecar path is derived only as `ledger_path.with_name(f"{ledger_path.stem}.resolution-events.jsonl")`. `append_resolution` uses the existing `append_jsonl_locked`, writes a distinct schema-validated event, and leaves every byte of the original ledger unchanged. Because a ledger may contain multiple original records, `load_original_forecast` always requires `forecast_id`. Direction correctness, time-window coverage, indicator resolution, outcome, and Brier score are recomputed from that immutable original plus the separately validated event; the resolution `indicator_id` must equal the original forecast indicator, Brier scoring runs only when the original probability was admissible and the outcome is binary-resolvable, and indeterminate events are never scored. Do not add another forecast entry point. Action ranking adds no public API, and `validate_verdict_bundle(verdict: Mapping[str, object], evidence: Mapping[str, object], lineage: Mapping[str, object]) -> None` remains unchanged.
 
 - [ ] **Step 12: Run the complete Task 10B GREEN suite**
 
