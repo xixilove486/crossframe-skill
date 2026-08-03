@@ -23,10 +23,12 @@ from .constants import (
     FRAMEWORK_REVISION,
     FRAMEWORK_SEMANTIC_SHA256,
     FRAMEWORK_VERSION,
+    PHASES,
     RUNTIME_VERSION,
     VALIDATOR_VERSION,
 )
 from .evidence import EvidenceArtifactSeal, EvidenceFrozenError, EvidenceLedger
+from .jsonio import load_json_object
 from .paths import (
     PRODUCTION_ROOT,
     RunLayout,
@@ -35,9 +37,9 @@ from .paths import (
     assert_safe_descendant,
     build_run_layout,
 )
-from .schemas import validate_instance
+from .schemas import validate_instance, validate_phase_artifact
 
-PHASE_ORDER = ("U0", "U1", "U2", "U3")
+PHASE_ORDER = PHASES
 PHASE_EVENT_SCHEMA_ID = "crossframe.ultra.v82.phase-event"
 RUN_CONTRACT_SCHEMA_ID = "crossframe.ultra.v82.run-contract"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -89,6 +91,21 @@ _VERSION_BINDING_FIELDS = frozenset(
         "article_contract_version",
         "source_tree_sha256",
     }
+)
+_LATE_PHASE_OUTPUT_COUNTS = {
+    "U4": 1,
+    "U5": 2,
+    "U6": 1,
+    "U8": 2,
+    "U9": 3,
+    "U10": 2,
+    "U11": 5,
+    "U12": 5,
+}
+_FINAL_DELIVERY_FILENAMES = (
+    "CrossFrame-Ultra-完整文章.md",
+    "完整推演档案.md",
+    "工件索引.md",
 )
 _CURRENT_VERSION_BINDING = {
     "framework_version": FRAMEWORK_VERSION,
@@ -533,7 +550,7 @@ def _validate_invalidated_phases(
     if len(snapshot) != len(set(snapshot)):
         raise PhaseIntegrityError("invalidated phases contain duplicates")
     if phase_id not in PHASE_ORDER:
-        raise PhaseIntegrityError("phase_id is outside U0-U3")
+        raise PhaseIntegrityError("phase_id is outside U0-U12")
     current_index = PHASE_ORDER.index(phase_id)
     if any(
         phase not in PHASE_ORDER or PHASE_ORDER.index(phase) <= current_index
@@ -543,8 +560,37 @@ def _validate_invalidated_phases(
     return snapshot
 
 
+def _validate_phase_output_contract(
+    phase_id: str, outputs: tuple[str, ...]
+) -> None:
+    if phase_id == "U7":
+        if len(outputs) < 2:
+            raise PhaseIntegrityError(
+                "U7 output order requires at least one recursive state and the lineage"
+            )
+        return
+    expected = _LATE_PHASE_OUTPUT_COUNTS.get(phase_id)
+    if expected is not None and len(outputs) != expected:
+        raise PhaseIntegrityError(
+            f"{phase_id} output contract requires exactly {expected} artifact hashes"
+        )
+
+
+def _sha256_file(path: Path) -> str:
+    try:
+        if not path.is_file():
+            raise PhaseIntegrityError(f"required U12 artifact is missing: {path.name}")
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except PhaseIntegrityError:
+        raise
+    except OSError as error:
+        raise PhaseIntegrityError(
+            f"required U12 artifact cannot be read: {path.name}"
+        ) from error
+
+
 class PhaseStore:
-    """In-memory U0-U3 append-only event chain with immutable run bindings."""
+    """In-memory U0-U12 append-only event chain with immutable run bindings."""
 
     def __init__(
         self,
@@ -913,6 +959,20 @@ class PhaseStore:
             raise PhaseTransitionError(
                 f"expected phase {expected!r}, received {phase_id!r}"
             )
+        status_path = self._run_layout.run_dir / "run-status.json"
+        if status_path.exists():
+            from .status import RunStatusStore
+
+            try:
+                status = RunStatusStore(self._run_layout).read()
+            except Exception as error:
+                raise PhaseIntegrityError("run status authority is invalid") from error
+            if status.status in {"cancelled", "failed"} or (
+                status.status == "complete" and phase_id != "U12"
+            ):
+                raise PhaseTransitionError(
+                    f"run is terminal on disk with status {status.status}"
+                )
 
     def _check_bindings(
         self,
@@ -1007,6 +1067,139 @@ class PhaseStore:
             self._completed.append(str(snapshot["phase_id"]))
         return copy.deepcopy(snapshot)
 
+    def _verify_u12_completion(
+        self,
+        outputs: tuple[str, ...],
+        *,
+        parent_event_sha256: str,
+    ) -> None:
+        manifest_path = self._run_layout.artifacts_dir / "ultra-artifact-manifest.json"
+        report_path = (
+            self._run_layout.validation_current_dir / "ultra-validator-report.json"
+        )
+        delivery_paths = tuple(
+            self._run_layout.delivery_dir / filename
+            for filename in _FINAL_DELIVERY_FILENAMES
+        )
+        for path in (manifest_path, report_path, *delivery_paths):
+            try:
+                assert_safe_descendant(self._run_layout.root, path)
+            except (OSError, TypeError, ValueError) as error:
+                raise PhaseIntegrityError("U12 artifact path authority is invalid") from error
+
+        manifest_file_sha256 = _sha256_file(manifest_path)
+        report_file_sha256 = _sha256_file(report_path)
+        delivery_hashes = tuple(_sha256_file(path) for path in delivery_paths)
+        expected_outputs = (
+            manifest_file_sha256,
+            report_file_sha256,
+            *delivery_hashes,
+        )
+        if outputs != expected_outputs:
+            raise PhaseIntegrityError(
+                "U12 output hashes differ from the manifest, report, or official delivery bytes"
+            )
+
+        try:
+            manifest = validate_phase_artifact(
+                "ultra-artifact-manifest.schema.json",
+                load_json_object(manifest_path),
+                expected_schema_id="crossframe.ultra.v82.artifact-manifest",
+                expected_run_id=self.run_id,
+                expected_version_binding=self._version_binding,
+                expected_phase_id="U12",
+            )
+            report = validate_phase_artifact(
+                "ultra-validator-report.schema.json",
+                load_json_object(report_path),
+                expected_schema_id="crossframe.ultra.v82.validator-report",
+                expected_run_id=self.run_id,
+                expected_version_binding=self._version_binding,
+                expected_phase_id="U12",
+            )
+        except Exception as error:
+            raise PhaseIntegrityError(
+                "U12 manifest or post-publish validator authority is invalid"
+            ) from error
+
+        if (
+            manifest.get("phase_chain_head_sha256") != parent_event_sha256
+            or manifest.get("official_delivery_published") is not True
+        ):
+            raise PhaseIntegrityError(
+                "U12 manifest does not bind the U11 chain head and official publication"
+            )
+        expected_delivery = {
+            path.relative_to(self._run_layout.run_dir).as_posix(): digest
+            for path, digest in zip(delivery_paths, delivery_hashes)
+        }
+        manifest_delivery = manifest.get("delivery_artifacts")
+        if not isinstance(manifest_delivery, list):
+            raise PhaseIntegrityError("U12 manifest delivery authority is missing")
+        observed_delivery: dict[str, str] = {}
+        for item in manifest_delivery:
+            if not isinstance(item, Mapping):
+                raise PhaseIntegrityError("U12 manifest delivery authority is invalid")
+            path = item.get("path")
+            digest = item.get("sha256")
+            if not isinstance(path, str) or not isinstance(digest, str):
+                raise PhaseIntegrityError("U12 manifest delivery authority is invalid")
+            if path in observed_delivery:
+                raise PhaseIntegrityError("U12 manifest repeats an official delivery path")
+            observed_delivery[path] = digest
+        if observed_delivery != expected_delivery:
+            raise PhaseIntegrityError(
+                "U12 manifest official delivery hashes differ from disk"
+            )
+
+        checks = report.get("checks")
+        if (
+            report.get("manifest_sha256") != manifest_file_sha256
+            or report.get("validator_set_sha256")
+            != manifest.get("validator_set_sha256")
+            or report.get("overall_status") != "pass"
+            or report.get("fresh_context") is not True
+            or not isinstance(checks, list)
+            or not checks
+            or any(
+                not isinstance(check, Mapping)
+                or check.get("status") != "pass"
+                or check.get("error_codes") != []
+                for check in checks
+            )
+        ):
+            raise PhaseIntegrityError(
+                "U12 requires a fresh successful post-publish validator report"
+            )
+        try:
+            manifest_time = _parse_timestamp(
+                manifest.get("generated_at"), error_type=PhaseIntegrityError
+            )
+            validated_time = _parse_timestamp(
+                report.get("validated_at"), error_type=PhaseIntegrityError
+            )
+        except PhaseIntegrityError:
+            raise
+        if validated_time < manifest_time:
+            raise PhaseIntegrityError("U12 validator report predates the published manifest")
+
+        from .status import RunStatusStore
+
+        try:
+            status = RunStatusStore(self._run_layout).read()
+        except Exception as error:
+            raise PhaseIntegrityError("U12 run status authority is unavailable") from error
+        if (
+            status.status != "complete"
+            or status.current_phase != "U12"
+            or status.last_complete_phase != "U12"
+            or status.validation_passed is not True
+            or status.tools_allowed is not False
+        ):
+            raise PhaseIntegrityError(
+                "U12 completion requires terminal validated status with tools disabled"
+            )
+
     def complete(
         self,
         phase_id: str,
@@ -1032,6 +1225,7 @@ class PhaseStore:
             evidence_cutoff=evidence_cutoff,
         )
         outputs = _validate_hashes(artifact_hashes, field="artifact_hashes")
+        _validate_phase_output_contract(phase_id, outputs)
         if phase_id == "U0":
             u0 = _verify_u0_authority(self._u0_authority)
             if (
@@ -1170,6 +1364,11 @@ class PhaseStore:
                 self._evidence_ledger.freeze()
             except EvidenceValidationError as error:
                 raise PhaseIntegrityError("U3 evidence ledger cannot be frozen") from error
+        elif phase_id == "U12":
+            self._verify_u12_completion(
+                outputs,
+                parent_event_sha256=parent,
+            )
         event = self._make_event(
             phase_id=phase_id,
             event_type="phase-completed",
@@ -1321,12 +1520,19 @@ class PhaseStore:
             _validate_invalidated_phases(phase_id, raw_invalidated)
         else:
             raise PhaseIntegrityError("replayed event status is invalid")
-        if phase_id != "U0" and status == "complete":
+        if phase_id in {"U1", "U2", "U3"} and status == "complete":
             raise PhaseIntegrityError(
                 "replayed U1-U3 completion requires external sealed authority"
             )
         if phase_id == "U0" and status == "complete" and outputs != (self._run_contract_sha256,):
             raise PhaseIntegrityError("replayed U0 does not bind the run contract")
+        if status == "complete":
+            _validate_phase_output_contract(phase_id, outputs)
+            if phase_id == "U12":
+                self._verify_u12_completion(
+                    outputs,
+                    parent_event_sha256=expected_parent,
+                )
         appended = self._append_event(snapshot)
         if status in {"failed", "blocked", "cancelled"}:
             self._terminal = True
@@ -1387,39 +1593,9 @@ class PhaseStore:
             self._evidence_cutoff, error_type=PhaseIntegrityError
         ):
             raise PhaseIntegrityError("fork requires a strictly later evidence cutoff")
-        contract_artifact = _thaw(self._run_contract)
-        assert isinstance(contract_artifact, dict)
-        contract = {
-            field: copy.deepcopy(contract_artifact[field])
-            for field in _RUN_CONTRACT_FIELDS
-        }
-        contract["evidence_cutoff"] = next_cutoff
-        mode = RunMode(str(contract["run_mode"]))
-        policy = (
-            RootPolicy(self._run_layout.root, self._run_layout.root.parent / "test-control")
-            if mode is RunMode.PRODUCTION
-            else RootPolicy(PRODUCTION_ROOT, self._run_layout.root)
+        raise PhaseIntegrityError(
+            "changed evidence cutoff requires a new start run with migration association"
         )
-        forked_layout = build_run_layout(mode, run_id, policy)
-        forked = PhaseStore(
-            run_id=run_id,
-            version_binding=self._version_binding,
-            source_sha256=self._source_sha256,
-            input_artifact_hashes=self._input_artifact_hashes,
-            input_snapshot_sha256=self._input_snapshot_sha256,
-            evidence_cutoff=next_cutoff,
-            now=datetime.fromisoformat(self._timestamp.replace("Z", "+00:00")),
-            run_contract=contract,
-            capability_availability=_thaw(self._capability_availability),
-            source_repository=self._source_repository,
-            u1_prerequisite_measurement=self._u1_prerequisite_measurement,
-            run_layout=forked_layout,
-        )
-        for entry in self._evidence_ledger.entries:
-            forked._evidence_ledger.append(entry)
-        for unknown in self._evidence_ledger.unknowns:
-            forked._evidence_ledger.append_unknown(unknown)
-        return forked
 
 
 __all__ = (

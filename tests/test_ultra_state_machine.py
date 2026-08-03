@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -955,14 +955,11 @@ def test_post_u3_evidence_requires_new_run_and_strictly_later_cutoff(u1_authorit
         store.fork_run(RUN_ID, evidence_cutoff="2026-08-03T00:00:00Z")
     with pytest.raises(module.PhaseIntegrityError, match="cutoff"):
         store.fork_run("20260803T000000Z-7c90bf53d144", evidence_cutoff=STAMP)
-    fork = store.fork_run(
-        "20260803T000000Z-7c90bf53d144",
-        evidence_cutoff="2026-08-03T00:00:00Z",
-    )
-    assert fork.run_id == "20260803T000000Z-7c90bf53d144"
-    assert fork.evidence_cutoff == "2026-08-03T00:00:00Z"
-    assert not fork.evidence_frozen
-    assert fork.evidence_unknowns == store.evidence_unknowns
+    with pytest.raises(module.PhaseIntegrityError, match="start"):
+        store.fork_run(
+            "20260803T000000Z-7c90bf53d144",
+            evidence_cutoff="2026-08-03T00:00:00Z",
+        )
 
 
 def test_fork_is_rejected_before_successfully_frozen_u3(u1_authority):
@@ -1012,3 +1009,220 @@ def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
             capability_availability={"retrieval": "available"},
             run_layout=_AUTHORITY_LAYOUT,
         )
+
+
+def _late_phase_hash(label: str) -> str:
+    return hashlib.sha256(label.encode("utf-8")).hexdigest()
+
+
+_LATE_PHASE_OUTPUTS = {
+    "U4": ("world-volume",),
+    "U5": ("transformation-ledger", "concept-disposition"),
+    "U6": ("claim-mechanism-graph",),
+    "U7": ("recursive-state-node-1", "recursive-state-node-2", "recursive-lineage"),
+    "U8": ("order-evaluation", "red-team-report"),
+    "U9": ("verdict", "action-ranking", "forecast-ledger"),
+    "U10": ("framework-gap-ledger", "output-plan"),
+    "U11": (
+        "semantic-coverage",
+        "article-review",
+        "article-partial",
+        "dossier",
+        "artifact-index",
+    ),
+}
+
+
+def _complete_through_u11(store, authority) -> None:
+    _complete_u0_u1(store, authority)
+    _complete_u2(store)
+    _complete_u3(store)
+    for phase_id, labels in _LATE_PHASE_OUTPUTS.items():
+        parent = store.events[-1]["event_sha256"]
+        outputs = tuple(_late_phase_hash(label) for label in labels)
+        event = store.complete(
+            phase_id,
+            artifact_hashes=outputs,
+            parent_event_sha256=parent,
+            input_artifact_hashes=(REQUEST_SHA256,),
+            version_binding=_binding(),
+            source_sha256=SOURCE_MANIFEST_SHA256,
+            evidence_cutoff=STAMP,
+        )
+        assert tuple(event["output_artifact_hashes"]) == outputs
+        assert event["parent_event_sha256"] == parent
+
+
+def test_phase_store_extends_the_single_ordered_chain_through_u11(u1_authority):
+    import ultra_runtime.state_machine as module
+    from ultra_runtime.constants import PHASES
+
+    assert module.PHASE_ORDER is PHASES
+    store = _store(module)
+    _complete_u0_u1(store, u1_authority)
+    _complete_u2(store)
+    _complete_u3(store)
+    before = store.events
+    with pytest.raises(module.PhaseIntegrityError, match="parent"):
+        store.complete(
+            "U4",
+            artifact_hashes=(_late_phase_hash("world-volume"),),
+            parent_event_sha256="f" * 64,
+        )
+    assert store.events == before
+
+    for phase_id, labels in _LATE_PHASE_OUTPUTS.items():
+        outputs = tuple(_late_phase_hash(label) for label in labels)
+        event = store.complete(
+            phase_id,
+            artifact_hashes=outputs,
+            parent_event_sha256=store.events[-1]["event_sha256"],
+            input_artifact_hashes=(REQUEST_SHA256,),
+            version_binding=_binding(),
+            source_sha256=SOURCE_MANIFEST_SHA256,
+            evidence_cutoff=STAMP,
+        )
+        assert tuple(event["output_artifact_hashes"]) == outputs
+
+    assert store.current_phase == "U11"
+    assert tuple(event["phase_id"] for event in store.events) == PHASES[:12]
+
+
+def test_late_phase_output_cardinality_is_rejected_atomically(u1_authority):
+    import ultra_runtime.state_machine as module
+
+    store = _store(module)
+    _complete_u0_u1(store, u1_authority)
+    _complete_u2(store)
+    _complete_u3(store)
+    before = store.events
+    with pytest.raises(module.PhaseIntegrityError, match="U4|output"):
+        store.complete("U4", artifact_hashes=())
+    assert store.events == before
+    store.complete("U4", artifact_hashes=(_late_phase_hash("world-volume"),))
+    before = store.events
+    with pytest.raises(module.PhaseIntegrityError, match="U5|output"):
+        store.complete(
+            "U5",
+            artifact_hashes=(_late_phase_hash("transformation-ledger"),),
+        )
+    assert store.events == before
+
+
+def test_u12_requires_hash_verified_post_publish_authority_and_terminal_status(
+    u1_authority,
+):
+    import ultra_runtime.state_machine as module
+    from ultra_runtime.status import RunStatusStore
+
+    store = _store(module)
+    _complete_through_u11(store, u1_authority)
+    layout = _AUTHORITY_LAYOUT
+    assert layout is not None
+    layout.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    layout.delivery_dir.mkdir(parents=True, exist_ok=True)
+    layout.validation_current_dir.mkdir(parents=True, exist_ok=True)
+
+    delivery_specs = (
+        ("CrossFrame-Ultra-完整文章.md", "final article\n", "article"),
+        ("完整推演档案.md", "final dossier\n", "dossier"),
+        ("工件索引.md", "final index\n", "artifact-index"),
+    )
+    delivery_refs = []
+    for filename, text, schema_suffix in delivery_specs:
+        path = layout.delivery_dir / filename
+        path.write_text(text, encoding="utf-8")
+        delivery_refs.append(
+            {
+                "path": path.relative_to(layout.run_dir).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "media_type": "text/markdown",
+                "schema_id": f"crossframe.ultra.v82.{schema_suffix}",
+                "phase_id": "U12",
+            }
+        )
+
+    validator_set_sha256 = _late_phase_hash("validator-set")
+    manifest = {
+        "schema_id": "crossframe.ultra.v82.artifact-manifest",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "version_binding": _binding(),
+        "generated_at": "2026-08-02T00:00:01Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U12",
+        "phase_chain_head_sha256": store.events[-1]["event_sha256"],
+        "validator_set_sha256": validator_set_sha256,
+        "artifacts": delivery_refs,
+        "delivery_artifacts": [
+            {
+                "path": item["path"],
+                "sha256": item["sha256"],
+                "media_type": item["media_type"],
+            }
+            for item in delivery_refs
+        ],
+        "official_delivery_published": True,
+    }
+    manifest["content_sha256"] = _hash_without(manifest, "content_sha256")
+    manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"
+    manifest_path.write_bytes(_canonical(manifest))
+    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+
+    report = {
+        "schema_id": "crossframe.ultra.v82.validator-report",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "version_binding": _binding(),
+        "generated_at": "2026-08-02T00:00:02Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U12",
+        "attempt_id": "post-publish-1",
+        "manifest_sha256": manifest_sha256,
+        "validator_set_sha256": validator_set_sha256,
+        "checks": [
+            {
+                "validator_id": "post-publish",
+                "status": "pass",
+                "error_codes": [],
+                "artifact_refs": [item["path"] for item in delivery_refs],
+            }
+        ],
+        "overall_status": "pass",
+        "validated_at": "2026-08-02T00:00:02Z",
+        "fresh_context": True,
+    }
+    report["content_sha256"] = _hash_without(report, "content_sha256")
+    report_path = layout.validation_current_dir / "ultra-validator-report.json"
+    report_path.write_bytes(_canonical(report))
+
+    status_store = RunStatusStore(layout)
+    created = status_store.create(datetime(2026, 8, 2, tzinfo=timezone.utc))
+    running = status_store.transition(
+        created,
+        "running",
+        datetime(2026, 8, 2, tzinfo=timezone.utc) + timedelta(seconds=1),
+        current_phase="U12",
+        last_complete_phase="U11",
+    )
+    status_store.transition(
+        running,
+        "complete",
+        datetime(2026, 8, 2, tzinfo=timezone.utc) + timedelta(seconds=2),
+        current_phase="U12",
+        last_complete_phase="U12",
+        validation_passed=True,
+    )
+
+    output_hashes = (
+        manifest_sha256,
+        hashlib.sha256(report_path.read_bytes()).hexdigest(),
+        *(item["sha256"] for item in delivery_refs),
+    )
+    event = store.complete(
+        "U12",
+        artifact_hashes=output_hashes,
+        parent_event_sha256=store.events[-1]["event_sha256"],
+    )
+    assert tuple(event["output_artifact_hashes"]) == output_hashes
+    assert store.current_phase == "U12"
