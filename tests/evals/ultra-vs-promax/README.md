@@ -8,8 +8,10 @@ The committed `results.json` must remain `not_run` until all 48 product runs and
 
 The only legal transition is `scaffold -> execution-ready -> ready-for-results-build`:
 
+The checked-in schema-v1 scaffold is read-only and may be inspected with `validate_scaffold`; it cannot enter `execution-ready`. Execution requires a schema-v2 pairing manifest, schema-v2 material manifests, and schema-v2 default-deny privacy policies.
+
 1. `scaffold`: every pair and product is pending, skill-tree hashes are null, case material reviews are pending, and `results.json` is exactly `not_run`.
-2. `execution-ready`: the transition command requires frozen evidence bundles, passed leakage/privacy/license reviews, declared source licenses and SHA-256 values, and both product skill-tree SHA-256 values. It refreshes the shared pair bindings atomically. No product result exists yet.
+2. `execution-ready`: the transition command requires 24 frozen evidence bundles; structured leakage, privacy, and license reviews bound to the complete source set; an exact per-source license decision; closed default-deny packet allowlists; and both product skill-tree SHA-256 values. It binds shared product-packet and grader-base-packet hashes, then replaces the pairing manifest once. No product result exists yet.
 3. `ready-for-results-build`: the second transition verifies both completed product runs and all three hash-bound blind grades for every case, then seals 24 completed pairs. `results.json` is still exactly `not_run`.
 4. Only the frozen rebuild command below may derive and atomically write a complete result. Direct jumps, partial pairs, hand-authored aggregate fields, missing hashes, and rewrites of the `not_run` placeholder during either transition fail closed.
 
@@ -40,6 +42,8 @@ The command validates the 24 pair bindings, both product run metadata records pe
 ## Evidence boundary
 
 `scenarios.json`, `rubric.json`, `pairing-manifest.json`, the case skeletons, this README, the empty raw registry, and the builder are deterministic scaffolding. They are not benchmark performance evidence. Expected-pressure files are audit-only and hidden from products and graders. Frozen case materials must pass outcome-leakage, privacy, and license review before product execution.
+
+Product packets contain only the prompt, evidence cutoff, and declared material sources. Grader packets contain only those case inputs, the scoring rubric, and logical `Article A` / `Article B` slots. Material manifests, privacy policies, expected-pressure files, product identities, raw paths, and prior grades are audit-only and never enter either packet.
 
 Actual model runs belong under `raw/<case-id>/<product>/`; blind grades belong under `raw/<case-id>/grades/`. No fallback product is allowed. Product names, pairing metadata, runtime internals, directory names, expected-pressure metadata, and prior grades remain hidden from graders.
 
