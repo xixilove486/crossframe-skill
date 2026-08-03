@@ -61,15 +61,15 @@
     },
     "privacy": {
       "status": "passed",
-      "reviewer_id": "task16-privacy-r2",
-      "reviewed_at": "2026-08-03T21:38:51Z",
+      "reviewer_id": "task16-privacy-r4",
+      "reviewed_at": "2026-08-03T22:19:09.285Z",
       "subject_sha256": "d9dd2edbe710065038feed3afae39fe70910a5a5e071057c4785a1d89916b7ca",
       "evidence": [
-        "Recomputed source byte hashes match manifest.source_files and source_set_sha256=d9dd2edbe710065038feed3afae39fe70910a5a5e071057c4785a1d89916b7ca; privacy-policy.json SHA-256=6eb653f10d9dde5e09d9d2696466fbe1760b34abfb92a953c0c6a96f2bc7ec21 matches the bound policy hash.",
-        "Both packet allowlists contain only prompt.md, evidence-cutoff.json, and the three declared source files; grader_injected_slots is exactly rubric/article-a/article-b, and audit_only_paths is exactly manifest/privacy-policy/expected-pressure.",
-        "Manual and high-signal secret/PII checks found no secrets, credentials, sensitive PII, real customer or incident data, or reusable operational details; public technical metadata, factual measurements, and the synthetic cohort support sensitive_paths=[] and outbound_safe=true."
+        "Current privacy-policy.json SHA-256 is 6975faa7b165b42b5d3d16dc6845655c3d57960eb69d598da50ec5fc694e8720 and matches reviews.privacy.privacy_policy_sha256; the policy has exactly the eight required fields, default_deny=true, and the exact required allowlists, injected slots, and audit-only paths.",
+        "Privacy review of source-01.json through source-03.json found only public standards metadata, public aggregate adoption measurements, and an explicitly synthetic cohort fixture; no secrets, credentials, sensitive PII, real customer or incident data, or reusable sensitive details were found.",
+        "Reviewer IDs are exact and distinct: license=task16-license-r1, privacy=task16-privacy-r4, outcome_leakage=task16-outcome-r3."
       ],
-      "privacy_policy_sha256": "6eb653f10d9dde5e09d9d2696466fbe1760b34abfb92a953c0c6a96f2bc7ec21",
+      "privacy_policy_sha256": "6975faa7b165b42b5d3d16dc6845655c3d57960eb69d598da50ec5fc694e8720",
       "sensitive_paths": [],
       "outbound_safe": true
     },

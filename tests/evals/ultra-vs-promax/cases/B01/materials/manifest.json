@@ -61,15 +61,15 @@
     },
     "privacy": {
       "status": "passed",
-      "reviewer_id": "task16-privacy-r2",
-      "reviewed_at": "2026-08-03T21:38:51Z",
+      "reviewer_id": "task16-privacy-r4",
+      "reviewed_at": "2026-08-03T22:19:09.285Z",
       "subject_sha256": "8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1",
       "evidence": [
-        "Recomputed source byte hashes match manifest.source_files and source_set_sha256=8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1; privacy-policy.json SHA-256=bd5d0c027df8407db823e71e09e6fdf7e3d1c4c92b29cf0590d95d1c51b995a6 matches the bound policy hash.",
-        "Both packet allowlists contain only prompt.md, evidence-cutoff.json, and the three declared source files; grader_injected_slots is exactly rubric/article-a/article-b, and audit_only_paths is exactly manifest/privacy-policy/expected-pressure.",
-        "Manual and high-signal secret/PII checks found no secrets, credentials, sensitive PII, real customer or incident data, or reusable operational details; public bibliographic attribution and project-owned synthetic fixtures support sensitive_paths=[] and outbound_safe=true."
+        "Current privacy-policy.json SHA-256 is 971a1eb2a6096228c3bfcf53f010b08fe291be31a5eb0a240a50d580019a330a and matches reviews.privacy.privacy_policy_sha256; the policy has exactly the eight required fields, default_deny=true, and the exact required allowlists, injected slots, and audit-only paths.",
+        "Privacy review of source-01.json through source-03.json found only public-source metadata/paraphrases and explicitly project-owned synthetic fixtures; no secrets, credentials, sensitive PII, real customer or incident data, or reusable sensitive details were found.",
+        "Reviewer IDs are exact and distinct: license=task16-license-r1, privacy=task16-privacy-r4, outcome_leakage=task16-outcome-r3."
       ],
-      "privacy_policy_sha256": "bd5d0c027df8407db823e71e09e6fdf7e3d1c4c92b29cf0590d95d1c51b995a6",
+      "privacy_policy_sha256": "971a1eb2a6096228c3bfcf53f010b08fe291be31a5eb0a240a50d580019a330a",
       "sensitive_paths": [],
       "outbound_safe": true
     },

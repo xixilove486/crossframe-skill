@@ -3,8 +3,6 @@
   "schema_version": 2,
   "case_id": "B01",
   "default_deny": true,
-  "live_retrieval_allowed": false,
-  "private_source_text_outbound_allowed": false,
   "product_packet_allowlist": [
     "tests/evals/ultra-vs-promax/cases/B01/prompt.md",
     "tests/evals/ultra-vs-promax/cases/B01/evidence-cutoff.json",
