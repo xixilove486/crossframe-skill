@@ -1,12 +1,95 @@
 {
   "schema_id": "crossframe.ultra.benchmark-materials-manifest",
-  "schema_version": 1,
+  "schema_version": 2,
   "case_id": "O01",
-  "bundle_status": "pending",
+  "bundle_status": "frozen",
   "retrieval_mode": "frozen-bundle-only",
-  "source_files": [],
-  "source_count": 0,
-  "outcome_leakage_review": "pending",
-  "privacy_review": "pending",
-  "license_review": "pending"
+  "source_files": [
+    {
+      "path": "event-timeline.md",
+      "sha256": "24535e600c29cd59f970a5cdb1cbd978d356dcefb7aa98a4e207bd025035657a",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    },
+    {
+      "path": "operating-context.md",
+      "sha256": "b8e3f994fc67f99c572f428bcd7e57145a43649cc6d7a1dc2cd55df0c335aed5",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    },
+    {
+      "path": "signal-register.md",
+      "sha256": "5bf62f72688d4d89252ce63dba3415a754c40c9bc03a57b2247cabb7a8fbed88",
+      "media_type": "text/markdown",
+      "license": "CC0-1.0"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "463551524f6f1c183459d25d1587f6e47059feba0aba9e09a5b29ea8320dc296",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:35:14Z",
+      "subject_sha256": "463551524f6f1c183459d25d1587f6e47059feba0aba9e09a5b29ea8320dc296",
+      "evidence": [
+        "独立逐字节核验三个源 SHA-256，并按 build_results.py canonical JSON 规则复算 source_set_sha256=463551524f6f1c183459d25d1587f6e47059feba0aba9e09a5b29ea8320dc296。",
+        "event-timeline.md、operating-context.md、signal-register.md 均明确声明项目原创、完全合成、dedicated under CC0-1.0 且允许再分发。",
+        "2026-08-04 Asia/Shanghai 核验官方 SPDX License List 3.28.0（https://spdx.org/licenses/ 与 https://spdx.org/licenses/CC0-1.0.html）及 Creative Commons CC0 1.0 Universal Legal Code Version 1.0（https://creativecommons.org/publicdomain/zero/1.0/legalcode.en）；CC0-1.0 是有效 SPDX 标识，官方 waiver 与 fallback license 支持再分发。"
+      ],
+      "source_decisions": [
+        {
+          "path": "event-timeline.md",
+          "sha256": "24535e600c29cd59f970a5cdb1cbd978d356dcefb7aa98a4e207bd025035657a",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "源内明确声明项目原创、完全合成、CC0-1.0 与允许再分发；官方 CC0 waiver 和 fallback license 核验通过。"
+        },
+        {
+          "path": "operating-context.md",
+          "sha256": "b8e3f994fc67f99c572f428bcd7e57145a43649cc6d7a1dc2cd55df0c335aed5",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "源内明确声明项目原创、完全合成、CC0-1.0 与允许再分发；官方 CC0 waiver 和 fallback license 核验通过。"
+        },
+        {
+          "path": "signal-register.md",
+          "sha256": "5bf62f72688d4d89252ce63dba3415a754c40c9bc03a57b2247cabb7a8fbed88",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "源内明确声明项目原创、完全合成、CC0-1.0 与允许再分发；官方 CC0 waiver 和 fallback license 核验通过。"
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:31:00Z",
+      "subject_sha256": "463551524f6f1c183459d25d1587f6e47059feba0aba9e09a5b29ea8320dc296",
+      "evidence": [
+        "独立重算三个源 SHA-256、source_set_sha256 与 privacy-policy.json SHA-256=3035b0a8b8d6ba0c2bce6b43859ff6875ce566fce995ec7513f5feeac12d0458，均与冻结绑定一致。",
+        "default_deny=true；product 与 grader case allowlist 仅含 prompt、evidence-cutoff 和三个源；grader slots 精确为 rubric、article-a、article-b；audit-only 精确列 manifest、privacy-policy、expected-pressure。",
+        "逐源检查未发现真实组织仿冒、可识别个人、秘密、凭据、邮箱、URL 或敏感绝对路径。"
+      ],
+      "privacy_policy_sha256": "3035b0a8b8d6ba0c2bce6b43859ff6875ce566fce995ec7513f5feeac12d0458",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:31:08Z",
+      "subject_sha256": "463551524f6f1c183459d25d1587f6e47059feba0aba9e09a5b29ea8320dc296",
+      "evidence": [
+        "独立复算三个源 SHA-256、source_set_sha256 与 frozen evidence-cutoff SHA-256=4637188276aa492fa6de45e5ca9120ca4d3d308538d8289fe0276951da7285f7。",
+        "材料只提供事件、岗位依赖、交接状态及分时期信号，没有给出分阶映射、结论标签、标准答案、评分提示、文章偏好或分析结果。",
+        "最晚已发生观测为 2026-08-01T18:00:00Z；2026-08-12 与 2026-08-20 仅是截止前登记的未来安排，未披露截止后结果。",
+        "expected-pressure.json 未被审查员读取、打印、解析、哈希或探测；expected_pressure_sha256 只使用提供的不可反推绑定引用。"
+      ],
+      "evidence_cutoff_sha256": "4637188276aa492fa6de45e5ca9120ca4d3d308538d8289fe0276951da7285f7",
+      "expected_pressure_sha256": "8fe87f4e8c4fc62efeef644faebe8411150029bd87c2ccffaf99432f4e01032f",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
 }
