@@ -20,9 +20,6 @@ SOURCE_MANIFEST_SHA256 = (
 )
 RUN_ID = "20260802T000000Z-5a7e9c31b022"
 STAMP = "2026-08-02T00:00:00Z"
-LOCKED_INPUT_SHA256 = "5b4588c532def72f4feadca261dfda4e9de9d92e69c917c226f6ebd7c06e3c10"
-INPUT_SNAPSHOT_SHA256 = "645ce61bbf23f02db8901f1eafd072cf31a4727ac2b6ce8bdd986e3d85a8b0d8"
-REQUEST_SHA256 = LOCKED_INPUT_SHA256
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
@@ -38,6 +35,18 @@ def _canonical(value: object) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+LOCKED_INPUT_SHA256 = hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest()
+_LOCKED_INPUTS = [
+    {
+        "path": "AGENTS.md",
+        "sha256": LOCKED_INPUT_SHA256,
+        "media_type": "text/markdown",
+    }
+]
+INPUT_SNAPSHOT_SHA256 = hashlib.sha256(_canonical(_LOCKED_INPUTS)).hexdigest()
+REQUEST_SHA256 = LOCKED_INPUT_SHA256
 
 
 def _hash_without(value: dict[str, object], *fields: str) -> str:
@@ -135,13 +144,7 @@ def _store(
 
 
 def _locked_inputs() -> list[dict[str, str]]:
-    return [
-        {
-            "path": "AGENTS.md",
-            "sha256": LOCKED_INPUT_SHA256,
-            "media_type": "text/markdown",
-        }
-    ]
+    return copy.deepcopy(_LOCKED_INPUTS)
 
 
 def _release_artifacts(repo: Path) -> list[dict[str, str]]:
