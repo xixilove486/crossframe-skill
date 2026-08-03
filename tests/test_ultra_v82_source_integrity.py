@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECKER_PATH = (
     ROOT / "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py"
 )
+SOURCE_DOCX = Path(r"E:\世界模型\跨尺度多圈层结构推演框架v8.2.docx")
 
 
 def _load_checker():
@@ -41,6 +42,11 @@ def test_checker_exposes_read_only_validation_api() -> None:
     assert callable(checker.validate_committed_source_tree)
     assert callable(checker.validate_against_docx)
     assert callable(checker.main)
+    assert not hasattr(checker, "generate_authority_tree")
+    assert not hasattr(checker, "_write_tree_files")
+    assert not hasattr(checker, "_render_authority_files")
+    assert not hasattr(checker, "_render_index_files")
+    assert not hasattr(checker, "_manifest_payload")
 
 
 def test_verified_snapshot_exposes_one_frozen_authority_view() -> None:
@@ -314,9 +320,8 @@ def test_committed_authority_tree_is_self_consistent() -> None:
 
 def test_source_aware_validation_accepts_the_exact_v82_docx() -> None:
     assert checker is not None, "Task3 checker is not implemented"
-    source_docx = Path(r"E:\世界模型\跨尺度多圈层结构推演框架v8.2.docx")
-    assert source_docx.is_file()
-    errors = checker.validate_against_docx(ROOT, source_docx)
+    assert SOURCE_DOCX.is_file()
+    errors = checker.validate_against_docx(ROOT, SOURCE_DOCX)
     assert errors == [], errors
 
 
@@ -522,16 +527,53 @@ def _tree_state(root: Path) -> dict[str, tuple[str, int, int, str | None]]:
     return state
 
 
+def _recursive_file_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
 def test_whole_tree_validation_is_read_only_and_writes_no_bytecode(
     committed_copy: Path,
 ) -> None:
     before = _tree_state(committed_copy)
+    before_hashes = _recursive_file_hashes(committed_copy)
     snapshot = checker.validate_committed_source_snapshot(committed_copy)
     after = _tree_state(committed_copy)
     assert snapshot.errors == ()
     assert after == before
+    assert _recursive_file_hashes(committed_copy) == before_hashes
     assert not list(committed_copy.rglob("*.pyc"))
     assert not list(committed_copy.rglob("__pycache__"))
+
+
+def test_validate_paths_do_not_call_mutating_filesystem_apis(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority_tree = ROOT / checker.SOURCE_TREE_RELATIVE
+    before_hashes = _recursive_file_hashes(authority_tree)
+
+    def forbidden_mutation(*_args, **_kwargs):
+        raise AssertionError("read-only checker attempted a filesystem mutation")
+
+    for owner, name in (
+        (Path, "write_bytes"),
+        (Path, "write_text"),
+        (Path, "mkdir"),
+        (Path, "unlink"),
+        (Path, "replace"),
+        (os, "mkdir"),
+        (os, "unlink"),
+        (os, "replace"),
+        (shutil, "rmtree"),
+    ):
+        monkeypatch.setattr(owner, name, forbidden_mutation)
+
+    assert checker.validate_committed_source_tree(ROOT) == []
+    assert checker.validate_against_docx(ROOT, SOURCE_DOCX) == []
+    assert _recursive_file_hashes(authority_tree) == before_hashes
 
 
 def test_manifest_duplicate_key_is_rejected(committed_copy: Path) -> None:
@@ -688,7 +730,7 @@ def test_compiler_execution_leaves_no_mutable_module_cache_or_sys_modules_entry(
         "xml/__init__.py",
     ),
 )
-def test_normal_cli_isolates_wrapper_and_compiler_from_repo_script_shadowing(
+def test_isolated_cli_rejects_repo_script_shadowing(
     committed_copy: Path,
     tmp_path: Path,
     shadow_relative: str,
@@ -718,6 +760,9 @@ def test_normal_cli_isolates_wrapper_and_compiler_from_repo_script_shadowing(
     result = subprocess.run(
         [
             sys.executable,
+            "-I",
+            "-S",
+            "-B",
             str(root_wrapper),
             "--repo",
             str(committed_copy),
@@ -732,11 +777,178 @@ def test_normal_cli_isolates_wrapper_and_compiler_from_repo_script_shadowing(
 
     assert not marker.exists(), result.stderr or result.stdout
     assert not canonical_marker.exists(), result.stderr or result.stdout
-    assert result.returncode in {0, 1}
+    assert result.returncode == 0, result.stderr or result.stdout
     report = json.loads(result.stdout)
+    assert report == {"errors": [], "ok": True}
     assert set(report) == {"errors", "ok"}
     assert not list(committed_copy.rglob("*.pyc"))
     assert not list(committed_copy.rglob("__pycache__"))
+
+
+@pytest.mark.parametrize(
+    "entrypoint",
+    (
+        ROOT / "scripts/check_crossframe_ultra_v82_source.py",
+        CHECKER_PATH,
+    ),
+    ids=("root-wrapper", "canonical-checker"),
+)
+def test_unisolated_cli_entrypoints_fail_closed(entrypoint: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(entrypoint), "--repo", str(ROOT), "--json"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 2, result.stdout or result.stderr
+    assert json.loads(result.stdout) == {
+        "errors": [
+            "trusted source validation requires direct Python startup flags -I -S -B"
+        ],
+        "ok": False,
+    }
+
+
+def test_isolated_wrapper_preserves_spaced_argv_and_propagates_child_exit_7(
+    tmp_path: Path,
+) -> None:
+    spaced_repo = tmp_path / "wrapper repository with spaces"
+    root_wrapper = spaced_repo / "scripts/check_crossframe_ultra_v82_source.py"
+    canonical_checker = (
+        spaced_repo
+        / "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py"
+    )
+    root_wrapper.parent.mkdir(parents=True)
+    canonical_checker.parent.mkdir(parents=True)
+    shutil.copy2(ROOT / "scripts/check_crossframe_ultra_v82_source.py", root_wrapper)
+    canonical_checker.write_text(
+        "\n".join(
+            (
+                "import json",
+                "import sys",
+                "print(json.dumps({",
+                "    'argv': sys.argv[1:],",
+                "    'isolated': bool(sys.flags.isolated),",
+                "    'no_site': bool(sys.flags.no_site),",
+                "    'dont_write_bytecode': bool(sys.flags.dont_write_bytecode),",
+                "}, sort_keys=True))",
+                "raise SystemExit(7)",
+                "",
+            )
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    repo_argument = tmp_path / "authority repository argument with spaces"
+    source_docx = tmp_path / "source document with spaces.docx"
+    repo_argument.mkdir()
+    source_docx.write_bytes(b"fake source for argv preservation")
+    expected_argv = [
+        "--repo",
+        str(repo_argument),
+        "--source-docx",
+        str(source_docx),
+        "--json",
+    ]
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-B",
+            str(root_wrapper),
+            *expected_argv,
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert result.returncode == 7, result.stderr or result.stdout
+    payload = json.loads(result.stdout)
+    assert payload == {
+        "argv": expected_argv,
+        "dont_write_bytecode": True,
+        "isolated": True,
+        "no_site": True,
+    }
+
+
+def test_unisolated_wrapper_fails_closed_after_sitecustomize_has_run(
+    tmp_path: Path,
+) -> None:
+    spaced_repo = tmp_path / "bootstrap repository with spaces"
+    root_wrapper = spaced_repo / "scripts/check_crossframe_ultra_v82_source.py"
+    canonical_checker = (
+        spaced_repo
+        / "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py"
+    )
+    root_wrapper.parent.mkdir(parents=True)
+    canonical_checker.parent.mkdir(parents=True)
+    shutil.copy2(ROOT / "scripts/check_crossframe_ultra_v82_source.py", root_wrapper)
+    child_marker = tmp_path / "canonical checker executed.txt"
+    canonical_checker.write_text(
+        f"open({str(child_marker)!r}, 'w', encoding='utf-8').write('executed')\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    python_path = tmp_path / "python path with spaces"
+    python_path.mkdir()
+    marker = tmp_path / "sitecustomize executed.txt"
+    (python_path / "sitecustomize.py").write_text(
+        f"open({str(marker)!r}, 'w', encoding='utf-8').write('executed')\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(python_path)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    result = subprocess.run(
+        [sys.executable, str(root_wrapper), "--repo", str(spaced_repo), "--json"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert marker.read_text(encoding="utf-8") == "executed"
+    assert not child_marker.exists()
+    assert result.returncode == 2, result.stdout or result.stderr
+    assert json.loads(result.stdout)["ok"] is False
+
+    marker.unlink()
+    isolated = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-B",
+            str(root_wrapper),
+            "--repo",
+            str(spaced_repo),
+            "--json",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    assert isolated.returncode == 0, isolated.stdout or isolated.stderr
+    assert child_marker.read_text(encoding="utf-8") == "executed"
+    assert not marker.exists()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows junction semantics")

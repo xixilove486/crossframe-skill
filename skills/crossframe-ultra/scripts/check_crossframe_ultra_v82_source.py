@@ -1,55 +1,34 @@
-"""Read-only integrity checker and staging helper for the v8.2 authority tree.
+"""Read-only integrity checker for the v8.2 authority tree.
 
 The parser and semantic normalizer deliberately live in Task 2's compiler.  This
-module only materializes and audits the authority representation produced from
-that snapshot; it never treats markdown file names or manifest counts as source
-authority.
+module only audits the authority representation produced from that snapshot; it
+never treats markdown file names or manifest counts as source authority.
 """
 
 from __future__ import annotations
 
-# A direct invocation can start with the repository's script directory at the
-# front of sys.path.  Re-enter in isolated mode before importing any ordinary
-# module so a repository file cannot shadow the wrapper/checker's dependencies.
+# Isolation must be established at interpreter startup.  A non-isolated process
+# may already have executed PYTHONPATH sitecustomize code, so it must fail closed
+# before importing any ordinary module rather than attempting an in-process
+# restart.
 import sys as _bootstrap_sys
 
+_ISOLATION_ERROR = (
+    "trusted source validation requires direct Python startup flags -I -S -B"
+)
 if __name__ == "__main__" and not (
     _bootstrap_sys.flags.isolated
     and _bootstrap_sys.flags.no_site
     and _bootstrap_sys.flags.dont_write_bytecode
 ):
-    _bootstrap_os = _bootstrap_sys.modules.get("os")
-    if _bootstrap_os is None:
-        raise RuntimeError("cannot enter isolated checker mode: os is unavailable")
-    _bootstrap_os.execv(
-        _bootstrap_sys.executable,
-        [
-            _bootstrap_sys.executable,
-            "-I",
-            "-S",
-            "-B",
-            _bootstrap_os.path.abspath(__file__),
-            *_bootstrap_sys.argv[1:],
-        ],
-    )
-
-if __name__ == "__main__":
-    # runpy.run_path temporarily places the canonical script directory on
-    # sys.path even in an isolated interpreter.  Remove that directory before
-    # importing ordinary modules (notably threading and subprocess).
-    _bootstrap_os = _bootstrap_sys.modules.get("os")
-    if _bootstrap_os is not None:
-        _canonical_script_dir = _bootstrap_os.path.normcase(
-            _bootstrap_os.path.abspath(_bootstrap_os.path.dirname(__file__))
+    if "--json" in _bootstrap_sys.argv[1:]:
+        _bootstrap_sys.stdout.write(
+            '{"errors":["trusted source validation requires direct Python '
+            'startup flags -I -S -B"],"ok":false}\n'
         )
-        _bootstrap_sys.path[:] = [
-            entry
-            for entry in _bootstrap_sys.path
-            if _bootstrap_os.path.normcase(
-                _bootstrap_os.path.abspath(entry or _bootstrap_os.getcwd())
-            )
-            != _canonical_script_dir
-        ]
+    else:
+        _bootstrap_sys.stderr.write(f"error: {_ISOLATION_ERROR}\n")
+    raise SystemExit(2)
 
 import argparse
 import base64
@@ -62,13 +41,11 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import stat
 import subprocess
 import sys
 import threading
 from types import MappingProxyType
-from uuid import uuid4
 
 
 RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
@@ -753,10 +730,6 @@ def _run_isolated_compiler(
         raise ValueError(f"isolated compiler returned invalid JSON: {error}") from error
 
 
-def _compiler_path() -> Path:
-    return Path(__file__).resolve().with_name("generate_crossframe_ultra_v82_source.py")
-
-
 def _canonical_json(payload: object) -> bytes:
     return (
         json.dumps(
@@ -770,36 +743,8 @@ def _canonical_json(payload: object) -> bytes:
     ).encode("utf-8")
 
 
-def _pretty_json(payload: object) -> str:
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        indent=2,
-        allow_nan=False,
-    )
-
-
 def _sha256_bytes(payload: bytes) -> str:
     return sha256(payload).hexdigest()
-
-
-def _sha256_path(
-    path: Path,
-    *,
-    anchor: Path | None = None,
-    max_bytes: int | None = None,
-) -> str:
-    if max_bytes is None:
-        max_bytes = MAX_SOURCE_TREE_FILE_BYTES
-    return _sha256_bytes(
-        _read_regular_file(
-            path,
-            anchor=anchor,
-            max_bytes=max_bytes,
-            label="authority hash input",
-        )
-    )
 
 
 def _is_reparse_or_link(path: Path) -> bool:
@@ -1527,405 +1472,11 @@ def _expected_file_entries(files: Mapping[str, bytes]) -> list[dict[str, object]
     ]
 
 
-def _manifest_payload(
-    snapshot: object,
-    files: Mapping[str, bytes],
-    *,
-    compiler_sha256: str,
-) -> dict[str, object]:
-    paragraphs, tables = _snapshot_records(snapshot)
-    concepts = _concept_records(paragraphs)
-    headings = _heading_records(paragraphs)
-    source_units = _source_unit_entries(paragraphs, tables)
-    divisions = [_range_to_json(item) for item in DIVISION_RANGES]
-    ranges = [_range_to_json(item) for item in SOURCE_RANGES]
-    division_records = []
-    for item in DIVISION_RANGES:
-        table_start = item.get("table_start")
-        table_end = item.get("table_end")
-        division_records.append(
-            {
-                "slug": str(item["file"]).removesuffix(".md"),
-                "title": item["title"],
-                "start_ordinal": _anchor_number(str(item["paragraph_start"]), "paragraph"),
-                "end_ordinal": _anchor_number(str(item["paragraph_end"]), "paragraph"),
-                "table_ordinals": [
-                    _anchor_number(anchor, "table")
-                    for anchor in _anchors_between(
-                        str(table_start) if table_start is not None else None,
-                        str(table_end) if table_end is not None else None,
-                        "table",
-                    )
-                ],
-            }
-        )
-    return {
-        "schema_id": "crossframe.ultra.v8.2.source-manifest",
-        "schema_version": 1,
-        "framework_version": "v8.2",
-        "framework_revision": "v8.2",
-        "raw_sha256": snapshot.raw_sha256,
-        "semantic_sha256": snapshot.semantic_sha256,
-        "semantic_normalization_version": SEMANTIC_NORMALIZATION_VERSION,
-        "normalization_version": SEMANTIC_NORMALIZATION_VERSION,
-        "paragraph_count": len(paragraphs),
-        "heading_count": len(headings),
-        "table_count": len(tables),
-        "concept_count": len(concepts),
-        "contract_count": _contract_count(paragraphs),
-        "source_unit_count": len(source_units),
-        "non_whitespace_chars": snapshot.non_whitespace_chars,
-        "compiler_version": COMPILER_VERSION,
-        "compiler": {
-            "version": COMPILER_VERSION,
-            "path": "skills/crossframe-ultra/scripts/generate_crossframe_ultra_v82_source.py",
-            "sha256": compiler_sha256,
-        },
-        "source_ranges": ranges,
-        "division_ranges": divisions,
-        "divisions": division_records,
-        "source_units": source_units,
-        "files": _expected_file_entries(files),
-        "source_tree_merkle_root": _tree_merkle_root(files),
-        "source_tree_merkle_version": TREE_MERKLE_VERSION,
-    }
-
-
-def _table_for_ordinal(snapshot: object) -> dict[int, dict[str, object]]:
-    return {record["ordinal"]: record for record in _snapshot_records(snapshot)[1]}
-
-
-def _range_records(
-    paragraphs: Sequence[Mapping[str, object]],
-    tables: Sequence[Mapping[str, object]],
-    item: Mapping[str, object],
-) -> tuple[list[Mapping[str, object]], list[Mapping[str, object]]]:
-    p_start = _anchor_number(str(item["paragraph_start"]), "paragraph")
-    p_end = _anchor_number(str(item["paragraph_end"]), "paragraph")
-    p_records = [
-        record
-        for record in paragraphs
-        if p_start <= int(record["ordinal"]) <= p_end
-    ]
-    t_start = item.get("table_start")
-    t_end = item.get("table_end")
-    if t_start is None or t_end is None:
-        return p_records, []
-    low = _anchor_number(str(t_start), "table")
-    high = _anchor_number(str(t_end), "table")
-    return p_records, [record for record in tables if low <= int(record["ordinal"]) <= high]
-
-
-def _escape_markdown_cell(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
-
-
-def _render_source_file(
-    snapshot: object,
-    item: Mapping[str, object],
-    paragraphs: Sequence[Mapping[str, object]],
-    tables: Sequence[Mapping[str, object]],
-) -> bytes:
-    p_start = paragraphs[0]["anchor"] if paragraphs else "EMPTY"
-    p_end = paragraphs[-1]["anchor"] if paragraphs else "EMPTY"
-    title = "CrossFrame Ultra v8.2 Source Envelope" if item["role"] == "source-envelope" else f"CrossFrame Ultra v8.2 {item['title']}"
-    table_ids = [str(record["anchor"]) for record in tables]
-    lines = [
-        f"# {title}",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        f"Source role: `{item['role']}`",
-        f"Paragraph range: `{p_start}`-`{p_end}`",
-        f"Paragraph count: `{len(paragraphs)}`",
-        f"Tables: `{', '.join(table_ids) if table_ids else 'none'}`",
-        "",
-        "## Source Paragraphs",
-        "",
-    ]
-    for record in paragraphs:
-        lines.append(
-            f"<!-- source-paragraph:{record['anchor']} style={record['style']} -->"
-        )
-        lines.append(str(record["text"]))
-        lines.append("")
-    payload = {"paragraphs": list(paragraphs), "tables": list(tables)}
-    lines.extend(
-        [
-            "## Canonical Records",
-            "",
-            "<!-- canonical-records:start -->",
-            "```json",
-            _pretty_json(payload),
-            "```",
-            "<!-- canonical-records:end -->",
-            "",
-        ]
-    )
-    return "\n".join(lines).encode("utf-8")
-
-
-def _render_table_file(snapshot: object, table: Mapping[str, object]) -> bytes:
-    rows = table["rows"]
-    cells = table["cell_paragraph_ordinals"]
-    lines = [
-        f"# CrossFrame Ultra v8.2 Table {table['anchor']}",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        f"Table ID: `{table['anchor']}`",
-        "Source paragraph anchors: "
-        + (", ".join(f"`V82-P{n:04d}`" for n in table["paragraph_ordinals"]) or "none"),
-        f"Row count: `{len(rows)}`",
-        f"Column count: `{max((len(row) for row in rows), default=0)}`",
-        "",
-        "## Rows",
-        "",
-    ]
-    if rows:
-        width = max(len(row) for row in rows)
-        lines.append("| " + " | ".join(f"column {i + 1}" for i in range(width)) + " |")
-        lines.append("| " + " | ".join("---" for _ in range(width)) + " |")
-        for row in rows:
-            padded = list(row) + [""] * (width - len(row))
-            lines.append("| " + " | ".join(_escape_markdown_cell(str(value)) for value in padded) + " |")
-    lines.extend(
-        [
-            "",
-            "<!-- table-rows:start -->",
-            "```json",
-            _pretty_json(rows),
-            "```",
-            "<!-- table-rows:end -->",
-            "",
-            "## Cell Paragraph Anchors",
-            "",
-            "<!-- cell-paragraph-anchors:start -->",
-            "```json",
-            _pretty_json(cells),
-            "```",
-            "<!-- cell-paragraph-anchors:end -->",
-            "",
-            "## Canonical Structure",
-            "",
-            "<!-- canonical-records:start -->",
-            "```json",
-            _pretty_json(table),
-            "```",
-            "<!-- canonical-records:end -->",
-            "",
-        ]
-    )
-    return "\n".join(lines).encode("utf-8")
-
-
 def _source_file_for_paragraph(ordinal: int) -> str:
     for item in SOURCE_RANGES:
         if _anchor_number(str(item["paragraph_start"]), "paragraph") <= ordinal <= _anchor_number(str(item["paragraph_end"]), "paragraph"):
             return str(item["file"])
     raise ValueError(f"paragraph ordinal outside fixed ranges: {ordinal}")
-
-
-def _render_index_files(snapshot: object, paragraphs: list[dict[str, object]], tables: list[dict[str, object]]) -> dict[str, bytes]:
-    lines = [
-        "# CrossFrame Ultra v8.2 Full Source Index",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        f"Semantic normalization version: `{SEMANTIC_NORMALIZATION_VERSION}`",
-        f"Paragraph count: `{len(paragraphs)}`",
-        f"Heading count: `{len(_heading_records(paragraphs))}`",
-        f"Table count: `{len(tables)}`",
-        f"Concept count: `{len(_concept_records(paragraphs))}`",
-        f"Contract count: `{_contract_count(paragraphs)}`",
-        f"Source-unit count: `{len(paragraphs) + len(tables)}`",
-        "",
-        "| file | title | paragraph range | paragraph count | tables |",
-        "| --- | --- | --- | ---: | --- |",
-    ]
-    for item in SOURCE_RANGES:
-        p_start = str(item["paragraph_start"])
-        p_end = str(item["paragraph_end"])
-        p_count = _anchor_number(p_end, "paragraph") - _anchor_number(p_start, "paragraph") + 1
-        t_start, t_end = item.get("table_start"), item.get("table_end")
-        table_text = ""
-        if t_start is not None and t_end is not None:
-            table_text = ", ".join(_anchors_between(str(t_start), str(t_end), "table"))
-        lines.append(
-            f"| [{item['file']}]({item['file']}) | {item['title']} | `{p_start}-{p_end}` | `{p_count}` | {table_text} |"
-        )
-    index = "\n".join(lines) + "\n"
-
-    heading_lines = [
-        "# CrossFrame Ultra v8.2 Heading Index",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        "",
-        "| paragraph id | style | text | source file |",
-        "| --- | --- | --- | --- |",
-    ]
-    for record in _heading_records(paragraphs):
-        anchor = str(record["anchor"])
-        source_file = _source_file_for_paragraph(int(record["ordinal"]))
-        text = str(record["text"]).replace("|", "\\|").replace("\n", "<br>")
-        heading_lines.append(
-            f"| [{anchor}]({source_file}) | `{record['style']}` | {text} | [{source_file}]({source_file}) |"
-        )
-    heading_index = "\n".join(heading_lines) + "\n"
-
-    concept_lines = [
-        "# CrossFrame Ultra v8.2 Exact Source Form Locator",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        "",
-        "## Exact Source Form Locator",
-        "",
-        "This index groups exact styled source forms without adding definitions.",
-        "",
-        "| exact source form | style | source anchors |",
-        "| --- | --- | --- |",
-    ]
-    for record in _concept_records(paragraphs):
-        text = str(record["text"]).replace("|", "\\|").replace("\n", "<br>")
-        same = [
-            item
-            for item in paragraphs
-            if item["style"] == record["style"] and item["text"] == record["text"]
-        ]
-        links = ", ".join(
-            f"[{item['anchor']}]({_source_file_for_paragraph(int(item['ordinal']))})"
-            for item in same
-        )
-        concept_lines.append(f"| {text} | `{record['style']}` | {links} |")
-    term_index = "\n".join(concept_lines) + "\n"
-
-    table_lines = [
-        "# CrossFrame Ultra v8.2 Table Index",
-        "",
-        f"Raw SHA256: `{snapshot.raw_sha256}`",
-        f"Semantic SHA256: `{snapshot.semantic_sha256}`",
-        f"Table count: `{len(tables)}`",
-        "",
-        "| table | paragraph anchors | rows | columns | file |",
-        "| --- | ---: | ---: | ---: | --- |",
-    ]
-    for table in tables:
-        table_lines.append(
-            f"| `{table['anchor']}` | `{len(table['paragraph_ordinals'])}` | `{len(table['rows'])}` | `{max((len(row) for row in table['rows']), default=0)}` | [{table['anchor']}](tables/{table['anchor']}.md) |"
-        )
-    table_index = "\n".join(table_lines) + "\n"
-    return {
-        "00-index.md": index.encode("utf-8"),
-        "00-heading-index.md": heading_index.encode("utf-8"),
-        "00-term-index.md": term_index.encode("utf-8"),
-        "00-table-index.md": table_index.encode("utf-8"),
-    }
-
-
-def _render_authority_files(snapshot: object) -> dict[str, bytes]:
-    paragraphs, tables = _snapshot_records(snapshot)
-    files = _render_index_files(snapshot, paragraphs, tables)
-    table_map = {int(record["ordinal"]): record for record in tables}
-    for item in SOURCE_RANGES:
-        p_records, t_records = _range_records(paragraphs, tables, item)
-        files[str(item["file"])] = _render_source_file(snapshot, item, p_records, t_records)
-    for ordinal, table in sorted(table_map.items()):
-        files[f"tables/V82-T{ordinal:03d}.md"] = _render_table_file(snapshot, table)
-    if set(files) != set(EXPECTED_TREE_FILES):
-        raise ValueError("authority renderer produced an unexpected file inventory")
-    return files
-
-
-def _write_tree_files(stage: Path, files: Mapping[str, bytes]) -> None:
-    stage.mkdir(parents=True, exist_ok=False)
-    for relative, content in sorted(files.items()):
-        target = stage / Path(relative)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if _is_reparse_or_link(target.parent):
-            raise ValueError(f"staging parent is a symlink or reparse point: {target.parent}")
-        target.write_bytes(content)
-
-
-def generate_authority_tree(repo: Path, source_docx: Path) -> Path:
-    """Compile and atomically promote a full v8.2 tree.
-
-    This helper is intentionally separate from the read-only CLI.  It uses
-    Task 2's snapshot compiler and is useful for the one-time source promotion.
-    """
-    repo = _safe_repo(Path(repo))
-    source_docx = Path(os.path.abspath(source_docx))
-    _assert_no_link_ancestors(source_docx, source_docx.anchor and Path(source_docx.anchor) or source_docx.parent)
-    source_bytes = _read_bounded_source_docx(source_docx)
-    if _sha256_bytes(source_bytes) != RAW_SHA256:
-        raise ValueError(f"raw SHA256 mismatch: expected {RAW_SHA256}, got {_sha256_bytes(source_bytes)}")
-    compiler_path = _compiler_path()
-    compiler_bytes = _read_regular_file(
-        compiler_path,
-        anchor=compiler_path.parent,
-        max_bytes=MAX_SOURCE_COMPILER_BYTES,
-        label="source compiler",
-    )
-    snapshot = _captured_snapshot_from_response(
-        _run_isolated_compiler(
-            compiler_bytes,
-            "source_snapshot",
-            {"source": base64.b64encode(source_bytes).decode("ascii")},
-        )
-    )
-    if snapshot.errors:
-        raise ValueError("invalid v8.2 snapshot: " + "; ".join(snapshot.errors))
-    refs = repo / REFERENCES_RELATIVE
-    _assert_no_link_ancestors(refs, repo)
-    refs.mkdir(parents=True, exist_ok=True)
-    live = repo / SOURCE_TREE_RELATIVE
-    manifest_path = repo / MANIFEST_RELATIVE
-    for path in (refs, live.parent, manifest_path.parent):
-        _assert_no_link_ancestors(path, repo)
-    stage = refs / f".v8.2-full-source.stage-{uuid4().hex}"
-    files = _render_authority_files(snapshot)
-    _write_tree_files(stage, files)
-    compiler_sha = _sha256_bytes(compiler_bytes)
-    manifest = _manifest_payload(snapshot, files, compiler_sha256=compiler_sha)
-    manifest_stage = refs / f".source-manifest.stage-{uuid4().hex}.json"
-    manifest_stage.write_bytes(
-        json.dumps(
-            manifest,
-            ensure_ascii=False,
-            indent=2,
-            allow_nan=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
-    backup = refs / f".v8.2-full-source.backup-{uuid4().hex}"
-    old_manifest = refs / f".source-manifest.backup-{uuid4().hex}.json"
-    try:
-        if live.exists():
-            os.replace(live, backup)
-        os.replace(stage, live)
-        if manifest_path.exists():
-            os.replace(manifest_path, old_manifest)
-        os.replace(manifest_stage, manifest_path)
-    except Exception:
-        if live.exists() and not stage.exists():
-            try:
-                os.replace(live, stage)
-            except OSError:
-                pass
-        if backup.exists() and not live.exists():
-            os.replace(backup, live)
-        if old_manifest.exists() and not manifest_path.exists():
-            os.replace(old_manifest, manifest_path)
-        raise
-    finally:
-        for leftover in (stage, manifest_stage, backup, old_manifest):
-            if leftover.exists():
-                if leftover.is_dir():
-                    shutil.rmtree(leftover)
-                else:
-                    leftover.unlink()
-    return live
 
 
 def _strict_json_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
