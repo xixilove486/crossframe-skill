@@ -48,11 +48,14 @@ RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
 SEMANTIC_SHA256 = "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
 LEGACY_V80_SHA256 = "3186805a3e46e1b16948a4e51d08e7693a8e0dd04aa6b4604e796266d649936c"
 EXPECTED_SOURCE_CHECKER_SHA256 = "96ab4688bd88458cf6a83028811a9ee3ee43c0b1dad2ad2039c9a54eb0068287"
+EXPECTED_JSONIO_SHA256 = "d15246d92fdd0c0c1c1c356e1b8b536456227d5ec0ea55c3ce61702add7528cc"
 MAX_KNOWLEDGE_FILE_BYTES = 1024 * 1024
 # Every authority read, including the frozen source-checker bytes, is bounded
 # by the same one-MiB per-file ceiling.
 MAX_AUTHORITY_FILE_BYTES = MAX_KNOWLEDGE_FILE_BYTES
 MAX_KNOWLEDGE_SNAPSHOT_BYTES = 4 * 1024 * 1024
+MAX_KNOWLEDGE_JSON_CONTAINER_ITEMS = 100_000
+MAX_KNOWLEDGE_JSON_DEPTH = 128
 
 ULTRA_RELATIVE = Path("skills/crossframe-ultra")
 REFERENCES_RELATIVE = ULTRA_RELATIVE / "references"
@@ -61,6 +64,7 @@ REGISTRY_RELATIVE = REFERENCES_RELATIVE / "concept-registry/v8.2-concept-registr
 REGISTRY_INDEX_RELATIVE = REFERENCES_RELATIVE / "concept-registry/index.md"
 CONTRACT_MAP_RELATIVE = REFERENCES_RELATIVE / "concept-contracts/v8.2-contract-map.json"
 ROUTE_MAP_RELATIVE = REFERENCES_RELATIVE / "v8.2-route-map.json"
+JSONIO_RELATIVE = ULTRA_RELATIVE / "scripts/ultra_runtime/jsonio.py"
 
 SCHEMA_FILES = {
     "source": "ultra-source-manifest.schema.json",
@@ -78,21 +82,21 @@ CONTRACT_FILES = frozenset(
     }
 )
 EXPECTED_CONTRACT_HASHES = {
-    "core-kernel-contracts.json": "36e744fb55de92ee8d9cb503816db929c5b4872c21465a94ba0733236d032160",
-    "transformation-contracts.json": "9b03a4375b5ff29a9cbbaa17724acb28e8937c47cc14744f3ca03a5e8bf1a97d",
-    "world-volume-contracts.json": "76136718dc95b25c2a46b8af00d497d95a5ca6ecec975ab4826cb2fac5bcaef7",
-    "recursive-inference-contracts.json": "58c0d59521b979d7b249fb119a8b0af8d5436e125d09e0706f58ccc7d693331c",
-    "judgment-governance-contracts.json": "20ab08e9f070a84805be0a871bc25dab1440bf46ebb0b4423f5db141da5a9f4f",
+    "core-kernel-contracts.json": "0cfeebc4102be58775ea636c6e30af4785c16ae35c6ebd6d805db16ccbaf92f2",
+    "transformation-contracts.json": "f94f776fb82cb9a110a43d35c2a518a31d153649b8cb4475471d8f5efc0aead1",
+    "world-volume-contracts.json": "c62318d61c867d75a7305d620540b32a04eaf537332c862d910e438e27d4c5a5",
+    "recursive-inference-contracts.json": "833e363dcb6dcac3daaab02d5f6c1f537c7ddfb46640e9ce666cb90c27f541a2",
+    "judgment-governance-contracts.json": "0f2cfb51a606452eda0bf709ca92115d499fbadf4c843148aeac6bae6d4dd08e",
 }
 EXPECTED_AUTHORITY_HASHES = {
     "skills/crossframe-ultra/references/concept-registry/v8.2-concept-registry.json": "8c88d2b3d47c378b7beccd74082f8b460f5e91780f18aae1fd74d3a26242ff6d",
     "skills/crossframe-ultra/references/concept-registry/index.md": "48a9c90f9d6b1f08588a0b61f1ab343439175c92652c6d9899eb10c4d844b9df",
-    "skills/crossframe-ultra/references/concept-contracts/v8.2-contract-map.json": "9c243893a7879346b4c2b8959398d6172b62df9354891184304df79b1ba7508c",
-    "skills/crossframe-ultra/references/v8.2-route-map.json": "2e01bf18eb740daa8d9a07cb8bf3c78e467ee76baadcbdf12e697ad4be415b4a",
+    "skills/crossframe-ultra/references/concept-contracts/v8.2-contract-map.json": "f21f844022d7b67aae1596c154cfe75ecb7b000b0d7959533b71c41c2293e84e",
+    "skills/crossframe-ultra/references/v8.2-route-map.json": "b4b14305303db066f1ecc7bfd1f8e5703925632131f13aba0cd9955e6534b20f",
     "skills/crossframe-ultra/schemas/ultra-source-manifest.schema.json": "8e3dbf483987a99ca61a159bd723a134129242789ca848657741b8982ee690ca",
     "skills/crossframe-ultra/schemas/ultra-concept-registry.schema.json": "b254564eafbb8c8a949ff82499d4f706e6b2d7eb4e84120269d24aad048990fa",
-    "skills/crossframe-ultra/schemas/ultra-contract-map.schema.json": "96423ed983d04a1693ac66f5ef003d097bb323c2a69294facbfee28e09fa3dca",
-    "skills/crossframe-ultra/schemas/ultra-route-map.schema.json": "9ac0cf3368c76df6c1b0992ab3bb7cbf77ee30eb7ce90a70d8226dcabadb93c0",
+    "skills/crossframe-ultra/schemas/ultra-contract-map.schema.json": "fd057452e348b6aa64c734485a76961ab1a11de81857fec08bc2545bf413c38d",
+    "skills/crossframe-ultra/schemas/ultra-route-map.schema.json": "fb2fe9c7883496d3f41c448c5172e74cc464184cf6b00919dec474337148200a",
 }
 CONCEPT_FIELDS = frozenset(
     {
@@ -128,6 +132,7 @@ CONTRACT_DOCUMENT_FIELDS = frozenset(
         "responsibility",
         "source_anchors",
         "concept_ids",
+        "machine_requirements",
         "clauses",
     }
 )
@@ -135,7 +140,14 @@ CONTRACT_ENTRY_FIELDS = frozenset(
     {"contract_id", "file", "file_sha256", "concept_ids", "source_anchors"}
 )
 ROUTE_FIELDS = frozenset(
-    {"route_id", "task", "source_anchors", "concept_ids", "contract_ids"}
+    {
+        "route_id",
+        "task",
+        "source_anchors",
+        "concept_ids",
+        "requirement_ids",
+        "contract_ids",
+    }
 )
 ALLOWED_INFERENCE_INTERFACES = frozenset(
     {
@@ -162,6 +174,7 @@ ANCHOR_RE = re.compile(r"^V82-(?:P[0-9]{4}|T[0-9]{3})$")
 CONCEPT_ID_RE = re.compile(r"^V82-[A-Z][A-Z0-9-]*$")
 CONTRACT_ID_RE = re.compile(r"^V82-CONTRACT-[A-Z0-9-]+$")
 ROUTE_ID_RE = re.compile(r"^V82-ROUTE-[A-Z0-9-]+$")
+REQUIREMENT_ID_RE = re.compile(r"^V82-REQ-[A-Z0-9-]+$")
 OLD_ANCHOR_RE = re.compile(r"\bV8-[PT][0-9]{3,4}\b", re.IGNORECASE)
 FORBIDDEN_SIBLING_TERMS = (
     "crossframe-casebook",
@@ -184,6 +197,21 @@ FORBIDDEN_SIBLING_TERMS = (
     "promax",
     "crossframe max",
 )
+
+EXPECTED_REQUIREMENT_OWNERS = {
+    "V82-REQ-SP-AXES": "V82-CONTRACT-TRANSFORMATION",
+    "V82-REQ-M02-EXECUTION": "V82-CONTRACT-TRANSFORMATION",
+    "V82-REQ-RCC-RELATION": "V82-CONTRACT-WORLD-VOLUME",
+    "V82-REQ-RAC-MEMBERSHIP": "V82-CONTRACT-WORLD-VOLUME",
+    "V82-REQ-GOVERNANCE-MACHINE": "V82-CONTRACT-JUDGMENT-GOVERNANCE",
+}
+EXPECTED_REQUIREMENT_HASHES = {
+    "V82-REQ-SP-AXES": "f2f31cba7a1dc1eebf5791b4f70305b1672aafcb6116ee5151e4b07f78ad6cdd",
+    "V82-REQ-M02-EXECUTION": "b2e5c7815af592c86800c47d9b3d15695f15818c3d4fd1c65cfbf4aa6f576329",
+    "V82-REQ-RCC-RELATION": "e9057206ca2da57e59b09ce5e0081a96692ed1d091677e9b7125d82fe3e175ad",
+    "V82-REQ-RAC-MEMBERSHIP": "bf26d263547a2371d868a3ee871bd3a95ffb23f04899555014a7888ada4cce4b",
+    "V82-REQ-GOVERNANCE-MACHINE": "b7b67eb7cb2f4e9e83526724bc01c6229150f34f7ea20d57d5732e72b1c7347d",
+}
 
 SEMANTIC_UNIT_SPLIT_RE = re.compile(
     r"[\uff0c,\u3002\uff1b;\uff1a:\uff01!\uff1f?]+|(?=\u5e76\u4e14|\u4f46\u662f|\u7136\u800c|\u5426\u5219)"
@@ -513,13 +541,8 @@ CURATED_SEMANTIC_EVIDENCE.update(
         "不得把所有相关对象合并为一个超圈层或宣称更高主体": ("不是把所有相关对象装进一个大圈层", "不是宣称存在一个更高主体"),
         "冻结快照必须记录关系成员映射mψ通道约束多时钟尺度剖面未知残差和k": ("快照是推演的冻结起点", "关系和成员映射", "未知残差和同一性判据"),
         "保留观察支持候选争议未知或不适用等状态": ("观察到得到支持的假设候选争议未知或不适用",),
-        "默认": ("描述性嵌套只检验边界成员重叠退出和接口映射",),
     }
 )
-
-
-class DuplicateKeyError(ValueError):
-    """Raised when an authority JSON document contains a duplicate key."""
 
 
 def _deduplicate(values: Sequence[str]) -> list[str]:
@@ -947,46 +970,11 @@ def _read_regular(
     return _read_regular_posix(Path(path), Path(repo), max_bytes)
 
 
-def _pairs_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise DuplicateKeyError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_non_finite_json_constant(value: str) -> object:
-    raise ValueError(f"non-finite JSON constant is forbidden: {value}")
-
-
-def _strict_json_float(value: str) -> float:
-    parsed = float(value)
-    if not math.isfinite(parsed):
-        raise ValueError(f"non-finite JSON number is forbidden: {value}")
-    return parsed
-
-
-def _parse_json_bytes(payload: bytes, label: str, errors: list[str]) -> object | None:
-    try:
-        text = payload.decode("utf-8")
-        if text.startswith("\ufeff"):
-            raise ValueError("UTF-8 BOM is forbidden")
-        return json.loads(
-            text,
-            object_pairs_hook=_pairs_object,
-            parse_constant=_reject_non_finite_json_constant,
-            parse_float=_strict_json_float,
-        )
-    except Exception as error:
-        errors.append(f"{label}: cannot load authority JSON: {error}")
-        return None
-
-
 class _KnowledgeSnapshot:
-    def __init__(self, repo: Path, errors: list[str]) -> None:
+    def __init__(self, repo: Path, errors: list[str], json_loader: object | None) -> None:
         self.repo = repo
         self.errors = errors
+        self.json_loader = json_loader
         self.payloads: dict[str, bytes] = {}
         self.total_bytes = 0
 
@@ -1020,11 +1008,31 @@ class _KnowledgeSnapshot:
         payload = self.payloads.get(label)
         if payload is None:
             return None
-        return _parse_json_bytes(payload, label, self.errors)
+        if not callable(self.json_loader):
+            self.errors.append(f"{label}: strict JSON loader is unavailable")
+            return None
+        try:
+            return self.json_loader(
+                payload,
+                source=label,
+                max_bytes=MAX_KNOWLEDGE_FILE_BYTES,
+                max_container_items=MAX_KNOWLEDGE_JSON_CONTAINER_ITEMS,
+                max_depth=MAX_KNOWLEDGE_JSON_DEPTH,
+            )
+        except Exception as error:
+            message = str(error).replace(
+                "duplicate JSON object key", "duplicate JSON key"
+            )
+            self.errors.append(f"{label}: cannot load authority JSON: {message}")
+            return None
 
 
-def _capture_knowledge_snapshot(repo: Path, errors: list[str]) -> _KnowledgeSnapshot:
-    snapshot = _KnowledgeSnapshot(repo, errors)
+def _capture_knowledge_snapshot(
+    repo: Path,
+    errors: list[str],
+    json_loader: object | None,
+) -> _KnowledgeSnapshot:
+    snapshot = _KnowledgeSnapshot(repo, errors, json_loader)
     paths = [
         REGISTRY_RELATIVE,
         REGISTRY_INDEX_RELATIVE,
@@ -1147,6 +1155,7 @@ def _module_from_source(
     payload: bytes,
     *,
     repo: Path | None = None,
+    injected_modules: Mapping[str, object] | None = None,
 ) -> object:
     global _SOURCE_MODULE_SEQUENCE
 
@@ -1162,6 +1171,11 @@ def _module_from_source(
     module.__spec__ = None
     isolation = _ImportIsolation(repo or Path(path).parent)
     with isolation:
+        missing = object()
+        previous_aliases: dict[str, object] = {}
+        for alias, injected in (injected_modules or {}).items():
+            previous_aliases[alias] = sys.modules.get(alias, missing)
+            sys.modules[alias] = injected
         sys.modules[module_name] = module
         try:
             exec(compile(source, str(path), "exec"), module.__dict__)
@@ -1169,12 +1183,17 @@ def _module_from_source(
             # The dynamic module is intentionally never resident after exec,
             # including the exceptional path.
             sys.modules.pop(module_name, None)
+            for alias, previous in previous_aliases.items():
+                if previous is missing:
+                    sys.modules.pop(alias, None)
+                else:
+                    sys.modules[alias] = previous
     return module
 
 
 def _load_source_checker(repo: Path):
     path = repo / ULTRA_RELATIVE / "scripts/check_crossframe_ultra_v82_source.py"
-    payload = _read_regular(path, repo)
+    payload = _read_regular(path, repo, max_bytes=MAX_AUTHORITY_FILE_BYTES)
     actual_hash = sha256(payload).hexdigest()
     if actual_hash != EXPECTED_SOURCE_CHECKER_SHA256:
         raise ValueError(
@@ -1195,6 +1214,42 @@ def _load_source_checker(repo: Path):
         if getattr(module, name, None) != expected:
             raise ValueError(f"source authority checker binding mismatch: {name}")
     return module
+
+
+def _load_strict_json_loader(repo: Path, source_checker: object):
+    path = repo / JSONIO_RELATIVE
+    payload = _read_regular(path, repo, max_bytes=MAX_AUTHORITY_FILE_BYTES)
+    actual_hash = sha256(payload).hexdigest()
+    if actual_hash != EXPECTED_JSONIO_SHA256:
+        raise ValueError(
+            "strict JSON loader hash mismatch: "
+            f"expected {EXPECTED_JSONIO_SHA256}, got {actual_hash}"
+        )
+    module = _module_from_source(
+        "ultra_v82_knowledge_jsonio",
+        path,
+        payload,
+        repo=repo,
+        injected_modules={"check_crossframe_ultra_v82_source": source_checker},
+    )
+    runtime_loader = getattr(module, "load_json_object_bytes", None)
+    if not callable(runtime_loader):
+        raise ValueError("strict JSON loader does not expose load_json_object_bytes")
+
+    def load_json_object_bytes(*args, **kwargs):
+        value = runtime_loader(*args, **kwargs)
+        stack: list[object] = [value]
+        while stack:
+            current = stack.pop()
+            if isinstance(current, float) and not math.isfinite(current):
+                raise ValueError("non-finite JSON number is forbidden")
+            if isinstance(current, Mapping):
+                stack.extend(current.values())
+            elif isinstance(current, list):
+                stack.extend(current)
+        return value
+
+    return load_json_object_bytes
 
 
 def _closed_schema_errors(schema: object, path: str = "$") -> list[str]:
@@ -1406,6 +1461,925 @@ def _normalize_text(value: str) -> str:
     return "".join(character for character in value.casefold() if character.isalnum())
 
 
+def _requirement_path_value(value: object, path: Sequence[object]) -> object:
+    current = value
+    for part in path:
+        if isinstance(part, str) and isinstance(current, Mapping):
+            if part not in current:
+                raise KeyError(part)
+            current = current[part]
+        elif isinstance(part, int) and isinstance(current, list):
+            current = current[part]
+        else:
+            raise KeyError(part)
+    return current
+
+
+def _requirement_value_text(value: object) -> str:
+    """Flatten a descriptor value for field-level evidence comparisons."""
+    if isinstance(value, Mapping):
+        parts: list[str] = []
+        for key, child in value.items():
+            parts.append(str(key))
+            parts.append(_requirement_value_text(child))
+        return " ".join(parts)
+    if isinstance(value, list):
+        return " ".join(_requirement_value_text(child) for child in value)
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None:
+        return "null"
+    return str(value)
+
+
+def _validate_requirement_source_support(
+    requirement: Mapping[str, object],
+    source_records: Mapping[str, str],
+    errors: list[str],
+) -> None:
+    requirement_id = str(requirement.get("requirement_id", "<missing>"))
+    declared_refs = set(
+        _string_list(
+            requirement.get("source_refs"),
+            f"{requirement_id} source_refs",
+            errors,
+            allow_empty=False,
+        )
+    )
+    supported_refs: set[str] = set()
+
+    def support(
+        path: Sequence[object],
+        anchor: str,
+        *markers: str,
+        expected_values: Sequence[str] = (),
+    ) -> None:
+        path_label = ".".join(str(part) for part in path)
+        try:
+            field_value = _requirement_path_value(requirement, path)
+        except (IndexError, KeyError):
+            errors.append(
+                f"{requirement_id}: required field path is absent: {path_label}"
+            )
+            return
+        if anchor not in declared_refs:
+            errors.append(
+                f"{requirement_id} {path_label}: precise support anchor {anchor} "
+                "is not declared in source_refs"
+            )
+            return
+        source = source_records.get(anchor)
+        if not isinstance(source, str):
+            errors.append(
+                f"{requirement_id} {path_label}: precise support anchor {anchor} "
+                "is not resolvable"
+            )
+            return
+        normalized_source = _normalize_text(source)
+        for marker in markers:
+            if _normalize_text(marker) not in normalized_source:
+                errors.append(
+                    f"{requirement_id} {path_label}: source anchor {anchor} "
+                    f"does not contain required marker {marker!r}"
+                )
+                return
+        value_text = _normalize_text(_requirement_value_text(field_value))
+        if expected_values:
+            if isinstance(field_value, list) and all(
+                isinstance(item, str) for item in field_value
+            ):
+                normalized_items = {
+                    _normalize_text(item) for item in field_value
+                }
+                missing_values = [
+                    expected
+                    for expected in expected_values
+                    if _normalize_text(expected) not in normalized_items
+                ]
+            else:
+                missing_values = [
+                    expected
+                    for expected in expected_values
+                    if _normalize_text(expected) not in value_text
+                ]
+            if missing_values:
+                errors.append(
+                    f"{requirement_id} {path_label}: field value does not preserve "
+                    f"required canonical values {missing_values!r}"
+                )
+                return
+        elif isinstance(field_value, (str, int, float, bool)):
+            normalized_value = _normalize_text(_requirement_value_text(field_value))
+            if normalized_value and normalized_value not in normalized_source:
+                errors.append(
+                    f"{requirement_id} {path_label}: field value is not supported "
+                    f"by source anchor {anchor}"
+                )
+                return
+        supported_refs.add(anchor)
+
+    if requirement_id == "V82-REQ-SP-AXES":
+        support(
+            ("axes",),
+            "V82-P0870",
+            "SP=<A,X,T,O,C,R,I,N,J>",
+            expected_values=("A", "X", "T", "O", "C", "R", "I", "N", "J"),
+        )
+        support(
+            ("axes",),
+            "V82-T012",
+            "状态字段核心",
+            "expands 的计算见证",
+            "不可替代边界",
+            expected_values=(
+                "聚合层次",
+                "空间范围",
+                "时间跨度",
+                "组织层级",
+                "因果层次",
+                "观察分辨率",
+                "影响范围",
+                "网络拓扑范围",
+                "管辖与授权范围",
+            ),
+        )
+        axes = requirement.get("axes")
+        if isinstance(axes, list):
+            for index, axis in enumerate(axes):
+                if not isinstance(axis, Mapping):
+                    continue
+                refs = axis.get("source_refs")
+                if not isinstance(refs, list) or len(refs) != 4:
+                    errors.append(
+                        f"{requirement_id} axes.{index}: four precise cell refs are required"
+                    )
+                    continue
+                support(("axes", index, "canonical_zh"), refs[0], f"{axis.get('axis_id')} {axis.get('canonical_zh')}")
+                support(("axes", index, "state_field_core"), refs[1], str(axis.get("state_field_core", "")))
+                support(("axes", index, "expands_computational_witness"), refs[2], str(axis.get("expands_computational_witness", "")))
+                support(("axes", index, "non_substitution_boundary"), refs[3], str(axis.get("non_substitution_boundary", "")))
+        support(
+            ("axis_relations",),
+            "V82-P0911",
+            "每轴关系只有五种",
+            expected_values=("equal", "expands", "contracts", "incomparable", "unknown"),
+        )
+        support(
+            ("axis_difference_required_fields",),
+            "V82-P0911",
+            "轴比较记录固定包含",
+            expected_values=(
+                "axis_id",
+                "source_state",
+                "target_state",
+                "relation",
+                "order_witness",
+                "information_loss",
+                "uncertainty",
+            ),
+        )
+        support(
+            ("order_witness_required_fields",),
+            "V82-P0911",
+            "order_witness 不是一句说明",
+            "validation_status 必须为 valid",
+            expected_values=(
+                "comparator_id",
+                "comparator_version",
+                "verifier_id",
+                "evidence_refs",
+                "comparison_payload",
+                "comparator_result_ref",
+                "verification_artifact_ref",
+                "verification_hash",
+                "validation_status",
+            ),
+        )
+        support(
+            ("order_witness_invariants",),
+            "V82-P0911",
+            "没有可解析见证，只能记 unknown",
+            expected_values=(
+                "non_unknown_requires_closed_valid_witness",
+                "unresolvable_witness_forces_unknown",
+                "nontrivial_relation_requires_registered_comparator_result",
+                "identical_states_may_use_builtin_deep_equality_for_equal",
+                "identical_states_cannot_expand_or_contract",
+            ),
+        )
+        support(
+            ("order_witness_registry_resolution",),
+            "V82-P0911",
+            "外部比较器结果注册表",
+            expected_values=(
+                "axis_comparator_results",
+                "axis_id",
+                "comparator_id",
+                "comparator_version",
+                "source_state_sha256",
+                "target_state_sha256",
+                "relation",
+                "verification_hash",
+                "validation_status",
+                "unknown",
+                "identical_states_equal_only",
+            ),
+        )
+        support(
+            ("invariants", 1),
+            "V82-P0912",
+            "not_applicable 对象",
+            "不是删掉该轴",
+            expected_values=("not_applicable_is_explicit_and_never_omitted",),
+        )
+        support(
+            ("partial_order_invariants",),
+            "V82-P0913",
+            "反身性、反对称性和传递性",
+            "规范化等价类",
+            expected_values=(
+                "normalized_states_are_reflexive",
+                "bidirectional_order_implies_same_normalized_equivalence_class",
+                "transitivity_requires_composable_intermediate_state_version_and_witness",
+                "arbitrary_pairwise_distance_tolerance_cannot_define_equality",
+            ),
+        )
+        support(
+            ("partial_order_invariants",),
+            "V82-P0914",
+            "可组合的语义保持映射",
+            "incomparable 或 unknown",
+            expected_values=(
+                "expands_requires_composable_semantics_preserving_auxiliary_mappings",
+                "auxiliary_mapping_conflict_forces_incomparable_or_unknown",
+            ),
+        )
+        support(
+            ("classification_precedence",),
+            "V82-P0916",
+            "机器分类按以下顺序执行",
+            expected_values=(
+                "any_incomparable",
+                "horizontal_or_incomparable",
+                "has_expands_and_contracts",
+                "mixed",
+                "any_unknown",
+                "unresolved",
+                "all_equal",
+                "equal_or_expands_with_at_least_one_expands",
+                "elevation",
+                "equal_or_contracts_with_at_least_one_contracts",
+                "reduction",
+            ),
+        )
+        classification_markers = (
+            ("V82-P0917", "任一轴 incomparable", "horizontal_or_incomparable"),
+            ("V82-P0918", "同时出现扩展和收缩", "mixed"),
+            ("V82-P0919", "任一轴 unknown", "unresolved"),
+            ("V82-P0920", "九轴全 equal", "all_equal"),
+            ("V82-P0921", "至少一轴扩展", "elevation"),
+            ("V82-P0922", "至少一轴收缩", "reduction"),
+        )
+        for index, (anchor, *markers) in enumerate(classification_markers):
+            support(("classification_precedence", index), anchor, *markers)
+        support(
+            ("transformation_classes",),
+            "V82-P0923",
+            "mixed",
+            "horizontal_or_incomparable",
+            "unresolved",
+            expected_values=(
+                "horizontal_or_incomparable",
+                "mixed",
+                "unresolved",
+                "all_equal",
+                "elevation",
+                "reduction",
+            ),
+        )
+        support(
+            ("invariants", 4),
+            "V82-P0923",
+            "J 只能由新的有效授权元组见证扩展",
+            expected_values=("no_other_axis_substitutes_for_j",),
+        )
+        support(
+            ("j_authorization_tuple_required_fields",),
+            "V82-P0924",
+            "每个原子元组只绑定一个来源",
+            "独立复核",
+            expected_values=(
+                "source_ref",
+                "decision_subject_ref",
+                "object_ref",
+                "action_ref",
+                "jurisdiction",
+                "validity_period",
+                "revocation_conditions",
+                "evidence_refs",
+                "independent_review_ref",
+            ),
+        )
+        support(
+            ("j_expansion_invariants",),
+            "V82-P0924",
+            "comparison_payload",
+            "其他轴的扩展都不能使 J 变为 expands",
+            expected_values=(
+                "only_valid_normalized_atomic_tuples_enter_set_comparison",
+                "comparison_payload_lists_complete_new_target_tuples_and_validity_evidence",
+                "comparison_payload_aligns_with_j_authorization",
+                "multiple_objects_or_actions_require_separate_tuples",
+                "strings_ids_claims_control_coverage_or_other_axes_cannot_make_j_expand",
+            ),
+        )
+    elif requirement_id == "V82-REQ-M02-EXECUTION":
+        support(
+            ("branches",),
+            "V82-P0661",
+            "G4a",
+            "G4b",
+            "唯一预选一个子型",
+            expected_values=(
+                "descriptive_nesting",
+                "cross_layer_causal",
+                "object_conversion",
+                "intervention_conversion",
+                "G4a",
+                "G4b",
+            ),
+        )
+        support(
+            ("success_criteria_by_root_subtype",),
+            "V82-P0662",
+            "conditional_information_gain",
+            "object_dynamics_non_commutation",
+            expected_values=(
+                "conditional_information_gain",
+                "conditional_predictive_gain",
+                "conditional_intervention_gain",
+                "object_dynamics_non_commutation",
+                "intervention_non_commutation",
+                "identity_criterion_violation",
+                "effective_relation_change",
+                "intervention_response_change",
+            ),
+        )
+        support(
+            ("success_criterion_selection_cardinality",),
+            "V82-P0662",
+            "每个实例只能预选其中一个",
+            expected_values=("1",),
+        )
+        support(
+            ("positive_support_requires",),
+            "V82-P0928",
+            "决策规则",
+            "正向阈值",
+            "已预注册且通过",
+            expected_values=(
+                "positive_decision_rule_ref",
+                "positive_threshold",
+            ),
+        )
+        support(
+            ("null_support_requires",),
+            "V82-P0663",
+            "等价性或充分性检验",
+            "功效或灵敏度门",
+            "容差",
+            expected_values=(
+                "null_decision_rule_ref",
+                "equivalence_or_sufficiency_test_ref",
+                "power_or_sensitivity_ref",
+                "tolerance_ref",
+            ),
+        )
+        support(
+            ("pre_result_registration_required_fields",),
+            "V82-P0926",
+            "看结果前冻结",
+            "不能因正向门失败切换支路",
+            expected_values=("pre_result_registration_ref", "pre_result_registration_hash"),
+        )
+        support(
+            ("pre_result_registration_match_fields",),
+            "V82-P0926",
+            "operator_ids",
+            "selected_operator_branch",
+            "claim_mode",
+            expected_values=(
+                "operator_id",
+                "selected_operator_branch",
+                "claim_mode",
+            ),
+        )
+        support(
+            ("pre_result_registration_match_fields",),
+            "V82-P0661",
+            "结果出现前唯一预选一个子型",
+            "预定阈值或容差",
+            expected_values=(
+                "root_subtype",
+                "success_criterion_id",
+                "positive_threshold",
+            ),
+        )
+        support(
+            ("pre_result_registration_match_fields",),
+            "V82-P0663",
+            "D3/E5 映射",
+            "比较模型",
+            "正向阈值",
+            "null_decision_rule",
+            "功效或灵敏度门",
+            "容差",
+            expected_values=(
+                "d3_e5_mapping_ref",
+                "comparison_model_ref",
+                "positive_threshold",
+                "null_decision_rule_ref",
+                "equivalence_or_sufficiency_test_ref",
+                "power_or_sensitivity_ref",
+                "tolerance_ref",
+            ),
+        )
+        support(
+            ("pre_result_registration_match_fields",),
+            "V82-P0928",
+            "决策规则",
+            "正向阈值",
+            "已预注册且通过",
+            expected_values=(
+                "positive_decision_rule_ref",
+                "positive_threshold",
+            ),
+        )
+        support(
+            ("pre_result_registration_match_fields",),
+            "V82-P0930",
+            "预注册 null_decision_rule",
+            "等价性或充分性检验",
+            "功效或灵敏度",
+            "容差",
+            expected_values=(
+                "null_decision_rule_ref",
+                "equivalence_or_sufficiency_test_ref",
+                "power_or_sensitivity_ref",
+                "tolerance_ref",
+            ),
+        )
+        support(
+            ("result_state_semantics", "supported"),
+            "V82-P0928",
+            "supported",
+            "纯描述分支",
+            expected_values=(
+                "selected_branch_ran_and_registered_positive_rule_and_threshold_passed",
+            ),
+        )
+        support(
+            ("result_state_semantics", "unsupported_or_undecided"),
+            "V82-P0929",
+            "unsupported_or_undecided",
+            expected_values=("selected_branch_ran_without_positive_or_null_support",),
+        )
+        support(
+            ("result_state_semantics", "null_supported"),
+            "V82-P0930",
+            "null_supported",
+            "全部通过",
+            expected_values=(
+                "selected_branch_ran_and_registered_null_rule_and_all_three_null_gates_passed",
+            ),
+        )
+        support(
+            ("result_state_semantics", "not_evaluated"),
+            "V82-P0931",
+            "not_evaluated",
+            "相应分支尚未运行",
+            expected_values=("selected_branch_did_not_run",),
+        )
+        support(
+            ("result_states",),
+            "V82-P0932",
+            "不能自动写成 null_supported",
+            expected_values=("supported", "unsupported_or_undecided", "null_supported", "not_evaluated"),
+        )
+        support(
+            ("concept_id",),
+            "V82-P0938",
+            "边界—成员嵌入",
+            expected_values=("V82-M02",),
+        )
+        support(
+            ("branches", 0),
+            "V82-P0939",
+            "描述性嵌套只检验边界、成员、重叠、退出和接口映射",
+            expected_values=("descriptive_nesting", "descriptive_mapping"),
+        )
+        support(
+            ("branches", 1),
+            "V82-P0940",
+            "G4a 或 G4b root-instance",
+            "唯一成功判据",
+            expected_values=("cross_layer_causal", "causal", "G4a", "G4b"),
+        )
+        support(("action_ceiling",), "V82-P0941", "描述性嵌套不生成上位优先、下位义务或 J 轴扩展")
+        support(
+            ("branches",),
+            "V82-P0942",
+            "descriptive_nesting",
+            "cross_layer_causal",
+            "object_conversion",
+            "intervention_conversion",
+            expected_values=(
+                "descriptive_nesting",
+                "cross_layer_causal",
+                "object_conversion",
+                "intervention_conversion",
+            ),
+        )
+        support(
+            ("forbidden_substitutions",),
+            "V82-P0942",
+            "不得用描述性嵌套的边界材料支持后面三支",
+            expected_values=(
+                "不得用描述性嵌套的边界材料支持后面三支",
+                "描述性嵌套不生成上位优先、下位义务或 J 轴扩展",
+            ),
+        )
+        support(
+            ("branches", 2, "allowed_root_subtypes"),
+            "V82-P1006",
+            "object_conversion",
+            "G4b 实例",
+            expected_values=("G4b",),
+        )
+        support(
+            ("runtime_registry_resolution_contract",),
+            "V82-P0926",
+            "看结果前冻结",
+            "不能因正向门失败切换支路",
+            expected_values=(
+                "pre_result_registration_ref_and_hash_must_resolve",
+                "all_match_fields_must_equal_same_hash_verified_pre_result_registration",
+                "branch_and_mode_must_match_frozen_registration",
+            ),
+        )
+        support(
+            ("runtime_registry_resolution_contract",),
+            "V82-P0928",
+            "决策规则",
+            "正向阈值",
+            "已预注册且通过",
+            expected_values=(
+                "registered_positive_rule_and_threshold_must_both_pass_for_supported",
+            ),
+        )
+        support(
+            ("runtime_registry_resolution_contract",),
+            "V82-P0930",
+            "预注册 null_decision_rule",
+            "全部通过",
+            expected_values=(
+                "registered_null_rule_and_all_three_null_gates_must_pass_for_null_supported",
+            ),
+        )
+        support(
+            ("runtime_registry_resolution_contract",),
+            "V82-P1016",
+            "root_instance_ids",
+            "可解析的 root-instance 注册表",
+            "字符串前缀不能充当实例",
+            expected_values=(
+                "non_descriptive_root_instance_ids_must_resolve",
+                "causal_object_and_intervention_require_nonempty_causal_bridge",
+                "object_and_intervention_roots_require_g4b",
+                "cross_layer_causal_roots_allow_g4a_or_g4b",
+                "success_criterion_must_match_exactly_one_subtype_enum_value",
+                "not_evaluated_means_selected_branch_did_not_run",
+                "descriptive_supported_does_not_require_g_fields",
+            ),
+        )
+    elif requirement_id == "V82-REQ-RCC-RELATION":
+        support(
+            ("requirement_type",),
+            "V82-P1766",
+            "圈层关系 Rcc",
+            expected_values=("rcc_relation",),
+        )
+        support(
+            ("relation_types",),
+            "V82-P1796",
+            "六类关系是封闭的静态描述词",
+            expected_values=("平行", "嵌套", "重叠", "桥接", "竞争", "临时"),
+        )
+        support(
+            ("required_fields",),
+            "V82-P1796",
+            "源圈层、目标圈层、方向",
+            "证据、反例和失效条件",
+            expected_values=(
+                "source_circle_ref",
+                "target_circle_ref",
+                "direction",
+                "relation_type",
+                "shared_members_or_interfaces",
+                "channel",
+                "strength_or_scope",
+                "time_window",
+                "delay",
+                "threshold",
+                "evidence_refs",
+                "counterexample_refs",
+                "failure_conditions",
+            ),
+        )
+        detailed_relations = (
+            ("V82-P1797", "V82-P1798", "平行", "不存在成员或运行合同的包含关系"),
+            ("V82-P1799", "V82-P1800", "嵌套", "成员、合同或运行位置"),
+            ("V82-P1801", "V82-P1802", "重叠", "共享部分成员、角色、资源或接口"),
+            ("V82-P1803", "V82-P1804", "桥接", "原本分离的圈层连接起来"),
+            ("V82-P1805", "V82-P1806", "竞争", "排他约束"),
+            ("V82-P1807", "V82-P1808", "临时", "围绕事件、任务、危机")
+        )
+        for index, (heading_anchor, body_anchor, relation, marker) in enumerate(detailed_relations):
+            support(("relation_types", index), heading_anchor, relation)
+            support(("relation_types", index), body_anchor, marker)
+        definitions = requirement.get("relation_definitions")
+        if isinstance(definitions, list):
+            for index, definition in enumerate(definitions):
+                if not isinstance(definition, Mapping):
+                    continue
+                refs = definition.get("source_refs")
+                if not isinstance(refs, list) or len(refs) != 4:
+                    errors.append(f"{requirement_id} relation_definitions.{index}: four cell refs are required")
+                    continue
+                support(("relation_definitions", index, "relation_type"), refs[0], str(definition.get("relation_type", "")))
+                support(("relation_definitions", index, "definition"), refs[1], str(definition.get("definition", "")))
+                support(("relation_definitions", index, "criteria"), refs[2], str(definition.get("criteria", "")))
+                support(("relation_definitions", index, "failure_or_transition"), refs[3], str(definition.get("failure_or_transition", "")))
+        support(
+            ("invariants", 8),
+            "V82-P1837",
+            "转化不是第七种静态关系",
+            "绑定前后快照",
+            expected_values=("transformation_is_not_a_seventh_relation_type",),
+        )
+        support(
+            ("invariants", 2),
+            "V82-P1839",
+            "有向多重关系图加局部包含关系",
+            expected_values=("directed_multigraph_with_local_containment",),
+        )
+        support(
+            ("invariants",),
+            "V82-P1840",
+            "不要求每个节点只有一个父节点",
+            "每条边只表达一种已声明关系",
+            expected_values=(
+                "one_declared_relation_per_edge",
+                "same_pair_may_have_multiple_typed_edges_with_separate_channels_and_time_windows",
+                "multiple_local_parents_are_allowed",
+                "higher_does_not_imply_more_important_real_or_authorized",
+            ),
+        )
+        support(
+            ("invariants",),
+            "V82-P1841",
+            "共同环境误作直接关系",
+            "成员重叠误作组织包含",
+            "信息接触误作有效反馈",
+            expected_values=(
+                "shared_environment_is_not_a_direct_relation",
+                "member_overlap_is_not_nesting",
+                "information_contact_is_not_feedback",
+            ),
+        )
+        support(
+            ("validation_contract",),
+            "V82-P1796",
+            "证据、反例和失效条件",
+            expected_values=(
+                "record_fields",
+                "closed_exactly_required_fields",
+                "relation_type",
+                "closed_to_relation_types",
+                "evidence_refs",
+                "runtime_evidence_ids",
+                "counterexample_refs",
+                "runtime_counterexample_ids",
+                "authority_source_refs",
+                "separate_v82_anchors",
+            ),
+        )
+    elif requirement_id == "V82-REQ-RAC-MEMBERSHIP":
+        support(
+            ("requirement_type",),
+            "V82-P1766",
+            "成员与角色映射 Rac",
+            expected_values=("rac_membership",),
+        )
+        support(
+            ("required_fields",),
+            "V82-P1780",
+            "Rac 成员与角色映射",
+            expected_values=(
+                "actor_ref",
+                "circle_ref",
+                "membership_basis",
+                "start_time",
+                "end_time",
+                "roles",
+                "commitment_strength",
+                "actual_participation",
+                "exit_ability",
+                "dispute_status",
+                "evidence_status",
+                "source_refs",
+            ),
+        )
+        support(
+            ("invariants",),
+            "V82-P1781",
+            "多重归属",
+            "角色冲突",
+            "退出差异",
+            expected_values=(
+                "membership_is_not_binary_or_permanent",
+                "multiple_circle_memberships_are_allowed",
+                "role_conflicts_and_exit_differences_are_preserved",
+            ),
+        )
+        support(
+            ("required_fields",),
+            "V82-P1843",
+            "依据、起止时间、角色、承诺强度、实际参与、退出能力和争议",
+            expected_values=(
+                "membership_basis",
+                "start_time",
+                "end_time",
+                "roles",
+                "commitment_strength",
+                "actual_participation",
+                "exit_ability",
+                "dispute_status",
+            ),
+        )
+        support(
+            ("invariants",),
+            "V82-P1862",
+            "不自动成为桥接者",
+            "代表权、传导能力与责任主体必须分开",
+            expected_values=(
+                "formal_membership_does_not_imply_action_capacity",
+                "representation_does_not_imply_authorization",
+                "bridge_requires_an_actual_channel_and_state_or_information_change",
+                "representation_capacity_and_responsibility_remain_separate",
+            ),
+        )
+        support(
+            ("required_fields",),
+            "V82-P1915",
+            "行动者与圈层引用",
+            "关系和成员映射",
+            expected_values=("actor_ref", "circle_ref", "source_refs"),
+        )
+        support(
+            ("required_fields",),
+            "V82-P1916",
+            "每个值应标明状态",
+            "保留多个值及来源",
+            expected_values=("evidence_status", "source_refs"),
+        )
+    elif requirement_id == "V82-REQ-GOVERNANCE-MACHINE":
+        support(
+            ("framework_self_proof_allowed",),
+            "V82-P2780",
+            "框架不能用自己的语言证明自己安全",
+            expected_values=("false",),
+        )
+        support(
+            ("governance_record_generates_real_world_authorization",),
+            "V82-P2780",
+            "不产生现实行动授权",
+            expected_values=("false",),
+        )
+        support(
+            ("machine_invariants",),
+            "V82-P2781",
+            "框架不得自证",
+            "相反许可文字都不能覆盖",
+            expected_values=(
+                "framework_self_proof_forbidden",
+                "governance_record_authorization_generation_forbidden",
+                "replaced_to_active_forbidden",
+                "retired_to_active_forbidden",
+                "applied_requires_resolvable_external_approval",
+                "alias_approval_invalid",
+                "self_reported_independence_invalid",
+                "self_issued_authorization_invalid",
+                "contrary_permission_text_cannot_override_structured_constraints",
+            ),
+        )
+        support(
+            ("external_approval_required_bindings",),
+            "V82-P2890",
+            "精确绑定本次治理记录",
+            "target version",
+            "异议清单",
+            expected_values=(
+                "governance_record_ref",
+                "subject_ref",
+                "target_version",
+                "transition",
+                "objection_refs",
+                "decision_ref",
+            ),
+        )
+        support(
+            ("runtime_registry_resolution_fields",),
+            "V82-P2890",
+            "都必须从运行时注册表解析",
+            expected_values=(
+                "reviewer_refs",
+                "decision_member_refs",
+                "decision_body_ref",
+                "issuer_ref",
+                "authorization_scope",
+                "subject_ref",
+                "target_version",
+                "validity_window",
+                "conflict_refs",
+            ),
+        )
+        support(
+            ("external_approval_resolution_invariants",),
+            "V82-P2890",
+            "决定为 approved",
+            "同名别名",
+            "自签发授权",
+            expected_values=(
+                "externality_cannot_be_self_reported",
+                "decision_must_resolve_to_approved",
+                "alias_resolved_identity_must_be_external",
+                "internal_signature_is_rejected",
+                "self_issued_authorization_is_rejected",
+            ),
+        )
+
+    unused = declared_refs - supported_refs
+    if unused:
+        errors.append(
+            f"{requirement_id}: source_refs contain unsupported padding: {sorted(unused)}"
+        )
+
+
+def _canonical_requirement_hash(requirement: Mapping[str, object]) -> str:
+    encoded = json.dumps(
+        requirement,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return sha256(encoded).hexdigest()
+
+
+def _validate_machine_requirement_closure(
+    requirements: Mapping[str, tuple[str, Mapping[str, object], set[str]]],
+    source_records: Mapping[str, str],
+    errors: list[str],
+) -> dict[str, str]:
+    observed_owners = {requirement_id: owner for requirement_id, (owner, _, _) in requirements.items()}
+    expected_ids = set(EXPECTED_REQUIREMENT_OWNERS)
+    observed_ids = set(observed_owners)
+    if observed_ids != expected_ids:
+        errors.append(
+            "machine requirement closure mismatch: "
+            f"missing={sorted(expected_ids - observed_ids)}, "
+            f"extra={sorted(observed_ids - expected_ids)}"
+        )
+    for requirement_id, expected_owner in EXPECTED_REQUIREMENT_OWNERS.items():
+        actual_owner = observed_owners.get(requirement_id)
+        if actual_owner != expected_owner:
+            errors.append(
+                f"machine requirement owner mismatch: {requirement_id}: "
+                f"expected {expected_owner}, got {actual_owner}"
+            )
+    for requirement_id, (owner, requirement, _) in requirements.items():
+        _validate_requirement_source_support(requirement, source_records, errors)
+        expected_hash = EXPECTED_REQUIREMENT_HASHES.get(requirement_id)
+        if expected_hash and _canonical_requirement_hash(requirement) != expected_hash:
+            errors.append(
+                f"machine requirement semantic hash mismatch: {requirement_id}"
+            )
+    return observed_owners
+
+
 def _normalized_exact_in_source(value: str, source_texts: Sequence[str]) -> bool:
     normalized = _normalize_text(value)
     if not normalized:
@@ -1592,18 +2566,20 @@ def _validate_contracts(
     concepts: Mapping[str, Mapping[str, object]],
     source_records: Mapping[str, str],
     errors: list[str],
-) -> tuple[set[str], dict[str, set[str]]]:
+) -> tuple[set[str], dict[str, set[str]], dict[str, str]]:
     errors.extend(_version_errors("contract map", contract_map))
     entries = contract_map.get("contracts")
     if not isinstance(entries, list):
         errors.append("contract map: contracts must be a list")
-        return set(), {}
+        return set(), {}, {}
     if contract_map.get("contract_count") != len(entries):
         errors.append("contract map: contract_count mismatch")
     found_files: set[str] = set()
     contract_ids: set[str] = set()
     contract_concepts: dict[str, set[str]] = {}
+    requirements: dict[str, tuple[str, Mapping[str, object], set[str]]] = {}
     covered_concepts: set[str] = set()
+    fixed_contract_hash_mismatches: list[str] = []
     for index, entry in enumerate(entries):
         label = f"contract map entry[{index}]"
         if not isinstance(entry, dict):
@@ -1634,7 +2610,9 @@ def _validate_contracts(
         if entry.get("file_sha256") != actual_hash:
             errors.append(f"{contract_id}: contract file hash mismatch")
         if actual_hash != EXPECTED_CONTRACT_HASHES[file_name]:
-            errors.append(f"{contract_id}: fixed contract hash mismatch")
+            fixed_contract_hash_mismatches.append(
+                f"{contract_id}: fixed contract hash mismatch"
+            )
         _validate_contract_document_schema(
             contract_schema,
             document,
@@ -1667,6 +2645,39 @@ def _validate_contracts(
         document_anchors = _validate_anchors(
             document.get("source_anchors"), f"{contract_id} document", source_records, errors
         )
+        machine_requirements = document.get("machine_requirements")
+        if not isinstance(machine_requirements, list):
+            errors.append(f"{contract_id}: machine_requirements must be a list")
+        else:
+            document_anchor_set = set(document_anchors)
+            for requirement_index, requirement in enumerate(machine_requirements):
+                label = f"{contract_id} machine_requirement[{requirement_index}]"
+                if not isinstance(requirement, Mapping):
+                    errors.append(f"{label}: must be an object")
+                    continue
+                requirement_id = requirement.get("requirement_id")
+                if not isinstance(requirement_id, str) or REQUIREMENT_ID_RE.fullmatch(requirement_id) is None:
+                    errors.append(f"{label}: invalid requirement ID")
+                    continue
+                if requirement_id in requirements:
+                    errors.append(
+                        f"machine requirement closure: duplicate requirement ID {requirement_id}"
+                    )
+                    continue
+                requirement_refs = _validate_anchors(
+                    requirement.get("source_refs"), f"{label} source_refs", source_records, errors
+                )
+                dangling_refs = set(requirement_refs) - document_anchor_set
+                if dangling_refs:
+                    errors.append(
+                        f"{label}: source_refs escape owner document anchors: "
+                        f"{sorted(dangling_refs)}"
+                    )
+                requirements[requirement_id] = (
+                    contract_id,
+                    requirement,
+                    document_anchor_set,
+                )
         if map_anchors != document_anchors:
             errors.append(f"{contract_id}: source anchor backlinks differ between map and document")
         responsibility = document.get("responsibility")
@@ -1730,7 +2741,13 @@ def _validate_contracts(
     missing_backlinks = set(concepts) - covered_concepts
     if missing_backlinks:
         errors.append(f"contract map: concepts missing contract backlinks: {sorted(missing_backlinks)}")
-    return contract_ids, contract_concepts
+    requirement_owners = _validate_machine_requirement_closure(
+        requirements,
+        source_records,
+        errors,
+    )
+    errors.extend(fixed_contract_hash_mismatches)
+    return contract_ids, contract_concepts, requirement_owners
 
 
 def _validate_routes(
@@ -1738,6 +2755,7 @@ def _validate_routes(
     concepts: Mapping[str, Mapping[str, object]],
     contract_ids: set[str],
     contract_concepts: Mapping[str, set[str]],
+    requirement_owners: Mapping[str, str],
     source_records: Mapping[str, str],
     errors: list[str],
 ) -> None:
@@ -1752,6 +2770,9 @@ def _validate_routes(
     covered_concepts: set[str] = set()
     covered_contracts: set[str] = set()
     concept_route_counts: dict[str, int] = {concept_id: 0 for concept_id in concepts}
+    requirement_route_counts: dict[str, int] = {
+        requirement_id: 0 for requirement_id in requirement_owners
+    }
     for index, route in enumerate(routes):
         label = f"route[{index}]"
         if not isinstance(route, dict):
@@ -1788,6 +2809,12 @@ def _validate_routes(
         route_contracts = _string_list(
             route.get("contract_ids"), f"{route_id} contract IDs", errors, allow_empty=False
         )
+        route_requirements = _string_list(
+            route.get("requirement_ids"),
+            f"{route_id} requirement IDs",
+            errors,
+            allow_empty=False,
+        )
         for concept_id in route_concepts:
             if concept_id not in concepts:
                 errors.append(f"{route_id}: dangling route concept reference {concept_id}")
@@ -1798,6 +2825,18 @@ def _validate_routes(
             if contract_id not in contract_ids:
                 errors.append(f"{route_id}: dangling route contract reference {contract_id}")
             covered_contracts.add(contract_id)
+        for requirement_id in route_requirements:
+            owner = requirement_owners.get(requirement_id)
+            if owner is None:
+                errors.append(
+                    f"{route_id}: dangling route requirement reference {requirement_id}"
+                )
+                continue
+            requirement_route_counts[requirement_id] += 1
+            if owner not in route_contracts:
+                errors.append(
+                    f"{route_id}: requirement {requirement_id} omits owner contract {owner}"
+                )
         valid_route_concepts = set(route_concepts) & set(concepts)
         expected_contracts = {
             contract_id
@@ -1822,6 +2861,16 @@ def _validate_routes(
             "route map: contract closure mismatch; "
             f"missing={sorted(contract_ids - covered_contracts)}, "
             f"extra={sorted(covered_contracts - contract_ids)}"
+        )
+    missing_requirements = {
+        requirement_id
+        for requirement_id, count in requirement_route_counts.items()
+        if count == 0
+    }
+    if missing_requirements:
+        errors.append(
+            "route map: machine requirement closure mismatch; "
+            f"missing={sorted(missing_requirements)}"
         )
     invalid_partition = {
         concept_id: count
@@ -1886,11 +2935,18 @@ def validate_knowledge(repo: Path) -> list[str]:
         _assert_safe_path(repo / ULTRA_RELATIVE, repo)
     except ValueError as error:
         return [str(error)]
-    snapshot = _capture_knowledge_snapshot(repo, errors)
-    _validate_contract_directory_closure(repo, errors)
-    _validate_frozen_authority_hashes(snapshot, errors)
+    source_checker = None
+    json_loader = None
     try:
         source_checker = _load_source_checker(repo)
+        json_loader = _load_strict_json_loader(repo, source_checker)
+    except Exception as error:
+        errors.append(f"strict authority loader failed: {error}")
+    snapshot = _capture_knowledge_snapshot(repo, errors, json_loader)
+    _validate_contract_directory_closure(repo, errors)
+    try:
+        if source_checker is None:
+            raise ValueError("source checker is unavailable")
         source_manifest, source_records = _validated_source_snapshot(
             source_checker,
             repo,
@@ -1936,6 +2992,26 @@ def validate_knowledge(repo: Path) -> list[str]:
     assert isinstance(registry, Mapping)
     assert isinstance(contract_map, Mapping)
     assert isinstance(route_map, Mapping)
+    if source_manifest.get("concept_count") != 349:
+        errors.append(
+            "source inventory: expected concept_count=349, "
+            f"got {source_manifest.get('concept_count')}"
+        )
+    if source_manifest.get("contract_count") != 8:
+        errors.append(
+            "source inventory: expected contract_count=8, "
+            f"got {source_manifest.get('contract_count')}"
+        )
+    if registry.get("concept_count") != 9:
+        errors.append(
+            "curated registry: expected concept_count=9, "
+            f"got {registry.get('concept_count')}"
+        )
+    if contract_map.get("contract_count") != 5:
+        errors.append(
+            "curated contract map: expected contract_count=5, "
+            f"got {contract_map.get('contract_count')}"
+        )
     _validate_schema(
         "source manifest schema",
         schema_documents["source"],
@@ -1946,7 +3022,7 @@ def validate_knowledge(repo: Path) -> list[str]:
     _validate_schema("contract map schema", schema_documents["contracts"], contract_map, errors)
     _validate_schema("route map schema", schema_documents["routes"], route_map, errors)
     concepts = _validate_concepts(registry, source_records, errors)
-    contract_ids, contract_concepts = _validate_contracts(
+    contract_ids, contract_concepts, requirement_owners = _validate_contracts(
         contract_map,
         contract_documents,
         schema_documents["contracts"],
@@ -1959,9 +3035,11 @@ def validate_knowledge(repo: Path) -> list[str]:
         concepts,
         contract_ids,
         contract_concepts,
+        requirement_owners,
         source_records,
         errors,
     )
+    _validate_frozen_authority_hashes(snapshot, errors)
     return _deduplicate(errors)
 
 

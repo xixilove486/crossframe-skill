@@ -27,6 +27,7 @@
     "V82-M01",
     "V82-M08"
   ],
+  "machine_requirements": [],
   "clauses": [
     {
       "clause_id": "V82-CLAUSE-CORE-COMMON",

@@ -25,6 +25,7 @@
     "V82-M04",
     "V82-M06"
   ],
+  "machine_requirements": [],
   "clauses": [
     {
       "clause_id": "V82-CLAUSE-RECURSIVE-DIMENSIONS",

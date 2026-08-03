@@ -8,6 +8,66 @@
   "contract_id": "V82-CONTRACT-TRANSFORMATION",
   "responsibility": "尺度变换、圈层关系变换、表示或表述转义、任务相关损失、有效变量、闭合与残差回返。",
   "source_anchors": [
+    "V82-P0661",
+    "V82-P0662",
+    "V82-P0663",
+    "V82-P0870",
+    "V82-T012",
+    "V82-P0875",
+    "V82-P0876",
+    "V82-P0877",
+    "V82-P0878",
+    "V82-P0879",
+    "V82-P0880",
+    "V82-P0881",
+    "V82-P0882",
+    "V82-P0883",
+    "V82-P0884",
+    "V82-P0885",
+    "V82-P0886",
+    "V82-P0887",
+    "V82-P0888",
+    "V82-P0889",
+    "V82-P0890",
+    "V82-P0891",
+    "V82-P0892",
+    "V82-P0893",
+    "V82-P0894",
+    "V82-P0895",
+    "V82-P0896",
+    "V82-P0897",
+    "V82-P0898",
+    "V82-P0899",
+    "V82-P0900",
+    "V82-P0901",
+    "V82-P0902",
+    "V82-P0903",
+    "V82-P0904",
+    "V82-P0905",
+    "V82-P0906",
+    "V82-P0907",
+    "V82-P0908",
+    "V82-P0909",
+    "V82-P0910",
+    "V82-P0911",
+    "V82-P0912",
+    "V82-P0913",
+    "V82-P0914",
+    "V82-P0916",
+    "V82-P0917",
+    "V82-P0918",
+    "V82-P0919",
+    "V82-P0920",
+    "V82-P0921",
+    "V82-P0922",
+    "V82-P0923",
+    "V82-P0924",
+    "V82-P0926",
+    "V82-P0928",
+    "V82-P0929",
+    "V82-P0930",
+    "V82-P0931",
+    "V82-P0932",
     "V82-P0934",
     "V82-P0936",
     "V82-P0938",
@@ -29,6 +89,8 @@
     "V82-P1075",
     "V82-P1077",
     "V82-P1078",
+    "V82-P1006",
+    "V82-P1016",
     "V82-P1796",
     "V82-P1800"
   ],
@@ -42,6 +104,392 @@
     "V82-M07",
     "V82-M08",
     "V82-M09"
+  ],
+  "machine_requirements": [
+    {
+      "requirement_id": "V82-REQ-SP-AXES",
+      "requirement_type": "scale_profile",
+      "source_refs": [
+        "V82-P0870",
+        "V82-T012",
+        "V82-P0875",
+        "V82-P0876",
+        "V82-P0877",
+        "V82-P0878",
+        "V82-P0879",
+        "V82-P0880",
+        "V82-P0881",
+        "V82-P0882",
+        "V82-P0883",
+        "V82-P0884",
+        "V82-P0885",
+        "V82-P0886",
+        "V82-P0887",
+        "V82-P0888",
+        "V82-P0889",
+        "V82-P0890",
+        "V82-P0891",
+        "V82-P0892",
+        "V82-P0893",
+        "V82-P0894",
+        "V82-P0895",
+        "V82-P0896",
+        "V82-P0897",
+        "V82-P0898",
+        "V82-P0899",
+        "V82-P0900",
+        "V82-P0901",
+        "V82-P0902",
+        "V82-P0903",
+        "V82-P0904",
+        "V82-P0905",
+        "V82-P0906",
+        "V82-P0907",
+        "V82-P0908",
+        "V82-P0909",
+        "V82-P0910",
+        "V82-P0911",
+        "V82-P0912",
+        "V82-P0913",
+        "V82-P0914",
+        "V82-P0916",
+        "V82-P0917",
+        "V82-P0918",
+        "V82-P0919",
+        "V82-P0920",
+        "V82-P0921",
+        "V82-P0922",
+        "V82-P0923",
+        "V82-P0924"
+      ],
+      "axes": [
+        {
+          "axis_id": "A",
+          "canonical_zh": "聚合层次",
+          "state_field_core": "单位、成员集、分区、聚合规则、权重、排除项",
+          "expands_computational_witness": "目标总体覆盖源总体，目标分区是源分区的登记粗化",
+          "non_substitution_boundary": "不得由 O、X、I 或 J 替代",
+          "source_refs": ["V82-P0875", "V82-P0876", "V82-P0877", "V82-P0878"]
+        },
+        {
+          "axis_id": "X",
+          "canonical_zh": "空间范围",
+          "state_field_core": "坐标系、空间集合、边界通道、外部连接",
+          "expands_computational_witness": "坐标对齐后源空间是真子集",
+          "non_substitution_boundary": "不得由 A、O、I 或 J 替代",
+          "source_refs": ["V82-P0879", "V82-P0880", "V82-P0881", "V82-P0882"]
+        },
+        {
+          "axis_id": "T",
+          "canonical_zh": "时间跨度",
+          "state_field_core": "时间基准、窗口角色、起止点、时滞模型",
+          "expands_computational_witness": "同一基准与角色下目标区间真包含源区间",
+          "non_substitution_boundary": "当前截面和长期路径不能互代",
+          "source_refs": ["V82-P0883", "V82-P0884", "V82-P0885", "V82-P0886"]
+        },
+        {
+          "axis_id": "O",
+          "canonical_zh": "组织层级",
+          "state_field_core": "组织图、版本、节点、包含边、接口、重叠",
+          "expands_computational_witness": "同版组织 DAG 中目标节点覆盖源节点祖先闭包",
+          "non_substitution_boundary": "组织上位不等于 J 扩大",
+          "source_refs": ["V82-P0887", "V82-P0888", "V82-P0889", "V82-P0890"]
+        },
+        {
+          "axis_id": "C",
+          "canonical_zh": "因果层次",
+          "state_field_core": "因果模型、变量、边、干预语义、抽象映射",
+          "expands_computational_witness": "目标模型经语义保持映射覆盖源模型并增加可区分层面",
+          "non_substitution_boundary": "层级标签、时序和相关不能代替因果桥",
+          "source_refs": ["V82-P0891", "V82-P0892", "V82-P0893", "V82-P0894"]
+        },
+        {
+          "axis_id": "R",
+          "canonical_zh": "观察分辨率",
+          "state_field_core": "测量协议、可区分类、参数、误差、保护性省略",
+          "expands_computational_witness": "目标协议保留源协议全部区分并至少细分一类",
+          "non_substitution_boundary": "高分辨率不等于完整或有权行动",
+          "source_refs": ["V82-P0895", "V82-P0896", "V82-P0897", "V82-P0898"]
+        },
+        {
+          "axis_id": "I",
+          "canonical_zh": "影响范围",
+          "state_field_core": "结果、阈值、窗口、受影响位置、效应阶次",
+          "expands_computational_witness": "对齐后目标受影响位置集真包含源集合",
+          "non_substitution_boundary": "影响和观察均不等于授权",
+          "source_refs": ["V82-P0899", "V82-P0900", "V82-P0901", "V82-P0902"]
+        },
+        {
+          "axis_id": "N",
+          "canonical_zh": "网络拓扑范围",
+          "state_field_core": "图与版本、节点、边、语义、采样边界",
+          "expands_computational_witness": "存在语义保持图嵌入且目标覆盖源图",
+          "non_substitution_boundary": "网络中心不等于责任中心",
+          "source_refs": ["V82-P0903", "V82-P0904", "V82-P0905", "V82-P0906"]
+        },
+        {
+          "axis_id": "J",
+          "canonical_zh": "管辖与授权范围",
+          "state_field_core": "原子授权元组集合；每个元组固定来源、主体、单一对象、单一动作、地域、期限、撤回、有效性和证据",
+          "expands_computational_witness": "目标有效原子元组规范化集合真包含，且每个新增元组有独立有效性见证",
+          "non_substitution_boundary": "任何其他轴均不能替代 J；禁止对象集与动作集做笛卡尔积",
+          "source_refs": ["V82-P0907", "V82-P0908", "V82-P0909", "V82-P0910"]
+        }
+      ],
+      "axis_relations": [
+        "equal",
+        "expands",
+        "contracts",
+        "incomparable",
+        "unknown"
+      ],
+      "transformation_classes": [
+        "horizontal_or_incomparable",
+        "mixed",
+        "unresolved",
+        "all_equal",
+        "elevation",
+        "reduction"
+      ],
+      "axis_difference_required_fields": [
+        "axis_id",
+        "source_state",
+        "target_state",
+        "relation",
+        "order_witness",
+        "information_loss",
+        "uncertainty"
+      ],
+      "order_witness_required_fields": [
+        "comparator_id",
+        "comparator_version",
+        "verifier_id",
+        "evidence_refs",
+        "comparison_payload",
+        "comparator_result_ref",
+        "verification_artifact_ref",
+        "verification_hash",
+        "validation_status"
+      ],
+      "order_witness_invariants": [
+        "non_unknown_requires_closed_valid_witness",
+        "unresolvable_witness_forces_unknown",
+        "nontrivial_relation_requires_registered_comparator_result",
+        "identical_states_may_use_builtin_deep_equality_for_equal",
+        "identical_states_cannot_expand_or_contract"
+      ],
+      "order_witness_registry_resolution": {
+        "registry": "axis_comparator_results",
+        "match_fields": [
+          "axis_id",
+          "comparator_id",
+          "comparator_version",
+          "source_state_sha256",
+          "target_state_sha256",
+          "relation",
+          "verification_hash",
+          "validation_status"
+        ],
+        "unresolvable_relation": "unknown",
+        "nontrivial_relation_requires_resolved_result": true,
+        "builtin_deep_equality_scope": "identical_states_equal_only"
+      },
+      "partial_order_invariants": [
+        "normalized_states_are_reflexive",
+        "bidirectional_order_implies_same_normalized_equivalence_class",
+        "transitivity_requires_composable_intermediate_state_version_and_witness",
+        "arbitrary_pairwise_distance_tolerance_cannot_define_equality",
+        "expands_requires_composable_semantics_preserving_auxiliary_mappings",
+        "auxiliary_mapping_conflict_forces_incomparable_or_unknown"
+      ],
+      "classification_precedence": [
+        {"condition": "any_incomparable", "classification": "horizontal_or_incomparable"},
+        {"condition": "has_expands_and_contracts", "classification": "mixed"},
+        {"condition": "any_unknown", "classification": "unresolved"},
+        {"condition": "all_equal", "classification": "all_equal"},
+        {"condition": "equal_or_expands_with_at_least_one_expands", "classification": "elevation"},
+        {"condition": "equal_or_contracts_with_at_least_one_contracts", "classification": "reduction"}
+      ],
+      "j_authorization_tuple_required_fields": [
+        "source_ref",
+        "decision_subject_ref",
+        "object_ref",
+        "action_ref",
+        "jurisdiction",
+        "validity_period",
+        "revocation_conditions",
+        "evidence_refs",
+        "independent_review_ref"
+      ],
+      "j_expansion_invariants": [
+        "only_valid_normalized_atomic_tuples_enter_set_comparison",
+        "comparison_payload_lists_complete_new_target_tuples_and_validity_evidence",
+        "comparison_payload_aligns_with_j_authorization",
+        "multiple_objects_or_actions_require_separate_tuples",
+        "strings_ids_claims_control_coverage_or_other_axes_cannot_make_j_expand"
+      ],
+      "invariants": [
+        "all_nine_axes_are_registered",
+        "not_applicable_is_explicit_and_never_omitted",
+        "elevation_requires_all_axes_equal_or_expands_and_at_least_one_expands",
+        "j_expansion_requires_new_valid_atomic_authorization_tuples",
+        "no_other_axis_substitutes_for_j"
+      ]
+    },
+    {
+      "requirement_id": "V82-REQ-M02-EXECUTION",
+      "requirement_type": "m02_execution",
+      "source_refs": [
+        "V82-P0661",
+        "V82-P0662",
+        "V82-P0663",
+        "V82-P0926",
+        "V82-P0928",
+        "V82-P0929",
+        "V82-P0930",
+        "V82-P0931",
+        "V82-P0932",
+        "V82-P0938",
+        "V82-P0939",
+        "V82-P0940",
+        "V82-P0941",
+        "V82-P0942",
+        "V82-P1006",
+        "V82-P1016"
+      ],
+      "concept_id": "V82-M02",
+      "operator_id": "scale_operator:M02",
+      "branches": [
+        {
+          "branch_id": "descriptive_nesting",
+          "claim_mode": "descriptive_mapping",
+          "requires_root_instance": false,
+          "allowed_root_subtypes": [],
+          "required_evidence_fields": [
+            "boundary_refs",
+            "member_refs",
+            "overlap_refs",
+            "exit_refs",
+            "interface_mapping_refs"
+          ]
+        },
+        {
+          "branch_id": "cross_layer_causal",
+          "claim_mode": "causal",
+          "requires_root_instance": true,
+          "allowed_root_subtypes": ["G4a", "G4b"],
+          "required_evidence_fields": [
+            "root_instance_ids",
+            "success_criterion_id",
+            "causal_bridge_refs",
+            "causal_gate_ref",
+            "positive_decision_rule_ref",
+            "null_decision_rule_ref"
+          ]
+        },
+        {
+          "branch_id": "object_conversion",
+          "claim_mode": "object_conversion",
+          "requires_root_instance": true,
+          "allowed_root_subtypes": ["G4b"],
+          "required_evidence_fields": [
+            "root_instance_ids",
+            "success_criterion_id",
+            "causal_bridge_refs",
+            "positive_decision_rule_ref",
+            "null_decision_rule_ref"
+          ]
+        },
+        {
+          "branch_id": "intervention_conversion",
+          "claim_mode": "intervention_conversion",
+          "requires_root_instance": true,
+          "allowed_root_subtypes": ["G4b"],
+          "required_evidence_fields": [
+            "root_instance_ids",
+            "success_criterion_id",
+            "causal_bridge_refs",
+            "positive_decision_rule_ref",
+            "null_decision_rule_ref"
+          ]
+        }
+      ],
+      "success_criteria_by_root_subtype": {
+        "G4a": [
+          "conditional_information_gain",
+          "conditional_predictive_gain",
+          "conditional_intervention_gain"
+        ],
+        "G4b": [
+          "object_dynamics_non_commutation",
+          "intervention_non_commutation",
+          "identity_criterion_violation",
+          "effective_relation_change",
+          "intervention_response_change"
+        ]
+      },
+      "success_criterion_selection_cardinality": 1,
+      "pre_result_registration_required_fields": [
+        "pre_result_registration_ref",
+        "pre_result_registration_hash"
+      ],
+      "pre_result_registration_match_fields": [
+        "operator_id",
+        "selected_operator_branch",
+        "claim_mode",
+        "root_subtype",
+        "success_criterion_id",
+        "d3_e5_mapping_ref",
+        "comparison_model_ref",
+        "positive_decision_rule_ref",
+        "positive_threshold",
+        "null_decision_rule_ref",
+        "equivalence_or_sufficiency_test_ref",
+        "power_or_sensitivity_ref",
+        "tolerance_ref"
+      ],
+      "positive_support_requires": [
+        "positive_decision_rule_ref",
+        "positive_threshold"
+      ],
+      "runtime_registry_resolution_contract": [
+        "pre_result_registration_ref_and_hash_must_resolve",
+        "all_match_fields_must_equal_same_hash_verified_pre_result_registration",
+        "branch_and_mode_must_match_frozen_registration",
+        "non_descriptive_root_instance_ids_must_resolve",
+        "causal_object_and_intervention_require_nonempty_causal_bridge",
+        "object_and_intervention_roots_require_g4b",
+        "cross_layer_causal_roots_allow_g4a_or_g4b",
+        "success_criterion_must_match_exactly_one_subtype_enum_value",
+        "registered_positive_rule_and_threshold_must_both_pass_for_supported",
+        "registered_null_rule_and_all_three_null_gates_must_pass_for_null_supported",
+        "not_evaluated_means_selected_branch_did_not_run",
+        "descriptive_supported_does_not_require_g_fields"
+      ],
+      "result_states": [
+        "supported",
+        "unsupported_or_undecided",
+        "null_supported",
+        "not_evaluated"
+      ],
+      "result_state_semantics": {
+        "supported": "selected_branch_ran_and_registered_positive_rule_and_threshold_passed",
+        "unsupported_or_undecided": "selected_branch_ran_without_positive_or_null_support",
+        "null_supported": "selected_branch_ran_and_registered_null_rule_and_all_three_null_gates_passed",
+        "not_evaluated": "selected_branch_did_not_run"
+      },
+      "null_support_requires": [
+        "null_decision_rule_ref",
+        "equivalence_or_sufficiency_test_ref",
+        "power_or_sensitivity_ref",
+        "tolerance_ref"
+      ],
+      "forbidden_substitutions": [
+        "不得用描述性嵌套的边界材料支持后面三支",
+        "描述性嵌套不生成上位优先、下位义务或 J 轴扩展"
+      ],
+      "action_ceiling": "描述性嵌套不生成上位优先、下位义务或 J 轴扩展。"
+    }
   ],
   "clauses": [
     {

@@ -154,6 +154,7 @@ def test_validator_consumes_each_knowledge_file_from_one_bytes_snapshot(
             / checker.ULTRA_RELATIVE
             / "scripts/check_crossframe_ultra_v82_source.py"
         ).resolve(),
+        (ROOT / checker.JSONIO_RELATIVE).resolve(),
         *(
             (ROOT / checker.SCHEMAS_RELATIVE / name).resolve()
             for name in checker.SCHEMA_FILES.values()
@@ -240,6 +241,45 @@ def test_authority_json_rejects_utf8_bom(tmp_path: Path) -> None:
     output = result.stdout + result.stderr
     assert result.returncode != 0
     assert "bom is forbidden" in output.casefold()
+
+
+def test_knowledge_checker_reuses_strict_jsonio_resource_limits() -> None:
+    checker = load_checker()
+    source_checker = checker._load_source_checker(ROOT)
+    loader = checker._load_strict_json_loader(ROOT, source_checker)
+
+    with pytest.raises(ValueError, match="nesting depth"):
+        loader(
+            b'{"value":' + b"[" * 12 + b"0" + b"]" * 12 + b"}",
+            source="depth-probe",
+            max_bytes=1024,
+            max_container_items=100,
+            max_depth=4,
+        )
+    with pytest.raises(ValueError, match="container member count"):
+        loader(
+            b'{"value":[0,1,2,3]}',
+            source="container-probe",
+            max_bytes=1024,
+            max_container_items=3,
+            max_depth=16,
+        )
+    with pytest.raises(ValueError, match="invalid UTF-8"):
+        loader(
+            b'{"value":"\xff"}',
+            source="utf8-probe",
+            max_bytes=1024,
+            max_container_items=100,
+            max_depth=16,
+        )
+    with pytest.raises(ValueError, match="non-finite JSON number"):
+        loader(
+            b'{"value":1e400}',
+            source="overflow-probe",
+            max_bytes=1024,
+            max_container_items=100,
+            max_depth=16,
+        )
 
 
 def test_semantic_support_is_exact_per_source_or_explicit_curated_unit(
@@ -383,6 +423,9 @@ def test_checker_rejects_all_required_closure_mutations(tmp_path: Path) -> None:
     def supported_route_plus_fiction(data: dict) -> None:
         data["routes"][0]["task"] += "；并且它必然证明一切行动都已获得授权。"
 
+    def unsupported_default_route(data: dict) -> None:
+        data["routes"][1]["task"] = "默认：" + data["routes"][1]["task"]
+
     def unrelated_route_contract(data: dict) -> None:
         data["routes"][0]["contract_ids"].append("V82-CONTRACT-WORLD-VOLUME")
 
@@ -438,6 +481,7 @@ def test_checker_rejects_all_required_closure_mutations(tmp_path: Path) -> None:
         (routes_relative, dangling_route_contract, "route"),
         (routes_relative, unsupported_route, "unsupported"),
         (routes_relative, supported_route_plus_fiction, "unsupported"),
+        (routes_relative, unsupported_default_route, "unsupported"),
         (routes_relative, unrelated_route_contract, "compatibility"),
         (routes_relative, missing_compatible_route_contract, "compatibility"),
         (routes_relative, missing_route_backlink, "closure"),

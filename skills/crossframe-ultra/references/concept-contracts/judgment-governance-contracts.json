@@ -18,6 +18,7 @@
     "V82-P2646",
     "V82-P2780",
     "V82-P2781",
+    "V82-P2890",
     "V82-P2815",
     "V82-P2884",
     "V82-P2885",
@@ -30,6 +31,67 @@
     "V82-M07",
     "V82-M08",
     "V82-M09"
+  ],
+  "machine_requirements": [
+    {
+      "requirement_id": "V82-REQ-GOVERNANCE-MACHINE",
+      "requirement_type": "governance_invariants",
+      "source_refs": [
+        "V82-P2780",
+        "V82-P2781",
+        "V82-P2890"
+      ],
+      "framework_self_proof_allowed": false,
+      "governance_record_generates_real_world_authorization": false,
+      "terminal_to_active_forbidden": [
+        "replaced",
+        "retired"
+      ],
+      "applied_change_requires": "resolvable_external_approval",
+      "invalid_approval_evidence": [
+        "alias",
+        "self_reported_independent_true",
+        "self_issued_authorization"
+      ],
+      "contrary_permission_text_overrides": false,
+      "machine_invariants": [
+        "framework_self_proof_forbidden",
+        "governance_record_authorization_generation_forbidden",
+        "replaced_to_active_forbidden",
+        "retired_to_active_forbidden",
+        "applied_requires_resolvable_external_approval",
+        "alias_approval_invalid",
+        "self_reported_independence_invalid",
+        "self_issued_authorization_invalid",
+        "contrary_permission_text_cannot_override_structured_constraints"
+      ],
+      "external_approval_required_bindings": [
+        "governance_record_ref",
+        "subject_ref",
+        "target_version",
+        "transition",
+        "objection_refs",
+        "decision_ref"
+      ],
+      "runtime_registry_resolution_fields": [
+        "reviewer_refs",
+        "decision_member_refs",
+        "decision_body_ref",
+        "issuer_ref",
+        "authorization_scope",
+        "subject_ref",
+        "target_version",
+        "validity_window",
+        "conflict_refs"
+      ],
+      "external_approval_resolution_invariants": [
+        "externality_cannot_be_self_reported",
+        "decision_must_resolve_to_approved",
+        "alias_resolved_identity_must_be_external",
+        "internal_signature_is_rejected",
+        "self_issued_authorization_is_rejected"
+      ]
+    }
   ],
   "clauses": [
     {

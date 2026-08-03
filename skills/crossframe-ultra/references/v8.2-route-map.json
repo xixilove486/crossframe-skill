@@ -16,6 +16,9 @@
       "concept_ids": [
         "V82-M01"
       ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
+      ],
       "contract_ids": [
         "V82-CONTRACT-CORE-KERNEL",
         "V82-CONTRACT-TRANSFORMATION"
@@ -23,7 +26,7 @@
     },
     {
       "route_id": "V82-ROUTE-CIRCLE-NESTING",
-      "task": "默认：descriptive_nesting；描述性嵌套只检验边界、成员、重叠、退出和接口映射。后面三支：cross_layer_causal、object_conversion、intervention_conversion；跨层因果必须链接预注册 G4a 或 G4b root-instance，并通过 CAUSAL 与三态/null 门。圈层关系 Rcc；六类关系是封闭的静态描述词。嵌套表示一个圈层的成员、合同或运行位置被另一个圈层部分或全部包含；必须说明包含的基准。框架不要求每个节点只有一个父节点；每条边只表达一种已声明关系。",
+      "task": "记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支，并分别绑定描述、因果、对象转换或干预转换模式；描述性嵌套只检验边界、成员、重叠、退出和接口映射。跨层因果必须链接预注册 G4a 或 G4b root-instance，固定子型和唯一成功判据，并通过 CAUSAL 与三态/null 门。圈层关系 Rcc；六类关系是封闭的静态描述词。嵌套表示一个圈层的成员、合同或运行位置被另一个圈层部分或全部包含；必须说明包含的基准。框架不要求每个节点只有一个父节点；每条边只表达一种已声明关系。",
       "source_anchors": [
         "V82-P0938",
         "V82-P0939",
@@ -37,6 +40,12 @@
       ],
       "concept_ids": [
         "V82-M02"
+      ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES",
+        "V82-REQ-M02-EXECUTION",
+        "V82-REQ-RCC-RELATION",
+        "V82-REQ-RAC-MEMBERSHIP"
       ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
@@ -56,6 +65,9 @@
       "concept_ids": [
         "V82-M03"
       ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
+      ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
         "V82-CONTRACT-WORLD-VOLUME",
@@ -72,6 +84,9 @@
       "concept_ids": [
         "V82-M04"
       ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
+      ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
         "V82-CONTRACT-RECURSIVE-INFERENCE"
@@ -87,6 +102,10 @@
       "concept_ids": [
         "V82-M05"
       ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES",
+        "V82-REQ-GOVERNANCE-MACHINE"
+      ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
         "V82-CONTRACT-JUDGMENT-GOVERNANCE"
@@ -101,6 +120,9 @@
       ],
       "concept_ids": [
         "V82-M06"
+      ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
       ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
@@ -118,6 +140,9 @@
       "concept_ids": [
         "V82-M07"
       ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
+      ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
         "V82-CONTRACT-JUDGMENT-GOVERNANCE"
@@ -132,6 +157,9 @@
       ],
       "concept_ids": [
         "V82-M08"
+      ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
       ],
       "contract_ids": [
         "V82-CONTRACT-CORE-KERNEL",
@@ -148,6 +176,9 @@
       ],
       "concept_ids": [
         "V82-M09"
+      ],
+      "requirement_ids": [
+        "V82-REQ-SP-AXES"
       ],
       "contract_ids": [
         "V82-CONTRACT-TRANSFORMATION",
