@@ -55,6 +55,7 @@ RUN_STATUS_TRANSITIONS = {
 _RUN_STATUS_SCHEMA = "ultra-run-status.schema.json"
 _RUN_STATUS_SCHEMA_ID = "crossframe.ultra.v82.run-status"
 _UNSET = object()
+_U12_COMPLETE_AUTHORITY = object()
 
 
 class RunStatusError(UltraRuntimeError, RuntimeError):
@@ -314,14 +315,25 @@ class RunStatusStore:
                     atomic_write_json(self.path, _record_to_object(record))
         return record
 
-    def replace(
+    def _replace(
         self,
         expected: RunStatusRecord,
         replacement: RunStatusRecord,
+        *,
+        completion_authority: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
         _validate_record(replacement, run_id)
+        completing = replacement.status == "complete"
+        if completing and completion_authority is not _U12_COMPLETE_AUTHORITY:
+            raise RunStatusTransitionError(
+                "ordinary status replacement cannot complete outside the durable U12 closure"
+            )
+        if not completing and completion_authority is not None:
+            raise RunStatusTransitionError(
+                "U12 completion authority cannot be used for an ordinary replacement"
+            )
         if (
             replacement.schema_id != expected.schema_id
             or replacement.schema_version != expected.schema_version
@@ -355,7 +367,8 @@ class RunStatusStore:
         ):
             raise RunStatusTransitionError("last_complete_phase cannot move backwards")
         allowed = RUN_STATUS_TRANSITIONS[expected.status]
-        if replacement.status not in allowed:
+        allowed_completion = completing and expected.status == "running"
+        if not allowed_completion and replacement.status not in allowed:
             terminal = expected.status in {"complete", "failed", "cancelled"}
             qualifier = "terminal " if terminal else ""
             raise RunStatusTransitionError(
@@ -381,6 +394,13 @@ class RunStatusStore:
                     atomic_write_json(self.path, _record_to_object(replacement))
         return replacement
 
+    def replace(
+        self,
+        expected: RunStatusRecord,
+        replacement: RunStatusRecord,
+    ) -> RunStatusRecord:
+        return self._replace(expected, replacement)
+
     def transition(
         self,
         expected: RunStatusRecord,
@@ -397,20 +417,16 @@ class RunStatusStore:
             raise ValueError(f"unknown run status: {status!r}")
         if not isinstance(validation_passed, bool):
             raise TypeError("validation_passed must be a boolean")
+        if status == "complete":
+            raise RunStatusTransitionError(
+                "ordinary status transition cannot complete outside the durable U12 closure"
+            )
         target_phase = expected.current_phase if current_phase is None else current_phase
         target_last_complete = (
             expected.last_complete_phase
             if last_complete_phase is _UNSET
             else last_complete_phase
         )
-        if status == "complete" and (
-            target_phase != "U12"
-            or target_last_complete != "U12"
-            or validation_passed is not True
-        ):
-            raise RunStatusTransitionError(
-                "complete transition requires current_phase and last_complete_phase U12 with validation_passed true"
-            )
         replacement = _make_record(
             run_id=expected.run_id,
             status=status,
@@ -424,3 +440,37 @@ class RunStatusStore:
             revision=expected.revision + 1,
         )
         return self.replace(expected, replacement)
+
+    def commit_u12_complete(
+        self,
+        expected: RunStatusRecord,
+        now: datetime,
+        *,
+        reason: str,
+    ) -> RunStatusRecord:
+        _require_utc(now, "now")
+        _validate_record(expected, self.layout.run_dir.name)
+        if expected.status != "running":
+            raise RunStatusTransitionError(
+                "durable U12 completion requires the current running status authority"
+            )
+        from .deliverables import verify_u12_status_commit_authority
+
+        verify_u12_status_commit_authority(self.layout)
+        replacement = _make_record(
+            run_id=expected.run_id,
+            status="complete",
+            previous_status=expected.status,
+            current_phase="U12",
+            last_complete_phase="U12",
+            reason=reason,
+            validation_passed=True,
+            created_at=expected.created_at,
+            updated_at=_iso_utc(now),
+            revision=expected.revision + 1,
+        )
+        return self._replace(
+            expected,
+            replacement,
+            completion_authority=_U12_COMPLETE_AUTHORITY,
+        )

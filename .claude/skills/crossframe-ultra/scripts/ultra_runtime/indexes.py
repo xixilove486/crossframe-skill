@@ -17,7 +17,7 @@ from .jsonio import (
     load_json_object,
     sha256_bytes,
 )
-from .paths import _validate_run_id, assert_safe_descendant
+from .paths import RunLayout, _validate_run_id, assert_safe_descendant
 from .status import (
     RunStatusRecord,
     _parse_utc,
@@ -100,6 +100,29 @@ def _generation_manifest(files: dict[str, str | None]) -> dict[str, object]:
     }
 
 
+def _run_layout(root: Path, run_dir: Path) -> RunLayout:
+    return RunLayout(
+        root=root,
+        root_staging_dir=root / ".staging",
+        run_dir=run_dir,
+        input_dir=run_dir / "input",
+        authoring_dir=run_dir / "work" / "authoring",
+        artifacts_dir=run_dir / "artifacts",
+        delivery_dir=run_dir / "delivery",
+        validation_dir=run_dir / "validation",
+        validation_current_dir=run_dir / "validation" / "current",
+        validation_attempts_dir=run_dir / "validation" / "attempts",
+        recovery_dir=run_dir / "recovery",
+        logs_dir=run_dir / "logs",
+    )
+
+
+def _verify_complete_authority(layout: RunLayout) -> None:
+    from .deliverables import verify_completed_u12_transaction
+
+    verify_completed_u12_transaction(layout)
+
+
 class IndexStore:
     def __init__(self, root: Path):
         if not isinstance(root, Path):
@@ -152,6 +175,10 @@ class IndexStore:
                     raise ValueError("run status authority is in the wrong bundle path")
                 value = load_json_object(status_path)
                 record = _record_from_object(value, run_id)
+                if record.status == "complete":
+                    _verify_complete_authority(
+                        _run_layout(self.root, status_path.parent)
+                    )
             except (OSError, TypeError, ValueError, RuntimeError) as error:
                 raise IndexError(
                     f"invalid run-status authority at {status_path}: {error}"
@@ -521,16 +548,24 @@ class IndexStore:
 
     def read_pointer(self, name: str) -> dict[str, object] | None:
         path = self._pointer_path(name)
-        with _exclusive_path_lock(self.lock_path):
-            assert_safe_descendant(self.root, self.lock_path)
-            pointers = self._validate_generation()
-            value = pointers[name]
-            if value is None:
-                return None
-            run_id = value.get("run_id")
-            if not isinstance(run_id, str):
-                raise IndexError(f"index pointer {name} has no valid run_id")
-            try:
-                return _projection_from_object(value)
-            except (TypeError, ValueError, RuntimeError) as error:
-                raise IndexError(f"index pointer {name} is invalid") from error
+        with _exclusive_path_lock(self.authority_lock_path):
+            assert_safe_descendant(self.root, self.authority_lock_path)
+            with _exclusive_path_lock(self.lock_path):
+                assert_safe_descendant(self.root, self.lock_path)
+                pointers = self._validate_generation()
+                records = self._scan_authorities()
+                value = pointers[name]
+                expected = self._expected_pointer_bytes(records)[
+                    _POINTER_FILES[name]
+                ]
+                cached = (
+                    None if value is None else canonical_json_bytes(value)
+                )
+                if cached != expected:
+                    raise IndexError(
+                        f"index pointer {name} is stale: cached value differs from "
+                        "the run-status authority candidate set"
+                    )
+                if value is None:
+                    return None
+                return value
