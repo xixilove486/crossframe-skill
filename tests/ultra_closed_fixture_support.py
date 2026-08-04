@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from importlib import import_module
 import json
 from pathlib import Path
@@ -63,18 +64,20 @@ def write_closed_u4_u10_authoring(
 
     jsonio = _module(repo_root, "jsonio")
     article = _module(repo_root, "article")
+    materialization = _module(repo_root, "materialization")
     evidence = _fixture(repo_root, "evidence-ledger-valid.json")
     world = _fixture(repo_root, "world-volume-valid.json")
     transformation = _fixture(repo_root, "transformation-valid.json")
     verdict = _fixture(repo_root, "verdict-valid.json")
+    concept_document = make_concept_document(
+        evidence,
+        world,
+        transformation,
+    )
     authored: dict[str, dict[str, object]] = {
         "U04-world-volume.json": world,
         "U05-transformation-ledger.json": transformation,
-        "U05-concept-disposition.json": make_concept_document(
-            evidence,
-            world,
-            transformation,
-        ),
+        "U05-concept-disposition.json": concept_document,
         "U06-claim-mechanism-graph.json": _fixture(
             repo_root, "claim-mechanism-graph-valid.json"
         ),
@@ -103,11 +106,216 @@ def write_closed_u4_u10_authoring(
         repo_root,
         "article-packets/frozen-upstream-authority.json",
     )
-    required = output_authority["required_artifacts"]
-    if not isinstance(required, list) or len(required) < 2:
-        raise ValueError("closed output authority lacks required artifacts")
-    required[0]["path"] = "artifacts/U09-U10-verdict/U09-verdict.json"
-    required[1]["path"] = "artifacts/U09-U10-verdict/U09-action-ranking.json"
+    recursive_relatives = tuple(
+        sorted(
+            relative
+            for relative in authored
+            if relative.startswith("U07-recursive-states/")
+        )
+    )
+    upstream_relatives = (
+        "U03-evidence-ledger.json",
+        "U04-world-volume.json",
+        "U05-transformation-ledger.json",
+        "U05-concept-disposition.json",
+        "U06-claim-mechanism-graph.json",
+        *recursive_relatives,
+        "U07-recursive-lineage.json",
+        "U08-order-evaluation.json",
+        "U08-red-team-report.json",
+        "U09-verdict.json",
+        "U09-action-ranking.json",
+        "U09-forecast-ledger.json",
+    )
+    required: list[dict[str, str]] = []
+    placeholder_by_relative: dict[str, str] = {}
+    for relative in upstream_relatives:
+        destination = materialization.artifact_destination(
+            layout,
+            layout.authoring_dir / relative,
+        )
+        artifact_path = destination.relative_to(layout.run_dir).as_posix()
+        placeholder = hashlib.sha256(
+            f"closed-fixture-authority:{artifact_path}".encode("utf-8")
+        ).hexdigest()
+        placeholder_by_relative[relative] = placeholder
+        required.append(
+            {
+                "path": artifact_path,
+                "sha256": placeholder,
+                "media_type": "application/json",
+            }
+        )
+
+    semantic_authority = {
+        "UNIT-MAIN-VERDICT": (
+            "U06-claim-mechanism-graph.json",
+            "CLAIM-CHANNEL-CONSTRAINT",
+        ),
+        "UNIT-CONFIDENCE": (
+            "U08-order-evaluation.json",
+            "BASELINE-ORDER-1",
+        ),
+        "UNIT-STEELMAN": (
+            "U07-recursive-states/NODE-MIXTURE-ORDER-1.json",
+            "NODE-MIXTURE-ORDER-1",
+        ),
+        "UNIT-DECISIVE-EVIDENCE": (
+            "U03-evidence-ledger.json",
+            "EVIDENCE-ASSOCIATION-CHARTER",
+        ),
+        "UNIT-UNKNOWN": ("U04-world-volume.json", "UNKNOWN-ADAPTATION"),
+        "UNIT-CIRCLE-RELATION": (
+            "U05-transformation-ledger.json",
+            "TRANSFORM-CIRCLE-RELATION",
+        ),
+        "UNIT-MECHANISM": (
+            "U06-claim-mechanism-graph.json",
+            "MECHANISM-REVIEW-CHANNEL",
+        ),
+        "UNIT-RIVAL": (
+            "U07-recursive-states/NODE-RIVAL-ORDER-1.json",
+            "NODE-RIVAL-ORDER-1",
+        ),
+        "UNIT-ORDER-1": (
+            "U07-recursive-states/NODE-MAIN-ORDER-1.json",
+            "NODE-MAIN-ORDER-1",
+        ),
+        "UNIT-ORDER-2": (
+            "U07-recursive-states/NODE-MAIN-ORDER-2.json",
+            "NODE-MAIN-ORDER-2",
+        ),
+        "UNIT-ORDER-3": (
+            "U07-recursive-states/NODE-MAIN-ORDER-3.json",
+            "NODE-MAIN-ORDER-3",
+        ),
+        "UNIT-RESIDUAL": (
+            "U07-recursive-states/NODE-RESIDUAL-ORDER-1.json",
+            "NODE-RESIDUAL-ORDER-1",
+        ),
+        "UNIT-FIVE-VERDICTS": ("U09-verdict.json", "VERDICT-FACT"),
+        "UNIT-ACTION": ("U09-action-ranking.json", "OPTION-PROBE"),
+        "UNIT-REVERSAL": ("U09-action-ranking.json", "OPTION-DELAY"),
+        "UNIT-APPENDIX-MAPPING": ("U04-world-volume.json", "OMEGA-FIXTURE"),
+        "UNIT-APPENDIX-BRANCHES": (
+            "U07-recursive-lineage.json",
+            "BRANCH-MAIN",
+        ),
+        "UNIT-APPENDIX-FORECAST": (
+            "U09-forecast-ledger.json",
+            "FORECAST-BRANCH-SELECTION",
+        ),
+        "UNIT-APPENDIX-SOURCES": (
+            "U03-evidence-ledger.json",
+            "EVIDENCE-INTERVIEW-ONE",
+        ),
+        "UNIT-APPENDIX-GAPS": (
+            "U08-red-team-report.json",
+            "UNRESOLVED-PEER-CHANNEL",
+        ),
+    }
+    semantic_units = output_authority.get("semantic_universe")
+    if not isinstance(semantic_units, list):
+        raise ValueError("closed output authority lacks a semantic universe")
+    mappings = output_authority.get("mappings")
+    if not isinstance(mappings, list):
+        raise ValueError("closed output authority lacks semantic mappings")
+    entries = (*output_authority["sections"], *output_authority["appendices"])
+    concept_section = next(
+        entry for entry in entries if entry["section_id"] == "reader-14"
+    )
+    concept_unit_ids = concept_section.get("semantic_unit_ids")
+    if not isinstance(concept_unit_ids, list):
+        raise ValueError("closed concept section lacks semantic unit IDs")
+    source_mapping = next(
+        mapping for mapping in mappings if mapping["unit_id"] == "UNIT-APPENDIX-SOURCES"
+    )
+    concept_excerpt = source_mapping.get("normalized_excerpt")
+    if not isinstance(concept_excerpt, str) or not concept_excerpt:
+        raise ValueError("closed concept section lacks normalized reader prose")
+    concept_excerpt_sha256 = hashlib.sha256(
+        concept_excerpt.encode("utf-8")
+    ).hexdigest()
+    obligations = concept_document.get("semantic_obligations")
+    if not isinstance(obligations, list) or not obligations:
+        raise ValueError("closed concept disposition lacks semantic obligations")
+    concept_mappings: list[dict[str, object]] = []
+    for obligation in obligations:
+        if not isinstance(obligation, dict):
+            raise ValueError("closed semantic obligation must be an object")
+        obligation_id = obligation.get("obligation_id")
+        unit_id = obligation.get("semantic_unit_id")
+        status = obligation.get("status")
+        if not all(
+            isinstance(value, str) and value
+            for value in (obligation_id, unit_id, status)
+        ):
+            raise ValueError("closed semantic obligation lacks its identity")
+        concept_unit_ids.append(unit_id)
+        semantic_authority[unit_id] = (
+            "U05-concept-disposition.json",
+            obligation_id,
+        )
+        semantic_units.append(
+            {
+                "unit_id": unit_id,
+                "unit_kind": "claim",
+                "status": status,
+                "affects_ranking": True,
+                "used_in_reasoning": True,
+                "promised_to_reader": True,
+                "source_refs": [obligation_id],
+                "authority_artifact_sha256": placeholder_by_relative[
+                    "U05-concept-disposition.json"
+                ],
+                "authority_locator": obligation_id,
+                "normalized_semantic_text_sha256": concept_excerpt_sha256,
+            }
+        )
+        concept_mappings.append(
+            {
+                "unit_id": unit_id,
+                "unit_kind": "claim",
+                "section_id": "reader-14",
+                "normalized_excerpt": concept_excerpt,
+                "source_refs": [obligation_id],
+            }
+        )
+    gap_mapping_index = next(
+        index
+        for index, mapping in enumerate(mappings)
+        if mapping["section_id"] == "reader-15"
+    )
+    mappings[gap_mapping_index:gap_mapping_index] = concept_mappings
+    units_by_id: dict[str, dict[str, object]] = {}
+    for unit in semantic_units:
+        if not isinstance(unit, dict) or not isinstance(unit.get("unit_id"), str):
+            raise ValueError("closed semantic unit must be an identified object")
+        unit_id = unit["unit_id"]
+        try:
+            relative, locator = semantic_authority[unit_id]
+        except KeyError as error:
+            raise ValueError(f"closed semantic unit has no authority: {unit_id}") from error
+        unit["authority_artifact_sha256"] = placeholder_by_relative[relative]
+        unit["authority_locator"] = locator
+        units_by_id[unit_id] = unit
+    for entry in entries:
+        entry["dependency_hashes"] = list(
+            dict.fromkeys(
+                str(units_by_id[unit_id]["authority_artifact_sha256"])
+                for unit_id in entry["semantic_unit_ids"]
+            )
+        )
+    represented_hashes = {
+        str(unit["authority_artifact_sha256"])
+        for unit in semantic_units
+        if isinstance(unit, dict)
+    }
+    if represented_hashes != set(placeholder_by_relative.values()):
+        raise ValueError(
+            "closed semantic universe must authorize every U3-U9 artifact"
+        )
+    output_authority["required_artifacts"] = required
     authored["U10-output-plan.json"] = article.build_output_plan_artifact(
         run_id=output_authority["run_id"],
         version_binding=output_authority["version_binding"],

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 import copy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 from .constants import PHASES, current_version_binding
@@ -187,7 +187,33 @@ _DYNAMIC_RECURSIVE_SPEC = ArtifactSpec(
     "U06-U08-inference/U07-recursive-states/<node-id>.json",
 )
 
-
+_OUTPUT_PLAN_UPSTREAM_SCHEMA_SEQUENCE = (
+    "crossframe.ultra.v82.evidence-ledger",
+    "crossframe.ultra.v82.world-volume",
+    "crossframe.ultra.v82.transformation-ledger",
+    "crossframe.ultra.v82.concept-disposition",
+    "crossframe.ultra.v82.claim-mechanism-graph",
+    "crossframe.ultra.v82.recursive-lineage",
+    "crossframe.ultra.v82.order-evaluation",
+    "crossframe.ultra.v82.red-team-report",
+    "crossframe.ultra.v82.verdict",
+    "crossframe.ultra.v82.action-ranking",
+    "crossframe.ultra.v82.forecast-ledger",
+)
+_OUTPUT_PLAN_UPSTREAM_PHASE_BY_SCHEMA_ID = {
+    "crossframe.ultra.v82.evidence-ledger": "U3",
+    "crossframe.ultra.v82.world-volume": "U4",
+    "crossframe.ultra.v82.transformation-ledger": "U5",
+    "crossframe.ultra.v82.concept-disposition": "U5",
+    "crossframe.ultra.v82.claim-mechanism-graph": "U6",
+    "crossframe.ultra.v82.recursive-state": "U7",
+    "crossframe.ultra.v82.recursive-lineage": "U7",
+    "crossframe.ultra.v82.order-evaluation": "U8",
+    "crossframe.ultra.v82.red-team-report": "U8",
+    "crossframe.ultra.v82.verdict": "U9",
+    "crossframe.ultra.v82.action-ranking": "U9",
+    "crossframe.ultra.v82.forecast-ledger": "U9",
+}
 @dataclass(frozen=True, slots=True)
 class PreparedAuthoring:
     authoring_dir: Path
@@ -406,70 +432,19 @@ def seal_authoring_artifact(
         sealed["article_path"] = "work/authoring/article.partial.md"
         sealed["coverage_required"] = True
         sealed["official_filename_allowed"] = False
-        required_artifacts = sealed.get("required_artifacts")
-        replacements: dict[str, str] = {}
-        if isinstance(required_artifacts, list):
-            for record in required_artifacts:
-                if not isinstance(record, dict):
-                    continue
-                relative = record.get("path")
-                if not isinstance(relative, str):
-                    continue
-                relative_path = PurePosixPath(relative)
-                if (
-                    relative_path.is_absolute()
-                    or "\\" in relative
-                    or not relative_path.parts
-                    or relative_path.parts[0] != "artifacts"
-                    or ".." in relative_path.parts
-                ):
-                    raise ValueError(
-                        "output-plan required artifacts must use fixed artifacts/ paths"
-                    )
-                authority_path = layout.run_dir.joinpath(*relative_path.parts)
-                assert_safe_descendant(layout.root, authority_path)
-                if authority_path != layout.artifacts_dir and layout.artifacts_dir not in authority_path.parents:
-                    raise ValueError(
-                        "output-plan required artifact is outside the artifacts namespace"
-                    )
-                if not authority_path.is_file():
-                    raise ValueError(
-                        f"output-plan required artifact is absent: {relative}"
-                    )
-                declared = record.get("sha256")
-                actual = _sha256_file(authority_path)
-                if isinstance(declared, str):
-                    previous = replacements.setdefault(declared, actual)
-                    if previous != actual:
-                        raise ValueError(
-                            "one declared output-plan hash resolves to multiple artifacts"
-                        )
-                record["sha256"] = actual
-        for collection_name in ("sections", "appendices"):
-            collection = sealed.get(collection_name)
-            if not isinstance(collection, list):
-                continue
-            for entry in collection:
-                if not isinstance(entry, dict):
-                    continue
-                dependencies = entry.get("dependency_hashes")
-                if isinstance(dependencies, list):
-                    entry["dependency_hashes"] = [
-                        replacements.get(value, value) for value in dependencies
-                    ]
-        semantic_universe = sealed.get("semantic_universe")
-        if isinstance(semantic_universe, list):
-            for unit in semantic_universe:
-                if not isinstance(unit, dict):
-                    continue
-                authority_hash = unit.get("authority_artifact_sha256")
-                if isinstance(authority_hash, str):
-                    unit["authority_artifact_sha256"] = replacements.get(
-                        authority_hash, authority_hash
-                    )
-            sealed["semantic_universe_sha256"] = sha256_bytes(
-                canonical_json_bytes(semantic_universe)
+        expected_required_artifacts = (
+            None
+            if authority_values is None
+            else authority_values.get("output_plan_required_artifacts")
+        )
+        if expected_required_artifacts is None:
+            raise ValueError(
+                "U10 sealing requires runtime-derived U3-U9 required_artifacts"
             )
+        _rebind_output_plan_required_artifacts(
+            sealed,
+            expected_required_artifacts,
+        )
     sealed.update(
         {
             "schema_id": spec.schema_id,
@@ -493,6 +468,45 @@ def seal_authoring_artifact(
         )
     except Exception as error:
         raise ValueError(f"model-authored schema field validation failed: {error}") from error
+    if spec.relative_path == "U10-output-plan.json":
+        from . import article
+
+        expected_u9_parent = (
+            None
+            if authority_values is None
+            else authority_values.get("u9_parent_event_sha256")
+        )
+        if not isinstance(expected_u9_parent, str):
+            raise ValueError("U10 sealing requires the runtime-derived U9 parent event")
+        validated = article.validate_output_plan_artifact(
+            validated,
+            expected_run_id=layout.run_dir.name,
+            expected_version_binding=current_version_binding(),
+            expected_u9_parent_event_sha256=expected_u9_parent,
+            expected_required_artifacts=expected_required_artifacts,
+        )
+        authority_documents = (
+            None
+            if authority_values is None
+            else authority_values.get("output_plan_authority_documents")
+        )
+        if authority_documents is not None:
+            if not isinstance(authority_documents, Mapping):
+                raise TypeError("output-plan authority documents must be a mapping")
+            required_concept_semantic_unit_ids = authority_values.get(
+                "required_concept_semantic_unit_ids"
+            )
+            if required_concept_semantic_unit_ids is None:
+                raise ValueError(
+                    "U10 sealing requires runtime-derived concept semantic units"
+                )
+            _validate_output_plan_semantic_authority(
+                validated,
+                authority_documents,
+                required_concept_semantic_unit_ids=(
+                    required_concept_semantic_unit_ids
+                ),
+            )
     atomic_write_json(path, validated)
     return validated
 
@@ -643,6 +657,586 @@ class MaterializedBundle:
 
 def _full_artifact_sha256(document: Mapping[str, object]) -> str:
     return sha256_bytes(canonical_json_bytes(document))
+
+
+def _required_artifact_records(
+    value: object,
+    *,
+    label: str,
+) -> tuple[dict[str, str], ...]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
+        raise ValueError(f"{label} must be an array")
+    records: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for index, raw in enumerate(value):
+        if not isinstance(raw, Mapping) or set(raw) != {
+            "path",
+            "sha256",
+            "media_type",
+        }:
+            raise ValueError(
+                f"{label}[{index}] must contain only path, sha256, and media_type"
+            )
+        path = raw.get("path")
+        digest = raw.get("sha256")
+        media_type = raw.get("media_type")
+        if not isinstance(path, str) or not path:
+            raise ValueError(f"{label}[{index}] path must be nonempty")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise ValueError(f"{label}[{index}] sha256 must be lowercase SHA-256")
+        if media_type != "application/json":
+            raise ValueError(f"{label}[{index}] must identify a JSON artifact")
+        key = (path, digest, media_type)
+        if key in seen:
+            raise ValueError(f"{label} contains duplicate artifact records")
+        seen.add(key)
+        records.append(
+            {"path": path, "sha256": digest, "media_type": media_type}
+        )
+    if not records:
+        raise ValueError(f"{label} must not be empty")
+    return tuple(records)
+
+
+def _rebind_output_plan_required_artifacts(
+    output_plan: dict[str, Any],
+    expected_required_artifacts: object,
+) -> None:
+    declared = _required_artifact_records(
+        output_plan.get("required_artifacts"),
+        label="model-authored output-plan required_artifacts",
+    )
+    expected = _required_artifact_records(
+        expected_required_artifacts,
+        label="runtime-derived U3-U9 required_artifacts",
+    )
+    declared_identity = tuple(
+        (record["path"], record["media_type"]) for record in declared
+    )
+    expected_identity = tuple(
+        (record["path"], record["media_type"]) for record in expected
+    )
+    if declared_identity != expected_identity:
+        raise ValueError(
+            "output-plan paths do not match runtime-derived U3-U9 required_artifacts"
+        )
+
+    replacements: dict[str, str] = {}
+    for authored, frozen in zip(declared, expected, strict=True):
+        previous = replacements.setdefault(authored["sha256"], frozen["sha256"])
+        if previous != frozen["sha256"]:
+            raise ValueError(
+                "one model-authored output-plan hash resolves to multiple upstream artifacts"
+            )
+    output_plan["required_artifacts"] = copy.deepcopy(list(expected))
+    for collection_name in ("sections", "appendices"):
+        collection = output_plan.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        for entry in collection:
+            if not isinstance(entry, dict):
+                continue
+            dependencies = entry.get("dependency_hashes")
+            if isinstance(dependencies, list):
+                entry["dependency_hashes"] = [
+                    replacements.get(value, value) for value in dependencies
+                ]
+    semantic_universe = output_plan.get("semantic_universe")
+    if isinstance(semantic_universe, list):
+        for unit in semantic_universe:
+            if not isinstance(unit, dict):
+                continue
+            authority_hash = unit.get("authority_artifact_sha256")
+            if isinstance(authority_hash, str):
+                unit["authority_artifact_sha256"] = replacements.get(
+                    authority_hash,
+                    authority_hash,
+                )
+        output_plan["semantic_universe_sha256"] = sha256_bytes(
+            canonical_json_bytes(semantic_universe)
+        )
+
+
+def _derive_output_plan_upstream_authority(
+    layout: RunLayout,
+    authorities: Sequence[tuple[Path, Mapping[str, object]]],
+) -> tuple[tuple[dict[str, str], ...], dict[str, Mapping[str, object]]]:
+    frozen = tuple(authorities)
+    schema_ids = tuple(document.get("schema_id") for _, document in frozen)
+    recursive_count = schema_ids.count("crossframe.ultra.v82.recursive-state")
+    if recursive_count < 1:
+        raise ValueError("runtime-derived U3-U9 authority requires recursive states")
+    expected_schema_ids = (
+        *_OUTPUT_PLAN_UPSTREAM_SCHEMA_SEQUENCE[:5],
+        *("crossframe.ultra.v82.recursive-state",) * recursive_count,
+        *_OUTPUT_PLAN_UPSTREAM_SCHEMA_SEQUENCE[5:],
+    )
+    if schema_ids != expected_schema_ids:
+        raise ValueError(
+            "validated U3-U9 documents do not match the frozen upstream artifact DAG"
+        )
+
+    records: list[dict[str, str]] = []
+    documents_by_sha256: dict[str, Mapping[str, object]] = {}
+    seen_paths: set[str] = set()
+    for path, document in frozen:
+        if not isinstance(path, Path) or not path.is_file():
+            raise ValueError("runtime-derived U3-U9 authority path is not a file")
+        if not isinstance(document, Mapping):
+            raise TypeError("runtime-derived U3-U9 authority must be a document")
+        assert_safe_descendant(layout.root, path)
+        if layout.artifacts_dir not in path.parents:
+            raise ValueError(
+                "runtime-derived U3-U9 authority must occupy the artifacts namespace"
+            )
+        schema_id = document.get("schema_id")
+        expected_phase = _OUTPUT_PLAN_UPSTREAM_PHASE_BY_SCHEMA_ID.get(schema_id)
+        if expected_phase is None or document.get("phase_id") != expected_phase:
+            raise ValueError(
+                "runtime-derived U3-U9 authority has an invalid schema/phase identity"
+            )
+        canonical_bytes = canonical_json_bytes(document)
+        if path.read_bytes() != canonical_bytes:
+            raise ValueError(
+                "runtime-derived U3-U9 authority differs from its validated document"
+            )
+        relative = path.relative_to(layout.run_dir).as_posix()
+        digest = sha256_bytes(canonical_bytes)
+        if relative in seen_paths or digest in documents_by_sha256:
+            raise ValueError(
+                "runtime-derived U3-U9 authority reuses an artifact path or hash"
+            )
+        seen_paths.add(relative)
+        documents_by_sha256[digest] = copy.deepcopy(dict(document))
+        records.append(
+            {
+                "path": relative,
+                "sha256": digest,
+                "media_type": "application/json",
+            }
+        )
+    return tuple(records), documents_by_sha256
+
+
+def _owner_id(record: Mapping[str, object], field: str, label: str) -> str:
+    value = record.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} has no record owner ID")
+    return value
+
+
+def _record_mappings(value: object, label: str) -> tuple[Mapping[str, object], ...]:
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
+        raise ValueError(f"{label} must be an array of owned records")
+    result: list[Mapping[str, object]] = []
+    for index, record in enumerate(value):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"{label}[{index}] must be an owned record")
+        result.append(record)
+    return tuple(result)
+
+
+_OwnerPath = tuple[str | int, ...]
+
+
+def _register_owner(
+    owners: dict[str, _OwnerPath],
+    locator: str,
+    owner_path: _OwnerPath,
+) -> None:
+    previous = owners.get(locator)
+    if previous is not None:
+        raise ValueError(
+            "upstream artifact has duplicate owner locator "
+            f"{locator!r}: {previous!r} and {owner_path!r}"
+        )
+    owners[locator] = owner_path
+
+
+def _register_record_owners(
+    owners: dict[str, _OwnerPath],
+    value: object,
+    field: str,
+    role_path: _OwnerPath,
+) -> None:
+    label = ".".join(str(part) for part in role_path)
+    for index, record in enumerate(_record_mappings(value, label)):
+        _register_owner(
+            owners,
+            _owner_id(record, field, f"{label}[{index}]"),
+            (*role_path, index, field),
+        )
+
+
+def _artifact_authority_owner_map(
+    document: Mapping[str, object],
+) -> dict[str, _OwnerPath]:
+    schema_id = document.get("schema_id")
+    owners: dict[str, _OwnerPath] = {}
+    if schema_id == "crossframe.ultra.v82.evidence-ledger":
+        _register_record_owners(
+            owners,
+            document.get("entries"),
+            "evidence_id",
+            ("entries",),
+        )
+        _register_record_owners(
+            owners,
+            document.get("unknowns"),
+            "unknown_id",
+            ("unknowns",),
+        )
+    elif schema_id == "crossframe.ultra.v82.world-volume":
+        _register_owner(
+            owners,
+            _owner_id(document, "volume_id", "world volume"),
+            ("world-volume", "volume_id"),
+        )
+        for collection, field in (
+            ("actors", "actor_id"),
+            ("circles", "circle_id"),
+            ("positions", "position_id"),
+            ("clocks", "clock_id"),
+            ("channels", "channel_id"),
+            ("events", "event_id"),
+            ("local_distributions", "distribution_id"),
+            ("unknowns", "unknown_id"),
+            ("residuals", "residual_id"),
+        ):
+            _register_record_owners(
+                owners,
+                document.get(collection),
+                field,
+                (collection,),
+            )
+        for collection in ("actors", "circles", "positions"):
+            for index, record in enumerate(
+                _record_mappings(document.get(collection), collection)
+            ):
+                for state_field in ("M_state", "Psi_state"):
+                    state = record.get(state_field)
+                    if not isinstance(state, Mapping):
+                        raise ValueError(
+                            f"{collection}[{index}].{state_field} must be an owned record"
+                        )
+                    _register_owner(
+                        owners,
+                        _owner_id(
+                            state,
+                            "state_id",
+                            f"{collection}[{index}].{state_field}",
+                        ),
+                        (collection, index, state_field, "state_id"),
+                    )
+    elif schema_id == "crossframe.ultra.v82.transformation-ledger":
+        transformations = _record_mappings(
+            document.get("transformations"), "transformations"
+        )
+        for index, transformation in enumerate(transformations):
+            label = f"transformations[{index}]"
+            _register_owner(
+                owners,
+                _owner_id(transformation, "transform_id", label),
+                ("transformations", index, "transform_id"),
+            )
+            for collection in ("preserved", "changed", "folded", "omitted", "unknown"):
+                _register_record_owners(
+                    owners,
+                    transformation.get(collection),
+                    "component_id",
+                    ("transformations", index, collection),
+                )
+            _register_record_owners(
+                owners,
+                transformation.get("effective_variables"),
+                "variable_ref",
+                ("transformations", index, "effective_variables"),
+            )
+            for collection, field in (
+                ("task_relative_loss", "loss_id"),
+                ("location_effects", "effect_id"),
+                ("return_conditions", "condition_id"),
+            ):
+                _register_record_owners(
+                    owners,
+                    transformation.get(collection),
+                    field,
+                    ("transformations", index, collection),
+                )
+    elif schema_id == "crossframe.ultra.v82.concept-disposition":
+        dispositions = _record_mappings(document.get("dispositions"), "dispositions")
+        for index, disposition in enumerate(dispositions):
+            label = f"dispositions[{index}]"
+            _register_owner(
+                owners,
+                _owner_id(disposition, "concept_id", label),
+                ("dispositions", index, "concept_id"),
+            )
+            branch = disposition.get("condition_branch")
+            if branch is not None:
+                if not isinstance(branch, Mapping):
+                    raise ValueError(f"{label}.condition_branch must be an owned record")
+                _register_owner(
+                    owners,
+                    _owner_id(branch, "branch_id", f"{label}.condition_branch"),
+                    ("dispositions", index, "condition_branch", "branch_id"),
+                )
+                plan = branch.get("evidence_plan")
+                if not isinstance(plan, Mapping):
+                    raise ValueError(
+                        f"{label}.condition_branch.evidence_plan must be an owned record"
+                    )
+                _register_owner(
+                    owners,
+                    _owner_id(
+                        plan,
+                        "plan_id",
+                        f"{label}.condition_branch.evidence_plan",
+                    ),
+                    (
+                        "dispositions",
+                        index,
+                        "condition_branch",
+                        "evidence_plan",
+                        "plan_id",
+                    ),
+                )
+        _register_record_owners(
+            owners,
+            document.get("semantic_obligations"),
+            "obligation_id",
+            ("semantic_obligations",),
+        )
+    elif schema_id == "crossframe.ultra.v82.claim-mechanism-graph":
+        for collection, field in (
+            ("claims", "claim_id"),
+            ("mechanisms", "mechanism_id"),
+            ("edges", "edge_id"),
+            ("explanations", "explanation_id"),
+            ("insights", "insight_id"),
+        ):
+            _register_record_owners(
+                owners,
+                document.get(collection),
+                field,
+                (collection,),
+            )
+    elif schema_id == "crossframe.ultra.v82.recursive-state":
+        _register_owner(
+            owners,
+            _owner_id(document, "node_id", "recursive state"),
+            ("recursive-state", "node_id"),
+        )
+        bounded_subgraph = document.get("bounded_subgraph")
+        if bounded_subgraph is not None:
+            if not isinstance(bounded_subgraph, Mapping):
+                raise ValueError(
+                    "recursive state bounded_subgraph must be an owned record"
+                )
+            _register_owner(
+                owners,
+                _owner_id(
+                    bounded_subgraph,
+                    "subgraph_id",
+                    "recursive state bounded_subgraph",
+                ),
+                ("bounded_subgraph", "subgraph_id"),
+            )
+    elif schema_id == "crossframe.ultra.v82.recursive-lineage":
+        _register_record_owners(
+            owners,
+            document.get("branches"),
+            "branch_id",
+            ("branches",),
+        )
+    elif schema_id == "crossframe.ultra.v82.order-evaluation":
+        for index, evaluation in enumerate(
+            _record_mappings(document.get("evaluations"), "evaluations")
+        ):
+            baseline = evaluation.get("baseline")
+            if not isinstance(baseline, Mapping):
+                raise ValueError(f"evaluations[{index}].baseline must be an owned record")
+            _register_owner(
+                owners,
+                _owner_id(
+                    baseline,
+                    "baseline_id",
+                    f"evaluations[{index}].baseline",
+                ),
+                ("evaluations", index, "baseline", "baseline_id"),
+            )
+    elif schema_id == "crossframe.ultra.v82.red-team-report":
+        for collection, field in (
+            ("attacks", "attack_id"),
+            ("sensitivity_checks", "check_id"),
+            ("unresolved_items", "unresolved_item_id"),
+        ):
+            _register_record_owners(
+                owners,
+                document.get(collection),
+                field,
+                (collection,),
+            )
+    elif schema_id == "crossframe.ultra.v82.verdict":
+        _register_record_owners(
+            owners,
+            document.get("five_verdicts"),
+            "verdict_id",
+            ("five_verdicts",),
+        )
+    elif schema_id == "crossframe.ultra.v82.action-ranking":
+        _register_record_owners(
+            owners,
+            document.get("options"),
+            "option_id",
+            ("options",),
+        )
+    elif schema_id == "crossframe.ultra.v82.forecast-ledger":
+        _register_record_owners(
+            owners,
+            document.get("forecasts"),
+            "forecast_id",
+            ("forecasts",),
+        )
+    else:
+        raise ValueError("upstream artifact has no approved record-owner locators")
+    if not owners:
+        raise ValueError("upstream artifact has no owned authority locators")
+    return owners
+
+
+def _concept_semantic_owner_locators(
+    document: Mapping[str, object],
+) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for index, obligation in enumerate(
+        _record_mappings(document.get("semantic_obligations"), "semantic_obligations")
+    ):
+        semantic_unit_id = _owner_id(
+            obligation,
+            "semantic_unit_id",
+            f"semantic_obligations[{index}] semantic unit",
+        )
+        obligation_id = _owner_id(
+            obligation,
+            "obligation_id",
+            f"semantic_obligations[{index}]",
+        )
+        if semantic_unit_id in result:
+            raise ValueError("concept disposition repeats a semantic unit ID")
+        result[semantic_unit_id] = obligation_id
+    return result
+
+
+def _validate_output_plan_semantic_authority(
+    output_plan: Mapping[str, object],
+    authority_documents_by_sha256: Mapping[str, Mapping[str, object]],
+    *,
+    required_concept_semantic_unit_ids: Collection[str],
+) -> None:
+    required = _required_artifact_records(
+        output_plan.get("required_artifacts"),
+        label="sealed output-plan required_artifacts",
+    )
+    required_hashes = tuple(record["sha256"] for record in required)
+    if set(required_hashes) != set(authority_documents_by_sha256):
+        raise ValueError(
+            "sealed output-plan authority differs from runtime-derived U3-U9 documents"
+        )
+    if isinstance(
+        required_concept_semantic_unit_ids,
+        (str, bytes, bytearray, Mapping),
+    ) or not isinstance(required_concept_semantic_unit_ids, Collection):
+        raise TypeError("required concept semantic units must be a collection")
+    required_concept_ids = frozenset(required_concept_semantic_unit_ids)
+    if not all(isinstance(unit_id, str) and unit_id for unit_id in required_concept_ids):
+        raise ValueError("required concept semantic units must be identified")
+    concept_authorities = [
+        (digest, document)
+        for digest, document in authority_documents_by_sha256.items()
+        if document.get("schema_id") == "crossframe.ultra.v82.concept-disposition"
+    ]
+    if len(concept_authorities) != 1:
+        raise ValueError("runtime authority must contain one concept disposition")
+    concept_sha256, concept_document = concept_authorities[0]
+    concept_owner_by_semantic_id = _concept_semantic_owner_locators(concept_document)
+    if not required_concept_ids.issubset(concept_owner_by_semantic_id):
+        raise ValueError(
+            "required concept semantic units differ from the validated concept disposition"
+        )
+    unit_dependencies: dict[str, frozenset[str]] = {}
+    for collection_name in ("sections", "appendices"):
+        collection = output_plan.get(collection_name)
+        if not isinstance(collection, list):
+            raise ValueError(f"output-plan {collection_name} must be an array")
+        for entry in collection:
+            if not isinstance(entry, Mapping):
+                raise ValueError("output-plan section must be an object")
+            dependencies = entry.get("dependency_hashes")
+            unit_ids = entry.get("semantic_unit_ids")
+            if not isinstance(dependencies, list) or not isinstance(unit_ids, list):
+                raise ValueError("output-plan section authority arrays are invalid")
+            dependency_set = frozenset(dependencies)
+            for unit_id in unit_ids:
+                if isinstance(unit_id, str):
+                    unit_dependencies[unit_id] = dependency_set
+
+    semantic_universe = output_plan.get("semantic_universe")
+    if not isinstance(semantic_universe, list):
+        raise ValueError("output-plan semantic universe must be an array")
+    unit_authority: dict[str, tuple[str, str]] = {}
+    authorized_hashes: set[str] = set()
+    for raw in semantic_universe:
+        if not isinstance(raw, Mapping):
+            raise ValueError("output-plan semantic unit must be an object")
+        unit_id = raw.get("unit_id")
+        authority_hash = raw.get("authority_artifact_sha256")
+        locator = raw.get("authority_locator")
+        if not isinstance(unit_id, str) or not isinstance(authority_hash, str):
+            raise ValueError("output-plan semantic authority identity is invalid")
+        document = authority_documents_by_sha256.get(authority_hash)
+        if document is None:
+            raise ValueError(
+                f"semantic unit {unit_id} is outside runtime-derived U3-U9 authority"
+            )
+        if not isinstance(locator, str) or locator not in _artifact_authority_owner_map(
+            document
+        ):
+            raise ValueError(
+                f"semantic unit {unit_id} authority_locator is absent from its bound artifact"
+            )
+        if authority_hash not in unit_dependencies.get(unit_id, frozenset()):
+            raise ValueError(
+                f"semantic unit {unit_id} authority is absent from its section dependencies"
+            )
+        unit_authority[unit_id] = (authority_hash, locator)
+        authorized_hashes.add(authority_hash)
+    missing_artifact_paths = [
+        record["path"]
+        for record in required
+        if record["sha256"] not in authorized_hashes
+    ]
+    if missing_artifact_paths:
+        raise ValueError(
+            "runtime-derived required artifacts without semantic-unit authority: "
+            f"{missing_artifact_paths}"
+        )
+    missing_concept_ids = sorted(required_concept_ids - set(unit_authority))
+    misbound_concept_ids = sorted(
+        unit_id
+        for unit_id in required_concept_ids.intersection(unit_authority)
+        if unit_authority[unit_id]
+        != (concept_sha256, concept_owner_by_semantic_id[unit_id])
+    )
+    if missing_concept_ids or misbound_concept_ids:
+        raise ValueError(
+            "output plan omits or misbinds required concept semantic units: "
+            f"missing={missing_concept_ids}, misbound={misbound_concept_ids}"
+        )
 
 
 def _authority_name(spec: ArtifactSpec) -> str:
@@ -1021,6 +1615,13 @@ def materialize_u4_u11(
         layout, phase_store, evidence_spec.relative_path, evidence_spec
     )
     documents["evidence"] = evidence
+    evidence_path = artifact_destination(
+        layout,
+        prepared.authoring_dir / evidence_spec.relative_path,
+    )
+    upstream_authorities: list[tuple[Path, Mapping[str, object]]] = [
+        (evidence_path, evidence)
+    ]
 
     from . import article, concept_closure, coverage, forecast, judgment, recursion, world_volume
 
@@ -1054,6 +1655,7 @@ def materialize_u4_u11(
     documents["world_volume"] = values[0]
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
 
     knowledge_values, source_manifest_sha256 = _knowledge_authorities(repo)
     u5_sources = (
@@ -1061,9 +1663,12 @@ def materialize_u4_u11(
         prepared.authoring_dir / "U05-concept-disposition.json",
     )
 
+    required_concept_semantic_unit_ids: frozenset[str] | None = None
+
     def validate_u5(values: Sequence[Mapping[str, object]]) -> None:
+        nonlocal required_concept_semantic_unit_ids
         transformations, concepts = values
-        concept_closure.validate_concept_closure(
+        required_concept_semantic_unit_ids = concept_closure.validate_concept_closure(
             concepts,
             repo=repo,
             evidence_ledger=evidence,
@@ -1093,9 +1698,12 @@ def materialize_u4_u11(
         validate_documents=validate_u5,
         create_checkpoint=create_checkpoint,
     )
+    if required_concept_semantic_unit_ids is None:
+        raise RuntimeError("U5 validation did not return concept semantic units")
     documents["transformation_ledger"], documents["concept_disposition"] = values
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
 
     u6_source = prepared.authoring_dir / "U06-claim-mechanism-graph.json"
 
@@ -1135,6 +1743,7 @@ def materialize_u4_u11(
     documents["claim_mechanism_graph"] = values[0]
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
 
     state_sources = tuple(
         sorted(
@@ -1203,6 +1812,7 @@ def materialize_u4_u11(
     documents["recursive_lineage"] = lineage
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
 
     u8_sources = (
         prepared.authoring_dir / "U08-order-evaluation.json",
@@ -1251,6 +1861,7 @@ def materialize_u4_u11(
     documents["order_evaluation"], documents["red_team_report"] = values
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
 
     u9_sources = (
         prepared.authoring_dir / "U09-verdict.json",
@@ -1314,6 +1925,11 @@ def materialize_u4_u11(
     documents["verdict"], documents["action_ranking"], documents["forecast_ledger"] = values
     phase_events.append(event)
     artifact_paths.extend(paths)
+    upstream_authorities.extend(zip(paths, values, strict=True))
+
+    required_artifacts, authority_documents_by_sha256 = (
+        _derive_output_plan_upstream_authority(layout, upstream_authorities)
+    )
 
     u10_sources = (
         prepared.authoring_dir / "U10-framework-gap-ledger.json",
@@ -1334,7 +1950,14 @@ def materialize_u4_u11(
             expected_run_id=layout.run_dir.name,
             expected_version_binding=current_version_binding(),
             expected_u9_parent_event_sha256=u9_event_sha256,
-            expected_required_artifacts=output_plan["required_artifacts"],
+            expected_required_artifacts=required_artifacts,
+        )
+        _validate_output_plan_semantic_authority(
+            output_plan,
+            authority_documents_by_sha256,
+            required_concept_semantic_unit_ids=(
+                required_concept_semantic_unit_ids
+            ),
         )
 
     event, values, paths = _seal_json_phase(
@@ -1344,7 +1967,14 @@ def materialize_u4_u11(
         u10_sources,
         generated_at=now,
         authority_documents=documents,
-        authority_values={"u9_parent_event_sha256": u9_event_sha256},
+        authority_values={
+            "u9_parent_event_sha256": u9_event_sha256,
+            "output_plan_required_artifacts": required_artifacts,
+            "output_plan_authority_documents": authority_documents_by_sha256,
+            "required_concept_semantic_unit_ids": (
+                required_concept_semantic_unit_ids
+            ),
+        },
         input_artifact_hashes=_phase_input_hashes(
             documents,
             "claim_mechanism_graph",

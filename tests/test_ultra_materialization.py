@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from tests.ultra_closed_fixture_support import write_closed_u4_u10_authoring
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "skills/crossframe-ultra/scripts"
@@ -61,6 +63,120 @@ def _layout(paths, tmp_path: Path):
         "20260802T030405Z-000000000013",
         policy,
     )
+
+
+class _RecordingPhaseStore:
+    def __init__(self) -> None:
+        self.events: tuple[dict[str, object], ...] = ()
+
+    def complete(self, phase_id: str, *, artifact_hashes, **kwargs):
+        digests = tuple(artifact_hashes)
+        event = {
+            "phase_id": phase_id,
+            "status": "complete",
+            "event_sha256": hashlib.sha256(
+                f"{phase_id}:{len(self.events)}".encode("utf-8")
+            ).hexdigest(),
+            "output_artifact_hashes": list(digests),
+        }
+        self.events = (*self.events, event)
+        return event
+
+
+def _prepare_u10_authority_case(runtime, tmp_path: Path):
+    materialization, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    prepared = materialization.prepare_authoring(layout)
+    evidence = json.loads(
+        (REPO_ROOT / "tests/fixtures/ultra-runtime/evidence-ledger-valid.json").read_text(
+            "utf-8"
+        )
+    )
+    evidence.update(
+        {
+            "run_id": layout.run_dir.name,
+            "version_binding": _module("constants").current_version_binding(),
+            "generated_at": "2026-08-02T03:04:05Z",
+            "phase_id": "U3",
+            "content_sha256": "0" * 64,
+        }
+    )
+    evidence["content_sha256"] = _module(
+        "schemas"
+    ).compute_artifact_content_sha256(evidence)
+    evidence_path = materialization.artifact_destination(
+        layout,
+        layout.authoring_dir / "U03-evidence-ledger.json",
+    )
+    jsonio.atomic_write_json(evidence_path, evidence)
+    authority = write_closed_u4_u10_authoring(REPO_ROOT, layout)
+    return materialization, jsonio, layout, prepared, authority, _RecordingPhaseStore()
+
+
+def _write_mutated_plan(jsonio, layout, plan: dict[str, object]) -> None:
+    plan["semantic_universe_sha256"] = jsonio.sha256_bytes(
+        jsonio.canonical_json_bytes(plan["semantic_universe"])
+    )
+    jsonio.atomic_write_json(layout.authoring_dir / "U10-output-plan.json", plan)
+
+
+def _refresh_plan_dependencies(plan: dict[str, object]) -> None:
+    units = plan.get("semantic_universe")
+    if not isinstance(units, list):
+        raise TypeError("test output plan lacks a semantic universe")
+    units_by_id = {
+        unit["unit_id"]: unit
+        for unit in units
+        if isinstance(unit, dict) and isinstance(unit.get("unit_id"), str)
+    }
+    for entry in (*plan["sections"], *plan["appendices"]):
+        entry["dependency_hashes"] = list(
+            dict.fromkeys(
+                units_by_id[unit_id]["authority_artifact_sha256"]
+                for unit_id in entry["semantic_unit_ids"]
+            )
+        )
+
+
+def _rebind_semantic_unit(
+    plan: dict[str, object],
+    unit_id: str,
+    *,
+    artifact_suffix: str,
+    authority_locator: str,
+) -> None:
+    artifact = next(
+        record
+        for record in plan["required_artifacts"]
+        if record["path"].endswith(artifact_suffix)
+    )
+    unit = next(
+        item for item in plan["semantic_universe"] if item["unit_id"] == unit_id
+    )
+    unit["authority_artifact_sha256"] = artifact["sha256"]
+    unit["authority_locator"] = authority_locator
+    _refresh_plan_dependencies(plan)
+
+
+def _assert_u10_rejected_before_outputs(
+    materialization,
+    layout,
+    store: _RecordingPhaseStore,
+    *,
+    expected_fragment: str,
+) -> None:
+    with pytest.raises(ValueError) as captured:
+        materialization.materialize_u4_u11(
+            REPO_ROOT,
+            layout,
+            store,
+            now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
+            create_checkpoint=lambda *args, **kwargs: kwargs,
+        )
+    assert expected_fragment in str(captured.value)
+    assert all(event["phase_id"] not in {"U10", "U11"} for event in store.events)
+    assert not (layout.authoring_dir / "article.partial.md").exists()
+    assert list(layout.delivery_dir.glob("*")) == []
 
 
 def test_task13_materialization_module_exists_for_red_gate() -> None:
@@ -254,6 +370,21 @@ def test_runtime_rebinds_parent_run_identity_and_nested_output_plan_hashes(
         layout,
         plan_source,
         generated_at=generated_at,
+        authority_values={
+            "u9_parent_event_sha256": "9" * 64,
+            "output_plan_required_artifacts": [
+                {
+                    "path": relative,
+                    "sha256": digest,
+                    "media_type": "application/json",
+                }
+                for relative, digest in zip(
+                    required_paths,
+                    new_hashes,
+                    strict=True,
+                )
+            ],
+        },
     )
 
     assert [record["sha256"] for record in sealed["required_artifacts"]] == new_hashes
@@ -296,6 +427,343 @@ def test_output_plan_dependencies_must_resolve_inside_the_artifacts_namespace(
             plan_source,
             generated_at=datetime(2026, 8, 2, 3, 4, 9, tzinfo=timezone.utc),
         )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("control-only", "omit-verdict", "omit-action", "omit-forecast"),
+)
+def test_materialization_rejects_self_selected_or_core_omitting_u10_authority(
+    runtime,
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    materialization, jsonio, layout, prepared, _, store = (
+        _prepare_u10_authority_case(runtime, tmp_path)
+    )
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    entries = (*plan["sections"], *plan["appendices"])
+    units = plan["semantic_universe"]
+    if mutation == "control-only":
+        control_hash = hashlib.sha256(prepared.control_path.read_bytes()).hexdigest()
+        plan["required_artifacts"] = [
+            {
+                "path": prepared.control_path.relative_to(layout.run_dir).as_posix(),
+                "sha256": control_hash,
+                "media_type": "application/json",
+            }
+        ]
+        for entry in entries:
+            entry["dependency_hashes"] = [control_hash]
+        for unit in units:
+            unit["authority_artifact_sha256"] = control_hash
+            unit["authority_locator"] = "materialization-control"
+    else:
+        suffix = {
+            "omit-verdict": "/U09-verdict.json",
+            "omit-action": "/U09-action-ranking.json",
+            "omit-forecast": "/U09-forecast-ledger.json",
+        }[mutation]
+        removed = next(
+            record
+            for record in plan["required_artifacts"]
+            if record["path"].endswith(suffix)
+        )
+        fallback = next(
+            record
+            for record in plan["required_artifacts"]
+            if record["path"].endswith("/U03-evidence-ledger.json")
+        )
+        plan["required_artifacts"] = [
+            record for record in plan["required_artifacts"] if record is not removed
+        ]
+        for entry in entries:
+            entry["dependency_hashes"] = list(
+                dict.fromkeys(
+                    fallback["sha256"] if digest == removed["sha256"] else digest
+                    for digest in entry["dependency_hashes"]
+                )
+            )
+        for unit in units:
+            if unit["authority_artifact_sha256"] == removed["sha256"]:
+                unit["authority_artifact_sha256"] = fallback["sha256"]
+                unit["authority_locator"] = "EVIDENCE-ROSTER-ATLAS"
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="runtime-derived U3-U9 required_artifacts",
+    )
+
+
+@pytest.mark.parametrize(
+    "locator",
+    ("VERDICT-NOT-PRESENT", "OPTION-PROBE"),
+    ids=("fabricated", "mismatched-artifact"),
+)
+def test_materialization_rejects_locator_outside_its_bound_upstream_artifact(
+    runtime,
+    tmp_path: Path,
+    locator: str,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    unit = next(
+        item
+        for item in plan["semantic_universe"]
+        if item["unit_id"] == "UNIT-FIVE-VERDICTS"
+    )
+    verdict_authority = next(
+        record
+        for record in plan["required_artifacts"]
+        if record["path"].endswith("/U09-verdict.json")
+    )
+    assert unit["authority_artifact_sha256"] == verdict_authority["sha256"]
+    unit["authority_locator"] = locator
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="authority_locator",
+    )
+
+
+def test_materialization_rejects_omitted_required_concept_semantic_unit(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    omitted_id = "SEMANTIC-UNIT-V82-M01"
+    plan["semantic_universe"] = [
+        unit for unit in plan["semantic_universe"] if unit["unit_id"] != omitted_id
+    ]
+    for entry in (*plan["sections"], *plan["appendices"]):
+        entry["semantic_unit_ids"] = [
+            unit_id for unit_id in entry["semantic_unit_ids"] if unit_id != omitted_id
+        ]
+    _refresh_plan_dependencies(plan)
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="required concept semantic units",
+    )
+
+
+@pytest.mark.parametrize(
+    ("unit_id", "expected_suffix"),
+    (
+        (
+            "UNIT-ORDER-2",
+            "/U07-recursive-states/NODE-MAIN-ORDER-2.json",
+        ),
+        ("UNIT-APPENDIX-BRANCHES", "/U07-recursive-lineage.json"),
+        ("UNIT-CONFIDENCE", "/U08-order-evaluation.json"),
+    ),
+    ids=("recursive-state", "recursive-lineage", "order-evaluation"),
+)
+def test_materialization_requires_every_runtime_artifact_to_authorize_a_semantic_unit(
+    runtime,
+    tmp_path: Path,
+    unit_id: str,
+    expected_suffix: str,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    unit = next(
+        item for item in plan["semantic_universe"] if item["unit_id"] == unit_id
+    )
+    original = next(
+        record
+        for record in plan["required_artifacts"]
+        if record["sha256"] == unit["authority_artifact_sha256"]
+    )
+    assert original["path"].endswith(expected_suffix)
+    _rebind_semantic_unit(
+        plan,
+        unit_id,
+        artifact_suffix="/U03-evidence-ledger.json",
+        authority_locator="EVIDENCE-ROSTER-ATLAS",
+    )
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="without semantic-unit authority",
+    )
+
+
+def test_closed_fixture_assigns_semantic_authority_to_all_seventeen_upstream_artifacts(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    _, jsonio, layout, _, _, _ = _prepare_u10_authority_case(runtime, tmp_path)
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+
+    required_hashes = {
+        record["sha256"] for record in plan["required_artifacts"]
+    }
+    represented_hashes = {
+        unit["authority_artifact_sha256"] for unit in plan["semantic_universe"]
+    }
+
+    assert len(required_hashes) == 17
+    assert represented_hashes == required_hashes
+
+
+@pytest.mark.parametrize(
+    ("unit_id", "artifact_suffix", "reference_locator"),
+    (
+        (
+            "UNIT-CIRCLE-RELATION",
+            "/U05-transformation-ledger.json",
+            "UNKNOWN-ADAPTATION",
+        ),
+        (
+            "UNIT-FIVE-VERDICTS",
+            "/U09-verdict.json",
+            "EXPLANATION-RIVAL",
+        ),
+    ),
+    ids=("u5-unknown-reference", "u9-explanation-reference"),
+)
+def test_materialization_rejects_reference_only_authority_locator(
+    runtime,
+    tmp_path: Path,
+    unit_id: str,
+    artifact_suffix: str,
+    reference_locator: str,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    _rebind_semantic_unit(
+        plan,
+        unit_id,
+        artifact_suffix=artifact_suffix,
+        authority_locator=reference_locator,
+    )
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="authority_locator",
+    )
+
+
+def test_materialization_rejects_ambiguous_cross_owner_evidence_locator(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    evidence_path = materialization.artifact_destination(
+        layout,
+        layout.authoring_dir / "U03-evidence-ledger.json",
+    )
+    evidence_document = jsonio.load_json_object(evidence_path)
+    duplicate_locator = evidence_document["entries"][0]["evidence_id"]
+    evidence_document["unknowns"].append(
+        {
+            "unknown_id": duplicate_locator,
+            "location_ref": "POS-TEAM-MANAGER",
+            "description": "This string identifies a distinct unknown owner record.",
+            "resolution_condition": "Observe the next review cycle.",
+        }
+    )
+    evidence_document["content_sha256"] = _module(
+        "schemas"
+    ).compute_artifact_content_sha256(evidence_document)
+    _module("evidence").validate_evidence_artifact(
+        evidence_document,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=_module("constants").current_version_binding(),
+        expected_phase_id="U3",
+        expected_evidence_cutoff=evidence_document["evidence_cutoff"],
+    )
+    jsonio.atomic_write_json(evidence_path, evidence_document)
+
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    _rebind_semantic_unit(
+        plan,
+        "UNIT-DECISIVE-EVIDENCE",
+        artifact_suffix="/U03-evidence-ledger.json",
+        authority_locator=duplicate_locator,
+    )
+    _write_mutated_plan(jsonio, layout, plan)
+
+    _assert_u10_rejected_before_outputs(
+        materialization,
+        layout,
+        store,
+        expected_fragment="duplicate owner locator",
+    )
+
+
+def test_materialization_accepts_owned_transformation_effective_variable_locator(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    materialization, jsonio, layout, _, _, store = _prepare_u10_authority_case(
+        runtime,
+        tmp_path,
+    )
+    transformation_document = jsonio.load_json_object(
+        layout.authoring_dir / "U05-transformation-ledger.json"
+    )
+    variable_locator = transformation_document["transformations"][0][
+        "effective_variables"
+    ][0]["variable_ref"]
+    assert variable_locator == "VAR-SCALE-MANAGER-BUDGET"
+
+    plan = jsonio.load_json_object(layout.authoring_dir / "U10-output-plan.json")
+    _rebind_semantic_unit(
+        plan,
+        "UNIT-CIRCLE-RELATION",
+        artifact_suffix="/U05-transformation-ledger.json",
+        authority_locator=variable_locator,
+    )
+    _write_mutated_plan(jsonio, layout, plan)
+
+    with pytest.raises(
+        ValueError,
+        match="article packet count differs from the frozen output plan",
+    ):
+        materialization.materialize_u4_u11(
+            REPO_ROOT,
+            layout,
+            store,
+            now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
+            create_checkpoint=lambda *args, **kwargs: kwargs,
+        )
+    assert any(event["phase_id"] == "U10" for event in store.events)
+    assert all(event["phase_id"] != "U11" for event in store.events)
+    assert not (layout.authoring_dir / "article.partial.md").exists()
+    assert list(layout.delivery_dir.glob("*")) == []
 
 
 def test_materialization_rejects_a_forged_layout_outside_the_selected_root(
