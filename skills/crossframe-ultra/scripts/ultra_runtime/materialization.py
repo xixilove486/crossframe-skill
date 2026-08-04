@@ -14,6 +14,7 @@ from .jsonio import (
     atomic_write_json,
     canonical_json_bytes,
     load_json_object,
+    load_json_object_bytes,
     sha256_bytes,
 )
 from .paths import (
@@ -2218,16 +2219,6 @@ def _close_u12_transaction(
             checkpoint=checkpoint,
         )
 
-        current = status_store.read()
-        complete_status = status_store.transition(
-            current,
-            "complete",
-            _strictly_later(now, current.updated_at),
-            current_phase="U12",
-            last_complete_phase="U12",
-            reason="post-publish validation passed",
-            validation_passed=True,
-        )
         journal = load_json_object(paths.journal_path)
         completed_journal = _roll_forward_u12_transaction(
             layout,
@@ -2237,15 +2228,76 @@ def _close_u12_transaction(
         if completed_journal.get("state") != "complete":
             raise RuntimeError("U12 publish journal did not complete")
         reread_status = status_store.read()
+        if (
+            reread_status.status != "complete"
+            or reread_status.current_phase != "U12"
+            or reread_status.last_complete_phase != "U12"
+            or reread_status.validation_passed is not True
+            or reread_status.tools_allowed is not False
+        ):
+            raise RuntimeError("U12 terminal status authority is inconsistent")
+
+        event_path = layout.recovery_dir / "phase-events.jsonl"
+        try:
+            raw_events = event_path.read_bytes()
+        except OSError as error:
+            raise RuntimeError("U12 phase event journal cannot be read") from error
+        if not raw_events or not raw_events.endswith(b"\n"):
+            raise RuntimeError("U12 phase event journal is incomplete")
+        disk_events = []
+        for ordinal, row in enumerate(raw_events.splitlines(keepends=True), start=1):
+            parsed = load_json_object_bytes(
+                row,
+                source=f"{event_path}:{ordinal}",
+            )
+            if row != canonical_json_bytes(parsed):
+                raise RuntimeError("U12 phase event journal is not canonical")
+            disk_events.append(parsed)
+        u12_events = [
+            item
+            for item in disk_events
+            if item.get("phase_id") == "U12" and item.get("status") == "complete"
+        ]
+
         checkpoints = recovery.load_checkpoints(layout)
-        matching = [
+        u12_checkpoints = [
             item
             for item in checkpoints
-            if item.get("phase_id") == "U12"
-            and item.get("phase_event_sha256") == event.get("event_sha256")
+            if item.get("boundary_kind") == "phase"
+            and item.get("phase_id") == "U12"
         ]
-        if reread_status != complete_status or matching != [checkpoint]:
-            raise RuntimeError("U12 event, checkpoint, and status reread differ")
+        ordered_paths = (
+            paths.manifest_path,
+            report_path,
+            paths.article_path,
+            paths.dossier_path,
+            paths.artifact_index_path,
+        )
+        ordered_hashes = tuple(_sha256_file(path) for path in ordered_paths)
+        expected_refs = tuple(
+            (path.relative_to(layout.run_dir).as_posix(), digest)
+            for path, digest in zip(ordered_paths, ordered_hashes)
+        )
+        raw_refs = checkpoint.get("artifact_hashes")
+        observed_refs = (
+            tuple(
+                (str(item.get("path")), str(item.get("sha256")))
+                for item in raw_refs
+                if isinstance(item, Mapping)
+            )
+            if isinstance(raw_refs, list)
+            else ()
+        )
+        if (
+            u12_events != [event]
+            or u12_checkpoints != [checkpoint]
+            or tuple(event.get("output_artifact_hashes", ())) != ordered_hashes
+            or observed_refs != expected_refs
+            or checkpoint.get("phase_event_sha256") != event.get("event_sha256")
+        ):
+            raise RuntimeError(
+                "U12 disk event and checkpoint do not bind the ordered completion files"
+            )
         return event, reread_status, layout.run_dir / "final-chat.json"
     except BaseException as error:
         if durable:
@@ -2326,6 +2378,8 @@ def materialize_complete_run(
     status_store = RunStatusStore(layout)
     lease = acquire_run_lease(layout, now, timedelta(minutes=30))
     attention_marked = False
+    phase_store_restored = False
+    publication_journal_path = layout.recovery_dir / "publish-transaction.json"
 
     def mark_needs_attention(reason: str) -> object:
         nonlocal attention_marked
@@ -2351,6 +2405,32 @@ def materialize_complete_run(
 
     try:
         current = status_store.read()
+        if current.status == "complete":
+            recovered_publication = recover_publish_transaction(
+                layout, mark_needs_attention=mark_needs_attention
+            )
+            if not isinstance(
+                recovered_publication, Mapping
+            ) or recovered_publication.get("state") != "complete":
+                raise RuntimeError("terminal complete run has no complete publish journal")
+            paths = publication_paths(
+                layout,
+                str(recovered_publication["transaction_id"]),
+            )
+            return CompleteMaterializationResult(
+                run_id=run_id,
+                status="complete",
+                manifest_path=paths.manifest_path,
+                article_path=paths.article_path,
+                dossier_path=paths.dossier_path,
+                artifact_index_path=paths.artifact_index_path,
+                final_chat_path=layout.run_dir / "final-chat.json",
+                postcheck_passed=True,
+            )
+
+        resumed = recovery.resume_run(layout, now=now)
+        phase_store = _resume_phase_store(resumed)
+        phase_store_restored = True
         recovered_publication = recover_publish_transaction(
             layout, mark_needs_attention=mark_needs_attention
         )
@@ -2379,27 +2459,9 @@ def materialize_complete_run(
                 postcheck_passed=True,
             )
         if current.status != "running":
-            if current.status not in {
-                "created",
-                "interrupted",
-                "blocked",
-                "needs_attention",
-            }:
-                raise RuntimeError(
-                    f"run status {current.status!r} cannot materialize"
-                )
-            current = status_store.transition(
-                current,
-                "running",
-                _strictly_later(now, current.updated_at),
-                current_phase=current.current_phase,
-                last_complete_phase=current.last_complete_phase,
-                reason="materialization admitted",
-                validation_passed=False,
+            raise RuntimeError(
+                f"resumed run status {current.status!r} cannot materialize"
             )
-
-        resumed = recovery.resume_run(layout, now=now)
-        phase_store = _resume_phase_store(resumed)
         bundle = materialize_u4_u11(
             repo,
             layout,
@@ -2451,7 +2513,6 @@ def materialize_complete_run(
             fresh_check=fresh_check,
             commit_report=commit_report,
             mark_needs_attention=mark_needs_attention,
-            defer_completion=True,
         )
         current_report_path = (
             layout.validation_current_dir / "ultra-validator-report.json"
@@ -2486,7 +2547,11 @@ def materialize_complete_run(
             postcheck_passed=True,
         )
     except BaseException as error:
-        if not attention_marked:
+        if (
+            phase_store_restored
+            and publication_journal_path.is_file()
+            and not attention_marked
+        ):
             try:
                 mark_needs_attention(f"materialization failed: {type(error).__name__}: {error}")
             except BaseException as status_error:

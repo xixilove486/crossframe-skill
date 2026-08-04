@@ -57,49 +57,16 @@ def _layout(paths, tmp_path: Path):
     return paths.build_run_layout(paths.RunMode.TEST, RUN_ID, policy)
 
 
-def _real_read_events(jsonio, run_id: str) -> bytes:
-    source_path = (
-        REPO_ROOT / "skills/crossframe-ultra/references/source-manifest.json"
+def _bind_validation_repo(validation, authority_repo: Path, monkeypatch) -> None:
+    authority_module = (
+        authority_repo
+        / "skills/crossframe-ultra/scripts/ultra_runtime/validation.py"
     )
-    source = json.loads(source_path.read_text("utf-8"))
-    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
-    binding = _module("constants").current_version_binding()
-    rows: list[bytes] = []
-    for unit in source["source_units"]:
-        event: dict[str, object] = {
-            "schema_id": "crossframe.ultra.v82.read-event",
-            "schema_version": 1,
-            "run_id": run_id,
-            "version_binding": binding,
-            "generated_at": "2026-08-02T00:00:00Z",
-            "content_sha256": unit["sha256"],
-            "phase_id": "U1",
-            "source_unit_id": unit["unit_id"],
-            "source_kind": unit["kind"],
-            "source_ordinal": unit["ordinal"],
-            "source_manifest_sha256": source_sha256,
-            "promoted_semantic_snapshot_sha256": binding[
-                "framework_semantic_sha256"
-            ],
-            "source_lock_sha256": "d" * 64,
-            "parent_event_sha256": "e" * 64,
-            "receipt_sha256": hashlib.sha256(
-                f"{run_id}:{unit['unit_id']}:receipt".encode("utf-8")
-            ).hexdigest(),
-            "reader_mode": "full-source",
-            "execution_identity": {
-                "kind": "host-process",
-                "process_id": 1,
-                "executable": "python",
-                "user": "fixture-user",
-            },
-            "read_at": "2026-08-02T00:00:00Z",
-        }
-        event["read_event_sha256"] = jsonio.sha256_bytes(
-            jsonio.canonical_json_bytes(event)
-        )
-        rows.append(jsonio.canonical_json_bytes(event))
-    return b"".join(rows)
+    loaded_module = Path(validation.__file__).resolve()
+    assert hashlib.sha256(authority_module.read_bytes()).hexdigest() == hashlib.sha256(
+        loaded_module.read_bytes()
+    ).hexdigest()
+    monkeypatch.setattr(validation, "__file__", str(authority_module))
 
 
 class RecordingPhaseStore:
@@ -164,11 +131,88 @@ def real_seam_result(
     state_machine = _module("state_machine")
     status = _module("status")
     context = state_fixtures.u1_prerequisite_context.__wrapped__(tmp_path_factory)
-    u1_authority = state_fixtures.u1_authority.__wrapped__(context)
+    release_snapshot_path = context["repo"].parent / "release-manifest.json"
+    jsonio.atomic_write_bytes(
+        context["repo"]
+        / "skills/crossframe-ultra/references/release-manifest.json",
+        release_snapshot_path.read_bytes(),
+    )
+    jsonio.atomic_write_bytes(
+        context["repo"] / "scripts/check_crossframe_ultra_artifacts.py",
+        (REPO_ROOT / "scripts/check_crossframe_ultra_artifacts.py").read_bytes(),
+    )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(state_machine, "_SOURCE_REPOSITORY", context["repo"])
     layout = context["run_layout"]
     original_store = state_fixtures._store(state_machine)
-    state_fixtures._complete_u0_u1(original_store, u1_authority)
-    state_fixtures._complete_u2(original_store)
+    u1_snapshot = state_fixtures._issue_u1_recovery_snapshot(
+        original_store,
+        context,
+    )
+    u1_authority = u1_snapshot["authority"]
+    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+    u1_authority_dir = layout.recovery_dir / "u1-authority"
+    source_lock_path = u1_authority_dir / "source-lock.json"
+    source_coverage_path = u1_authority_dir / "source-coverage.json"
+    read_plan_path = u1_authority_dir / "read-plan.json"
+    read_events_path = (
+        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
+    )
+    now = datetime(2026, 8, 4, tzinfo=timezone.utc)
+    jsonio.atomic_write_json(run_contract_path, dict(original_store.run_contract))
+    recovery.create_checkpoint(
+        layout,
+        original_store,
+        boundary_kind="phase",
+        boundary_id="U0",
+        boundary_ordinal=0,
+        artifact_paths=(run_contract_path,),
+        now=now,
+    )
+    original_store.complete(
+        "U1",
+        artifact_hashes=(
+            u1_authority.source_lock_artifact_sha256,
+            u1_authority.read_coverage_artifact_sha256,
+        ),
+        u1_authority=u1_authority,
+    )
+    jsonio.atomic_write_json(source_lock_path, u1_snapshot["source_lock"])
+    jsonio.atomic_write_json(source_coverage_path, u1_snapshot["source_coverage"])
+    jsonio.atomic_write_bytes(
+        read_events_path,
+        b"".join(
+            jsonio.canonical_json_bytes(event)
+            for event in u1_snapshot["read_events"]
+        ),
+    )
+    recovery.create_checkpoint(
+        layout,
+        original_store,
+        boundary_kind="phase",
+        boundary_id="U1",
+        boundary_ordinal=0,
+        artifact_paths=(source_lock_path, source_coverage_path),
+        now=now + timedelta(seconds=1),
+    )
+    assert jsonio.load_json_object(read_plan_path) == u1_snapshot["read_plan"]
+    _, retrieval_ledger = state_fixtures._complete_u2(
+        original_store,
+        include_artifact=True,
+    )
+    retrieval_path = (
+        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
+    )
+    jsonio.atomic_write_json(retrieval_path, retrieval_ledger)
+    recovery.create_checkpoint(
+        layout,
+        original_store,
+        boundary_kind="phase",
+        boundary_id="U2",
+        boundary_ordinal=0,
+        artifact_paths=(retrieval_path,),
+        now=now + timedelta(seconds=2),
+    )
     evidence_fixture = json.loads(
         (
             REPO_ROOT / "tests/fixtures/ultra-runtime/evidence-ledger-valid.json"
@@ -188,20 +232,10 @@ def real_seam_result(
         artifact_hashes=(evidence_seal.artifact_sha256,),
         evidence_authority=evidence_seal,
     )
-    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
     evidence_path = (
         layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json"
     )
-    jsonio.atomic_write_json(run_contract_path, dict(original_store.run_contract))
     jsonio.atomic_write_json(evidence_path, original_store.evidence_artifact)
-    read_events_path = (
-        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
-    )
-    jsonio.atomic_write_bytes(
-        read_events_path,
-        _real_read_events(jsonio, original_store.run_id),
-    )
-    now = datetime(2026, 8, 4, tzinfo=timezone.utc)
     checkpoint = recovery.create_checkpoint(
         layout,
         original_store,
@@ -209,17 +243,17 @@ def real_seam_result(
         boundary_id="U3",
         boundary_ordinal=0,
         artifact_paths=(evidence_path,),
-        now=now,
+        now=now + timedelta(seconds=3),
     )
     expected_events = original_store.events
     del original_store
 
     statuses = status.RunStatusStore(layout)
-    created = statuses.create(now)
-    running = statuses.transition(created, "running", now + timedelta(seconds=1))
-    statuses.transition(running, "interrupted", now + timedelta(seconds=2))
+    created = statuses.create(now + timedelta(seconds=4))
+    running = statuses.transition(created, "running", now + timedelta(seconds=5))
+    statuses.transition(running, "interrupted", now + timedelta(seconds=6))
 
-    resumed = recovery.resume_run(layout, now=now + timedelta(seconds=3))
+    resumed = recovery.resume_run(layout, now=now + timedelta(seconds=7))
 
     assert resumed.checkpoint == checkpoint
     assert resumed.phase_store.events == expected_events
@@ -240,7 +274,7 @@ def real_seam_result(
     world = materialization.seal_authoring_artifact(
         layout,
         world_source,
-        generated_at=now + timedelta(seconds=4),
+        generated_at=now + timedelta(seconds=8),
         authority_documents={"evidence": jsonio.load_json_object(evidence_path)},
     )
     world_path = materialization.artifact_destination(layout, world_source)
@@ -263,9 +297,9 @@ def real_seam_result(
         boundary_id="U4",
         boundary_ordinal=0,
         artifact_paths=(world_path,),
-        now=now + timedelta(seconds=5),
+        now=now + timedelta(seconds=9),
     )
-    restarted = recovery.resume_run(layout, now=now + timedelta(seconds=6))
+    restarted = recovery.resume_run(layout, now=now + timedelta(seconds=10))
     assert restarted.phase_store.evidence_frozen is True
     assert restarted.phase_store.evidence_sha256 == evidence_seal.artifact_sha256
     assert [
@@ -279,7 +313,7 @@ def real_seam_result(
             REPO_ROOT,
             layout,
             restarted.phase_store,
-            now=now + timedelta(seconds=7),
+            now=now + timedelta(seconds=11),
             create_checkpoint=recovery.create_checkpoint,
         )
 
@@ -291,13 +325,13 @@ def real_seam_result(
         layout,
         sealed_plan,
         output_authority,
-        generated_at="2026-08-04T00:00:08Z",
+        generated_at="2026-08-04T00:00:12Z",
     )
     bundle = materialization.materialize_u4_u11(
         REPO_ROOT,
         layout,
         restarted.phase_store,
-        now=now + timedelta(seconds=8),
+        now=now + timedelta(seconds=12),
         create_checkpoint=recovery.create_checkpoint,
     )
     assert bundle.phase_events[-1]["phase_id"] == "U11"
@@ -313,8 +347,8 @@ def real_seam_result(
         layout.root.parent / "production-control",
         layout.root,
     )
-    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(validation, "default_root_policy", lambda: policy)
+    _bind_validation_repo(validation, context["repo"], monkeypatch)
 
     def fresh_check(stage: str) -> bytes:
         assert stage in {"pre-publish", "post-publish"}
@@ -326,7 +360,7 @@ def real_seam_result(
         else:
             assert official_article.is_file()
         return validation.validate_run_from_disk(
-            REPO_ROOT,
+            context["repo"],
             paths.RunMode.TEST,
             layout.run_dir.name,
         )
@@ -347,7 +381,7 @@ def real_seam_result(
         paths.RunMode.TEST,
         layout.run_dir.name,
         policy=policy,
-        now=now + timedelta(seconds=9),
+        now=now + timedelta(seconds=13),
         entropy=b"task12-task13-real-seam",
         fresh_check=fresh_check,
         commit_report=commit_report,
@@ -374,9 +408,43 @@ def real_seam_result(
             layout.recovery_dir / "phase-events.jsonl"
         ).read_text("utf-8").splitlines()
     )
+    u12_events = tuple(
+        event
+        for event in phase_events
+        if event["phase_id"] == "U12" and event["status"] == "complete"
+    )
+    u12_checkpoints = tuple(
+        item
+        for item in recovery.load_checkpoints(layout)
+        if item["boundary_kind"] == "phase" and item["phase_id"] == "U12"
+    )
+    ordered_paths = (
+        complete.manifest_path,
+        layout.validation_current_dir / "ultra-validator-report.json",
+        complete.article_path,
+        complete.dossier_path,
+        complete.artifact_index_path,
+    )
+    ordered_hashes = tuple(
+        hashlib.sha256(path.read_bytes()).hexdigest() for path in ordered_paths
+    )
+    assert len(u12_events) == 1
+    assert len(u12_checkpoints) == 1
+    assert tuple(u12_events[0]["output_artifact_hashes"]) == ordered_hashes
+    assert tuple(
+        (item["path"], item["sha256"])
+        for item in u12_checkpoints[0]["artifact_hashes"]
+    ) == tuple(
+        (path.relative_to(layout.run_dir).as_posix(), digest)
+        for path, digest in zip(ordered_paths, ordered_hashes)
+    )
+    assert u12_checkpoints[0]["phase_event_sha256"] == u12_events[0][
+        "event_sha256"
+    ]
     monkeypatch.undo()
     return {
         "layout": layout,
+        "authority_repo": context["repo"],
         "u11_snapshot_root": snapshot_root,
         "u3_evidence_frozen": resumed.phase_store.evidence_frozen,
         "u3_evidence_sha256": resumed.phase_store.evidence_sha256,
@@ -387,6 +455,8 @@ def real_seam_result(
         "complete": complete,
         "final_status": final_status,
         "u12_checkpoint": u12_checkpoint,
+        "u12_event": u12_events[0],
+        "ordered_u12_hashes": ordered_hashes,
         "manifest": manifest,
         "journal": journal,
         "latest_complete": latest_complete,
@@ -420,6 +490,9 @@ def test_task12_task13_real_disk_seam_commits_atomic_complete_run(
     assert status_record.validation_passed is True
     assert status_record.tools_allowed is False
     assert real_seam_result["u12_checkpoint"]["phase_id"] == "U12"
+    assert tuple(
+        real_seam_result["u12_event"]["output_artifact_hashes"]
+    ) == real_seam_result["ordered_u12_hashes"]
     assert real_seam_result["manifest"]["official_delivery_published"] is True
     assert real_seam_result["journal"]["state"] == "complete"
     assert real_seam_result["latest_complete"]["run_id"] == status_record.run_id
@@ -432,6 +505,7 @@ def _snapshot_materialization_runtime(
 ):
     paths = _module("paths")
     validation = _module("validation")
+    state_machine = _module("state_machine")
     test_root = tmp_path / "test-control"
     shutil.copytree(real_seam_result["u11_snapshot_root"], test_root)
     policy = paths.RootPolicy(tmp_path / "production-control", test_root)
@@ -441,6 +515,16 @@ def _snapshot_materialization_runtime(
         policy,
     )
     monkeypatch.setattr(validation, "default_root_policy", lambda: policy)
+    _bind_validation_repo(
+        validation,
+        real_seam_result["authority_repo"],
+        monkeypatch,
+    )
+    monkeypatch.setattr(
+        state_machine,
+        "_SOURCE_REPOSITORY",
+        real_seam_result["authority_repo"],
+    )
 
     def fresh_check(stage: str) -> bytes:
         official_article = (
@@ -451,7 +535,7 @@ def _snapshot_materialization_runtime(
         else:
             assert official_article.is_file()
         return validation.validate_run_from_disk(
-            REPO_ROOT,
+            real_seam_result["authority_repo"],
             paths.RunMode.TEST,
             layout.run_dir.name,
         )
@@ -523,17 +607,21 @@ def test_seam_durable_u12_status_cas_failure_is_retained_then_rolled_forward(
     deliverables = _module("deliverables")
     materialization = _module("materialization")
     status = _module("status")
-    original_transition = status.RunStatusStore.transition
+    original_commit = status.RunStatusStore.commit_u12_complete
     failed = False
 
-    def fail_first_complete(self, expected, next_status, now, **kwargs):
+    def fail_first_complete(self, expected, now, *, reason):
         nonlocal failed
-        if next_status == "complete" and not failed:
+        if not failed:
             failed = True
             raise status.RunStatusConflictError("injected complete CAS failure")
-        return original_transition(self, expected, next_status, now, **kwargs)
+        return original_commit(self, expected, now, reason=reason)
 
-    monkeypatch.setattr(status.RunStatusStore, "transition", fail_first_complete)
+    monkeypatch.setattr(
+        status.RunStatusStore,
+        "commit_u12_complete",
+        fail_first_complete,
+    )
     with pytest.raises(status.RunStatusConflictError, match="injected complete CAS"):
         materialization.materialize_complete_run(
             REPO_ROOT,
@@ -566,6 +654,61 @@ def test_seam_durable_u12_status_cas_failure_is_retained_then_rolled_forward(
     assert _module("indexes").IndexStore(layout.root).read_pointer(
         "latest-complete"
     )["run_id"] == layout.run_dir.name
+
+
+def test_seam_u1_hydration_failure_preserves_status_bytes_and_delivery(
+    real_seam_result,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths, layout, policy, _, _ = _snapshot_materialization_runtime(
+        real_seam_result,
+        tmp_path,
+        monkeypatch,
+    )
+    materialization = _module("materialization")
+    recovery = _module("recovery")
+    status = _module("status")
+    statuses = status.RunStatusStore(layout)
+    current = statuses.read()
+    interrupted = statuses.transition(
+        current,
+        "interrupted",
+        datetime(2026, 8, 4, 0, 3, tzinfo=timezone.utc),
+        current_phase=current.current_phase,
+        last_complete_phase=current.last_complete_phase,
+        reason="inject U1 hydration failure",
+    )
+    status_bytes = statuses.path.read_bytes()
+    (layout.recovery_dir / "u1-authority/read-plan.json").unlink()
+
+    def publication_must_not_start(*args, **kwargs):
+        pytest.fail("publication started before U1 hydration succeeded")
+
+    with pytest.raises(recovery.RecoveryIntegrityError, match="U1 read plan"):
+        materialization.materialize_complete_run(
+            REPO_ROOT,
+            paths.RunMode.TEST,
+            layout.run_dir.name,
+            policy=policy,
+            now=datetime(2026, 8, 4, 0, 3, 1, tzinfo=timezone.utc),
+            entropy=b"u1-hydration-failure",
+            fresh_check=publication_must_not_start,
+            commit_report=publication_must_not_start,
+        )
+
+    assert statuses.read() == interrupted
+    assert statuses.path.read_bytes() == status_bytes
+    assert not (layout.recovery_dir / "publish-transaction.json").exists()
+    assert not (layout.artifacts_dir / "ultra-artifact-manifest.json").exists()
+    assert not any(
+        (layout.delivery_dir / filename).exists()
+        for filename in (
+            "CrossFrame-Ultra-完整文章.md",
+            "完整推演档案.md",
+            "工件索引.md",
+        )
+    )
 
 
 def _u0_recovery_case(tmp_path: Path):

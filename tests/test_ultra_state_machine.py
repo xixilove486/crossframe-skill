@@ -383,7 +383,7 @@ def _complete_u0_u1(store, authority):
     )
 
 
-def _complete_u2(store):
+def _complete_u2(store, *, include_artifact=False):
     import ultra_runtime.retrieval as retrieval
 
     decision = retrieval.assess_retrieval_eligibility(
@@ -407,11 +407,12 @@ def _complete_u2(store):
         expected_decision_sha256=decision.decision_sha256,
         expected_authorization_sha256=None,
     )
-    return store.complete(
+    event = store.complete(
         "U2",
         artifact_hashes=(seal.artifact_sha256,),
         retrieval_authority=seal,
     )
+    return (event, ledger) if include_artifact else event
 
 
 def _evidence_entry() -> dict[str, object]:
@@ -1150,7 +1151,7 @@ def test_late_phase_output_cardinality_is_rejected_atomically(u1_authority):
     assert store.events == before
 
 
-def test_u12_requires_hash_verified_post_publish_authority_and_terminal_status(
+def test_u12_requires_hash_verified_post_publish_authority_before_status_commit(
     u1_authority,
 ):
     import ultra_runtime.state_machine as module
@@ -1246,15 +1247,6 @@ def test_u12_requires_hash_verified_post_publish_authority_and_terminal_status(
         current_phase="U12",
         last_complete_phase="U11",
     )
-    status_store.transition(
-        running,
-        "complete",
-        datetime(2026, 8, 2, tzinfo=timezone.utc) + timedelta(seconds=2),
-        current_phase="U12",
-        last_complete_phase="U12",
-        validation_passed=True,
-    )
-
     output_hashes = (
         manifest_sha256,
         hashlib.sha256(report_path.read_bytes()).hexdigest(),
@@ -1267,3 +1259,7 @@ def test_u12_requires_hash_verified_post_publish_authority_and_terminal_status(
     )
     assert tuple(event["output_artifact_hashes"]) == output_hashes
     assert store.current_phase == "U12"
+    assert status_store.read() == running
+    assert running.status == "running"
+    assert running.last_complete_phase == "U11"
+    assert running.validation_passed is False
