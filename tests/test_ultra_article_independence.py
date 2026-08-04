@@ -60,13 +60,20 @@ def _runtime_module(name: str):
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     importlib.invalidate_caches()
-    sys.modules.pop(f"ultra_runtime.{name}", None)
     return importlib.import_module(f"ultra_runtime.{name}")
 
 
 @pytest.fixture
 def coverage():
     return _runtime_module("coverage")
+
+
+def test_runtime_module_helper_preserves_package_export_coherence() -> None:
+    _runtime_module("coverage")
+    runtime = importlib.import_module("ultra_runtime")
+    schemas = _runtime_module("schemas")
+
+    assert runtime.load_compatibility_matrix is schemas.load_compatibility_matrix
 
 
 def _fixture_article() -> str:

@@ -51,7 +51,6 @@ def _runtime_module(name: str):
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
     importlib.invalidate_caches()
-    sys.modules.pop(f"ultra_runtime.{name}", None)
     return importlib.import_module(f"ultra_runtime.{name}")
 
 
