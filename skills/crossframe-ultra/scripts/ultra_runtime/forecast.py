@@ -12,10 +12,22 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 from .jsonio import (
-    append_jsonl_locked,
+    RUN_LIFECYCLE_LOCK_FILENAME,
+    _exclusive_path_lock,
+    atomic_write_bytes,
     canonical_json_bytes,
     load_json_object,
     sha256_bytes,
+)
+from .locks import Lease, _lease_lock_path, _read_lease, _require_owner
+from .paths import (
+    PRODUCTION_ROOT,
+    TEST_ROOT,
+    RootPolicy,
+    RunLayout,
+    RunMode,
+    assert_safe_descendant,
+    build_run_layout,
 )
 from .schemas import (
     build_schema_registry,
@@ -476,12 +488,19 @@ def _validate_resolution_event(
     return snapshot
 
 
-def _resolution_event_ids(sidecar: Path) -> set[str]:
+def _resolution_event_state(sidecar: Path) -> tuple[bytes, set[str]]:
     if not sidecar.exists():
-        return set()
+        return b"", set()
     try:
-        lines = sidecar.read_text(encoding="utf-8").splitlines()
+        previous = sidecar.read_bytes()
+        if previous and not previous.endswith(b"\n"):
+            raise ForecastError(
+                "resolution-event sidecar ends with a partial line"
+            )
+        lines = previous.decode("utf-8").splitlines()
         entries = [json.loads(line) for line in lines if line]
+    except ForecastError:
+        raise
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise ForecastError(f"cannot read resolution-event sidecar: {error}") from error
     if any(not isinstance(entry, dict) for entry in entries):
@@ -491,13 +510,105 @@ def _resolution_event_ids(sidecar: Path) -> set[str]:
         raise ForecastError("resolution-event sidecar contains an invalid event identity")
     if len(set(identifiers)) != len(identifiers):
         raise ForecastError("resolution-event sidecar already contains duplicate IDs")
-    return set(identifiers)
+    return previous, set(identifiers)
+
+
+def _validated_resolution_layout(layout: RunLayout) -> RunLayout:
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    try:
+        if layout.root == PRODUCTION_ROOT:
+            expected = build_run_layout(
+                RunMode.PRODUCTION,
+                layout.run_dir.name,
+                RootPolicy(PRODUCTION_ROOT, TEST_ROOT),
+            )
+        else:
+            expected = build_run_layout(
+                RunMode.TEST,
+                layout.run_dir.name,
+                RootPolicy(PRODUCTION_ROOT, layout.root),
+            )
+    except (OSError, TypeError, ValueError) as error:
+        raise ForecastError(
+            "forecast resolution RunLayout authority is invalid"
+        ) from error
+    if layout != expected:
+        raise ForecastError(
+            "forecast resolution requires the canonical U9 RunLayout authority"
+        )
+    return expected
+
+
+def _resolution_paths(layout: RunLayout) -> tuple[Path, Path]:
+    layout = _validated_resolution_layout(layout)
+    ledger_path = (
+        layout.artifacts_dir
+        / "U09-U10-verdict"
+        / "U09-forecast-ledger.json"
+    )
+    sidecar = ledger_path.with_name(
+        "U09-forecast-ledger.resolution-events.jsonl"
+    )
+    try:
+        for candidate in (ledger_path, sidecar):
+            assert_safe_descendant(layout.root, candidate)
+            candidate.relative_to(layout.run_dir)
+    except (OSError, ValueError) as error:
+        raise ForecastError(
+            "forecast resolution paths must stay inside the selected run"
+        ) from error
+    return ledger_path, sidecar
+
+
+def _append_resolution_event_locked(
+    layout: RunLayout,
+    lease: Lease,
+    sidecar: Path,
+    resolution: Mapping[str, object],
+) -> None:
+    lifecycle_lock = layout.run_dir / RUN_LIFECYCLE_LOCK_FILENAME
+    sidecar_lock = sidecar.parent / f".{sidecar.name}.lock"
+    try:
+        for candidate in (lifecycle_lock, sidecar_lock):
+            assert_safe_descendant(layout.root, candidate)
+            candidate.relative_to(layout.run_dir)
+    except (OSError, ValueError) as error:
+        raise ForecastError(
+            "forecast resolution lock path is outside the run"
+        ) from error
+
+    with _exclusive_path_lock(lifecycle_lock):
+        with _exclusive_path_lock(_lease_lock_path(layout)):
+            current_lease = _read_lease(layout)
+            _require_owner(current_lease, lease)
+            with _exclusive_path_lock(sidecar_lock):
+                _, locked_sidecar = _resolution_paths(layout)
+                if locked_sidecar != sidecar:
+                    raise ForecastError("forecast resolution sidecar authority changed")
+                previous, identifiers = _resolution_event_state(sidecar)
+                resolution_event_id = resolution["resolution_event_id"]
+                if resolution_event_id in identifiers:
+                    raise ForecastError(
+                        "resolution_event_id has already been appended"
+                    )
+                _resolution_paths(layout)
+                atomic_write_bytes(
+                    sidecar,
+                    previous + canonical_json_bytes(resolution),
+                )
 
 
 def append_resolution(
-    ledger_path: Path, resolution: Mapping[str, object]
+    layout: RunLayout,
+    resolution: Mapping[str, object],
+    *,
+    lease: Lease,
 ) -> None:
+    ledger_path, sidecar = _resolution_paths(layout)
     ledger = _load_ledger(ledger_path)
+    if ledger["run_id"] != layout.run_dir.name:
+        raise ForecastError("forecast ledger run_id does not match its RunLayout")
     resolution_snapshot = _snapshot(resolution, label="U9 forecast resolution event")
     forecast_id = resolution_snapshot.get("forecast_id")
     if type(forecast_id) is not str or not forecast_id:
@@ -510,7 +621,4 @@ def append_resolution(
             "resolution event must resolve exactly one immutable original forecast"
         )
     validated = _validate_resolution_event(ledger, matches[0], resolution_snapshot)
-    sidecar = ledger_path.with_name(f"{ledger_path.stem}.resolution-events.jsonl")
-    if validated["resolution_event_id"] in _resolution_event_ids(sidecar):
-        raise ForecastError("resolution_event_id has already been appended")
-    append_jsonl_locked(sidecar, validated)
+    _append_resolution_event_locked(layout, lease, sidecar, validated)
