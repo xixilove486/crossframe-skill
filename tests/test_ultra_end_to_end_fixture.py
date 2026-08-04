@@ -6,11 +6,16 @@ import hashlib
 from importlib import import_module
 import json
 from pathlib import Path
-import re
 import shutil
 import sys
 
 import pytest
+
+from tests.ultra_closed_fixture_support import (
+    CLOSED_ORGANIZATION_CASE,
+    write_closed_u4_u10_authoring,
+    write_closed_u11_authoring,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -39,36 +44,6 @@ TEMPLATE_MARKERS = {
     "ultra-validator-report-output.md": ("validator", "manifest", "passed", "error"),
     "ultra-repair-plan-output.md": ("attempt", "repair", "reset", "bounded"),
 }
-
-CLOSED_ORGANIZATION_CASE = {
-    "case_id": "org-delay-multiparent",
-    "material_closed": True,
-    "parents": ["care-constraint", "incentive-system", "resource-allocation"],
-    "channels": [
-        {"channel_id": "formal-schedule", "clock": "weekly", "latency_days": 2},
-        {"channel_id": "care-load", "clock": "event-driven", "latency_days": 11},
-    ],
-    "order_2": {
-        "effect": "reversal",
-        "condition": "formal escalation increases hidden care-load displacement",
-    },
-    "order_3": {
-        "effect": "lock-in",
-        "condition": "promotion metrics reward the escalation pattern",
-    },
-    "rival": {
-        "explanation_id": "individual-execution-deficit",
-        "confidence": "low",
-    },
-    "verdict_kinds": [
-        "fact",
-        "prediction",
-        "value",
-        "responsibility",
-        "authorization",
-    ],
-}
-
 
 def _module(name: str):
     scripts = str(SCRIPTS_DIR)
@@ -297,66 +272,7 @@ def real_seam_result(
         event["phase_id"] for event in restarted.phase_store.events
     ].count("U4") == 1
 
-    from tests.test_ultra_concept_closure import make_concept_document
-    from tests.test_ultra_judgment import make_action_ranking, make_gap_ledger
-    from tests.test_ultra_recursion import state_registry
-
-    fixture_root = REPO_ROOT / "tests/fixtures/ultra-runtime"
-    load_fixture = lambda name: json.loads((fixture_root / name).read_text("utf-8"))
-    transformation = load_fixture("transformation-valid.json")
-    verdict = load_fixture("verdict-valid.json")
-    authored = {
-        "U05-transformation-ledger.json": transformation,
-        "U05-concept-disposition.json": make_concept_document(
-            evidence_fixture,
-            load_fixture("world-volume-valid.json"),
-            transformation,
-        ),
-        "U06-claim-mechanism-graph.json": load_fixture(
-            "claim-mechanism-graph-valid.json"
-        ),
-        "U07-recursive-lineage.json": load_fixture("recursive-lineage-valid.json"),
-        "U08-order-evaluation.json": load_fixture("order-evaluation-valid.json"),
-        "U08-red-team-report.json": load_fixture("red-team-report-valid.json"),
-        "U09-verdict.json": verdict,
-        "U09-action-ranking.json": make_action_ranking(verdict),
-        "U09-forecast-ledger.json": load_fixture("forecast-valid.json"),
-    }
-    for recursive_state in state_registry().values():
-        authored[
-            f"U07-recursive-states/{recursive_state['node_id']}.json"
-        ] = recursive_state
-    authored["U10-framework-gap-ledger.json"] = make_gap_ledger(
-        authored["U09-action-ranking.json"]
-    )
-    output_authority = json.loads(
-        (
-            fixture_root
-            / "article-packets/frozen-upstream-authority.json"
-        ).read_text("utf-8")
-    )
-    output_authority["required_artifacts"][0]["path"] = (
-        "artifacts/U09-U10-verdict/U09-verdict.json"
-    )
-    output_authority["required_artifacts"][1]["path"] = (
-        "artifacts/U09-U10-verdict/U09-action-ranking.json"
-    )
-    authored["U10-output-plan.json"] = _module("article").build_output_plan_artifact(
-        run_id=output_authority["run_id"],
-        version_binding=output_authority["version_binding"],
-        generated_at=output_authority["generated_at"]["u10"],
-        u9_parent_event_sha256=output_authority["u9_parent_event_sha256"],
-        article_path=output_authority["article_path"],
-        sections=output_authority["sections"],
-        appendices=output_authority["appendices"],
-        required_artifacts=output_authority["required_artifacts"],
-        semantic_universe=output_authority["semantic_universe"],
-        blind_recovery_expectations=output_authority[
-            "blind_recovery_expectations"
-        ],
-    )
-    for relative, document in authored.items():
-        jsonio.atomic_write_json(layout.authoring_dir / relative, document)
+    output_authority = write_closed_u4_u10_authoring(REPO_ROOT, layout)
 
     with pytest.raises(ValueError, match="packet count"):
         materialization.materialize_u4_u11(
@@ -370,62 +286,12 @@ def real_seam_result(
     sealed_plan = jsonio.load_json_object(
         layout.artifacts_dir / "U09-U10-verdict/U10-output-plan.json"
     )
-    article_text = (
-        fixture_root / "article-packets/blind-reader-article.md"
-    ).read_text("utf-8").replace("\r\n", "\n")
-    article_parts = tuple(
-        match.group(0).strip() + "\n"
-        for match in re.finditer(r"(?ms)^## .*?(?=^## |\Z)", article_text)
-    )
-    assert len(article_parts) == 15
-    packet_dir = layout.authoring_dir / "article/packets"
-    for ordinal, prose in enumerate(article_parts, start=1):
-        packet_path = packet_dir / f"packet-{ordinal:02d}.md"
-        packet_path.parent.mkdir(parents=True, exist_ok=True)
-        packet_path.write_text(prose, encoding="utf-8", newline="\n")
-    packet_paths = tuple(sorted(packet_dir.glob("*.md"), key=lambda path: path.name))
-    packet_documents = materialization._packet_mappings(sealed_plan, packet_paths)
-    assembled = _module("article").assemble_article(
+    write_closed_u11_authoring(
+        REPO_ROOT,
+        layout,
         sealed_plan,
-        packet_documents,
-        layout.authoring_dir / "article.partial.md",
-    )
-    coverage = _module("coverage")
-    plan_sha256 = jsonio.sha256_bytes(jsonio.canonical_json_bytes(sealed_plan))
-    coverage_document = coverage.build_semantic_coverage_artifact(
-        assembled.article_text,
-        sealed_plan,
-        output_authority["mappings"],
-        run_id=layout.run_dir.name,
-        version_binding=_module("constants").current_version_binding(),
+        output_authority,
         generated_at="2026-08-04T00:00:08Z",
-        expected_output_plan_artifact_sha256=plan_sha256,
-    )
-    jsonio.atomic_write_json(
-        layout.authoring_dir / "U11-semantic-coverage.json",
-        coverage_document,
-    )
-    coverage_sha256 = jsonio.sha256_bytes(
-        jsonio.canonical_json_bytes(coverage_document)
-    )
-    review_document = coverage.build_article_review_artifact(
-        assembled.article_text,
-        sealed_plan,
-        coverage_document,
-        run_id=layout.run_dir.name,
-        version_binding=_module("constants").current_version_binding(),
-        generated_at="2026-08-04T00:00:08Z",
-        expected_output_plan_artifact_sha256=plan_sha256,
-        expected_coverage_artifact_sha256=coverage_sha256,
-    )
-    jsonio.atomic_write_json(
-        layout.authoring_dir / "U11-article-review.json",
-        review_document,
-    )
-    (layout.authoring_dir / "完整推演档案.md").write_text(
-        "# 完整推演档案\n\n真实磁盘 seam 验证档案。\n",
-        encoding="utf-8",
-        newline="\n",
     )
     bundle = materialization.materialize_u4_u11(
         REPO_ROOT,
