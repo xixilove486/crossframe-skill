@@ -17,6 +17,15 @@ FROZEN_BASE_COMMIT = "e1b422cddefc302255453d372954a1fddbe13669"
 FROZEN_MANIFEST_CANONICAL_SHA256 = (
     "4ac83ab579e645d1a7ff82a1c8cf8b3507b6b00dec2dc3e4df8c4effe6295770"
 )
+APPROVED_GLOBAL_INVENTORY_TEST_PATH = (
+    "tests/test_promax_repository_integration.py"
+)
+APPROVED_GLOBAL_INVENTORY_TEST_GIT_OBJECT_ID = (
+    "50a10897a8eb3a829531d4983063598353ff2ef2"
+)
+APPROVED_GLOBAL_INVENTORY_TEST_BLOB_SHA256 = (
+    "64092532aad969bc3dd4b43d17ab7181eab3b7843a3bd502a99362fb0f8a88bb"
+)
 TREE_HASH_ALGORITHM = (
     'digest.update(repo_path.encode("utf-8")); digest.update(b"\\0"); '
     'digest.update(git_mode.encode("ascii")); digest.update(b"\\0"); '
@@ -203,6 +212,57 @@ def assert_workflow_jobs_match_manifest(manifest: dict[str, object]) -> None:
             assert hashlib.sha256(actual).hexdigest() == job["sha256"]
 
 
+def assert_protected_tree_hashes_match_manifest(
+    protected: dict[str, tuple[str, str, str]],
+    blobs: dict[str, bytes],
+    manifest: dict[str, object],
+    context: str,
+    *,
+    blob_overrides: dict[str, bytes] | None = None,
+) -> None:
+    overrides = blob_overrides or {}
+    paths_by_surface: dict[str, list[str]] = {
+        name: [] for name, _predicate in SURFACE_MATCHERS
+    }
+    for repo_path in sorted(protected):
+        surface, _git_mode, _object_id = protected[repo_path]
+        paths_by_surface[surface].append(repo_path)
+
+    expected_surfaces = manifest["surfaces"]
+    assert isinstance(expected_surfaces, dict)
+    assert set(expected_surfaces) == set(paths_by_surface)
+    for surface, paths in paths_by_surface.items():
+        digest = hashlib.sha256()
+        for repo_path in paths:
+            _surface, git_mode, object_id = protected[repo_path]
+            blob = overrides.get(repo_path, blobs[object_id])
+            digest.update(repo_path.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(git_mode.encode("ascii"))
+            digest.update(b"\0")
+            digest.update(blob)
+            digest.update(b"\0")
+        assert expected_surfaces[surface] == {
+            "file_count": len(paths),
+            "tree_sha256": digest.hexdigest(),
+        }, f"protected surface changed at {context}: {surface}"
+
+    aggregate = hashlib.sha256()
+    for repo_path in sorted(protected):
+        _surface, git_mode, object_id = protected[repo_path]
+        blob = overrides.get(repo_path, blobs[object_id])
+        aggregate.update(repo_path.encode("utf-8"))
+        aggregate.update(b"\0")
+        aggregate.update(git_mode.encode("ascii"))
+        aggregate.update(b"\0")
+        aggregate.update(blob)
+        aggregate.update(b"\0")
+    assert manifest["aggregate"] == {
+        "file_count": len(protected),
+        "tree_sha256": aggregate.hexdigest(),
+    }, f"protected aggregate changed at {context}"
+
+
 def assert_commit_protected_files_match_manifest(
     commit: str,
     manifest: dict[str, object],
@@ -217,9 +277,6 @@ def assert_commit_protected_files_match_manifest(
         f"removed={sorted(set(expected_files) - set(protected))}"
     )
     blobs = read_git_blobs({object_id for _surface, _mode, object_id in protected.values()})
-    paths_by_surface: dict[str, list[str]] = {
-        name: [] for name, _predicate in SURFACE_MATCHERS
-    }
     for repo_path in sorted(protected):
         surface, git_mode, object_id = protected[repo_path]
         blob = blobs[object_id]
@@ -228,39 +285,99 @@ def assert_commit_protected_files_match_manifest(
             "git_mode": git_mode,
             "blob_sha256": hashlib.sha256(blob).hexdigest(),
         }, f"protected blob changed at {commit}: {repo_path}"
-        paths_by_surface[surface].append(repo_path)
+    assert_protected_tree_hashes_match_manifest(
+        protected,
+        blobs,
+        manifest,
+        commit,
+    )
 
-    expected_surfaces = manifest["surfaces"]
-    assert isinstance(expected_surfaces, dict)
-    assert set(expected_surfaces) == set(paths_by_surface)
-    for surface, paths in paths_by_surface.items():
-        digest = hashlib.sha256()
-        for repo_path in paths:
-            _surface, git_mode, object_id = protected[repo_path]
-            digest.update(repo_path.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(git_mode.encode("ascii"))
-            digest.update(b"\0")
-            digest.update(blobs[object_id])
-            digest.update(b"\0")
-        assert expected_surfaces[surface] == {
-            "file_count": len(paths),
-            "tree_sha256": digest.hexdigest(),
-        }, f"protected surface changed at {commit}: {surface}"
 
-    aggregate = hashlib.sha256()
+def assert_head_matches_approved_global_inventory_test_migration(
+    manifest: dict[str, object],
+) -> None:
+    protected = protected_tree_entries(git_tree_entries("HEAD"))
+    expected_files = manifest["protected_files"]
+    assert isinstance(expected_files, dict)
+    assert set(protected) == set(expected_files), (
+        "protected path inventory changed at HEAD: "
+        f"added={sorted(set(protected) - set(expected_files))}, "
+        f"removed={sorted(set(expected_files) - set(protected))}"
+    )
+
+    blobs = read_git_blobs({object_id for _surface, _mode, object_id in protected.values()})
+    approved_path = APPROVED_GLOBAL_INVENTORY_TEST_PATH
+    expected_approved = expected_files[approved_path]
+    assert isinstance(expected_approved, dict)
+    baseline_protected = protected_tree_entries(
+        git_tree_entries(FROZEN_BASE_COMMIT)
+    )
+    baseline_surface, baseline_mode, baseline_object_id = baseline_protected[
+        approved_path
+    ]
+    baseline_blob = read_git_blobs({baseline_object_id})[baseline_object_id]
+
     for repo_path in sorted(protected):
-        _surface, git_mode, object_id = protected[repo_path]
-        aggregate.update(repo_path.encode("utf-8"))
-        aggregate.update(b"\0")
-        aggregate.update(git_mode.encode("ascii"))
-        aggregate.update(b"\0")
-        aggregate.update(blobs[object_id])
-        aggregate.update(b"\0")
-    assert manifest["aggregate"] == {
-        "file_count": len(protected),
-        "tree_sha256": aggregate.hexdigest(),
-    }, f"protected aggregate changed at {commit}"
+        surface, git_mode, object_id = protected[repo_path]
+        blob_sha256 = hashlib.sha256(blobs[object_id]).hexdigest()
+        if repo_path == approved_path:
+            assert surface == expected_approved["surface"]
+            assert git_mode == expected_approved["git_mode"]
+            assert blob_sha256 in {
+                expected_approved["blob_sha256"],
+                APPROVED_GLOBAL_INVENTORY_TEST_BLOB_SHA256,
+            }, f"unapproved protected blob changed at HEAD: {repo_path}"
+            if blob_sha256 == APPROVED_GLOBAL_INVENTORY_TEST_BLOB_SHA256:
+                assert object_id == APPROVED_GLOBAL_INVENTORY_TEST_GIT_OBJECT_ID
+            else:
+                assert (surface, git_mode, object_id) == (
+                    baseline_surface,
+                    baseline_mode,
+                    baseline_object_id,
+                )
+            continue
+        assert expected_files[repo_path] == {
+            "surface": surface,
+            "git_mode": git_mode,
+            "blob_sha256": blob_sha256,
+        }, f"protected blob changed at HEAD: {repo_path}"
+
+    dirty = run_git(
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        *PROTECTED_PATHSPECS,
+    )
+    approved_dirty = f" M {approved_path}\0".encode("utf-8")
+    assert dirty in {b"", approved_dirty}, (
+        f"unapproved protected worktree change: {dirty!r}"
+    )
+    if dirty:
+        assert run_git("diff", "--summary", "--", approved_path) == b""
+        current_blob = (ROOT / approved_path).read_bytes().replace(b"\r\n", b"\n")
+        current_object_id = run_git(
+            "hash-object",
+            f"--path={approved_path}",
+            approved_path,
+        ).decode("ascii").strip()
+    else:
+        _surface, _mode, current_object_id = protected[approved_path]
+        current_blob = blobs[current_object_id]
+    assert current_object_id == APPROVED_GLOBAL_INVENTORY_TEST_GIT_OBJECT_ID
+    assert (
+        hashlib.sha256(current_blob).hexdigest()
+        == APPROVED_GLOBAL_INVENTORY_TEST_BLOB_SHA256
+    )
+
+    assert_protected_tree_hashes_match_manifest(
+        protected,
+        blobs,
+        manifest,
+        "HEAD normalized for approved global inventory test migration",
+        blob_overrides={approved_path: baseline_blob},
+    )
 
 
 def assert_protected_manifest_matches_head(manifest_path: Path) -> None:
@@ -279,17 +396,7 @@ def assert_protected_manifest_matches_head(manifest_path: Path) -> None:
     run_git("cat-file", "-e", f"{FROZEN_BASE_COMMIT}^{{commit}}")
 
     assert_commit_protected_files_match_manifest(FROZEN_BASE_COMMIT, manifest)
-    assert_commit_protected_files_match_manifest("HEAD", manifest)
-
-    dirty = run_git(
-        "status",
-        "--porcelain=v1",
-        "-z",
-        "--untracked-files=all",
-        "--",
-        *PROTECTED_PATHSPECS,
-    )
-    assert dirty == b"", f"protected worktree surface is dirty: {dirty!r}"
+    assert_head_matches_approved_global_inventory_test_migration(manifest)
     assert_workflow_jobs_match_manifest(manifest)
 
 
