@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
@@ -126,11 +127,96 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
     assert publication.manifest_path.read_bytes() == _payload()["manifest_bytes"]
     assert publication.journal_path.is_file()
     assert publication.backup_dir.is_dir()
-    assert not publication.staging_dir.exists()
+    assert publication.staging_dir.is_dir()
     journal = jsonio.load_json_object(publication.journal_path)
     assert journal["transaction_id"] == TRANSACTION_ID
-    assert journal["state"] == "complete"
+    assert journal["state"] == "postchecked"
     assert journal["postcheck_passed"] is True
+
+
+def test_publish_delivery_rejects_direct_completion_before_writes(
+    runtime, tmp_path: Path
+) -> None:
+    deliverables, paths, _ = runtime
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="completion|defer|U12"):
+        deliverables.publish_delivery(
+            layout,
+            transaction_id=TRANSACTION_ID,
+            fresh_check=lambda stage: b'{"overall_status":"pass"}\n',
+            commit_report=lambda stage, report: None,
+            mark_needs_attention=lambda reason: pytest.fail(reason),
+            defer_completion=False,
+            **_payload(),
+        )
+
+    assert not publication.journal_path.exists()
+    assert not publication.staging_dir.exists()
+    assert not any(path.exists() for path in publication.official_paths)
+
+
+@pytest.mark.parametrize("operation", ("recover", "publish"))
+def test_directory_at_fixed_publish_journal_path_fails_closed_before_mutation(
+    runtime,
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    deliverables, paths, _ = runtime
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    sentinels = {
+        publication.journal_path / "journal-sentinel.bin": b"journal sentinel\n",
+        publication.staging_dir / "staging-sentinel.bin": b"staging sentinel\n",
+        publication.backup_dir / "backup-sentinel.bin": b"backup sentinel\n",
+        layout.root / "index/latest.json": b"index sentinel\n",
+        (
+            layout.root
+            / "runs/2026/08/20260802T030406Z-000000000014/keep.bin"
+        ): b"sibling sentinel\n",
+        layout.recovery_dir / "recovery-sentinel.bin": b"recovery sentinel\n",
+        **{
+            official: f"official sentinel {official.name}\n".encode("utf-8")
+            for official in publication.official_paths
+        },
+    }
+    for path, value in sentinels.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(value)
+    before = {
+        path.relative_to(layout.root): path.read_bytes()
+        for path in layout.root.rglob("*")
+        if path.is_file()
+    }
+    events: list[str] = []
+
+    with pytest.raises((OSError, TypeError, ValueError, RuntimeError)):
+        if operation == "recover":
+            deliverables.recover_publish_transaction(
+                layout,
+                mark_needs_attention=events.append,
+            )
+        else:
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=lambda stage: events.append(f"check:{stage}"),
+                commit_report=lambda stage, report: events.append(
+                    f"commit:{stage}"
+                ),
+                mark_needs_attention=events.append,
+                **_payload(),
+            )
+
+    after = {
+        path.relative_to(layout.root): path.read_bytes()
+        for path in layout.root.rglob("*")
+        if path.is_file()
+    }
+    assert events == []
+    assert publication.journal_path.is_dir()
+    assert after == before
 
 
 def test_failed_replacement_restores_exact_prior_complete_bytes_and_keeps_audit(
@@ -254,6 +340,250 @@ def test_recovery_before_backup_preserves_verified_previous_official_bytes(
     assert all(official.read_bytes() == prior for official, prior in previous.items())
     assert not publication.staging_dir.exists()
     assert not publication.backup_dir.exists()
+
+
+def _recoverable_backed_up_journal(deliverables, jsonio, layout, publication):
+    payloads = {
+        publication.manifest_path: _payload()["manifest_bytes"],
+        publication.article_path: _payload()["article_bytes"],
+        publication.dossier_path: _payload()["dossier_bytes"],
+        publication.artifact_index_path: _payload()["artifact_index_bytes"],
+    }
+    previous = {
+        official: f"previous {official.name}\n".encode("utf-8")
+        for official in payloads
+    }
+    for official, prior in previous.items():
+        official.parent.mkdir(parents=True, exist_ok=True)
+        official.write_bytes(prior)
+        staged = deliverables._staged_path(publication, official)
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        staged.write_bytes(payloads[official])
+        backup = deliverables._backup_path(publication, official)
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        backup.write_bytes(prior)
+    journal = deliverables._journal_object(
+        layout,
+        publication,
+        transaction_id=TRANSACTION_ID,
+        state="backed-up",
+        payloads=payloads,
+        previous=previous,
+        precheck_passed=True,
+        postcheck_passed=None,
+        failure=None,
+    )
+    journal.setdefault("u12_event_sha256", None)
+    journal.setdefault("u12_checkpoint_content_sha256", None)
+    for entry in journal["files"]:
+        official = layout.run_dir / entry["official_path"]
+        entry.setdefault(
+            "backup_path",
+            deliverables._backup_path(publication, official)
+            .relative_to(layout.root)
+            .as_posix(),
+        )
+    return journal
+
+
+def test_recovery_adapts_closed_legacy_journal_after_full_preflight(
+    runtime, tmp_path: Path
+) -> None:
+    deliverables, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    journal = _recoverable_backed_up_journal(
+        deliverables, jsonio, layout, publication
+    )
+    journal.pop("u12_event_sha256")
+    journal.pop("u12_checkpoint_content_sha256")
+    for entry in journal["files"]:
+        entry.pop("backup_path")
+    payloads = {
+        publication.manifest_path: _payload()["manifest_bytes"],
+        publication.article_path: _payload()["article_bytes"],
+        publication.dossier_path: _payload()["dossier_bytes"],
+        publication.artifact_index_path: _payload()["artifact_index_bytes"],
+    }
+    for official, payload in payloads.items():
+        official.write_bytes(payload)
+    index_sentinel = layout.root / "index/latest.json"
+    sibling_sentinel = (
+        layout.root
+        / "runs/2026/08/20260802T030406Z-000000000014/keep.bin"
+    )
+    index_sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sibling_sentinel.parent.mkdir(parents=True, exist_ok=True)
+    index_sentinel.write_bytes(b"index sentinel\n")
+    sibling_sentinel.write_bytes(b"sibling sentinel\n")
+    jsonio.atomic_write_json(publication.journal_path, journal)
+    attentions: list[str] = []
+
+    recovered = deliverables.recover_publish_transaction(
+        layout,
+        mark_needs_attention=attentions.append,
+    )
+
+    assert recovered is not None and recovered["state"] == "rolled-back"
+    assert attentions == ["recovered incomplete publication journal"]
+    for official in publication.official_paths:
+        assert official.read_bytes() == f"previous {official.name}\n".encode("utf-8")
+    assert index_sentinel.read_bytes() == b"index sentinel\n"
+    assert sibling_sentinel.read_bytes() == b"sibling sentinel\n"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "absolute-index",
+        "absolute-sibling",
+        "backslash",
+        "dotdot",
+        "duplicate",
+        "missing",
+        "extra",
+        "wrong-run-id",
+        "unknown-state",
+        "wrong-staged",
+        "wrong-backup",
+        "missing-backup-field",
+        "wrong-new-hash",
+        "non-boolean-previous",
+        "false-precheck",
+        "open-journal",
+        "open-entry",
+    ),
+)
+def test_recovery_rejects_malformed_journal_before_mutating_any_sentinel(
+    runtime,
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    deliverables, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    journal = _recoverable_backed_up_journal(
+        deliverables, jsonio, layout, publication
+    )
+
+    index_sentinel = layout.root / "index/latest.json"
+    sibling_sentinel = (
+        layout.root
+        / "runs/2026/08/20260802T030406Z-000000000014/keep.bin"
+    )
+    run_sentinel = layout.recovery_dir / "recovery-sentinel.bin"
+    sentinels = {
+        index_sentinel: b"index sentinel\n",
+        sibling_sentinel: b"sibling sentinel\n",
+        run_sentinel: b"run sentinel\n",
+    }
+    for path, value in sentinels.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(value)
+
+    files = journal["files"]
+    if mutation in {"absolute-index", "absolute-sibling"}:
+        target = index_sentinel if mutation == "absolute-index" else sibling_sentinel
+        files[0]["official_path"] = str(target)
+        files[0]["previous_existed"] = False
+        files[0]["previous_sha256"] = None
+    elif mutation == "backslash":
+        files[0]["official_path"] = files[0]["official_path"].replace("/", "\\")
+    elif mutation == "dotdot":
+        files[0]["official_path"] = "delivery/../recovery/recovery-sentinel.bin"
+        files[0]["previous_existed"] = False
+        files[0]["previous_sha256"] = None
+    elif mutation == "duplicate":
+        files[1] = copy.deepcopy(files[0])
+    elif mutation == "missing":
+        files.pop()
+    elif mutation == "extra":
+        extra = copy.deepcopy(files[0])
+        extra["official_path"] = "recovery/recovery-sentinel.bin"
+        extra["previous_existed"] = False
+        extra["previous_sha256"] = None
+        files.append(extra)
+    elif mutation == "wrong-run-id":
+        journal["run_id"] = "20260802T030406Z-000000000014"
+    elif mutation == "unknown-state":
+        journal["state"] = "almost-complete"
+    elif mutation == "wrong-staged":
+        files[0]["staged_path"] = str(index_sentinel)
+    elif mutation == "wrong-backup":
+        files[0]["backup_path"] = str(sibling_sentinel)
+    elif mutation == "missing-backup-field":
+        files[0].pop("backup_path")
+    elif mutation == "wrong-new-hash":
+        files[0]["new_sha256"] = "f" * 64
+    elif mutation == "non-boolean-previous":
+        files[0]["previous_existed"] = "yes"
+    elif mutation == "false-precheck":
+        journal["precheck_passed"] = False
+        journal["postcheck_passed"] = False
+        journal["failure"] = "rolled back after injected failure"
+        journal["state"] = "rolled-back"
+    elif mutation == "open-journal":
+        journal["unexpected"] = "not closed"
+    elif mutation == "open-entry":
+        files[0]["unexpected"] = "not closed"
+    else:  # pragma: no cover - the parameter list is the closed mutation set
+        raise AssertionError(mutation)
+
+    jsonio.atomic_write_json(publication.journal_path, journal)
+    tracked_paths = (
+        *sentinels,
+        *publication.official_paths,
+        *(deliverables._staged_path(publication, path) for path in publication.official_paths),
+        *(deliverables._backup_path(publication, path) for path in publication.official_paths),
+        publication.journal_path,
+    )
+    before = {path: path.read_bytes() for path in tracked_paths}
+    attentions: list[str] = []
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="journal|path|state|hash|closed|canonical|boolean"):
+        deliverables.recover_publish_transaction(
+            layout,
+            mark_needs_attention=attentions.append,
+        )
+
+    assert attentions == []
+    assert {path: path.read_bytes() for path in tracked_paths} == before
+
+
+def test_recovery_rejects_staged_reparse_ancestor_before_any_mutation(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deliverables, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    journal = _recoverable_backed_up_journal(
+        deliverables, jsonio, layout, publication
+    )
+    jsonio.atomic_write_json(publication.journal_path, journal)
+    staged_delivery_dir = publication.staging_dir / "delivery"
+    real_is_reparse_point = paths._is_reparse_point
+
+    def simulated_reparse(path: Path) -> bool:
+        return Path(path) == staged_delivery_dir or real_is_reparse_point(Path(path))
+
+    tracked_paths = (
+        *publication.official_paths,
+        *(deliverables._staged_path(publication, path) for path in publication.official_paths),
+        *(deliverables._backup_path(publication, path) for path in publication.official_paths),
+        publication.journal_path,
+    )
+    before = {path: path.read_bytes() for path in tracked_paths}
+    monkeypatch.setattr(paths, "_is_reparse_point", simulated_reparse)
+
+    with pytest.raises((TypeError, ValueError, RuntimeError), match="reparse|symlink|junction"):
+        deliverables.recover_publish_transaction(
+            layout,
+            mark_needs_attention=lambda reason: pytest.fail(reason),
+        )
+
+    assert {path: path.read_bytes() for path in tracked_paths} == before
 
 
 def test_final_chat_projection_is_locked_complete_absolute_and_not_a_phase_artifact(
