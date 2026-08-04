@@ -491,7 +491,7 @@ def _validate_u4_u9_authorities(
     layout: RunLayout,
     loaded: Mapping[str, list[dict[str, object]]],
     authority: Mapping[str, object],
-) -> None:
+) -> frozenset[str]:
     from . import concept_closure
     from . import forecast
     from . import judgment
@@ -585,7 +585,7 @@ def _validate_u4_u9_authorities(
     knowledge_values, source_manifest_sha256 = materialization._knowledge_authorities(
         repo
     )
-    concept_closure.validate_concept_closure(
+    required_concept_semantic_unit_ids = concept_closure.validate_concept_closure(
         concepts,
         repo=repo,
         evidence_ledger=evidence,
@@ -704,6 +704,104 @@ def _validate_u4_u9_authorities(
         evidence=evidence,
         lineage=lineage,
         expected_verdict_artifact_sha256=verdict_hash,
+    )
+    return frozenset(required_concept_semantic_unit_ids)
+
+
+def _validate_u10_authority(
+    layout: RunLayout,
+    loaded: Mapping[str, list[dict[str, object]]],
+    authority: Mapping[str, object],
+    *,
+    required_concept_semantic_unit_ids: frozenset[str],
+) -> None:
+    from . import article
+    from . import materialization
+
+    raw_refs = authority.get("refs_by_phase")
+    raw_events = authority.get("events")
+    if not isinstance(raw_refs, Mapping) or not isinstance(raw_events, tuple):
+        raise ValueError("verified U10 disk authority is unavailable")
+    u9_events = [
+        event
+        for event in raw_events
+        if isinstance(event, Mapping)
+        and event.get("phase_id") == "U9"
+        and event.get("status") == "complete"
+    ]
+    if len(u9_events) != 1:
+        raise ValueError("verified U9 parent event is unavailable")
+
+    documents_by_sha256: dict[str, Mapping[str, object]] = {}
+    for documents in loaded.values():
+        for document in documents:
+            digest = sha256_bytes(canonical_json_bytes(document))
+            if digest in documents_by_sha256:
+                raise ValueError("verified disk artifacts reuse a content hash")
+            documents_by_sha256[digest] = document
+
+    upstream_candidates: list[tuple[Path, Mapping[str, object]]] = []
+    for ordinal in range(3, 10):
+        phase_id = f"U{ordinal}"
+        phase_refs = raw_refs.get(phase_id)
+        if not isinstance(phase_refs, Mapping):
+            raise ValueError(f"verified {phase_id} artifact refs are unavailable")
+        for relative, digest in phase_refs.items():
+            if not isinstance(relative, str) or not isinstance(digest, str):
+                raise ValueError("verified upstream artifact ref is invalid")
+            document = documents_by_sha256.get(digest)
+            if document is None:
+                raise ValueError("verified upstream artifact bytes are unavailable")
+            upstream_candidates.append(
+                (_artifact_path(layout, relative), document)
+            )
+
+    frozen_sequence = materialization._OUTPUT_PLAN_UPSTREAM_SCHEMA_SEQUENCE
+    recursive_schema_id = "crossframe.ultra.v82.recursive-state"
+    schema_rank = {
+        schema_id: index
+        for index, schema_id in enumerate(frozen_sequence[:5])
+    }
+    schema_rank[recursive_schema_id] = 5
+    schema_rank.update(
+        {
+            schema_id: index + 6
+            for index, schema_id in enumerate(frozen_sequence[5:])
+        }
+    )
+    try:
+        upstream_authorities = sorted(
+            upstream_candidates,
+            key=lambda item: (
+                schema_rank[str(item[1]["schema_id"])],
+                item[0].as_posix()
+                if item[1].get("schema_id") == recursive_schema_id
+                else "",
+            ),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("verified U3-U9 schema sequence is invalid") from error
+
+    required_artifacts, authority_documents = (
+        materialization._derive_output_plan_upstream_authority(
+            layout,
+            upstream_authorities,
+        )
+    )
+    output_plan = _single_document(
+        loaded, "crossframe.ultra.v82.output-plan"
+    )
+    article.validate_output_plan_artifact(
+        output_plan,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_u9_parent_event_sha256=str(u9_events[0]["event_sha256"]),
+        expected_required_artifacts=required_artifacts,
+    )
+    materialization._validate_output_plan_semantic_authority(
+        output_plan,
+        authority_documents,
+        required_concept_semantic_unit_ids=required_concept_semantic_unit_ids,
     )
 
 
@@ -894,8 +992,10 @@ def _validate_article_coverage(
     try:
         from .coverage import normalize_excerpt
 
-        article = normalize_excerpt(article_bytes.decode("utf-8", errors="strict"))
+        article_text = article_bytes.decode("utf-8", errors="strict")
+        article = normalize_excerpt(article_text)
     except UnicodeDecodeError:
+        article_text = ""
         article = ""
     mappings = coverage.get("mappings", [])
     missing = [
@@ -916,6 +1016,44 @@ def _validate_article_coverage(
             "article-coverage",
             "ULTRA-COVERAGE-MISSING",
             "artifacts/U09-U10-verdict/U11-semantic-coverage.json",
+        )
+    try:
+        from .coverage import build_article_review_artifact
+
+        output_plan = _single_document(
+            loaded, "crossframe.ultra.v82.output-plan"
+        )
+        article_review = _single_document(
+            loaded, "crossframe.ultra.v82.article-review"
+        )
+        generated_at = article_review.get("generated_at")
+        if not isinstance(generated_at, str):
+            raise ValueError("article review generated_at is unavailable")
+        rebuilt_review = build_article_review_artifact(
+            article_text,
+            output_plan,
+            coverage,
+            run_id=layout.run_dir.name,
+            version_binding=current_version_binding(),
+            generated_at=generated_at,
+            expected_output_plan_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(output_plan)
+            ),
+            expected_coverage_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(coverage)
+            ),
+        )
+        if (
+            rebuilt_review != article_review
+            or rebuilt_review.get("overall_status") != "mechanical-complete"
+        ):
+            raise ValueError("U11 article review is not mechanical-complete")
+    except Exception:
+        _issue(
+            issues,
+            "article-coverage",
+            "ULTRA-ARTICLE-REVIEW-FAILED",
+            "artifacts/U09-U10-verdict/U11-article-review.json",
         )
 
 
@@ -1032,11 +1170,19 @@ def validate_run_from_disk(
         if disk_authority is not None:
             _validate_read_events(root, layout, manifest, disk_authority, issues)
             try:
-                _validate_u4_u9_authorities(
+                required_concept_semantic_unit_ids = _validate_u4_u9_authorities(
                     root,
                     layout,
                     loaded,
                     disk_authority,
+                )
+                _validate_u10_authority(
+                    layout,
+                    loaded,
+                    disk_authority,
+                    required_concept_semantic_unit_ids=(
+                        required_concept_semantic_unit_ids
+                    ),
                 )
             except Exception:
                 _issue(

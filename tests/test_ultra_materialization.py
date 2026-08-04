@@ -9,7 +9,10 @@ import sys
 
 import pytest
 
-from tests.ultra_closed_fixture_support import write_closed_u4_u10_authoring
+from tests.ultra_closed_fixture_support import (
+    write_closed_u4_u10_authoring,
+    write_closed_u11_authoring,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -764,6 +767,97 @@ def test_materialization_accepts_owned_transformation_effective_variable_locator
     assert all(event["phase_id"] != "U11" for event in store.events)
     assert not (layout.authoring_dir / "article.partial.md").exists()
     assert list(layout.delivery_dir.glob("*")) == []
+
+
+def test_u11_materialization_rejects_external_dependent_mechanical_review(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    materialization, jsonio, layout, _, output_authority, store = (
+        _prepare_u10_authority_case(runtime, tmp_path)
+    )
+    with pytest.raises(ValueError, match="packet count"):
+        materialization.materialize_u4_u11(
+            REPO_ROOT,
+            layout,
+            store,
+            now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
+            create_checkpoint=lambda *args, **kwargs: kwargs,
+        )
+    sealed_plan = jsonio.load_json_object(
+        layout.artifacts_dir / "U09-U10-verdict/U10-output-plan.json"
+    )
+    generated_at = "2026-08-02T03:04:11Z"
+    write_closed_u11_authoring(
+        REPO_ROOT,
+        layout,
+        sealed_plan,
+        output_authority,
+        generated_at=generated_at,
+    )
+
+    packet_path = layout.authoring_dir / "article/packets/packet-01.md"
+    packet_path.write_text(
+        packet_path.read_text("utf-8").rstrip()
+        + "\n\n完整判断依据详见附件。\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    article = _module("article")
+    coverage = _module("coverage")
+    packet_paths = tuple(
+        sorted(
+            (layout.authoring_dir / "article/packets").glob("*.md"),
+            key=lambda path: path.name,
+        )
+    )
+    assembled = article.assemble_article(
+        sealed_plan,
+        materialization._packet_mappings(sealed_plan, packet_paths),
+        layout.authoring_dir / "article.partial.md",
+    )
+    plan_sha256 = hashlib.sha256(jsonio.canonical_json_bytes(sealed_plan)).hexdigest()
+    coverage_document = coverage.build_semantic_coverage_artifact(
+        assembled.article_text,
+        sealed_plan,
+        output_authority["mappings"],
+        run_id=layout.run_dir.name,
+        version_binding=_module("constants").current_version_binding(),
+        generated_at=generated_at,
+        expected_output_plan_artifact_sha256=plan_sha256,
+    )
+    jsonio.atomic_write_json(
+        layout.authoring_dir / "U11-semantic-coverage.json",
+        coverage_document,
+    )
+    review_document = coverage.build_article_review_artifact(
+        assembled.article_text,
+        sealed_plan,
+        coverage_document,
+        run_id=layout.run_dir.name,
+        version_binding=_module("constants").current_version_binding(),
+        generated_at=generated_at,
+        expected_output_plan_artifact_sha256=plan_sha256,
+        expected_coverage_artifact_sha256=hashlib.sha256(
+            jsonio.canonical_json_bytes(coverage_document)
+        ).hexdigest(),
+    )
+    assert review_document["overall_status"] == "mechanical-fail"
+    assert review_document["external_dependencies"]
+    jsonio.atomic_write_json(
+        layout.authoring_dir / "U11-article-review.json",
+        review_document,
+    )
+
+    with pytest.raises(ValueError, match="mechanical-complete"):
+        materialization.materialize_u4_u11(
+            REPO_ROOT,
+            layout,
+            store,
+            now=datetime(2026, 8, 2, 3, 4, 11, tzinfo=timezone.utc),
+            create_checkpoint=lambda *args, **kwargs: kwargs,
+        )
+    assert all(event["phase_id"] != "U11" for event in store.events)
 
 
 def test_materialization_rejects_a_forged_layout_outside_the_selected_root(

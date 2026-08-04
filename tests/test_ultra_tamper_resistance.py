@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
 import json
 from pathlib import Path
 
@@ -193,6 +194,71 @@ def _reseal_phase_events_with_substituted_u4_output(run) -> None:
         parent = event["event_sha256"]
     assert changed
     path.write_bytes(b"".join(support.canonical_bytes(event) for event in events))
+    support.refresh_manifest(run)
+
+
+def _reseal_phase_tail_and_checkpoints(run, first_phase: str) -> None:
+    first_ordinal = int(first_phase[1:])
+    checkpoints_dir = run.path("recovery/checkpoints")
+    checkpoint_records = [
+        (path, support.load_json(path))
+        for path in sorted(checkpoints_dir.glob("*.json"))
+    ]
+    for _, checkpoint in checkpoint_records:
+        if int(str(checkpoint["phase_id"])[1:]) < first_ordinal:
+            continue
+        for artifact_ref in checkpoint["artifact_hashes"]:
+            artifact_ref["sha256"] = hashlib.sha256(
+                run.path(artifact_ref["path"]).read_bytes()
+            ).hexdigest()
+
+    phase_checkpoints = {
+        checkpoint["phase_id"]: checkpoint
+        for _, checkpoint in checkpoint_records
+        if checkpoint["boundary_kind"] == "phase"
+    }
+    events = support._phase_events(run.run_dir)
+    parent = "0" * 64
+    events_by_phase = {}
+    for event in events:
+        ordinal = int(str(event["phase_id"])[1:])
+        if ordinal >= first_ordinal:
+            event["parent_event_sha256"] = parent
+            if event["status"] == "complete":
+                event["output_artifact_hashes"] = [
+                    item["sha256"]
+                    for item in phase_checkpoints[event["phase_id"]]["artifact_hashes"]
+                ]
+            event["content_sha256"] = run.modules.state_machine._compute_event_content_sha256(
+                event
+            )
+            event["event_sha256"] = run.modules.state_machine.compute_event_sha256(event)
+        parent = event["event_sha256"]
+        events_by_phase[event["phase_id"]] = event
+    run.path("recovery/phase-events.jsonl").write_bytes(
+        b"".join(support.canonical_bytes(event) for event in events)
+    )
+
+    replacements = []
+    for source, checkpoint in checkpoint_records:
+        if int(str(checkpoint["phase_id"])[1:]) < first_ordinal:
+            continue
+        bound_phase = (
+            checkpoint["phase_id"]
+            if checkpoint["boundary_kind"] == "phase"
+            else "U10"
+        )
+        checkpoint["phase_event_sha256"] = events_by_phase[bound_phase]["event_sha256"]
+        checkpoint["content_sha256"] = (
+            run.modules.schemas.compute_artifact_content_sha256(checkpoint)
+        )
+        raw = support.canonical_bytes(checkpoint)
+        target = checkpoints_dir / f"{hashlib.sha256(raw).hexdigest()}.json"
+        target.write_bytes(raw)
+        replacements.append((source, target))
+    for source, target in replacements:
+        if source != target:
+            source.unlink()
     support.refresh_manifest(run)
 
 
@@ -560,3 +626,106 @@ def test_fresh_validator_rejects_resealed_phase_or_checkpoint_substitution(
 
     assert report["overall_status"] == "fail"
     assert "ULTRA-AUTHORITY-DAG" in support.report_error_codes(report)
+
+
+def test_fresh_validator_rejects_resealed_u10_parent_authority_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = support.build_valid_run(tmp_path, monkeypatch)
+    baseline_report = support.parse_report(
+        run.modules.validation.validate_run_from_disk(
+            support.REPO_ROOT, run.modules.paths.RunMode.TEST, support.RUN_ID
+        )
+    )
+    baseline_codes = support.report_error_codes(baseline_report)
+    assert "ULTRA-AUTHORITY-DAG" not in baseline_codes
+    output_plan_path = run.path(
+        "artifacts/U09-U10-verdict/U10-output-plan.json"
+    )
+    output_plan = support.load_json(output_plan_path)
+    output_plan["u9_parent_event_sha256"] = "9" * 64
+    output_plan["content_sha256"] = (
+        run.modules.schemas.compute_artifact_content_sha256(output_plan)
+    )
+    support.write_json(output_plan_path, output_plan)
+    _reseal_phase_tail_and_checkpoints(run, "U10")
+
+    report = support.parse_report(
+        run.modules.validation.validate_run_from_disk(
+            support.REPO_ROOT, run.modules.paths.RunMode.TEST, support.RUN_ID
+        )
+    )
+
+    assert report["overall_status"] == "fail"
+    assert "ULTRA-AUTHORITY-DAG" in (
+        support.report_error_codes(report) - baseline_codes
+    )
+
+
+def test_fresh_validator_recomputes_and_rejects_external_dependent_u11_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = support.build_valid_run(tmp_path, monkeypatch)
+    baseline_report = support.parse_report(
+        run.modules.validation.validate_run_from_disk(
+            support.REPO_ROOT, run.modules.paths.RunMode.TEST, support.RUN_ID
+        )
+    )
+    baseline_codes = support.report_error_codes(baseline_report)
+    assert "ULTRA-ARTICLE-REVIEW-FAILED" not in baseline_codes
+    article_path = run.path("work/authoring/article.partial.md")
+    article_path.write_text(
+        article_path.read_text("utf-8").rstrip()
+        + "\n\n完整判断依据详见附件。\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    output_plan = support.load_json(
+        run.path("artifacts/U09-U10-verdict/U10-output-plan.json")
+    )
+    coverage_path = run.path(
+        "artifacts/U09-U10-verdict/U11-semantic-coverage.json"
+    )
+    coverage_document = support.load_json(coverage_path)
+    coverage_document["article_sha256"] = hashlib.sha256(
+        article_path.read_bytes()
+    ).hexdigest()
+    coverage_document["content_sha256"] = (
+        run.modules.schemas.compute_artifact_content_sha256(coverage_document)
+    )
+    support.write_json(coverage_path, coverage_document)
+
+    review_path = run.path("artifacts/U09-U10-verdict/U11-article-review.json")
+    prior_review = support.load_json(review_path)
+    coverage_module = importlib.import_module("ultra_runtime.coverage")
+    review_document = coverage_module.build_article_review_artifact(
+        article_path.read_text("utf-8"),
+        output_plan,
+        coverage_document,
+        run_id=support.RUN_ID,
+        version_binding=run.modules.constants.current_version_binding(),
+        generated_at=prior_review["generated_at"],
+        expected_output_plan_artifact_sha256=hashlib.sha256(
+            support.canonical_bytes(output_plan)
+        ).hexdigest(),
+        expected_coverage_artifact_sha256=hashlib.sha256(
+            support.canonical_bytes(coverage_document)
+        ).hexdigest(),
+    )
+    assert review_document["overall_status"] == "mechanical-fail"
+    assert review_document["external_dependencies"]
+    support.write_json(review_path, review_document)
+    _reseal_phase_tail_and_checkpoints(run, "U11")
+
+    report = support.parse_report(
+        run.modules.validation.validate_run_from_disk(
+            support.REPO_ROOT, run.modules.paths.RunMode.TEST, support.RUN_ID
+        )
+    )
+
+    assert report["overall_status"] == "fail"
+    assert "ULTRA-ARTICLE-REVIEW-FAILED" in (
+        support.report_error_codes(report) - baseline_codes
+    )

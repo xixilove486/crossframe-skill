@@ -698,13 +698,25 @@ def _write_immutable(path: Path, value: object) -> bytes:
 
 
 def _sync_events(path: Path, events: Sequence[Mapping[str, object]]) -> None:
-    raw = b"".join(canonical_json_bytes(dict(event)) for event in events)
+    chunks = tuple(canonical_json_bytes(dict(event)) for event in events)
+    raw = b"".join(chunks)
     if path.exists():
         try:
             existing = path.read_bytes()
         except OSError as error:
             raise RecoveryIntegrityError("phase event journal is unreadable") from error
-        if not raw.startswith(existing):
+        if not existing or not existing.endswith(b"\n"):
+            raise RecoveryIntegrityError("phase event journal is incomplete")
+        boundary = 0
+        whole_event_prefix = False
+        for chunk in chunks:
+            boundary += len(chunk)
+            if len(existing) == boundary:
+                whole_event_prefix = True
+                break
+            if len(existing) < boundary:
+                break
+        if not whole_event_prefix or existing != raw[: len(existing)]:
             raise RecoveryIntegrityError("phase event journal diverges from PhaseStore")
         if existing == raw:
             return
@@ -1341,6 +1353,23 @@ def cancel_run(
         return status
     if status.status in {"failed", "complete"}:
         raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
+    completed_events = [item for item in events if item.get("status") == "complete"]
+    last_complete_phase = (
+        None if not completed_events else str(completed_events[-1]["phase_id"])
+    )
+    if events[-1].get("status") == "cancelled":
+        event = events[-1]
+        try:
+            return RunStatusStore(layout).transition(
+                status,
+                "cancelled",
+                now,
+                current_phase=str(event["phase_id"]),
+                last_complete_phase=last_complete_phase,
+                reason=str(event["failure_code"]),
+            )
+        except Exception as error:
+            raise RecoveryStateError("run status cancellation transition failed") from error
     if events[-1].get("status") != "complete":
         raise RecoveryStateError("run already has a terminal phase event")
     event = _terminal_event(authority, events, reason=reason.strip(), now=now)
@@ -1353,15 +1382,7 @@ def cancel_run(
             "cancelled",
             now,
             current_phase=str(event["phase_id"]),
-            last_complete_phase=(
-                None
-                if not any(item.get("status") == "complete" for item in events)
-                else str(
-                    [item for item in events if item.get("status") == "complete"][-1][
-                        "phase_id"
-                    ]
-                )
-            ),
+            last_complete_phase=last_complete_phase,
             reason=reason.strip(),
         )
     except Exception as error:

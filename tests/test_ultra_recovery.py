@@ -476,6 +476,100 @@ def test_resume_uses_last_full_boundary_and_cancel_is_terminal(tmp_path):
         recovery.resume_run(layout, now=NOW + timedelta(seconds=5))
 
 
+def test_partial_cancellation_blocks_new_lease_and_retry_converges(
+    tmp_path,
+    monkeypatch,
+):
+    recovery, _, layout, _, _, _ = _checkpoint(tmp_path)
+    from ultra_runtime import locks
+    from ultra_runtime.status import RunStatusStore
+
+    statuses = RunStatusStore(layout)
+    created = statuses.create(NOW)
+    statuses.transition(created, "running", NOW + timedelta(seconds=1))
+    real_transition = recovery.RunStatusStore.transition
+
+    def fail_status_transition(*args, **kwargs):
+        del args, kwargs
+        raise RuntimeError("injected status write failure")
+
+    monkeypatch.setattr(recovery.RunStatusStore, "transition", fail_status_transition)
+    with pytest.raises(recovery.RecoveryStateError, match="status cancellation"):
+        recovery.cancel_run(
+            layout,
+            reason="user requested cancellation",
+            now=NOW + timedelta(seconds=2),
+        )
+
+    events_path = layout.recovery_dir / "phase-events.jsonl"
+    persisted_events = [
+        json.loads(line)
+        for line in events_path.read_text("utf-8").splitlines()
+    ]
+    assert persisted_events[-1]["status"] == "cancelled"
+    assert statuses.read().status == "running"
+    with pytest.raises(locks.CancelledRunError):
+        locks.acquire_run_lease(
+            layout,
+            NOW + timedelta(seconds=3),
+            timedelta(seconds=30),
+        )
+
+    monkeypatch.setattr(recovery.RunStatusStore, "transition", real_transition)
+    cancelled = recovery.cancel_run(
+        layout,
+        reason="user requested cancellation",
+        now=NOW + timedelta(seconds=4),
+    )
+    repeated = recovery.cancel_run(
+        layout,
+        reason="user requested cancellation",
+        now=NOW + timedelta(seconds=5),
+    )
+
+    assert cancelled.status == repeated.status == "cancelled"
+    assert cancelled.tools_allowed is repeated.tools_allowed is False
+    final_events = [
+        json.loads(line)
+        for line in events_path.read_text("utf-8").splitlines()
+    ]
+    assert sum(event["status"] == "cancelled" for event in final_events) == 1
+
+
+@pytest.mark.parametrize(
+    "existing_bytes",
+    (
+        b"",
+        _canonical({"event": "one"})[:-1],
+    ),
+    ids=("empty", "half-line"),
+)
+def test_sync_events_rejects_incomplete_existing_journal(tmp_path, existing_bytes):
+    recovery = _recovery_module()
+    path = tmp_path / "phase-events.jsonl"
+    events = ({"event": "one"}, {"event": "two"})
+    path.write_bytes(existing_bytes)
+
+    with pytest.raises(recovery.RecoveryIntegrityError, match="journal|event"):
+        recovery._sync_events(path, events)
+
+    assert path.read_bytes() == existing_bytes
+
+
+def test_sync_events_appends_a_whole_event_prefix_and_is_idempotent(tmp_path):
+    recovery = _recovery_module()
+    path = tmp_path / "phase-events.jsonl"
+    events = ({"event": "one"}, {"event": "two"})
+    path.write_bytes(_canonical(events[0]))
+
+    recovery._sync_events(path, events)
+    expected = b"".join(_canonical(event) for event in events)
+    assert path.read_bytes() == expected
+
+    recovery._sync_events(path, events)
+    assert path.read_bytes() == expected
+
+
 @pytest.mark.parametrize("prior_status", ("interrupted", "needs_attention"))
 def test_resume_hydrates_before_status_authorization(
     tmp_path,

@@ -2064,6 +2064,10 @@ def materialize_u4_u11(
         expected_output_plan_artifact_sha256=_full_artifact_sha256(documents["output_plan"]),
         expected_coverage_artifact_sha256=_full_artifact_sha256(coverage_document),
     )
+    if built_review.get("overall_status") != "mechanical-complete":
+        raise ValueError(
+            "deterministic U11 article review must be mechanical-complete"
+        )
     if authored_review != built_review:
         raise ValueError("model-authored article review differs from deterministic runtime review")
     review_destination = artifact_destination(layout, review_source)
