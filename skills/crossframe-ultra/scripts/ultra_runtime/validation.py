@@ -4,6 +4,7 @@ from collections import Counter
 from collections.abc import Mapping
 import copy
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 from typing import Any
 
@@ -32,7 +33,6 @@ from .paths import (
 )
 from .schemas import (
     compute_artifact_content_sha256,
-    validate_instance,
     validate_phase_artifact,
 )
 
@@ -73,6 +73,17 @@ _SECRET_PATTERNS = (
     re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"\b(?:password|passwd|secret)\s*[=:]\s*\S+", re.IGNORECASE),
 )
+_U1_SOURCE_LOCK_PATH = "recovery/u1-authority/source-lock.json"
+_U1_READ_PLAN_PATH = "recovery/u1-authority/read-plan.json"
+_U1_SOURCE_COVERAGE_PATH = "recovery/u1-authority/source-coverage.json"
+_COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
+_COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
+
+
+class _AuthorityDAGError(ValueError):
+    def __init__(self, message: str, *, phase_id: str | None = None) -> None:
+        super().__init__(message)
+        self.phase_id = phase_id
 
 
 def _repo_root() -> Path:
@@ -96,13 +107,15 @@ def validator_set_sha256(repo: Path) -> str:
     runtime = root / "skills/crossframe-ultra/scripts/ultra_runtime"
     relative_files = [
         "skills/crossframe-ultra/references/source-manifest.json",
-        "skills/crossframe-ultra/scripts/ultra_runtime/artifacts.py",
-        "skills/crossframe-ultra/scripts/ultra_runtime/validation.py",
-        "skills/crossframe-ultra/scripts/ultra_runtime/constants.py",
-        "skills/crossframe-ultra/scripts/ultra_runtime/jsonio.py",
-        "skills/crossframe-ultra/scripts/ultra_runtime/paths.py",
-        "skills/crossframe-ultra/scripts/ultra_runtime/schemas.py",
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py",
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py",
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py",
+        "scripts/check_crossframe_ultra_artifacts.py",
     ]
+    relative_files.extend(
+        path.relative_to(root).as_posix()
+        for path in sorted(runtime.glob("*.py"))
+    )
     relative_files.extend(
         path.relative_to(root).as_posix()
         for path in sorted((root / "skills/crossframe-ultra/schemas").glob("*.json"))
@@ -135,6 +148,144 @@ def _artifact_path(layout: RunLayout, relative: str) -> Path:
     except (ValueError, OSError) as error:
         raise ValueError(f"artifact path escapes its run: {relative}") from error
     return candidate
+
+
+def _load_verified_disk_authority(
+    layout: RunLayout,
+    manifest: Mapping[str, Any],
+) -> dict[str, object]:
+    from . import recovery
+
+    try:
+        recovery._validate_layout(layout)
+        run_authority, compatibility = recovery._validate_authority(layout)
+        if compatibility != "resume":
+            raise ValueError("fresh validation requires exact current recovery authority")
+        events = recovery._read_events(
+            layout,
+            run_authority,
+            compatibility=compatibility,
+        )
+    except Exception as error:
+        raise _AuthorityDAGError(f"recovery authority is invalid: {error}") from error
+
+    events_by_hash = {str(event["event_sha256"]): event for event in events}
+    checkpoints_dir = layout.recovery_dir / "checkpoints"
+    try:
+        candidates = sorted(checkpoints_dir.iterdir(), key=lambda path: path.name)
+    except OSError as error:
+        raise _AuthorityDAGError("checkpoint directory is unavailable") from error
+    if not candidates:
+        raise _AuthorityDAGError("checkpoint directory is empty")
+
+    checkpoints: list[dict[str, object]] = []
+    slots: set[tuple[str, str, int]] = set()
+    for path in candidates:
+        phase_id: str | None = None
+        try:
+            if not path.is_file() or re.fullmatch(r"[0-9a-f]{64}\.json", path.name) is None:
+                raise ValueError("checkpoint directory contains a noncanonical entry")
+            raw = path.read_bytes()
+            checkpoint = load_json_object_bytes(raw, source=str(path))
+            raw_phase = checkpoint.get("phase_id")
+            phase_id = raw_phase if isinstance(raw_phase, str) else None
+            if sha256_bytes(raw) != path.stem:
+                raise ValueError("checkpoint filename hash differs from its bytes")
+            if raw != canonical_json_bytes(checkpoint):
+                raise ValueError("checkpoint bytes are not canonical JSON")
+            validated = recovery._validate_checkpoint(
+                layout,
+                checkpoint,
+                authority=run_authority,
+                compatibility=compatibility,
+                events_by_hash=events_by_hash,
+            )
+            slot = recovery._checkpoint_slot(validated)
+            if slot in slots:
+                raise ValueError("checkpoint logical slot is duplicated")
+            slots.add(slot)
+            checkpoints.append(validated)
+        except Exception as error:
+            raise _AuthorityDAGError(
+                f"checkpoint authority is invalid: {error}",
+                phase_id=phase_id,
+            ) from error
+    checkpoints.sort(key=recovery._checkpoint_sort_key)
+
+    phase_ids = tuple(
+        str(event["phase_id"])
+        for event in events
+        if event.get("status") == "complete"
+    )
+    if phase_ids not in {_COMPLETE_THROUGH_U11, _COMPLETE_THROUGH_U12}:
+        raise _AuthorityDAGError("phase chain is not complete through U11")
+    phase_checkpoints = [
+        checkpoint
+        for checkpoint in checkpoints
+        if checkpoint.get("boundary_kind") == "phase"
+    ]
+    if tuple(str(checkpoint["phase_id"]) for checkpoint in phase_checkpoints) != phase_ids:
+        raise _AuthorityDAGError("phase checkpoints do not exactly cover the event chain")
+
+    refs_by_phase: dict[str, dict[str, str]] = {}
+    for checkpoint in phase_checkpoints:
+        phase_id = str(checkpoint["phase_id"])
+        refs = checkpoint.get("artifact_hashes")
+        if not isinstance(refs, list):
+            raise _AuthorityDAGError(
+                "phase checkpoint artifact refs are invalid",
+                phase_id=phase_id,
+            )
+        refs_by_phase[phase_id] = {
+            str(item["path"]): str(item["sha256"])
+            for item in refs
+            if isinstance(item, Mapping)
+        }
+        if len(refs_by_phase[phase_id]) != len(refs):
+            raise _AuthorityDAGError(
+                "phase checkpoint artifact refs are duplicated",
+                phase_id=phase_id,
+            )
+
+    manifest_refs: dict[str, dict[str, str]] = {}
+    for record in manifest["artifacts"]:
+        phase_id = str(record["phase_id"])
+        manifest_refs.setdefault(phase_id, {})[str(record["path"])] = str(
+            record["sha256"]
+        )
+    for phase_id in ("U0", *tuple(f"U{number}" for number in range(2, 12))):
+        if refs_by_phase.get(phase_id) != manifest_refs.get(phase_id):
+            raise _AuthorityDAGError(
+                "phase checkpoint differs from the manifest artifact set",
+                phase_id=phase_id,
+            )
+    expected_u1_paths = {_U1_SOURCE_LOCK_PATH, _U1_SOURCE_COVERAGE_PATH}
+    if set(refs_by_phase.get("U1", {})) != expected_u1_paths:
+        raise _AuthorityDAGError(
+            "U1 checkpoint does not bind the fixed source authority files",
+            phase_id="U1",
+        )
+    if "U12" in refs_by_phase:
+        expected_u12_paths = {
+            "artifacts/ultra-artifact-manifest.json",
+            "validation/current/ultra-validator-report.json",
+            "delivery/CrossFrame-Ultra-完整文章.md",
+            "delivery/完整推演档案.md",
+            "delivery/工件索引.md",
+        }
+        if set(refs_by_phase["U12"]) != expected_u12_paths:
+            raise _AuthorityDAGError(
+                "U12 checkpoint does not bind the fixed completion files",
+                phase_id="U12",
+            )
+    u11_event = next(event for event in events if event.get("phase_id") == "U11")
+    if manifest.get("phase_chain_head_sha256") != u11_event.get("event_sha256"):
+        raise _AuthorityDAGError("manifest does not bind the verified U11 chain head")
+    return {
+        "run_authority": copy.deepcopy(run_authority),
+        "events": tuple(copy.deepcopy(event) for event in events),
+        "refs_by_phase": copy.deepcopy(refs_by_phase),
+    }
 
 
 def _load_structured_artifacts(
@@ -325,10 +476,242 @@ def _validate_world_and_lineage(
             )
 
 
+def _single_document(
+    loaded: Mapping[str, list[dict[str, object]]],
+    schema_id: str,
+) -> dict[str, object]:
+    documents = loaded.get(schema_id, [])
+    if len(documents) != 1:
+        raise ValueError(f"disk authority requires exactly one {schema_id} artifact")
+    return documents[0]
+
+
+def _validate_u4_u9_authorities(
+    repo: Path,
+    layout: RunLayout,
+    loaded: Mapping[str, list[dict[str, object]]],
+    authority: Mapping[str, object],
+) -> None:
+    from . import concept_closure
+    from . import forecast
+    from . import judgment
+    from . import materialization
+    from . import recursion
+    from . import world_volume
+
+    raw_refs = authority.get("refs_by_phase")
+    if not isinstance(raw_refs, Mapping):
+        raise ValueError("verified phase artifact refs are unavailable")
+
+    def expected_hash(phase_id: str, relative: str) -> str:
+        phase_refs = raw_refs.get(phase_id)
+        if not isinstance(phase_refs, Mapping):
+            raise ValueError(f"verified {phase_id} artifact refs are unavailable")
+        digest = phase_refs.get(relative)
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            raise ValueError(f"verified artifact hash is unavailable: {relative}")
+        return digest
+
+    evidence = _single_document(
+        loaded, "crossframe.ultra.v82.evidence-ledger"
+    )
+    world = _single_document(loaded, "crossframe.ultra.v82.world-volume")
+    transformations = _single_document(
+        loaded, "crossframe.ultra.v82.transformation-ledger"
+    )
+    concepts = _single_document(
+        loaded, "crossframe.ultra.v82.concept-disposition"
+    )
+    graph = _single_document(
+        loaded, "crossframe.ultra.v82.claim-mechanism-graph"
+    )
+    lineage = _single_document(
+        loaded, "crossframe.ultra.v82.recursive-lineage"
+    )
+    order_evaluation = _single_document(
+        loaded, "crossframe.ultra.v82.order-evaluation"
+    )
+    red_team = _single_document(
+        loaded, "crossframe.ultra.v82.red-team-report"
+    )
+    verdict = _single_document(loaded, "crossframe.ultra.v82.verdict")
+    action_ranking = _single_document(
+        loaded, "crossframe.ultra.v82.action-ranking"
+    )
+    forecast_ledger = _single_document(
+        loaded, "crossframe.ultra.v82.forecast-ledger"
+    )
+
+    evidence_hash = expected_hash(
+        "U3", "artifacts/U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    world_hash = expected_hash(
+        "U4", "artifacts/U04-U05-world-volume/U04-world-volume.json"
+    )
+    transformation_hash = expected_hash(
+        "U5",
+        "artifacts/U04-U05-world-volume/U05-transformation-ledger.json",
+    )
+    concept_hash = expected_hash(
+        "U5", "artifacts/U04-U05-world-volume/U05-concept-disposition.json"
+    )
+    graph_hash = expected_hash(
+        "U6", "artifacts/U06-U08-inference/U06-claim-mechanism-graph.json"
+    )
+    lineage_hash = expected_hash(
+        "U7", "artifacts/U06-U08-inference/U07-recursive-lineage.json"
+    )
+    order_hash = expected_hash(
+        "U8", "artifacts/U06-U08-inference/U08-order-evaluation.json"
+    )
+    red_team_hash = expected_hash(
+        "U8", "artifacts/U06-U08-inference/U08-red-team-report.json"
+    )
+    verdict_hash = expected_hash(
+        "U9", "artifacts/U09-U10-verdict/U09-verdict.json"
+    )
+
+    relation_refs = materialization._runtime_relation_refs(world)
+    relation_refs_sha256 = sha256_bytes(canonical_json_bytes(relation_refs))
+    world_volume.validate_world_volume(
+        world,
+        evidence_ledger=evidence,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_evidence_artifact_sha256=evidence_hash,
+        relation_refs=relation_refs,
+        expected_relation_refs_sha256=relation_refs_sha256,
+    )
+    knowledge_values, source_manifest_sha256 = materialization._knowledge_authorities(
+        repo
+    )
+    concept_closure.validate_concept_closure(
+        concepts,
+        repo=repo,
+        evidence_ledger=evidence,
+        world_volume=world,
+        transformation_ledger=transformations,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_source_manifest_sha256=source_manifest_sha256,
+        expected_evidence_artifact_sha256=evidence_hash,
+        expected_world_volume_artifact_sha256=world_hash,
+        expected_transformation_ledger_artifact_sha256=transformation_hash,
+        expected_registry_sha256=knowledge_values["registry_sha256"],
+        expected_route_map_sha256=knowledge_values["route_map_sha256"],
+        expected_contract_map_sha256=knowledge_values["contract_map_sha256"],
+        required_route_ids=concepts["required_route_ids"],
+    )
+    judgment._validate_claim_mechanism_graph(
+        graph,
+        evidence_ledger=evidence,
+        world_volume=world,
+        transformation_ledger=transformations,
+        concept_disposition=concepts,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_evidence_ledger_artifact_sha256=evidence_hash,
+        expected_world_volume_artifact_sha256=world_hash,
+        expected_transformation_ledger_artifact_sha256=transformation_hash,
+        expected_concept_disposition_artifact_sha256=concept_hash,
+    )
+
+    states = loaded.get("crossframe.ultra.v82.recursive-state", [])
+    if not states:
+        raise ValueError("verified U7 authority has no recursive states")
+    state_registry: dict[str, dict[str, object]] = {}
+    for state in states:
+        node_id = state.get("node_id")
+        if not isinstance(node_id, str) or not node_id:
+            raise ValueError("verified recursive state has no node_id")
+        relative = f"artifacts/U06-U08-inference/U07-recursive-states/{node_id}.json"
+        state_hash = expected_hash("U7", relative)
+        if state_hash in state_registry:
+            raise ValueError("verified recursive state hash is duplicated")
+        state_registry[state_hash] = state
+    for state in states:
+        recursion._validate_recursive_state(
+            state,
+            parent_volume=world,
+            recursive_state_artifacts=state_registry,
+            transformation_ledger=transformations,
+            claim_mechanism_graph=graph,
+            expected_run_id=layout.run_dir.name,
+            expected_version_binding=current_version_binding(),
+            expected_world_volume_artifact_sha256=world_hash,
+            expected_transformation_ledger_artifact_sha256=transformation_hash,
+            expected_claim_mechanism_graph_artifact_sha256=graph_hash,
+        )
+    recursion._validate_recursive_lineage_bundle(
+        lineage,
+        world,
+        recursive_state_artifacts=state_registry,
+        transformation_ledger=transformations,
+        claim_mechanism_graph=graph,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_world_volume_artifact_sha256=world_hash,
+        expected_transformation_ledger_artifact_sha256=transformation_hash,
+        expected_claim_mechanism_graph_artifact_sha256=graph_hash,
+    )
+    recursion._validate_order_evaluation(
+        order_evaluation,
+        claim_mechanism_graph=graph,
+        recursive_lineage=lineage,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_claim_mechanism_graph_artifact_sha256=graph_hash,
+        expected_recursive_lineage_artifact_sha256=lineage_hash,
+    )
+    recursion._validate_red_team_report(
+        red_team,
+        claim_mechanism_graph=graph,
+        recursive_lineage=lineage,
+        order_evaluation=order_evaluation,
+        recursive_state_artifacts=state_registry,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_claim_mechanism_graph_artifact_sha256=graph_hash,
+        expected_recursive_lineage_artifact_sha256=lineage_hash,
+        expected_order_evaluation_artifact_sha256=order_hash,
+    )
+    judgment._validate_verdict_with_authority(
+        verdict,
+        evidence_ledger=evidence,
+        recursive_lineage=lineage,
+        claim_mechanism_graph=graph,
+        order_evaluation=order_evaluation,
+        red_team_report=red_team,
+        recursive_state_artifacts=state_registry,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_evidence_ledger_artifact_sha256=evidence_hash,
+        expected_claim_mechanism_graph_artifact_sha256=graph_hash,
+        expected_recursive_lineage_artifact_sha256=lineage_hash,
+        expected_order_evaluation_artifact_sha256=order_hash,
+        expected_red_team_report_artifact_sha256=red_team_hash,
+    )
+    judgment._validate_action_ranking(
+        action_ranking,
+        verdict=verdict,
+        evidence=evidence,
+        lineage=lineage,
+        expected_verdict_artifact_sha256=verdict_hash,
+    )
+    forecast._validate_forecast_ledger(
+        forecast_ledger,
+        verdict=verdict,
+        evidence=evidence,
+        lineage=lineage,
+        expected_verdict_artifact_sha256=verdict_hash,
+    )
+
+
 def _validate_read_events(
     repo: Path,
     layout: RunLayout,
     manifest: Mapping[str, Any],
+    authority: Mapping[str, object],
     issues: dict[str, list[tuple[str, str]]],
 ) -> None:
     records = [
@@ -344,79 +727,140 @@ def _validate_read_events(
             READ_EVENTS_PATH,
         )
         return
-    source_path = repo / "skills/crossframe-ultra/references/source-manifest.json"
+    from . import source_integrity
+
     try:
-        source = load_json_object(source_path)
-        validate_instance("ultra-source-manifest.schema.json", source)
-        source_manifest_sha256 = sha256_bytes(source_path.read_bytes())
-        rows = _artifact_path(layout, READ_EVENTS_PATH).read_bytes().splitlines()
+        raw_run_authority = authority.get("run_authority")
+        raw_events = authority.get("events")
+        raw_refs = authority.get("refs_by_phase")
+        if (
+            not isinstance(raw_run_authority, Mapping)
+            or not isinstance(raw_events, tuple)
+            or not isinstance(raw_refs, Mapping)
+        ):
+            raise ValueError("verified disk authority is incomplete")
+        u0_event = next(
+            event
+            for event in raw_events
+            if isinstance(event, Mapping) and event.get("phase_id") == "U0"
+        )
+        u1_refs = raw_refs.get("U1")
+        if not isinstance(u1_refs, Mapping):
+            raise ValueError("verified U1 checkpoint refs are unavailable")
+        source_path = repo / "skills/crossframe-ultra/references/source-manifest.json"
+        source = source_integrity.load_source_manifest(
+            source_path,
+            expected_sha256=str(raw_run_authority["source_sha256"]),
+        )
+        input_refs = raw_run_authority.get("input_refs")
+        if not isinstance(input_refs, list) or not input_refs:
+            raise ValueError("verified input refs are unavailable")
+        expected_inputs: list[dict[str, str]] = []
+        for item in input_refs:
+            if not isinstance(item, Mapping):
+                raise ValueError("verified input ref is malformed")
+            relative = str(item["path"])
+            parsed = PurePosixPath(relative)
+            if (
+                parsed.is_absolute()
+                or "\\" in relative
+                or len(parsed.parts) < 2
+                or parsed.parts[0] != "input"
+                or ".." in parsed.parts
+            ):
+                raise ValueError("verified input ref is outside the input directory")
+            expected_inputs.append(
+                {
+                    "path": PurePosixPath(*parsed.parts[1:]).as_posix(),
+                    "sha256": str(item["sha256"]),
+                    "media_type": str(item["media_type"]),
+                }
+            )
+        source_lock_path = _artifact_path(layout, _U1_SOURCE_LOCK_PATH)
+        read_plan_path = _artifact_path(layout, _U1_READ_PLAN_PATH)
+        source_coverage_path = _artifact_path(layout, _U1_SOURCE_COVERAGE_PATH)
+        source_lock_raw = source_lock_path.read_bytes()
+        read_plan_raw = read_plan_path.read_bytes()
+        source_coverage_raw = source_coverage_path.read_bytes()
+        source_lock = load_json_object_bytes(
+            source_lock_raw,
+            source=_U1_SOURCE_LOCK_PATH,
+        )
+        read_plan = load_json_object_bytes(
+            read_plan_raw,
+            source=_U1_READ_PLAN_PATH,
+        )
+        source_coverage = load_json_object_bytes(
+            source_coverage_raw,
+            source=_U1_SOURCE_COVERAGE_PATH,
+        )
+        if (
+            source_lock_raw != canonical_json_bytes(source_lock)
+            or read_plan_raw != canonical_json_bytes(read_plan)
+            or source_coverage_raw != canonical_json_bytes(source_coverage)
+        ):
+            raise ValueError("persisted U1 authority bytes are not canonical")
+        read_events_raw = _artifact_path(layout, READ_EVENTS_PATH).read_bytes()
+        if not read_events_raw or not read_events_raw.endswith(b"\n"):
+            raise source_integrity.SourceCoverageError(
+                "read event journal is incomplete"
+            )
+        read_events: list[dict[str, object]] = []
+        for ordinal, row in enumerate(read_events_raw.splitlines(keepends=True), start=1):
+            event = load_json_object_bytes(
+                row,
+                source=f"{READ_EVENTS_PATH}:{ordinal}",
+            )
+            if row != canonical_json_bytes(event):
+                raise source_integrity.SourceCoverageError(
+                    "read event journal is not canonical JSONL"
+                )
+            read_events.append(event)
+        expected_source_lock_sha256 = u1_refs.get(_U1_SOURCE_LOCK_PATH)
+        expected_read_coverage_sha256 = u1_refs.get(_U1_SOURCE_COVERAGE_PATH)
+        if not isinstance(expected_source_lock_sha256, str) or not isinstance(
+            expected_read_coverage_sha256, str
+        ):
+            raise ValueError("verified U1 checkpoint hashes are unavailable")
+        source_integrity._validate_persisted_u1_authority(
+            repo=repo,
+            run_layout=layout,
+            manifest=source,
+            source_lock=source_lock,
+            read_plan=read_plan,
+            coverage=source_coverage,
+            read_events=read_events,
+            expected_run_id=layout.run_dir.name,
+            expected_run_mode=_mode_for_layout(layout).value,
+            expected_version_binding=current_version_binding(),
+            expected_parent_event_sha256=str(u0_event["event_sha256"]),
+            expected_evidence_cutoff=str(raw_run_authority["evidence_cutoff"]),
+            expected_inputs=expected_inputs,
+            expected_source_lock_sha256=expected_source_lock_sha256,
+            expected_read_coverage_sha256=expected_read_coverage_sha256,
+        )
+    except source_integrity.SourceCoverageError as error:
+        message = str(error)
+        code = (
+            "ULTRA-SOURCE-MISMATCH"
+            if "content hash differs" in message
+            else "ULTRA-READ-COVERAGE"
+            if "count" in message or "cover every" in message or "incomplete" in message
+            else "ULTRA-READ-AUTHORITY"
+        )
+        _issue(
+            issues,
+            "source-read-coverage",
+            code,
+            READ_EVENTS_PATH,
+        )
     except Exception:
         _issue(
             issues,
             "source-read-coverage",
-            "ULTRA-READ-COVERAGE",
+            "ULTRA-READ-AUTHORITY",
             READ_EVENTS_PATH,
         )
-        return
-    units = source["source_units"]
-    if len(rows) != len(units):
-        _issue(
-            issues,
-            "source-read-coverage",
-            "ULTRA-READ-COVERAGE",
-            READ_EVENTS_PATH,
-        )
-        return
-    receipts: set[str] = set()
-    for row, unit in zip(rows, units):
-        try:
-            event = load_json_object_bytes(row, source=READ_EVENTS_PATH)
-            event_hash = event.get("read_event_sha256")
-            unsigned = dict(event)
-            unsigned.pop("read_event_sha256", None)
-            authority_ok = (
-                event.get("schema_id") == "crossframe.ultra.v82.read-event"
-                and event.get("schema_version") == 1
-                and event.get("run_id") == layout.run_dir.name
-                and event.get("version_binding") == current_version_binding()
-                and event.get("phase_id") == "U1"
-                and event.get("source_manifest_sha256") == source_manifest_sha256
-                and event.get("promoted_semantic_snapshot_sha256")
-                == current_version_binding()["framework_semantic_sha256"]
-                and event_hash == sha256_bytes(canonical_json_bytes(unsigned))
-            )
-            unit_ok = (
-                event.get("source_unit_id") == unit["unit_id"]
-                and event.get("source_kind") == unit["kind"]
-                and event.get("source_ordinal") == unit["ordinal"]
-                and event.get("content_sha256") == unit["sha256"]
-            )
-            receipt = event.get("receipt_sha256")
-            receipt_ok = (
-                isinstance(receipt, str)
-                and re.fullmatch(r"[0-9a-f]{64}", receipt) is not None
-                and receipt not in receipts
-            )
-        except Exception:
-            authority_ok = unit_ok = receipt_ok = False
-            receipt = None
-        if not authority_ok or not receipt_ok:
-            _issue(
-                issues,
-                "source-read-coverage",
-                "ULTRA-READ-COVERAGE",
-                READ_EVENTS_PATH,
-            )
-            return
-        if not unit_ok:
-            _issue(
-                issues,
-                "source-read-coverage",
-                "ULTRA-SOURCE-MISMATCH",
-                READ_EVENTS_PATH,
-            )
-            return
-        receipts.add(str(receipt))
 
 
 def _normalized(value: str) -> str:
@@ -567,8 +1011,40 @@ def validate_run_from_disk(
                 "ULTRA-VALIDATOR-SET-MISMATCH",
                 "artifacts/ultra-artifact-manifest.json",
             )
+        disk_authority: dict[str, object] | None = None
+        try:
+            disk_authority = _load_verified_disk_authority(layout, manifest)
+        except _AuthorityDAGError as error:
+            _issue(
+                issues,
+                "artifact-integrity",
+                "ULTRA-AUTHORITY-DAG",
+                "recovery",
+            )
+            if error.phase_id == "U1":
+                _issue(
+                    issues,
+                    "source-read-coverage",
+                    "ULTRA-READ-AUTHORITY",
+                    READ_EVENTS_PATH,
+                )
         loaded = _load_structured_artifacts(layout, manifest, issues)
-        _validate_read_events(root, layout, manifest, issues)
+        if disk_authority is not None:
+            _validate_read_events(root, layout, manifest, disk_authority, issues)
+            try:
+                _validate_u4_u9_authorities(
+                    root,
+                    layout,
+                    loaded,
+                    disk_authority,
+                )
+            except Exception:
+                _issue(
+                    issues,
+                    "artifact-integrity",
+                    "ULTRA-AUTHORITY-DAG",
+                    "artifacts/U04-U09",
+                )
         _validate_claim_semantics(loaded, issues)
         _validate_world_and_lineage(loaded, issues)
         _validate_article_coverage(layout, loaded, issues)

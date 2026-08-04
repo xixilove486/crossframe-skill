@@ -7,7 +7,8 @@ import hashlib
 import importlib
 import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -18,9 +19,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ULTRA_SCRIPTS = REPO_ROOT / "skills/crossframe-ultra/scripts"
 FIXTURES = REPO_ROOT / "tests/fixtures/ultra-runtime"
-RUN_ID = "20260804T000000Z-0123456789ab"
+RUN_ENTROPY = b"ultra-validation-authority-template"
+RUN_ID = f"20260804T000000Z-{hashlib.sha256(RUN_ENTROPY).hexdigest()[:12]}"
 STAMP = "2026-08-04T00:00:00Z"
-PHASE_HEAD = "a" * 64
 UNIT_KINDS = (
     "claim",
     "evidence",
@@ -53,7 +54,10 @@ def load_validation_runtime() -> SimpleNamespace:
         constants=importlib.import_module("ultra_runtime.constants"),
         jsonio=importlib.import_module("ultra_runtime.jsonio"),
         paths=importlib.import_module("ultra_runtime.paths"),
+        recovery=importlib.import_module("ultra_runtime.recovery"),
         schemas=importlib.import_module("ultra_runtime.schemas"),
+        source_integrity=importlib.import_module("ultra_runtime.source_integrity"),
+        state_machine=importlib.import_module("ultra_runtime.state_machine"),
     )
 
 
@@ -201,10 +205,127 @@ class BuiltRun:
         return self.run_dir / Path(relative)
 
 
+_AUTHORITATIVE_TEMPLATE: Path | None = None
+
+
+def _phase_events(run_dir: Path) -> list[dict[str, object]]:
+    path = run_dir / "recovery/phase-events.jsonl"
+    events = [json.loads(line) for line in path.read_text("utf-8").splitlines()]
+    assert all(isinstance(event, dict) for event in events)
+    return events
+
+
+def _phase_chain_head(run_dir: Path, phase_id: str = "U11") -> str:
+    matches = [
+        event
+        for event in _phase_events(run_dir)
+        if event.get("phase_id") == phase_id and event.get("status") == "complete"
+    ]
+    assert len(matches) == 1
+    digest = matches[0].get("event_sha256")
+    assert isinstance(digest, str)
+    return digest
+
+
+def _persist_u1_read_plan(modules: SimpleNamespace, layout: object) -> None:
+    authority = load_json(layout.recovery_dir / "run-authority.json")
+    source_lock_path = layout.recovery_dir / "u1-authority/source-lock.json"
+    source_lock_sha256 = hashlib.sha256(source_lock_path.read_bytes()).hexdigest()
+    u0_event = next(
+        event for event in _phase_events(layout.run_dir) if event["phase_id"] == "U0"
+    )
+    source_manifest = modules.source_integrity.load_source_manifest(
+        REPO_ROOT / "skills/crossframe-ultra/references/source-manifest.json",
+        expected_sha256=str(authority["source_sha256"]),
+    )
+    read_plan = modules.source_integrity.build_read_plan(
+        source_manifest,
+        promoted_semantic_snapshot_sha256=source_manifest.semantic_sha256,
+        source_manifest_sha256=source_manifest.sha256,
+        source_lock_sha256=source_lock_sha256,
+        parent_event_sha256=str(u0_event["event_sha256"]),
+    )
+    write_json(layout.recovery_dir / "u1-authority/read-plan.json", read_plan)
+
+
+def _strip_template_to_u11(modules: SimpleNamespace, layout: object) -> None:
+    events_path = layout.recovery_dir / "phase-events.jsonl"
+    events = [event for event in _phase_events(layout.run_dir) if event["phase_id"] != "U12"]
+    events_path.write_bytes(b"".join(canonical_bytes(event) for event in events))
+    for path in (layout.recovery_dir / "checkpoints").glob("*.json"):
+        if load_json(path).get("phase_id") == "U12":
+            path.unlink()
+    shutil.rmtree(layout.delivery_dir, ignore_errors=True)
+    shutil.rmtree(layout.validation_dir, ignore_errors=True)
+    (layout.recovery_dir / "publish-transaction.json").unlink(missing_ok=True)
+    (layout.artifacts_dir / "ultra-artifact-manifest.json").unlink(missing_ok=True)
+
+
+def _authoritative_template(tmp_path: Path) -> Path:
+    global _AUTHORITATIVE_TEMPLATE
+    if _AUTHORITATIVE_TEMPLATE is not None:
+        return _AUTHORITATIVE_TEMPLATE
+    from tests.run_ultra_fixed_root_smoke import run_fixed_root_smoke
+
+    modules = load_validation_runtime()
+    template_root = (tmp_path.parent / "ultra-validation-authority-template").resolve()
+    policy = modules.paths.RootPolicy(
+        production_root=template_root / "prod",
+        test_root=template_root / "test",
+    )
+    release = load_json(
+        REPO_ROOT / "skills/crossframe-ultra/references/release-manifest.json"
+    )
+    declared_tree = {
+        str(item["path"]): str(item["sha256"])
+        for item in release["release_artifacts"]
+    }
+    original_tree_hashes = modules.source_integrity.canonical_skill_tree_hashes
+    modules.source_integrity.canonical_skill_tree_hashes = lambda _root: dict(
+        declared_tree
+    )
+    original_validate_run_from_disk = modules.validation.validate_run_from_disk
+
+    def validate_run_with_read_plan(
+        repo: Path, run_mode: object, run_id: str
+    ) -> bytes:
+        layout = modules.paths.build_run_layout(run_mode, run_id, policy)
+        read_plan_path = layout.recovery_dir / "u1-authority/read-plan.json"
+        if not read_plan_path.is_file():
+            _persist_u1_read_plan(modules, layout)
+        return original_validate_run_from_disk(repo, run_mode, run_id)
+
+    modules.validation.validate_run_from_disk = validate_run_with_read_plan
+    try:
+        result = run_fixed_root_smoke(
+            root_policy=policy,
+            started_at=datetime(2026, 8, 4, tzinfo=timezone.utc),
+            run_entropy=RUN_ENTROPY,
+            transaction_entropy=b"ultra-validation-authority-transaction",
+        )
+    finally:
+        modules.validation.validate_run_from_disk = original_validate_run_from_disk
+        modules.source_integrity.canonical_skill_tree_hashes = original_tree_hashes
+    assert result["run_id"] == RUN_ID
+    layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
+    _strip_template_to_u11(modules, layout)
+    _persist_u1_read_plan(modules, layout)
+    validator_hash = modules.validation.validator_set_sha256(REPO_ROOT)
+    manifest = modules.artifacts.build_artifact_manifest(
+        layout,
+        phase_chain_head_sha256=_phase_chain_head(layout.run_dir),
+        validator_set_sha256=validator_hash,
+        generated_at=datetime(2026, 8, 4, tzinfo=timezone.utc),
+    )
+    write_json(layout.artifacts_dir / "ultra-artifact-manifest.json", manifest)
+    _AUTHORITATIVE_TEMPLATE = layout.run_dir
+    return layout.run_dir
+
+
 def refresh_manifest(run: BuiltRun) -> dict[str, object]:
     manifest = run.modules.artifacts.build_artifact_manifest(
         run.layout,
-        phase_chain_head_sha256=PHASE_HEAD,
+        phase_chain_head_sha256=_phase_chain_head(run.run_dir),
         validator_set_sha256=run.validator_set_sha256,
         generated_at=datetime(2026, 8, 4, tzinfo=timezone.utc),
     )
@@ -219,36 +340,9 @@ def build_valid_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuiltRun
         test_root=(tmp_path / "test").resolve(),
     )
     layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
-    layout.run_dir.mkdir(parents=True, exist_ok=True)
+    layout.run_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(_authoritative_template(tmp_path), layout.run_dir)
     monkeypatch.setattr(modules.validation, "default_root_policy", lambda: policy)
-
-    files = {
-        "artifacts/U00-U03-evidence/ultra-read-events.jsonl": _read_events(modules),
-        "artifacts/U00-U03-evidence/ultra-evidence-ledger.json": canonical_bytes(
-            seal_fixture(modules, "evidence-ledger-valid.json")
-        ),
-        "artifacts/U04-U05-world-volume/ultra-world-volume.json": canonical_bytes(
-            seal_fixture(modules, "world-volume-valid.json")
-        ),
-        "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json": canonical_bytes(
-            seal_fixture(modules, "claim-mechanism-graph-valid.json")
-        ),
-        "artifacts/U06-U08-inference/recursive-state-NODE-MAIN-ORDER-1.json": canonical_bytes(
-            seal_fixture(modules, "recursive-state-valid.json")
-        ),
-        "artifacts/U06-U08-inference/ultra-recursive-lineage.json": canonical_bytes(
-            seal_fixture(modules, "recursive-lineage-valid.json")
-        ),
-    }
-    article = _article_bytes()
-    files["work/authoring/article.partial.md"] = article
-    files["artifacts/U09-U10-verdict/U11-semantic-coverage.json"] = canonical_bytes(
-        _coverage(modules, article)
-    )
-    for relative, raw in files.items():
-        path = layout.run_dir / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(raw)
 
     validator_hash = modules.validation.validator_set_sha256(REPO_ROOT)
     run = BuiltRun(
@@ -263,6 +357,70 @@ def build_valid_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuiltRun
     return run
 
 
+def persisted_u1_authority_args(run: BuiltRun) -> dict[str, object]:
+    disk_authority = run.modules.validation._load_verified_disk_authority(
+        run.layout,
+        load_json(run.manifest_path),
+    )
+    run_authority = disk_authority["run_authority"]
+    events = disk_authority["events"]
+    refs_by_phase = disk_authority["refs_by_phase"]
+    assert isinstance(run_authority, dict)
+    assert isinstance(events, tuple)
+    assert isinstance(refs_by_phase, dict)
+    u0_event = next(event for event in events if event["phase_id"] == "U0")
+    u1_refs = refs_by_phase["U1"]
+    assert isinstance(u1_refs, dict)
+    source_manifest = run.modules.source_integrity.load_source_manifest(
+        REPO_ROOT / "skills/crossframe-ultra/references/source-manifest.json",
+        expected_sha256=str(run_authority["source_sha256"]),
+    )
+    expected_inputs: list[dict[str, str]] = []
+    for item in run_authority["input_refs"]:
+        assert isinstance(item, dict)
+        relative = PurePosixPath(str(item["path"]))
+        assert relative.parts[0] == "input"
+        expected_inputs.append(
+            {
+                "path": PurePosixPath(*relative.parts[1:]).as_posix(),
+                "sha256": str(item["sha256"]),
+                "media_type": str(item["media_type"]),
+            }
+        )
+    read_events = [
+        json.loads(row)
+        for row in run.path(
+            "artifacts/U00-U03-evidence/ultra-read-events.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    assert all(isinstance(event, dict) for event in read_events)
+    return {
+        "repo": REPO_ROOT,
+        "run_layout": run.layout,
+        "manifest": source_manifest,
+        "source_lock": load_json(
+            run.path("recovery/u1-authority/source-lock.json")
+        ),
+        "read_plan": load_json(run.path("recovery/u1-authority/read-plan.json")),
+        "coverage": load_json(
+            run.path("recovery/u1-authority/source-coverage.json")
+        ),
+        "read_events": read_events,
+        "expected_run_id": RUN_ID,
+        "expected_run_mode": "test",
+        "expected_version_binding": run.modules.constants.current_version_binding(),
+        "expected_parent_event_sha256": str(u0_event["event_sha256"]),
+        "expected_evidence_cutoff": str(run_authority["evidence_cutoff"]),
+        "expected_inputs": expected_inputs,
+        "expected_source_lock_sha256": str(
+            u1_refs["recovery/u1-authority/source-lock.json"]
+        ),
+        "expected_read_coverage_sha256": str(
+            u1_refs["recovery/u1-authority/source-coverage.json"]
+        ),
+    }
+
+
 def parse_report(raw: bytes) -> dict[str, object]:
     value = json.loads(raw.decode("utf-8"))
     assert isinstance(value, dict)
@@ -275,6 +433,41 @@ def report_error_codes(report: dict[str, object]) -> set[str]:
         for check in report["checks"]
         for code in check["error_codes"]
     }
+
+
+def test_validator_set_binds_every_runtime_and_u1_authority_checker(
+    tmp_path: Path,
+) -> None:
+    isolated_repo = tmp_path / "repo"
+    isolated_skill = isolated_repo / "skills/crossframe-ultra"
+    shutil.copytree(REPO_ROOT / "skills/crossframe-ultra", isolated_skill)
+    isolated_scripts = isolated_repo / "scripts"
+    isolated_scripts.mkdir()
+    shutil.copy2(
+        REPO_ROOT / "scripts/check_crossframe_ultra_artifacts.py",
+        isolated_scripts / "check_crossframe_ultra_artifacts.py",
+    )
+    modules = load_validation_runtime()
+    dependencies = (
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py",
+        "scripts/check_crossframe_ultra_artifacts.py",
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py",
+        "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py",
+        "skills/crossframe-ultra/scripts/ultra_runtime/errors.py",
+        "skills/crossframe-ultra/scripts/ultra_runtime/evidence.py",
+        "skills/crossframe-ultra/scripts/ultra_runtime/state_machine.py",
+        "skills/crossframe-ultra/scripts/ultra_runtime/status.py",
+    )
+
+    baseline = modules.validation.validator_set_sha256(isolated_repo)
+    for relative in dependencies:
+        path = isolated_repo / relative
+        original = path.read_bytes()
+        path.write_bytes(original + b"\n")
+        try:
+            assert modules.validation.validator_set_sha256(isolated_repo) != baseline
+        finally:
+            path.write_bytes(original)
 
 
 def test_disk_fresh_validation_is_canonical_read_only_and_schema_valid(
@@ -306,6 +499,118 @@ def test_disk_fresh_validation_is_canonical_read_only_and_schema_valid(
     assert not (run.run_dir / ".writer-lease.json").exists()
     assert not run.layout.validation_current_dir.exists()
     assert not run.layout.validation_attempts_dir.exists()
+
+
+def test_persisted_u1_authority_reconstruction_returns_an_issuer_seal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run = build_valid_run(tmp_path, monkeypatch)
+    arguments = persisted_u1_authority_args(run)
+
+    seal = run.modules.source_integrity._validate_persisted_u1_authority(
+        **arguments
+    )
+
+    assert type(seal) is run.modules.source_integrity.U1AuthoritySeal
+    assert run.modules.source_integrity.verify_u1_authority_seal(seal) is seal
+    assert seal.source_lock_artifact_sha256 == arguments[
+        "expected_source_lock_sha256"
+    ]
+    assert seal.read_coverage_artifact_sha256 == arguments[
+        "expected_read_coverage_sha256"
+    ]
+
+
+def test_persisted_u1_source_lock_rejects_live_skill_tree_drift(
+    tmp_path: Path,
+) -> None:
+    modules = load_validation_runtime()
+    isolated_repo = tmp_path / "repo"
+    isolated_skill = isolated_repo / "skills/crossframe-ultra"
+    shutil.copytree(REPO_ROOT / "skills/crossframe-ultra", isolated_skill)
+    release_builder = isolated_skill / "scripts/build_crossframe_ultra_release_manifest.py"
+    rebuilt = subprocess.run(
+        [sys.executable, "-B", str(release_builder), "--repo", str(isolated_repo), "--write"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert rebuilt.returncode == 0, rebuilt.stderr
+
+    source_manifest_path = isolated_skill / "references/source-manifest.json"
+    source_manifest = modules.source_integrity.load_source_manifest(
+        source_manifest_path,
+        expected_sha256=hashlib.sha256(source_manifest_path.read_bytes()).hexdigest(),
+    )
+    release_manifest_path = isolated_skill / "references/release-manifest.json"
+    measurement = modules.source_integrity.measure_u1_prerequisites(
+        isolated_repo,
+        manifest=source_manifest,
+        release_manifest_path=release_manifest_path,
+        run_mode="test",
+    )
+    assert measurement.ready, measurement.missing
+
+    policy = modules.paths.RootPolicy(
+        production_root=(tmp_path / "prod").resolve(),
+        test_root=(tmp_path / "test").resolve(),
+    )
+    layout = modules.paths.build_run_layout(
+        modules.paths.RunMode.TEST,
+        RUN_ID,
+        policy,
+    )
+    layout.input_dir.mkdir(parents=True)
+    request = canonical_bytes({"request": "bind the live canonical skill tree"})
+    request_path = layout.input_dir / "request.json"
+    request_path.write_bytes(request)
+    expected_inputs = [
+        {
+            "path": request_path.name,
+            "sha256": hashlib.sha256(request).hexdigest(),
+            "media_type": "application/json",
+        }
+    ]
+    parent_event_sha256 = "a" * 64
+    binding = modules.constants.current_version_binding()
+    source_lock = modules.source_integrity.build_source_lock(
+        run_id=RUN_ID,
+        version_binding=binding,
+        generated_at=STAMP,
+        prerequisite_measurement=measurement,
+        parent_event_sha256=parent_event_sha256,
+        evidence_cutoff=STAMP,
+        run_layout=layout,
+        inputs=expected_inputs,
+    )
+    arguments = {
+        "repo": isolated_repo,
+        "manifest": source_manifest,
+        "expected_run_id": RUN_ID,
+        "expected_run_mode": "test",
+        "expected_version_binding": binding,
+        "expected_parent_event_sha256": parent_event_sha256,
+        "expected_evidence_cutoff": STAMP,
+        "expected_inputs": expected_inputs,
+        "run_layout": layout,
+    }
+    assert modules.source_integrity._validate_persisted_source_lock(
+        source_lock,
+        **arguments,
+    ) == canonical_sha256(source_lock)
+
+    checker = isolated_skill / "scripts/check_crossframe_ultra_artifacts.py"
+    checker.write_bytes(checker.read_bytes() + b"\n")
+
+    with pytest.raises(
+        modules.source_integrity.SourceLockError,
+        match="canonical skill tree",
+    ):
+        modules.source_integrity._validate_persisted_source_lock(
+            source_lock,
+            **arguments,
+        )
 
 
 def test_parent_commits_exact_child_bytes_and_rejects_edited_report(
