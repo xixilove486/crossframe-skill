@@ -16,8 +16,6 @@ SOURCE_MANIFEST = ROOT / "skills/crossframe-ultra/references/source-manifest.jso
 SOURCE_MANIFEST_SHA256 = (
     "1c22cda241473ecb3654e37ee9890b975457bb098334ab5c0f85d2775abf6725"
 )
-LOCKED_INPUT_SHA256 = "5b4588c532def72f4feadca261dfda4e9de9d92e69c917c226f6ebd7c06e3c10"
-INPUT_SNAPSHOT_SHA256 = "645ce61bbf23f02db8901f1eafd072cf31a4727ac2b6ce8bdd986e3d85a8b0d8"
 RUN_ID = "20260802T000000Z-4f6d87c20a11"
 STAMP = "2026-08-02T00:00:00Z"
 PARENT_EVENT_SHA256 = "1" * 64
@@ -40,6 +38,17 @@ def _canonical(value: object) -> bytes:
         )
         + "\n"
     ).encode("utf-8")
+
+
+LOCKED_INPUT_SHA256 = hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest()
+_LOCKED_INPUTS = [
+    {
+        "path": "AGENTS.md",
+        "sha256": LOCKED_INPUT_SHA256,
+        "media_type": "text/markdown",
+    }
+]
+INPUT_SNAPSHOT_SHA256 = hashlib.sha256(_canonical(_LOCKED_INPUTS)).hexdigest()
 
 
 def _hash_without(value: dict[str, object], *fields: str) -> str:
@@ -65,13 +74,7 @@ def _binding() -> dict[str, object]:
 
 
 def _inputs() -> list[dict[str, str]]:
-    return [
-        {
-            "path": "AGENTS.md",
-            "sha256": LOCKED_INPUT_SHA256,
-            "media_type": "text/markdown",
-        }
-    ]
+    return copy.deepcopy(_LOCKED_INPUTS)
 
 
 def _run_layout(root: Path, *, run_id: str = RUN_ID):
@@ -619,12 +622,17 @@ def test_raw_caller_release_and_role_hash_kwargs_are_rejected(
         module.build_source_lock(**arguments)
 
 
-def test_repository_u1_measurement_does_not_mistake_a_schema_for_release_authority():
+def test_repository_u1_measurement_verifies_current_release_authority():
     import ultra_runtime.source_integrity as module
 
     measurement = module.measure_u1_prerequisites(ROOT, manifest=_snapshot(module))
-    assert not measurement.ready
-    assert "release_manifest" in measurement.missing
+    assert measurement.ready
+    assert measurement.missing == ()
+    assert {"release_manifest", "skill_tree_hash"} <= set(measurement.verified)
+    skill_tree_sha256 = measurement.skill_tree_sha256
+    assert isinstance(skill_tree_sha256, str)
+    assert len(skill_tree_sha256) == 64
+    assert all(character in "0123456789abcdef" for character in skill_tree_sha256)
 
 
 def test_production_measurement_rejects_release_override_and_test_measurement(
