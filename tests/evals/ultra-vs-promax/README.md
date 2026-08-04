@@ -17,6 +17,16 @@ The checked-in manifest is schema-v2 `execution-ready`. Historical schema-v1 sca
 
 The checked-in `execution-ready`/`not_run` assertions prove deterministic preparation only. They do not claim product quality, benchmark thresholds, a winner, or forward validation. If the deferred benchmark is later executed, final-evidence assertions must require manifest status `ready-for-results-build`, 24 completed pairs, 48 hash-bound product runs, 72 hash-bound blind grades, a derived `complete` result, and verified raw references.
 
+When canonical ProMax or Ultra files change before benchmark execution, use the explicit `--reseal-execution-ready` maintenance operation, not a state transition. It accepts only the exact schema-v2 `execution-ready` manifest, the type-strict and byte-exact `NOT_RUN_RESULTS` (`not_run`) document, and a `raw/` root containing only `.gitkeep`. Booleans cannot substitute for numeric result fields. It updates all 48 product skill-tree hashes, then fully revalidates the candidate's 24 frozen bundles and 48 product contracts before replacement. It leaves `results.json` and `raw/` byte-for-byte unchanged and fails closed on any output, grade, malformed state, stale contract, or measurement failure. The normal transition remains illegal from `execution-ready` to `execution-ready`.
+
+The complete reseal operation runs under Ultra's existing exclusive path-lock primitive, using one stable lock file in the current user's host-local temporary directory. Cooperative reseal writers that use the same lock convention cannot enter the guarded operation concurrently; lock acquisition fails closed if the underlying primitive cannot acquire exclusivity. After the replacement temporary file is flushed and immediately before `os.replace`, the guard fully revalidates the candidate's 24 bundles and 48 product contracts, compares that validated authority snapshot with the initial snapshot, freshly remeasures both fixed skill roots and every bundle/product hash against the just-validated snapshot, and finally rechecks the expected manifest, results, and raw bytes. Any change observed by that final guard aborts without replacing the pairing manifest. This is not a kernel multi-object compare-and-swap against non-cooperative writers: a writer that ignores the operation lock can still race after the last guarded read of a particular authority, including the post-guard micro-window before the operating-system replacement call.
+
+After canonical fixes are integrated and before any product run or blind grade, reseal with:
+
+```powershell
+python -B tests/evals/ultra-vs-promax/build_results.py --repo-root . --eval-root tests/evals/ultra-vs-promax --output tests/evals/ultra-vs-promax/results.json --reseal-execution-ready
+```
+
 After evidence review, prepare execution with:
 
 ```powershell
@@ -37,7 +47,7 @@ Task 17 and independent reviewers rebuild `results.json` with this exact command
 python -B tests/evals/ultra-vs-promax/build_results.py --repo-root . --eval-root tests/evals/ultra-vs-promax --output tests/evals/ultra-vs-promax/results.json
 ```
 
-The command revalidates the 24 pair bindings, all fresh-context receipts and global ID uniqueness, both product run metadata records per case, raw output SHA-256 values, artifact-tree SHA-256 values, and all three blind-grade files before atomically replacing `results.json`. On any error it exits non-zero and leaves the existing placeholder or prior derived result byte-for-byte unchanged.
+The command revalidates the 24 pair bindings, all fresh-context receipts and global ID uniqueness, both product run metadata records per case, raw output SHA-256 values, artifact-tree SHA-256 values, and all three blind-grade files before atomically replacing `results.json`. It accepts only the exact canonical `NOT_RUN_RESULTS` document or the exact canonical bytes of the same freshly derived result; boolean numeric coercions and noncanonical-but-equivalent JSON are rejected. On any error it exits non-zero and leaves the existing placeholder or prior derived result byte-for-byte unchanged.
 
 ## Evidence boundary
 

@@ -7,6 +7,7 @@ import copy
 from datetime import datetime
 import hashlib
 import importlib
+import importlib.util
 import json
 import math
 import os
@@ -16,7 +17,8 @@ import stat
 import statistics
 import sys
 import tempfile
-from typing import Mapping, Sequence
+from threading import Lock
+from typing import Callable, ContextManager, Mapping, Sequence
 
 
 BENCHMARK_ID = "crossframe-ultra-vs-promax-24-v1"
@@ -67,6 +69,8 @@ NOT_RUN_RESULTS = {
     ),
 }
 SHA256_HEX = frozenset("0123456789abcdef")
+_OPERATION_LOCK_FACTORY: Callable[[Path], ContextManager[None]] | None = None
+_OPERATION_LOCK_FACTORY_GUARD = Lock()
 
 
 class BenchmarkBuildError(ValueError):
@@ -1318,6 +1322,8 @@ def build_grader_packet(
 def _contract(
     repo: Path,
     evaluation: Path,
+    *,
+    manifest_override: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     scenarios = _require_list(
         _load_json(evaluation / "scenarios.json", context="scenarios.json"),
@@ -1327,12 +1333,19 @@ def _contract(
         _load_json(evaluation / "rubric.json", context="rubric.json"),
         context="rubric.json",
     )
-    manifest = _require_object(
-        _load_json(
-            evaluation / "pairing-manifest.json",
+    manifest = (
+        _require_object(
+            _load_json(
+                evaluation / "pairing-manifest.json",
+                context="pairing-manifest.json",
+            ),
             context="pairing-manifest.json",
-        ),
-        context="pairing-manifest.json",
+        )
+        if manifest_override is None
+        else _require_object(
+            manifest_override,
+            context="pairing-manifest.json override",
+        )
     )
     manifest_version = manifest.get("schema_version")
     if type(manifest_version) is not int or manifest_version not in {1, 2}:
@@ -2605,13 +2618,102 @@ def _derive_results(
     }
 
 
-def _atomic_write_json(path: Path, value: object) -> None:
-    payload = json.dumps(
+def _json_document_bytes(value: object) -> bytes:
+    return json.dumps(
         value,
         ensure_ascii=False,
         allow_nan=False,
         indent=2,
     ).encode("utf-8") + b"\n"
+
+
+def _strict_json_equal(actual: object, expected: object) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(actual) == set(expected) and all(
+            _strict_json_equal(actual[key], expected[key]) for key in expected
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _strict_json_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected, strict=True)
+        )
+    return actual == expected
+
+
+def _is_exact_json_document(
+    raw: bytes,
+    actual: object,
+    expected: object,
+) -> bool:
+    return (
+        _strict_json_equal(actual, expected)
+        and raw == _json_document_bytes(expected)
+    )
+
+
+def _load_operation_lock_factory() -> Callable[[Path], ContextManager[None]]:
+    global _OPERATION_LOCK_FACTORY
+    with _OPERATION_LOCK_FACTORY_GUARD:
+        if _OPERATION_LOCK_FACTORY is not None:
+            return _OPERATION_LOCK_FACTORY
+        source_repo = Path(__file__).resolve().parents[3]
+        scripts_root = source_repo / "skills" / "crossframe-ultra" / "scripts"
+        jsonio_path = scripts_root / "ultra_runtime" / "jsonio.py"
+        _reject_link_or_reparse(jsonio_path, context="Ultra JSON I/O lock primitive")
+        if not jsonio_path.is_file():
+            raise BenchmarkBuildError("Ultra JSON I/O lock primitive is missing")
+        scripts_text = str(scripts_root)
+        inserted = scripts_text not in sys.path
+        if inserted:
+            sys.path.insert(0, scripts_text)
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_crossframe_benchmark_ultra_jsonio",
+                jsonio_path,
+            )
+            if spec is None or spec.loader is None:
+                raise BenchmarkBuildError(
+                    "Ultra JSON I/O lock primitive could not be loaded"
+                )
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        except BenchmarkBuildError:
+            raise
+        except Exception as exc:
+            raise BenchmarkBuildError(
+                "Ultra JSON I/O lock primitive could not be loaded"
+            ) from exc
+        finally:
+            if inserted:
+                sys.path.remove(scripts_text)
+        module_path = Path(str(module.__file__)).resolve()
+        if module_path != jsonio_path.resolve():
+            raise BenchmarkBuildError(
+                "Ultra JSON I/O lock primitive is not from the builder skill root"
+            )
+        factory = getattr(module, "_exclusive_path_lock", None)
+        if not callable(factory):
+            raise BenchmarkBuildError("Ultra exclusive path lock is unavailable")
+        _OPERATION_LOCK_FACTORY = factory
+        return factory
+
+
+def _reseal_operation_lock() -> ContextManager[None]:
+    lock_path = Path(tempfile.gettempdir()) / (
+        "crossframe-ultra-vs-promax-reseal.lock"
+    )
+    return _load_operation_lock_factory()(lock_path)
+
+
+def _atomic_write_json(
+    path: Path,
+    value: object,
+    *,
+    before_replace: Callable[[], None] | None = None,
+) -> None:
+    payload = _json_document_bytes(value)
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
         mode="wb",
@@ -2626,6 +2728,8 @@ def _atomic_write_json(path: Path, value: object) -> None:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
+        if before_replace is not None:
+            before_replace()
         os.replace(temporary, path)
     except BaseException:
         try:
@@ -2634,19 +2738,25 @@ def _atomic_write_json(path: Path, value: object) -> None:
             raise
 
 
-def _require_not_run_results(evaluation: Path) -> None:
+def _require_not_run_results(evaluation: Path) -> bytes:
+    results_path = evaluation / "results.json"
+    _reject_link_or_reparse(results_path, context="results.json")
+    if not results_path.is_file():
+        raise BenchmarkBuildError(f"missing results.json: {results_path}")
+    raw = results_path.read_bytes()
     results = _require_object(
-        _load_json(evaluation / "results.json", context="results.json"),
+        _decode_json(raw, "results.json", BenchmarkBuildError),
         context="results.json",
     )
-    if results != NOT_RUN_RESULTS:
+    if not _is_exact_json_document(raw, results, NOT_RUN_RESULTS):
         raise BenchmarkBuildError(
             "state transition requires the exact not_run results placeholder; "
             "hand-authored aggregate data is prohibited"
         )
+    return raw
 
 
-def _require_pristine_raw_root(evaluation: Path) -> None:
+def _require_pristine_raw_root(evaluation: Path) -> bytes:
     raw_root = evaluation / "raw"
     _reject_link_or_reparse(raw_root, context="raw evidence root")
     if not raw_root.is_dir():
@@ -2663,6 +2773,7 @@ def _require_pristine_raw_root(evaluation: Path) -> None:
             "raw evidence root must be empty except for raw/.gitkeep; "
             "preexisting product or grade evidence is prohibited"
         )
+    return entries[0].read_bytes()
 
 
 def _measure_promax_skill_tree_sha256(repo: Path) -> str:
@@ -2764,6 +2875,285 @@ def _contract_with_manifest(
     }
 
 
+def _validated_execution_skill_tree_hashes(repo: Path) -> dict[str, str]:
+    measured_hashes = _measure_execution_skill_tree_sha256(repo)
+    return {
+        product: _require_sha256(
+            measured_hashes.get(product),
+            context=f"measured {product} skill tree SHA-256",
+        )
+        for product in PRODUCTS
+    }
+
+
+def _measure_reseal_authority_snapshot(
+    *,
+    evaluation: Path,
+    candidate: Mapping[str, object],
+    product_hashes: Mapping[str, str],
+    case_ids: Sequence[str],
+) -> dict[str, object]:
+    scenarios_path = evaluation / "scenarios.json"
+    rubric_path = evaluation / "rubric.json"
+    _reject_link_or_reparse(scenarios_path, context="scenarios.json")
+    _reject_link_or_reparse(rubric_path, context="rubric.json")
+    pairs = _require_list(candidate["pairs"], context="candidate pairs")
+    pairs_by_case: dict[str, dict[str, object]] = {}
+    for raw_pair in pairs:
+        pair = _require_object(raw_pair, context="candidate pair")
+        pairs_by_case[str(pair["case_id"])] = pair
+    product_contract_hashes: list[tuple[str, str, str]] = []
+    bundle_binding_hashes: list[tuple[str, tuple[tuple[str, object], ...]]] = []
+    bundle_tree_hashes: list[tuple[str, str]] = []
+    binding_fields = (
+        "request_sha256",
+        "evidence_cutoff_sha256",
+        "materials_tree_sha256",
+        "privacy_policy_sha256",
+        "product_packet_sha256",
+        "grader_base_packet_sha256",
+    )
+    for case_id in case_ids:
+        pair = pairs_by_case[case_id]
+        products = _require_object(
+            pair["products"],
+            context=f"candidate pair {case_id} products",
+        )
+        for product in PRODUCTS:
+            product_contract = _require_object(
+                products[product],
+                context=f"candidate pair {case_id} {product} contract",
+            )
+            product_contract_hashes.append(
+                (case_id, product, str(product_contract["skill_tree_sha256"]))
+            )
+        bindings = _require_object(
+            pair["bindings"],
+            context=f"candidate pair {case_id} bindings",
+        )
+        bundle_binding_hashes.append(
+            (case_id, tuple((field, bindings[field]) for field in binding_fields))
+        )
+        bundle_tree_hashes.append(
+            (case_id, tree_sha256(evaluation / "cases" / case_id))
+        )
+    return {
+        "scenarios_sha256": sha256_bytes(scenarios_path.read_bytes()),
+        "rubric_sha256": sha256_bytes(rubric_path.read_bytes()),
+        "candidate_sha256": sha256_bytes(_json_document_bytes(candidate)),
+        "root_hashes": tuple(
+            (product, product_hashes[product]) for product in PRODUCTS
+        ),
+        "product_contract_hashes": tuple(product_contract_hashes),
+        "bundle_binding_hashes": tuple(bundle_binding_hashes),
+        "bundle_tree_hashes": tuple(bundle_tree_hashes),
+    }
+
+
+def _validate_reseal_candidate(
+    *,
+    repo: Path,
+    evaluation: Path,
+    candidate: dict[str, object],
+    product_hashes: Mapping[str, str],
+) -> tuple[int, dict[str, object]]:
+    contract = _contract(
+        repo,
+        evaluation,
+        manifest_override=candidate,
+    )
+    manifest = _require_object(contract["manifest"], context="candidate manifest")
+    if contract["schema_version"] != 2 or manifest["status"] != "execution-ready":
+        raise BenchmarkBuildError(
+            "reseal candidate must remain an exact schema-v2 execution-ready manifest"
+        )
+    pairs = _require_list(contract["pairs"], context="candidate pairs")
+    product_contract_count = 0
+    for raw_pair in pairs:
+        pair = _require_object(raw_pair, context="candidate pair")
+        products = _require_object(
+            pair["products"],
+            context=f"candidate pair {pair['case_id']} products",
+        )
+        for product in PRODUCTS:
+            product_contract = _require_object(
+                products[product],
+                context=f"candidate pair {pair['case_id']} {product} contract",
+            )
+            if product_contract["skill_tree_sha256"] != product_hashes[product]:
+                raise BenchmarkBuildError(
+                    f"candidate pair {pair['case_id']} {product} skill tree "
+                    "hash differs from the guarded measurement"
+                )
+            product_contract_count += 1
+    if len(pairs) != 24 or product_contract_count != 48:
+        raise BenchmarkBuildError(
+            "reseal-execution-ready requires 24 pairs and 48 product contracts"
+        )
+    bundles = _validated_v2_bundles(
+        repo=repo,
+        evaluation=evaluation,
+        contract=contract,
+    )
+    if len(bundles) != 24:
+        raise BenchmarkBuildError(
+            "reseal-execution-ready requires exactly 24 validated bundles"
+        )
+    case_ids = tuple(
+        str(_require_object(raw_case, context="candidate scenario")["id"])
+        for raw_case in _require_list(
+            contract["scenarios"],
+            context="candidate scenarios",
+        )
+    )
+    snapshot = _measure_reseal_authority_snapshot(
+        evaluation=evaluation,
+        candidate=candidate,
+        product_hashes=product_hashes,
+        case_ids=case_ids,
+    )
+    return product_contract_count, snapshot
+
+
+def _require_unchanged_bytes(path: Path, expected: bytes, *, context: str) -> None:
+    _reject_link_or_reparse(path, context=context)
+    try:
+        current = path.read_bytes()
+    except OSError as exc:
+        raise BenchmarkBuildError(
+            f"{context} changed during reseal validation"
+        ) from exc
+    if current != expected:
+        raise BenchmarkBuildError(f"{context} changed during reseal validation")
+
+
+def reseal_execution_ready(
+    *,
+    repo_root: Path | str,
+    eval_root: Path | str,
+) -> dict[str, object]:
+    repo, evaluation = _resolve_roots(repo_root, eval_root)
+    with _reseal_operation_lock():
+        results_before = _require_not_run_results(evaluation)
+        raw_placeholder_before = _require_pristine_raw_root(evaluation)
+
+        manifest_path = evaluation / "pairing-manifest.json"
+        _reject_link_or_reparse(manifest_path, context="pairing-manifest.json")
+        manifest_before = manifest_path.read_bytes()
+        current_manifest = _require_object(
+            _decode_json(
+                manifest_before,
+                "pairing-manifest.json",
+                BenchmarkBuildError,
+            ),
+            context="pairing-manifest.json",
+        )
+        if (
+            current_manifest.get("schema_version") != 2
+            or current_manifest.get("status") != "execution-ready"
+        ):
+            raise BenchmarkBuildError(
+                "reseal-execution-ready requires the exact schema-v2 "
+                "execution-ready pairing manifest"
+            )
+
+        contract = _contract(repo, evaluation)
+        manifest = _require_object(contract["manifest"], context="manifest")
+        if (
+            contract["schema_version"] != 2
+            or manifest["status"] != "execution-ready"
+        ):
+            raise BenchmarkBuildError(
+                "reseal-execution-ready requires the exact schema-v2 "
+                "execution-ready pairing manifest"
+            )
+
+        product_hashes = _validated_execution_skill_tree_hashes(repo)
+        candidate = copy.deepcopy(manifest)
+        candidate_pairs = _require_list(
+            candidate["pairs"],
+            context="manifest pairs",
+        )
+        for raw_pair in candidate_pairs:
+            pair = _require_object(raw_pair, context="manifest pair")
+            products = _require_object(
+                pair["products"],
+                context=f"pair {pair['case_id']} products",
+            )
+            for product in PRODUCTS:
+                product_contract = _require_object(
+                    products[product],
+                    context=f"pair {pair['case_id']} {product} contract",
+                )
+                product_contract["skill_tree_sha256"] = product_hashes[product]
+        product_contract_count, initial_snapshot = _validate_reseal_candidate(
+            repo=repo,
+            evaluation=evaluation,
+            candidate=candidate,
+            product_hashes=product_hashes,
+        )
+
+        def final_guard() -> None:
+            final_count, validated_snapshot = _validate_reseal_candidate(
+                repo=repo,
+                evaluation=evaluation,
+                candidate=candidate,
+                product_hashes=product_hashes,
+            )
+            if (
+                final_count != product_contract_count
+                or validated_snapshot != initial_snapshot
+            ):
+                raise BenchmarkBuildError(
+                    "benchmark bundle/product authority changed during reseal validation"
+                )
+            boundary_hashes = _validated_execution_skill_tree_hashes(repo)
+            if tuple(
+                (product, boundary_hashes[product]) for product in PRODUCTS
+            ) != validated_snapshot["root_hashes"]:
+                raise BenchmarkBuildError(
+                    "fixed skill tree authority changed during reseal validation"
+                )
+            boundary_snapshot = _measure_reseal_authority_snapshot(
+                evaluation=evaluation,
+                candidate=candidate,
+                product_hashes=boundary_hashes,
+                case_ids=tuple(
+                    case_id
+                    for case_id, _hash in validated_snapshot["bundle_tree_hashes"]
+                ),
+            )
+            if boundary_snapshot != validated_snapshot:
+                raise BenchmarkBuildError(
+                    "benchmark bundle/product authority changed during reseal validation"
+                )
+            _require_unchanged_bytes(
+                manifest_path,
+                manifest_before,
+                context="pairing manifest",
+            )
+            if _require_not_run_results(evaluation) != results_before:
+                raise BenchmarkBuildError(
+                    "results.json changed during reseal validation"
+                )
+            if _require_pristine_raw_root(evaluation) != raw_placeholder_before:
+                raise BenchmarkBuildError(
+                    "raw/.gitkeep changed during reseal validation"
+                )
+
+        _atomic_write_json(
+            manifest_path,
+            candidate,
+            before_replace=final_guard,
+        )
+
+        return {
+            "operation": "reseal-execution-ready",
+            "state": "execution-ready",
+            "pair_count": 24,
+            "product_contract_count": product_contract_count,
+            "results_status": "not_run",
+        }
 
 
 def transition_state(
@@ -2973,8 +3363,16 @@ def build_results(
         evaluation=evaluation,
         output_path=output_path,
     )
+    _reject_link_or_reparse(output, context="results.json")
+    if not output.is_file():
+        raise BenchmarkBuildError(f"missing results.json: {output}")
+    existing_results_raw = output.read_bytes()
     existing_results = _require_object(
-        _load_json(output, context="results.json"),
+        _decode_json(
+            existing_results_raw,
+            "results.json",
+            BenchmarkBuildError,
+        ),
         context="results.json",
     )
     contract = _contract(repo, evaluation)
@@ -2983,7 +3381,18 @@ def build_results(
         evaluation=evaluation,
         contract=contract,
     )
-    if existing_results != NOT_RUN_RESULTS and existing_results != results:
+    if not (
+        _is_exact_json_document(
+            existing_results_raw,
+            existing_results,
+            NOT_RUN_RESULTS,
+        )
+        or _is_exact_json_document(
+            existing_results_raw,
+            existing_results,
+            results,
+        )
+    ):
         raise BenchmarkBuildError(
             "results.json contains hand-authored aggregate data or stale derived data"
         )
@@ -3511,10 +3920,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--eval-root", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument(
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument(
         "--transition-to",
         choices=("execution-ready", "ready-for-results-build"),
     )
+    operation.add_argument("--reseal-execution-ready", action="store_true")
     parser.add_argument("--promax-skill-tree-sha256")
     parser.add_argument("--ultra-skill-tree-sha256")
     return parser
@@ -3526,6 +3937,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo_root = Path(arguments.repo_root)
         eval_root = Path(arguments.eval_root)
         output = Path(arguments.output)
+        if arguments.reseal_execution_ready:
+            repo, evaluation = _resolve_roots(repo_root, eval_root)
+            _resolve_output_path(
+                repo=repo,
+                evaluation=evaluation,
+                output_path=output,
+            )
+            if (
+                arguments.promax_skill_tree_sha256 is not None
+                or arguments.ultra_skill_tree_sha256 is not None
+            ):
+                raise BenchmarkBuildError(
+                    "reseal-execution-ready does not accept caller-supplied "
+                    "skill tree hashes"
+                )
+            reseal = reseal_execution_ready(
+                repo_root=repo,
+                eval_root=evaluation,
+            )
+            print(json.dumps(reseal, ensure_ascii=False, sort_keys=True))
+            return 0
         if arguments.transition_to is not None:
             repo, evaluation = _resolve_roots(repo_root, eval_root)
             _resolve_output_path(
