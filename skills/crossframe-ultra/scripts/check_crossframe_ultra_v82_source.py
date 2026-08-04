@@ -1219,7 +1219,7 @@ def _walk_regular_tree(
         try:
             with _open_anchored_directory(directory, anchor=anchor) as opened:
                 with opened.scandir() as iterator:
-                    entries = []
+                    entries: list[tuple[str, os.stat_result]] = []
                     for entry in iterator:
                         entry_count += 1
                         if entry_count > max_entries:
@@ -1229,23 +1229,31 @@ def _walk_regular_tree(
                             )
                             entry_limit_hit = True
                             break
-                        entries.append(entry)
-                    entries.sort(key=lambda entry: entry.name)
+                        path = directory / entry.name
+                        relative = path.relative_to(root).as_posix()
+                        try:
+                            metadata = entry.stat(follow_symlinks=False)
+                        except (OSError, ValueError) as error:
+                            errors.append(
+                                f"cannot inspect source tree entry {relative}: {error}"
+                            )
+                            continue
+                        entries.append((entry.name, metadata))
+                    entries.sort(key=lambda item: item[0])
         except (OSError, ValueError) as error:
             errors.append(f"cannot scan source tree {directory}: {error}")
             continue
-        for entry in entries:
-            path = directory / entry.name
+        for entry_name, metadata in entries:
+            path = directory / entry_name
             relative = path.relative_to(root).as_posix()
             depth = len(PurePosixPath(relative).parts)
             try:
-                metadata = entry.stat(follow_symlinks=False)
                 attributes = getattr(metadata, "st_file_attributes", 0)
                 reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
                 if stat.S_ISLNK(metadata.st_mode) or attributes & reparse_flag:
                     errors.append(f"source tree contains symlink or reparse point: {relative}")
                     continue
-                if entry.is_dir(follow_symlinks=False):
+                if stat.S_ISDIR(metadata.st_mode):
                     if depth > max_depth:
                         errors.append(f"source tree depth exceeds safety limit ({max_depth}): {relative}")
                         continue
@@ -1253,7 +1261,7 @@ def _walk_regular_tree(
                         errors.append(f"source tree contains unknown directory: {relative}")
                         continue
                     pending.append(path)
-                elif entry.is_file(follow_symlinks=False):
+                elif stat.S_ISREG(metadata.st_mode):
                     if depth > max_depth:
                         errors.append(f"source tree depth exceeds safety limit ({max_depth}): {relative}")
                         continue

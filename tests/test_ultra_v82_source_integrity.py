@@ -215,6 +215,63 @@ def test_source_tree_total_budget_rejects_before_adding_the_excess_file(
     assert any("total" in error.lower() and "limit" in error.lower() for error in errors)
 
 
+def test_tree_walk_consumes_direntry_metadata_before_scan_handle_closes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    payload = tree / "record.md"
+    payload.write_bytes(b"authority")
+    state = {"closed": False}
+
+    class LifetimeBoundEntry:
+        name = payload.name
+
+        def _require_open(self) -> None:
+            if state["closed"]:
+                raise OSError(9, "Bad file descriptor")
+
+        def stat(self, *, follow_symlinks: bool = True):
+            self._require_open()
+            return payload.stat(follow_symlinks=follow_symlinks)
+
+        def is_dir(self, *, follow_symlinks: bool = True) -> bool:
+            self._require_open()
+            return payload.is_dir()
+
+        def is_file(self, *, follow_symlinks: bool = True) -> bool:
+            self._require_open()
+            return payload.is_file()
+
+    class LifetimeBoundScandir:
+        def __enter__(self):
+            return iter((LifetimeBoundEntry(),))
+
+        def __exit__(self, _error_type, _error, _traceback) -> None:
+            state["closed"] = True
+
+    class LifetimeBoundDirectory:
+        def scandir(self) -> LifetimeBoundScandir:
+            return LifetimeBoundScandir()
+
+    @contextmanager
+    def fake_open_anchored_directory(*_args, **_kwargs):
+        yield LifetimeBoundDirectory()
+
+    monkeypatch.setattr(
+        checker,
+        "_open_anchored_directory",
+        fake_open_anchored_directory,
+    )
+
+    files, errors = checker._walk_regular_tree(tree, anchor=tree)
+
+    assert state["closed"] is True
+    assert files == {"record.md": b"authority"}
+    assert errors == []
+
+
 def test_authority_tree_rejects_unknown_directory_without_descending(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
