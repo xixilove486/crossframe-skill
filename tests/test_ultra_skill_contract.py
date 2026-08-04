@@ -128,6 +128,18 @@ def test_activation_contract_rejects_near_misses_and_adjacent_runtime_routes() -
     assert "暂停确认" in skill
 
 
+def test_multi_runtime_routing_separates_comparison_from_choice_confirmation() -> None:
+    skill = _required_text(SKILL_PATH)
+    marker = "<!-- ULTRA-MULTI-RUNTIME-CONFIRM -->"
+    assert skill.count(marker) == 1
+    contract = skill.split(marker, 1)[1].split("\n\n", 1)[0]
+    assert "若用户明确要求比较 Ultra 与另一个 runtime" in contract
+    assert "先分别独立运行 Ultra 和被比较 runtime，再比较各自结果" in contract
+    assert "同时明确点名多个 runtime 但未提出比较" in contract
+    assert "暂停确认本次选择哪个 runtime" in contract
+    assert "两种分支互斥" in contract
+
+
 def test_controller_is_v82_only_fixed_root_and_has_no_early_final_escape() -> None:
     skill = _required_text(SKILL_PATH)
     for marker in (

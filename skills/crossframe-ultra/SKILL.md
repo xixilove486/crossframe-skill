@@ -33,7 +33,7 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 `crossframe-suite` 不得自动升级到 Ultra。<!-- ULTRA-NO-REVIEW-CHAIN --> Ultra 不串联 `crossframe-review`。<!-- ULTRA-NO-FALLBACK --> Ultra 失败、阻断或材料不足时不得回退到 Max 或 ProMax，也不得改成交谈短答。
 
 <!-- ULTRA-MULTI-RUNTIME-CONFIRM -->
-若同一请求同时明确点名多个 runtime，暂停确认要分别运行哪些 runtime；不要用优先级吞掉用户意图。
+若用户明确要求比较 Ultra 与另一个 runtime，先分别独立运行 Ultra 和被比较 runtime，再比较各自结果；若同一请求同时明确点名多个 runtime 但未提出比较，暂停确认本次选择哪个 runtime。两种分支互斥；不要用优先级吞掉用户意图，也不要把并列点名擅自改写为比较。
 
 宿主已经加载本 skill 时，不要再次要求用户重复名称；直接执行 U0，并记录显式路由证据。
 
