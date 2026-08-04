@@ -255,7 +255,7 @@ def u1_prerequisite_context(tmp_path_factory):
     }
 
 
-def _issue_u1_authority(store, context):
+def _issue_u1_authority(store, context, *, include_recovery_snapshot=False):
     import ultra_runtime.source_integrity as source_integrity
 
     u0 = store.complete("U0", artifact_hashes=(store.run_contract_artifact_sha256,))
@@ -320,7 +320,45 @@ def _issue_u1_authority(store, context):
         expected_source_lock_sha256=lock_seal.artifact_sha256,
         expected_parent_event_sha256=u0["event_sha256"],
     )
-    return source_integrity.validate_u1_authority(lock_seal, audit)
+    authority = source_integrity.validate_u1_authority(lock_seal, audit)
+    if not include_recovery_snapshot:
+        return authority
+    source_coverage = {
+        "artifact_type": "crossframe.ultra.v82.u1-source-coverage",
+        "run_id": store.run_id,
+        "version_binding": _binding(),
+        "parent_event_sha256": u0["event_sha256"],
+        "source_lock_sha256": lock_seal.artifact_sha256,
+        "receipt_sha256s": [receipt.receipt_sha256 for receipt in receipts],
+        "read_event_sha256s": [
+            str(event["read_event_sha256"]) for event in events
+        ],
+    }
+    read_plan = source_integrity.build_read_plan(
+        manifest,
+        promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+        source_manifest_sha256=manifest.sha256,
+        source_lock_sha256=lock_seal.artifact_sha256,
+        parent_event_sha256=u0["event_sha256"],
+    )
+    assert hashlib.sha256(_canonical(source_coverage)).hexdigest() == (
+        audit.artifact_sha256
+    )
+    return {
+        "authority": authority,
+        "source_lock": copy.deepcopy(lock),
+        "source_coverage": source_coverage,
+        "read_plan": read_plan,
+        "read_events": tuple(copy.deepcopy(event) for event in events),
+    }
+
+
+def _issue_u1_recovery_snapshot(store, context):
+    return _issue_u1_authority(
+        store,
+        context,
+        include_recovery_snapshot=True,
+    )
 
 
 @pytest.fixture(scope="module")

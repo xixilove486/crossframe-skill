@@ -1521,14 +1521,114 @@ class PhaseStore:
             self._terminal = True
         return appended
 
+    def _validated_recovered_u1_authority(
+        self,
+        value: object,
+        *,
+        parent_event_sha256: str,
+        output_artifact_hashes: tuple[str, ...],
+    ) -> tuple[object, dict[str, object]]:
+        from .source_integrity import U1AuthoritySeal, verify_u1_authority_seal
+
+        if not isinstance(value, U1AuthoritySeal):
+            raise PhaseIntegrityError("recovered U1 authority is not issuer-produced")
+        try:
+            verified = verify_u1_authority_seal(value)
+        except Exception as error:
+            raise PhaseIntegrityError(
+                "recovered U1 authority issuer integrity is invalid"
+            ) from error
+        expected = {
+            "run_id": self.run_id,
+            "version_binding": self._version_binding,
+            "parent_event_sha256": parent_event_sha256,
+            "evidence_cutoff": self._evidence_cutoff,
+            "run_mode": self.run_contract["run_mode"],
+            "source_manifest_sha256": self._source_sha256,
+            "input_snapshot_sha256": self._input_snapshot_sha256,
+            "input_artifact_hashes": self._input_artifact_hashes,
+            "input_root": self._run_input_root,
+        }
+        if (
+            any(
+                getattr(verified, field, None) != expected_value
+                for field, expected_value in expected.items()
+            )
+            or not verified.authorizes_phase
+            or verified.free_space_status != "available"
+            or self.run_contract["request_sha256"]
+            not in verified.input_artifact_hashes
+            or output_artifact_hashes
+            != (
+                verified.source_lock_artifact_sha256,
+                verified.read_coverage_artifact_sha256,
+            )
+        ):
+            raise PhaseIntegrityError("recovered U1 authority differs from the run")
+        snapshot = {
+            "run_id": verified.run_id,
+            "version_binding": copy.deepcopy(verified.version_binding),
+            "parent_event_sha256": verified.parent_event_sha256,
+            "evidence_cutoff": verified.evidence_cutoff,
+            "run_mode": verified.run_mode,
+            "source_release_id": verified.source_release_id,
+            "source_manifest_sha256": verified.source_manifest_sha256,
+            "release_manifest_sha256": verified.release_manifest_sha256,
+            "compatibility_matrix_sha256": verified.compatibility_matrix_sha256,
+            "knowledge_report_sha256": verified.knowledge_report_sha256,
+            "skill_tree_sha256": verified.skill_tree_sha256,
+            "free_space_reserve_bytes": verified.free_space_reserve_bytes,
+            "free_space_status": verified.free_space_status,
+            "input_snapshot_sha256": verified.input_snapshot_sha256,
+            "input_artifact_hashes": list(verified.input_artifact_hashes),
+            "inputs": copy.deepcopy(list(verified.inputs)),
+            "input_root": verified.input_root,
+            "acl_status": verified.acl_status,
+            "source_lock_artifact_sha256": verified.source_lock_artifact_sha256,
+            "read_coverage_artifact_sha256": verified.read_coverage_artifact_sha256,
+            "authorizes_phase": verified.authorizes_phase,
+        }
+        return copy.deepcopy(verified), snapshot
+
     def _restore_validated_recovery_events(
         self,
         events: Sequence[Mapping[str, object]],
+        *,
+        u1_authority: object | None = None,
     ) -> None:
-        """Restore an already disk-validated chain without reissuing U1-U3 seals."""
+        """Restore a disk-validated chain without replaying completed phases."""
 
         if self._events:
             raise PhaseIntegrityError("recovery restore requires a fresh PhaseStore")
+        u1_event = next(
+            (
+                event
+                for event in events
+                if event.get("phase_id") == "U1" and event.get("status") == "complete"
+            ),
+            None,
+        )
+        if u1_authority is not None and u1_event is None:
+            raise PhaseIntegrityError("recovered U1 authority has no completed event")
+        if u1_event is not None and u1_authority is None:
+            raise PhaseIntegrityError("completed U1 recovery requires sealed authority")
+        recovered_u1 = None
+        accepted_u1 = None
+        if u1_event is not None:
+            outputs = u1_event.get("output_artifact_hashes")
+            parent = u1_event.get("parent_event_sha256")
+            if not isinstance(outputs, list) or not isinstance(parent, str):
+                raise PhaseIntegrityError("recovered U1 event authority is invalid")
+            validated_u1_outputs = _validate_hashes(
+                outputs,
+                field="output_artifact_hashes",
+            )
+            _validate_phase_output_contract("U1", validated_u1_outputs)
+            recovered_u1, accepted_u1 = self._validated_recovered_u1_authority(
+                u1_authority,
+                parent_event_sha256=parent,
+                output_artifact_hashes=validated_u1_outputs,
+            )
         for event in events:
             snapshot = copy.deepcopy(dict(event))
             phase_id = snapshot.get("phase_id")
@@ -1581,6 +1681,16 @@ class PhaseStore:
             )
             _validate_phase_output_contract(str(phase_id), validated_outputs)
             self._append_event(snapshot)
+            if (
+                phase_id == "U1"
+                and accepted_u1 is not None
+                and recovered_u1 is not None
+            ):
+                self._u1_coverage_sha256 = str(
+                    accepted_u1["read_coverage_artifact_sha256"]
+                )
+                self._u1_authority = recovered_u1
+                self._u1_snapshot = _freeze(accepted_u1)
 
     def append_evidence(self, entry: Mapping[str, object]) -> dict[str, object]:
         if self._terminal:

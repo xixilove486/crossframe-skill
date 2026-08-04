@@ -55,6 +55,10 @@ _MIGRATION_SCHEMA_ID = "crossframe.ultra.v82.run-migration"
 _AUTHORITY_FILENAME = "run-authority.json"
 _EVENTS_FILENAME = "phase-events.jsonl"
 _CHECKPOINT_LOCK_FILENAME = ".checkpoint.lock"
+_U1_SOURCE_LOCK_PATH = Path("recovery/u1-authority/source-lock.json")
+_U1_SOURCE_COVERAGE_PATH = Path("recovery/u1-authority/source-coverage.json")
+_U1_READ_PLAN_PATH = Path("recovery/u1-authority/read-plan.json")
+_U1_READ_EVENTS_PATH = Path("artifacts/U00-U03-evidence/ultra-read-events.jsonl")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}")
 _AUTHORITY_FIELDS = frozenset(
@@ -717,6 +721,224 @@ def _status_if_present(layout: RunLayout) -> RunStatusRecord | None:
         raise RecoveryIntegrityError("run status authority is invalid") from error
 
 
+def _u1_recovery_read_plan(
+    phase_store: PhaseStore,
+    *,
+    parent_event_sha256: str,
+    source_lock_sha256: str,
+) -> dict[str, object]:
+    from .source_integrity import (
+        EXPECTED_SOURCE_UNIT_COUNT,
+        build_read_plan,
+        load_source_manifest,
+    )
+
+    try:
+        accepted = phase_store._accepted_u1_snapshot()
+        if (
+            accepted.get("parent_event_sha256") != parent_event_sha256
+            or accepted.get("source_lock_artifact_sha256") != source_lock_sha256
+        ):
+            raise RecoveryIntegrityError(
+                "U1 checkpoint differs from accepted source authority"
+            )
+        manifest = load_source_manifest(
+            phase_store._source_repository
+            / "skills"
+            / "crossframe-ultra"
+            / "references"
+            / "source-manifest.json",
+            expected_sha256=str(accepted["source_manifest_sha256"]),
+        )
+        plan = build_read_plan(
+            manifest,
+            promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+            source_manifest_sha256=manifest.sha256,
+            source_lock_sha256=source_lock_sha256,
+            parent_event_sha256=parent_event_sha256,
+        )
+    except RecoveryIntegrityError:
+        raise
+    except Exception as error:
+        raise RecoveryIntegrityError(
+            "U1 recovery read plan cannot be reconstructed"
+        ) from error
+    if (
+        plan.get("source_unit_count") != EXPECTED_SOURCE_UNIT_COUNT
+        or not isinstance(plan.get("source_unit_ids"), list)
+        or len(plan["source_unit_ids"]) != EXPECTED_SOURCE_UNIT_COUNT
+        or not isinstance(plan.get("source_units"), list)
+        or len(plan["source_units"]) != EXPECTED_SOURCE_UNIT_COUNT
+    ):
+        raise RecoveryIntegrityError(
+            "U1 recovery read plan does not cover exactly 4,753 source units"
+        )
+    return plan
+
+
+def _validated_u1_recovery_authority(
+    layout: RunLayout,
+    authority: Mapping[str, object],
+    events: Sequence[Mapping[str, object]],
+    checkpoints: Sequence[Mapping[str, object]],
+    store: PhaseStore,
+) -> object | None:
+    u1_event = next(
+        (
+            event
+            for event in events
+            if event.get("phase_id") == "U1" and event.get("status") == "complete"
+        ),
+        None,
+    )
+    if u1_event is None:
+        return None
+    u1_checkpoint = next(
+        (
+            checkpoint
+            for checkpoint in checkpoints
+            if checkpoint.get("boundary_kind") == "phase"
+            and checkpoint.get("phase_id") == "U1"
+        ),
+        None,
+    )
+    if u1_checkpoint is None:
+        raise RecoveryIntegrityError("U1 recovery checkpoint is unavailable")
+    refs = u1_checkpoint.get("artifact_hashes")
+    outputs = u1_event.get("output_artifact_hashes")
+    expected_paths = (
+        _U1_SOURCE_LOCK_PATH.as_posix(),
+        _U1_SOURCE_COVERAGE_PATH.as_posix(),
+    )
+    if (
+        not isinstance(refs, list)
+        or len(refs) != 2
+        or tuple(
+            item.get("path") if isinstance(item, Mapping) else None for item in refs
+        )
+        != expected_paths
+        or not isinstance(outputs, list)
+        or len(outputs) != 2
+        or [
+            item.get("sha256") if isinstance(item, Mapping) else None
+            for item in refs
+        ]
+        != outputs
+        or u1_checkpoint.get("phase_event_sha256")
+        != u1_event.get("event_sha256")
+    ):
+        raise RecoveryIntegrityError("U1 checkpoint authority paths are invalid")
+
+    source_lock_path = layout.run_dir / _U1_SOURCE_LOCK_PATH
+    source_coverage_path = layout.run_dir / _U1_SOURCE_COVERAGE_PATH
+    read_plan_path = layout.run_dir / _U1_READ_PLAN_PATH
+    read_events_path = layout.run_dir / _U1_READ_EVENTS_PATH
+    try:
+        for path in (
+            source_lock_path,
+            source_coverage_path,
+            read_plan_path,
+            read_events_path,
+        ):
+            assert_safe_descendant(layout.root, path)
+            path.relative_to(layout.run_dir)
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError("U1 recovery authority path is invalid") from error
+
+    try:
+        source_lock = _read_canonical_object(source_lock_path)
+    except RecoveryIntegrityError as error:
+        raise RecoveryIntegrityError("U1 source lock is unavailable or invalid") from error
+    try:
+        read_plan = _read_canonical_object(read_plan_path)
+    except RecoveryIntegrityError as error:
+        raise RecoveryIntegrityError("U1 read plan is unavailable or invalid") from error
+    try:
+        source_coverage = _read_canonical_object(source_coverage_path)
+    except RecoveryIntegrityError as error:
+        raise RecoveryIntegrityError(
+            "U1 source coverage is unavailable or invalid"
+        ) from error
+    raw_input_refs = authority.get("input_refs")
+    if not isinstance(raw_input_refs, list):
+        raise RecoveryIntegrityError("U1 input authority is invalid")
+    recovery_inputs: list[dict[str, str]] = []
+    for item in raw_input_refs:
+        if not isinstance(item, Mapping):
+            raise RecoveryIntegrityError("U1 recovery input authority is invalid")
+        relative = Path(str(item.get("path")))
+        try:
+            input_relative = relative.relative_to("input")
+        except ValueError as error:
+            raise RecoveryIntegrityError(
+                "U1 recovery input is outside the fixed input root"
+            ) from error
+        recovery_inputs.append(
+            {
+                "path": input_relative.as_posix(),
+                "sha256": str(item.get("sha256")),
+                "media_type": str(item.get("media_type")),
+            }
+        )
+    if [item["sha256"] for item in recovery_inputs] != authority[
+        "input_artifact_hashes"
+    ]:
+        raise RecoveryIntegrityError("U1 locked inputs differ from recovery authority")
+
+    try:
+        raw_read_events = read_events_path.read_bytes()
+    except OSError as error:
+        raise RecoveryIntegrityError("U1 read events are unavailable") from error
+    if not raw_read_events or not raw_read_events.endswith(b"\n"):
+        raise RecoveryIntegrityError("U1 read event journal is incomplete")
+    read_events: list[dict[str, object]] = []
+    for index, line in enumerate(raw_read_events.splitlines(keepends=True)):
+        try:
+            event = load_json_object_bytes(
+                line,
+                source=f"{read_events_path}:{index + 1}",
+            )
+        except (TypeError, ValueError) as error:
+            raise RecoveryIntegrityError("U1 read event journal is invalid") from error
+        if line != canonical_json_bytes(event):
+            raise RecoveryIntegrityError("U1 read event journal is not canonical")
+        read_events.append(event)
+
+    from . import source_integrity
+
+    validator = getattr(source_integrity, "_validate_persisted_u1_authority", None)
+    if not callable(validator):
+        raise RecoveryIntegrityError("U1 persisted authority validator is unavailable")
+    try:
+        manifest = source_integrity.load_source_manifest(
+            store._source_repository
+            / "skills"
+            / "crossframe-ultra"
+            / "references"
+            / "source-manifest.json",
+            expected_sha256=str(authority["source_sha256"]),
+        )
+        return validator(
+            repo=store._source_repository,
+            run_layout=layout,
+            manifest=manifest,
+            source_lock=source_lock,
+            read_plan=read_plan,
+            coverage=source_coverage,
+            read_events=tuple(read_events),
+            expected_run_id=store.run_id,
+            expected_run_mode=str(store.run_contract["run_mode"]),
+            expected_version_binding=authority["version_binding"],
+            expected_parent_event_sha256=str(u1_event["parent_event_sha256"]),
+            expected_evidence_cutoff=str(authority["evidence_cutoff"]),
+            expected_inputs=tuple(recovery_inputs),
+            expected_source_lock_sha256=str(outputs[0]),
+            expected_read_coverage_sha256=str(outputs[1]),
+        )
+    except Exception as error:
+        raise RecoveryIntegrityError("U1 persisted authority validation failed") from error
+
+
 def _restore_phase_store(
     layout: RunLayout,
     authority: Mapping[str, object],
@@ -837,7 +1059,17 @@ def _restore_phase_store(
                 or store.evidence_sha256 not in outputs
             ):
                 raise RecoveryIntegrityError("restored U3 evidence hash differs")
-        store._restore_validated_recovery_events(events)
+        u1_authority = _validated_u1_recovery_authority(
+            layout,
+            authority,
+            events,
+            checkpoints,
+            store,
+        )
+        store._restore_validated_recovery_events(
+            events,
+            u1_authority=u1_authority,
+        )
     except RecoveryIntegrityError:
         raise
     except Exception as error:
@@ -868,6 +1100,7 @@ def create_checkpoint(
         raise RecoveryCompatibilityError("new checkpoints require exact current versions")
     _validate_event_chain(events, authority, compatibility=compatibility)
     refs = _artifact_refs(layout, artifact_paths)
+    u1_read_plan: dict[str, object] | None = None
     if boundary_kind == "phase":
         phase_id = phase_store.current_phase
         if (
@@ -879,6 +1112,19 @@ def create_checkpoint(
             != events[-1].get("output_artifact_hashes")
         ):
             raise RecoveryIntegrityError("phase checkpoint boundary differs from PhaseStore")
+        if phase_id == "U1":
+            if tuple(item["path"] for item in refs) != (
+                _U1_SOURCE_LOCK_PATH.as_posix(),
+                _U1_SOURCE_COVERAGE_PATH.as_posix(),
+            ):
+                raise RecoveryIntegrityError(
+                    "U1 checkpoint must use the fixed recovery authority paths"
+                )
+            u1_read_plan = _u1_recovery_read_plan(
+                phase_store,
+                parent_event_sha256=str(events[-1]["parent_event_sha256"]),
+                source_lock_sha256=refs[0]["sha256"],
+            )
     elif boundary_kind == "article-packet":
         phase_id = "U11"
         if (
@@ -936,6 +1182,10 @@ def create_checkpoint(
         else:
             _write_immutable(authority_path, authority)
         _sync_events(events_path, events)
+        if u1_read_plan is not None:
+            read_plan_path = layout.run_dir / _U1_READ_PLAN_PATH
+            assert_safe_descendant(layout.root, read_plan_path)
+            _write_immutable(read_plan_path, u1_read_plan)
         existing, _, _, _ = _load_checkpoints_unlocked(layout)
         slot = _checkpoint_slot(checkpoint)
         if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
@@ -996,6 +1246,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
     if status.status in {"cancelled", "failed", "complete"}:
         raise RecoveryStateError(f"{status.status} run is terminal and cannot resume")
     checkpoint = _select_latest(checkpoints)
+    phase_store = _restore_phase_store(layout, authority, events, checkpoints)
     if status.status == "running":
         resumed = status
     else:
@@ -1017,7 +1268,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
         compatibility_result="resume",
         checkpoint=checkpoint,
         status=resumed,
-        phase_store=_restore_phase_store(layout, authority, events, checkpoints),
+        phase_store=phase_store,
     )
 
 
