@@ -232,7 +232,7 @@ def _check_cancelled(layout: RunLayout) -> None:
     try:
         from . import recovery
 
-        authority, compatibility = recovery._validate_authority(layout)
+        authority, compatibility, _ = recovery._validate_authority_record(layout)
         events = recovery._read_events(
             layout,
             authority,
@@ -244,6 +244,12 @@ def _check_cancelled(layout: RunLayout) -> None:
         ) from error
     if events and events[-1].get("status") == "cancelled":
         raise CancelledRunError("cancelled run cannot acquire or heartbeat a lease")
+    try:
+        recovery._validate_authority(layout)
+    except Exception as error:
+        raise LeaseNeedsAttentionError(
+            "phase event authority is corrupt; lease acquisition needs attention"
+        ) from error
 
 
 def _new_lease(layout: RunLayout, now: datetime, ttl: timedelta) -> Lease:

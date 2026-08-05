@@ -168,17 +168,42 @@ def _establish_u0_u3(
     *,
     started_at: datetime,
 ) -> state_machine.PhaseStore:
-    request_path = layout.input_dir / "closed-organization-case.json"
-    request_bytes = jsonio.canonical_json_bytes(CLOSED_ORGANIZATION_CASE)
+    request_path = layout.input_dir / "request.bin"
+    metadata_path = layout.input_dir / "request-metadata.json"
+    request_bytes = jsonio.canonical_json_bytes(
+        {
+            "analysis_kind": "closed-input",
+            "claim": CLOSED_ORGANIZATION_CASE["order_2"]["condition"],
+            "material": json.dumps(
+                CLOSED_ORGANIZATION_CASE,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        }
+    )
     jsonio.atomic_write_bytes(request_path, request_bytes)
+    jsonio.atomic_write_json(
+        metadata_path,
+        {
+            "request_sha256": jsonio.sha256_bytes(request_bytes),
+            "request_size": len(request_bytes),
+        },
+    )
     layout.logs_dir.mkdir(parents=True, exist_ok=True)
     request_sha256 = jsonio.sha256_bytes(request_bytes)
+    input_paths = tuple(sorted((request_path, metadata_path), key=lambda path: path.name))
     locked_inputs = [
         {
-            "path": request_path.name,
-            "sha256": request_sha256,
-            "media_type": "application/json",
+            "path": path.name,
+            "sha256": _sha256_file(path),
+            "media_type": (
+                "application/json"
+                if path.suffix.casefold() == ".json"
+                else "application/octet-stream"
+            ),
         }
+        for path in input_paths
     ]
     input_snapshot_sha256 = jsonio.sha256_bytes(
         jsonio.canonical_json_bytes(locked_inputs)
@@ -207,12 +232,18 @@ def _establish_u0_u3(
             + ", ".join(measurement.missing)
         )
 
-    status.RunStatusStore(layout).create(started_at)
+    created = status.RunStatusStore(layout).create(started_at)
+    materialization.seal_request_intake_authority(
+        layout,
+        request_sha256=request_sha256,
+        request_size=len(request_bytes),
+        created_at=created.created_at,
+    )
     store = state_machine.PhaseStore(
         run_id=layout.run_dir.name,
         version_binding=binding,
         source_sha256=manifest.sha256,
-        input_artifact_hashes=(request_sha256,),
+        input_artifact_hashes=tuple(item["sha256"] for item in locked_inputs),
         input_snapshot_sha256=input_snapshot_sha256,
         evidence_cutoff=evidence_cutoff,
         now=started_at,

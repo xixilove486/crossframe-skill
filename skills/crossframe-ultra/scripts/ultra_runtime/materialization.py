@@ -3231,7 +3231,11 @@ def materialize_complete_run(
         publication_paths,
         recover_publish_transaction,
     )
-    from .locks import acquire_run_lease, release_run_lease
+    from .locks import (
+        LeaseNeedsAttentionError,
+        acquire_run_lease,
+        release_run_lease,
+    )
     from .status import RunStatusStore
 
     status_store = RunStatusStore(layout)
@@ -3263,7 +3267,24 @@ def materialize_complete_run(
         return changed
 
     try:
-        lease = acquire_run_lease(layout, now, timedelta(minutes=30))
+        try:
+            lease = acquire_run_lease(layout, now, timedelta(minutes=30))
+        except LeaseNeedsAttentionError as error:
+            input_drift_error = getattr(recovery, "_RecoveryInputDriftError", None)
+            if (
+                not isinstance(input_drift_error, type)
+                or not isinstance(error.__cause__, input_drift_error)
+                or not _request_intake_authority_path(layout).is_file()
+            ):
+                raise
+            current = status_store.read()
+            checkpoints_dir = layout.recovery_dir / "checkpoints"
+            if not checkpoints_dir.is_dir() or not any(
+                path.is_file() for path in checkpoints_dir.glob("*.json")
+            ):
+                raise
+            _foundation_input_inventory(layout, status_record=current)
+            raise
         current = status_store.read()
         checkpoints_dir = layout.recovery_dir / "checkpoints"
         if checkpoints_dir.is_dir() and any(

@@ -131,16 +131,6 @@ def real_seam_result(
     state_machine = _module("state_machine")
     status = _module("status")
     context = state_fixtures.u1_prerequisite_context.__wrapped__(tmp_path_factory)
-    release_snapshot_path = context["repo"].parent / "release-manifest.json"
-    jsonio.atomic_write_bytes(
-        context["repo"]
-        / "skills/crossframe-ultra/references/release-manifest.json",
-        release_snapshot_path.read_bytes(),
-    )
-    jsonio.atomic_write_bytes(
-        context["repo"] / "scripts/check_crossframe_ultra_artifacts.py",
-        (REPO_ROOT / "scripts/check_crossframe_ultra_artifacts.py").read_bytes(),
-    )
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(state_machine, "_SOURCE_REPOSITORY", context["repo"])
     layout = context["run_layout"]
@@ -250,6 +240,12 @@ def real_seam_result(
 
     statuses = status.RunStatusStore(layout)
     created = statuses.create(now + timedelta(seconds=4))
+    materialization.seal_request_intake_authority(
+        layout,
+        request_sha256=state_fixtures.REQUEST_SHA256,
+        request_size=len(state_fixtures.REQUEST_BYTES),
+        created_at=created.created_at,
+    )
     running = statuses.transition(created, "running", now + timedelta(seconds=5))
     statuses.transition(running, "interrupted", now + timedelta(seconds=6))
 
