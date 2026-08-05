@@ -364,7 +364,7 @@ ProMax 自带生成—反证—校验—修复闭环，最终回答只在工件�
 
 ### Ultra v8.2 参考运行时与发布边界
 
-Ultra 是 exact-only 的固定 v8.2 参考运行时；ProMax 保持 v8.0。生产运行根固定为 `E:\世界模型\output\crossframe-ultra`，测试运行根固定为 `E:\世界模型\output\crossframe-ultra-tests`，官方文章路径固定为 `delivery\CrossFrame-Ultra-完整文章.md`。
+当前仓库中的 Ultra 为测试版本，24 案例对比与前瞻验证完成前不视为正式晋级。Ultra 是 exact-only 的固定 v8.2 参考运行时；ProMax 保持 v8.0。生产运行根固定为 `E:\世界模型\output\crossframe-ultra`，测试运行根固定为 `E:\世界模型\output\crossframe-ultra-tests`，官方文章路径固定为 `delivery\CrossFrame-Ultra-完整文章.md`。
 
 Ultra 不自行演化理论；它只执行并验证被冻结的参考运行时。预测机制验证不等于前瞻准确率验证，任何前瞻准确率主张都需要独立、面向未来的证据。
 

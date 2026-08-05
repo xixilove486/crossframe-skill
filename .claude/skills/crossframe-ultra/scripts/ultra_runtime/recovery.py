@@ -1446,18 +1446,32 @@ def cancel_run(
     _require_utc(now, "now")
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("cancellation reason must be non-empty")
-    _, authority, compatibility, events = _load_checkpoints_unlocked(layout)
+    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
     if compatibility == "reject":
         raise RecoveryCompatibilityError("unsupported run cannot be cancelled")
     status = _status_if_present(layout)
     if status is None:
         raise RecoveryStateError("run status authority is unavailable")
+    if status.status in {"failed", "complete"}:
+        raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
+    if not checkpoints and not authority and not events:
+        if status.current_phase != "U0" or status.last_complete_phase is not None:
+            raise RecoveryIntegrityError("status-only cancellation requires pre-U0 authority")
+        if status.status == "cancelled":
+            return status
+        try:
+            return RunStatusStore(layout).transition(
+                status,
+                "cancelled",
+                now,
+                reason=reason.strip(),
+            )
+        except Exception as error:
+            raise RecoveryStateError("run status cancellation transition failed") from error
     if status.status == "cancelled":
         if events[-1].get("status") != "cancelled":
             raise RecoveryIntegrityError("cancelled status lacks terminal phase authority")
         return status
-    if status.status in {"failed", "complete"}:
-        raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
     completed_events = [item for item in events if item.get("status") == "complete"]
     last_complete_phase = (
         None if not completed_events else str(completed_events[-1]["phase_id"])
