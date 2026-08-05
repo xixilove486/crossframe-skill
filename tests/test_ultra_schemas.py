@@ -222,6 +222,8 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-forecast-ledger.schema.json",
     "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",
+    "ultra-host-action.schema.json",
+    "ultra-host-result-receipt.schema.json",
     "ultra-order-evaluation.schema.json",
     "ultra-output-plan.schema.json",
     "ultra-phase-event.schema.json",
@@ -250,6 +252,8 @@ AUTHORITY_SCHEMAS = frozenset(
     {
         "ultra-concept-registry.schema.json",
         "ultra-contract-map.schema.json",
+        "ultra-host-action.schema.json",
+        "ultra-host-result-receipt.schema.json",
         "ultra-route-map.schema.json",
         "ultra-source-manifest.schema.json",
     }
@@ -1946,6 +1950,57 @@ def test_common_schema_current_binding_matches_runtime_constants() -> None:
     ]
     schema_binding = {field: definition["const"] for field, definition in properties.items()}
     assert schema_binding == constants.current_version_binding()
+
+
+@pytest.mark.parametrize(
+    ("schema_name", "document"),
+    (
+        (
+            "ultra-host-action.schema.json",
+            {
+                "schema_id": "crossframe.ultra.v82.host-action",
+                "schema_version": 1,
+                "run_id": RUN_ID,
+                "version_binding": version_binding(),
+                "phase_id": "U0",
+                "action_kind": "capability-attestation",
+                "parent_event_sha256": None,
+                "request_sha256": HASH_1,
+                "result_relative_path": "work/host/U00-capability-result.json",
+                "payload": {"required_capabilities": ["filesystem", "validators"]},
+                "issued_at": STAMP,
+                "action_sha256": HASH_2,
+            },
+        ),
+        (
+            "ultra-host-result-receipt.schema.json",
+            {
+                "schema_id": "crossframe.ultra.v82.host-result-receipt",
+                "schema_version": 1,
+                "run_id": RUN_ID,
+                "version_binding": version_binding(),
+                "phase_id": "U0",
+                "action_kind": "capability-attestation",
+                "parent_event_sha256": None,
+                "request_sha256": HASH_1,
+                "action_sha256": HASH_2,
+                "result_relative_path": "work/host/U00-capability-result.json",
+                "result_sha256": HASH_3,
+                "execution_id": "host-exec-1",
+                "completed_at": STAMP,
+                "receipt_sha256": HASH_4,
+            },
+        ),
+    ),
+)
+def test_host_action_and_host_result_schemas_are_closed(
+    schema_name: str, document: dict[str, Any]
+) -> None:
+    runtime = load_runtime()
+    runtime.validate_instance(schema_name, document)
+    document["host_selected_authority"] = True
+    with pytest.raises(ValidationError):
+        runtime.validate_instance(schema_name, document)
 
 
 @pytest.mark.parametrize(

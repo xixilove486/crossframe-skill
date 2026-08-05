@@ -36,6 +36,8 @@ SCHEMA_NAMES = (
     "ultra-forecast-ledger.schema.json",
     "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",
+    "ultra-host-action.schema.json",
+    "ultra-host-result-receipt.schema.json",
     "ultra-order-evaluation.schema.json",
     "ultra-output-plan.schema.json",
     "ultra-phase-event.schema.json",
