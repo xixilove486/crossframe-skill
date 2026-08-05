@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-transformation-ledger.schema.json",
+  "title": "CrossFrame Ultra scale, circle and representation transformations",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["evidence_artifact_sha256", "evidence_content_sha256", "world_volume_artifact_sha256", "world_volume_content_sha256", "transformations"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.transformation-ledger"},
+        "phase_id": {"const": "U5"},
+        "evidence_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "evidence_content_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "world_volume_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "world_volume_content_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "transformations": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/transformation"},
+          "allOf": [
+            {"contains": {"properties": {"kind": {"const": "scale"}}, "required": ["kind"]}, "minContains": 1},
+            {"contains": {"properties": {"kind": {"const": "circle-relation"}}, "required": ["kind"]}, "minContains": 1},
+            {"contains": {"properties": {"kind": {"const": "representation-translation"}}, "required": ["kind"]}, "minContains": 1}
+          ]
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "nullableIdentifier": {
+      "oneOf": [
+        {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        {"type": "null"}
+      ]
+    },
+    "identityAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_type", "location_ref", "axis_id", "value", "evidence_ids"],
+      "properties": {
+        "identity_type": {"enum": ["scale-state", "circle-relation", "source-representation", "represented-state"]},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "axis_id": {
+          "oneOf": [
+            {"enum": ["A", "X", "T", "O", "C", "R", "I", "N", "J"]},
+            {"type": "null"}
+          ]
+        },
+        "value": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "axisState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "normalized_state_ref", "normalized_state_sha256", "description"],
+      "properties": {
+        "status": {"enum": ["recorded", "unknown", "not_applicable", "not_observable", "withheld_for_protection"]},
+        "normalized_state_ref": {"$ref": "#/$defs/nullableIdentifier"},
+        "normalized_state_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      },
+      "if": {"properties": {"status": {"const": "recorded"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "normalized_state_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+          "normalized_state_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+        }
+      },
+      "else": {
+        "properties": {
+          "normalized_state_ref": {"type": "null"},
+          "normalized_state_sha256": {"type": "null"}
+        }
+      }
+    },
+    "comparisonPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payload_kind", "payload_ref", "payload_sha256", "description"],
+      "properties": {
+        "payload_kind": {"oneOf": [{"enum": ["mapping", "set", "interval", "graph", "authorization-difference", "deep-equality"]}, {"type": "null"}]},
+        "payload_ref": {"$ref": "#/$defs/nullableIdentifier"},
+        "payload_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "validComparisonPayload": {
+      "allOf": [
+        {"$ref": "#/$defs/comparisonPayload"},
+        {"properties": {
+          "payload_kind": {"enum": ["mapping", "set", "interval", "graph", "authorization-difference", "deep-equality"]},
+          "payload_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+          "payload_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+        }}
+      ]
+    },
+    "missingComparisonPayload": {
+      "allOf": [
+        {"$ref": "#/$defs/comparisonPayload"},
+        {"properties": {"payload_kind": {"type": "null"}, "payload_ref": {"type": "null"}, "payload_sha256": {"type": "null"}}}
+      ]
+    },
+    "validOrderWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparator_id", "comparator_version", "verifier_id", "evidence_refs", "comparison_payload", "comparator_result_ref", "verification_artifact_ref", "verification_hash", "validation_status"],
+      "properties": {
+        "comparator_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "comparator_version": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "verifier_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "comparison_payload": {"$ref": "#/$defs/validComparisonPayload"},
+        "comparator_result_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "verification_artifact_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "verification_hash": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "validation_status": {"const": "valid"}
+      }
+    },
+    "missingOrderWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparator_id", "comparator_version", "verifier_id", "evidence_refs", "comparison_payload", "comparator_result_ref", "verification_artifact_ref", "verification_hash", "validation_status"],
+      "properties": {
+        "comparator_id": {"type": "null"},
+        "comparator_version": {"type": "null"},
+        "verifier_id": {"type": "null"},
+        "evidence_refs": {"type": "array", "maxItems": 0},
+        "comparison_payload": {"$ref": "#/$defs/missingComparisonPayload"},
+        "comparator_result_ref": {"type": "null"},
+        "verification_artifact_ref": {"type": "null"},
+        "verification_hash": {"type": "null"},
+        "validation_status": {"const": "missing"}
+      }
+    },
+    "recordedStateMatch": {"type": "object", "properties": {"status": {"const": "recorded"}}, "required": ["status"]},
+    "notApplicableStateMatch": {"type": "object", "properties": {"status": {"const": "not_applicable"}}, "required": ["status"]},
+    "materiallyMissingStateMatch": {"type": "object", "properties": {"status": {"enum": ["unknown", "not_observable", "withheld_for_protection"]}}, "required": ["status"]},
+    "axisDifference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis_id", "source_state", "target_state", "relation", "order_witness", "information_loss", "uncertainty"],
+      "properties": {
+        "axis_id": {"enum": ["A", "X", "T", "O", "C", "R", "I", "N", "J"]},
+        "source_state": {"$ref": "#/$defs/axisState"},
+        "target_state": {"$ref": "#/$defs/axisState"},
+        "relation": {"enum": ["equal", "expands", "contracts", "incomparable", "unknown"]},
+        "order_witness": {"oneOf": [{"$ref": "#/$defs/validOrderWitness"}, {"$ref": "#/$defs/missingOrderWitness"}]},
+        "information_loss": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "uncertainty": {"$ref": "ultra-common.schema.json#/$defs/stringArray"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"relation": {"const": "unknown"}}, "required": ["relation"]},
+          "then": {"properties": {"order_witness": {"$ref": "#/$defs/missingOrderWitness"}}},
+          "else": {"properties": {"order_witness": {"$ref": "#/$defs/validOrderWitness"}}}
+        },
+        {
+          "if": {"properties": {"order_witness": {"properties": {"comparison_payload": {"properties": {"payload_kind": {"const": "deep-equality"}}, "required": ["payload_kind"]}}, "required": ["comparison_payload"]}}, "required": ["order_witness"]},
+          "then": {"properties": {"relation": {"const": "equal"}}}
+        },
+        {
+          "if": {"properties": {"order_witness": {"properties": {"comparator_id": {"const": "builtin:deep-equality"}}, "required": ["comparator_id"]}}, "required": ["order_witness"]},
+          "then": {"properties": {"relation": {"const": "equal"}, "order_witness": {"properties": {"comparison_payload": {"properties": {"payload_kind": {"const": "deep-equality"}}}}}}}
+        },
+        {
+          "if": {"properties": {"axis_id": {"const": "J"}, "relation": {"const": "expands"}}, "required": ["axis_id", "relation"]},
+          "then": {"properties": {"order_witness": {"properties": {"comparison_payload": {"properties": {"payload_kind": {"const": "authorization-difference"}}}}}}}
+        },
+        {
+          "if": {"properties": {"source_state": {"$ref": "#/$defs/notApplicableStateMatch"}, "target_state": {"$ref": "#/$defs/notApplicableStateMatch"}}, "required": ["source_state", "target_state"]},
+          "then": {"properties": {"relation": {"enum": ["equal", "unknown"]}}}
+        },
+        {
+          "if": {"oneOf": [
+            {"properties": {"source_state": {"$ref": "#/$defs/notApplicableStateMatch"}, "target_state": {"$ref": "#/$defs/recordedStateMatch"}}, "required": ["source_state", "target_state"]},
+            {"properties": {"source_state": {"$ref": "#/$defs/recordedStateMatch"}, "target_state": {"$ref": "#/$defs/notApplicableStateMatch"}}, "required": ["source_state", "target_state"]}
+          ]},
+          "then": {"properties": {"relation": {"const": "incomparable"}}}
+        },
+        {
+          "if": {"anyOf": [
+            {"properties": {"source_state": {"$ref": "#/$defs/materiallyMissingStateMatch"}}, "required": ["source_state"]},
+            {"properties": {"target_state": {"$ref": "#/$defs/materiallyMissingStateMatch"}}, "required": ["target_state"]}
+          ]},
+          "then": {"properties": {"relation": {"const": "unknown"}}}
+        }
+      ]
+    },
+    "exactAxisDifferences": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/axisDifference"},
+      "allOf": [
+        {"contains": {"properties": {"axis_id": {"const": "A"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "X"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "T"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "O"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "C"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "R"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "I"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "N"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"properties": {"axis_id": {"const": "J"}}, "required": ["axis_id"]}, "minContains": 1, "maxContains": 1}
+      ]
+    },
+    "hasIncomparable": {"type": "array", "contains": {"properties": {"relation": {"const": "incomparable"}}, "required": ["relation"]}, "minContains": 1},
+    "hasExpands": {"type": "array", "contains": {"properties": {"relation": {"const": "expands"}}, "required": ["relation"]}, "minContains": 1},
+    "hasContracts": {"type": "array", "contains": {"properties": {"relation": {"const": "contracts"}}, "required": ["relation"]}, "minContains": 1},
+    "hasUnknown": {"type": "array", "contains": {"properties": {"relation": {"const": "unknown"}}, "required": ["relation"]}, "minContains": 1},
+    "onlyEqual": {"type": "array", "items": {"properties": {"relation": {"const": "equal"}}, "required": ["relation"]}},
+    "onlyEqualOrExpands": {"type": "array", "items": {"properties": {"relation": {"enum": ["equal", "expands"]}}, "required": ["relation"]}},
+    "onlyEqualOrContracts": {"type": "array", "items": {"properties": {"relation": {"enum": ["equal", "contracts"]}}, "required": ["relation"]}},
+    "scaleClassification": {
+      "type": "object",
+      "required": ["axis_differences", "transformation_class"],
+      "oneOf": [
+        {"properties": {"transformation_class": {"const": "horizontal_or_incomparable"}, "axis_differences": {"$ref": "#/$defs/hasIncomparable"}}},
+        {"properties": {"transformation_class": {"const": "mixed"}, "axis_differences": {"allOf": [{"not": {"$ref": "#/$defs/hasIncomparable"}}, {"$ref": "#/$defs/hasExpands"}, {"$ref": "#/$defs/hasContracts"}]}}},
+        {"properties": {"transformation_class": {"const": "unresolved"}, "axis_differences": {"allOf": [{"not": {"$ref": "#/$defs/hasIncomparable"}}, {"not": {"allOf": [{"$ref": "#/$defs/hasExpands"}, {"$ref": "#/$defs/hasContracts"}]}}, {"$ref": "#/$defs/hasUnknown"}]}}},
+        {"properties": {"transformation_class": {"const": "all_equal"}, "axis_differences": {"$ref": "#/$defs/onlyEqual"}}},
+        {"properties": {"transformation_class": {"const": "elevation"}, "axis_differences": {"allOf": [{"$ref": "#/$defs/onlyEqualOrExpands"}, {"$ref": "#/$defs/hasExpands"}]}}},
+        {"properties": {"transformation_class": {"const": "reduction"}, "axis_differences": {"allOf": [{"$ref": "#/$defs/onlyEqualOrContracts"}, {"$ref": "#/$defs/hasContracts"}]}}}
+      ]
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "location_ref", "source_refs", "target_refs", "description", "evidence_ids", "unknown_id"],
+      "properties": {
+        "component_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "source_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "target_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "unknown_id": {"$ref": "#/$defs/nullableIdentifier"}
+      }
+    },
+    "loss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["loss_id", "loss_kind", "description", "location_ref", "affected_component_ids", "evidence_ids", "recoverable"],
+      "properties": {
+        "loss_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "loss_kind": {"enum": ["detail", "identity", "recoverability", "uncertainty"]},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "affected_component_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "recoverable": {"type": "boolean"}
+      }
+    },
+    "locationEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effect_id", "location_ref", "effect_kind", "description", "evidence_ids", "variable_refs"],
+      "properties": {
+        "effect_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "effect_kind": {"enum": ["gain", "damage", "exit-cost", "spillover"]},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "variable_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "effectiveVariable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variable_ref", "location_ref", "state_kind", "state_id", "variable_name", "clock_id", "evidence_ids"],
+      "properties": {
+        "variable_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "state_kind": {"enum": ["M", "Psi"]},
+        "state_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "variable_name": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "clock_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "residualBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["residual_id", "location_ref", "description", "evidence_ids", "return_condition_ids"],
+      "properties": {
+        "residual_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "location_ref": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "return_condition_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "returnCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition_id", "description", "trigger_refs", "required_variable_refs", "evidence_ids"],
+      "properties": {
+        "condition_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "trigger_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "required_variable_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "evidence_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      }
+    },
+    "transformation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transform_id", "kind", "input_identity", "output_identity", "axis_differences", "transformation_class", "preserved", "changed", "folded", "omitted", "unknown", "task_relative_loss", "location_effects", "effective_variables", "closure_status", "residuals", "return_conditions"],
+      "properties": {
+        "transform_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["scale", "circle-relation", "representation-translation"]},
+        "input_identity": {"$ref": "#/$defs/identityAuthority"},
+        "output_identity": {"$ref": "#/$defs/identityAuthority"},
+        "axis_differences": {"type": "array", "items": {"$ref": "#/$defs/axisDifference"}},
+        "transformation_class": {"oneOf": [{"enum": ["horizontal_or_incomparable", "mixed", "unresolved", "all_equal", "elevation", "reduction"]}, {"type": "null"}]},
+        "preserved": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "changed": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "folded": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "omitted": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "unknown": {"type": "array", "items": {"$ref": "#/$defs/component"}},
+        "task_relative_loss": {"type": "array", "items": {"$ref": "#/$defs/loss"}},
+        "location_effects": {"type": "array", "items": {"$ref": "#/$defs/locationEffect"}},
+        "effective_variables": {"type": "array", "items": {"$ref": "#/$defs/effectiveVariable"}},
+        "closure_status": {"enum": ["closed", "bounded", "open"]},
+        "residuals": {"type": "array", "items": {"$ref": "#/$defs/residualBinding"}},
+        "return_conditions": {"type": "array", "items": {"$ref": "#/$defs/returnCondition"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "scale"}}, "required": ["kind"]},
+          "then": {
+            "allOf": [
+              {
+                "properties": {
+                  "input_identity": {
+                    "properties": {
+                      "identity_type": {"const": "scale-state"},
+                      "axis_id": {"type": "null"}
+                    }
+                  },
+                  "output_identity": {
+                    "properties": {
+                      "identity_type": {"const": "scale-state"},
+                      "axis_id": {"type": "null"}
+                    }
+                  },
+                  "axis_differences": {"$ref": "#/$defs/exactAxisDifferences"},
+                  "transformation_class": {"enum": ["horizontal_or_incomparable", "mixed", "unresolved", "all_equal", "elevation", "reduction"]}
+                }
+              },
+              {"$ref": "#/$defs/scaleClassification"}
+            ]
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "circle-relation"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "input_identity": {
+                "properties": {
+                  "identity_type": {"const": "circle-relation"},
+                  "axis_id": {"type": "null"}
+                }
+              },
+              "output_identity": {
+                "properties": {
+                  "identity_type": {"const": "circle-relation"},
+                  "axis_id": {"type": "null"}
+                }
+              },
+              "axis_differences": {"maxItems": 0},
+              "transformation_class": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "representation-translation"}}, "required": ["kind"]},
+          "then": {
+            "properties": {
+              "input_identity": {
+                "properties": {
+                  "identity_type": {"const": "source-representation"},
+                  "axis_id": {"type": "null"}
+                }
+              },
+              "output_identity": {
+                "properties": {
+                  "identity_type": {"const": "represented-state"},
+                  "axis_id": {"type": "null"}
+                }
+              },
+              "axis_differences": {"maxItems": 0},
+              "transformation_class": {"type": "null"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

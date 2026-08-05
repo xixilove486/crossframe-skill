@@ -1,0 +1,30 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-privacy-policy",
+  "schema_version": 2,
+  "case_id": "C02",
+  "default_deny": true,
+  "product_packet_allowlist": [
+    "tests/evals/ultra-vs-promax/cases/C02/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/C02/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-01.csv",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-02.csv",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-03.csv"
+  ],
+  "grader_case_packet_allowlist": [
+    "tests/evals/ultra-vs-promax/cases/C02/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/C02/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-01.csv",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-02.csv",
+    "tests/evals/ultra-vs-promax/cases/C02/materials/record-03.csv"
+  ],
+  "grader_injected_slots": [
+    "rubric",
+    "article-a",
+    "article-b"
+  ],
+  "audit_only_paths": [
+    "tests/evals/ultra-vs-promax/cases/C02/materials/manifest.json",
+    "tests/evals/ultra-vs-promax/cases/C02/privacy-policy.json",
+    "tests/evals/ultra-vs-promax/cases/C02/expected-pressure.json"
+  ]
+}

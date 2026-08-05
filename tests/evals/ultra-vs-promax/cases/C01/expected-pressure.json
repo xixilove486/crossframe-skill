@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "C01",
+  "decisive_pressure": "closed evidence court",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "closed-evidence-court",
+    "rival-mechanism"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

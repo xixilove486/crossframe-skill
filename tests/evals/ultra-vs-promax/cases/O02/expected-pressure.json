@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "O02",
+  "decisive_pressure": "false premise, rival mechanism",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "false-user-premise",
+    "rival-mechanism"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

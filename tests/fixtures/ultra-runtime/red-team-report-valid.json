@@ -1,0 +1,84 @@
+{
+  "schema_id": "crossframe.ultra.v82.red-team-report",
+  "schema_version": 1,
+  "run_id": "ultra-world-fixture-run",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+  },
+  "generated_at": "2026-08-02T10:45:00Z",
+  "content_sha256": "8126007bbb7b5f43f8646068d19e08989b5f23643d8a0132c2ec35d0310bcee4",
+  "phase_id": "U8",
+  "claim_mechanism_graph_artifact_sha256": "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c",
+  "recursive_lineage_artifact_sha256": "032ec27a6d3a6ddf353927a27a5e1df2d3b5efaf8573878f65d7c2cfb8a4e9aa",
+  "order_evaluation_artifact_sha256": "789844fdcba85a9f3317d4c1c3bd385d277b2c019d79a644398625ff349057b2",
+  "attacks": [
+    {
+      "attack_id": "ATTACK-SIMULATION-IDENTITY",
+      "target": {
+        "recursive_node_id": "NODE-MAIN-ORDER-2"
+      },
+      "attack_kind": "identity-confusion",
+      "challenge": "The second-order reversal is simulated and cannot be restated as an observed fact.",
+      "evidence_refs": [
+        "EVIDENCE-INTERVIEW-ONE",
+        "EVIDENCE-ROSTER-ATLAS"
+      ],
+      "evidence_identity": "simulated-result",
+      "result": "survives"
+    },
+    {
+      "attack_id": "ATTACK-RESIDUAL-CHANNEL",
+      "target": {
+        "branch_id": "BRANCH-RESIDUAL"
+      },
+      "attack_kind": "strongest-counterexample",
+      "challenge": "The peer-effect residual has no validated channel and may reverse the branch ranking.",
+      "evidence_refs": [],
+      "evidence_identity": "unknown",
+      "result": "revise"
+    }
+  ],
+  "sensitivity_checks": [
+    {
+      "check_id": "SENSITIVITY-WORKLOAD-DURATION",
+      "variable": "reported workload duration",
+      "variation": "Remove the workload constraint after the interaction clock.",
+      "outcome": "The second-order reversal weakens but the first-order channel effect remains."
+    }
+  ],
+  "baseline_comparisons": [
+    {
+      "order": 1,
+      "baseline_ref": "BASELINE-ORDER-1",
+      "winner": "lineage"
+    },
+    {
+      "order": 2,
+      "baseline_ref": "BASELINE-ORDER-2",
+      "winner": "lineage"
+    },
+    {
+      "order": 3,
+      "baseline_ref": "BASELINE-ORDER-3",
+      "winner": "undecidable"
+    }
+  ],
+  "unresolved_items": [
+    {
+      "unresolved_item_id": "UNRESOLVED-PEER-CHANNEL",
+      "challenge_id": "ATTACK-RESIDUAL-CHANNEL",
+      "description": "The frozen run cannot identify a real channel for the peer-effect residual.",
+      "evidence_refs": []
+    }
+  ],
+  "overall_status": "needs-attention"
+}

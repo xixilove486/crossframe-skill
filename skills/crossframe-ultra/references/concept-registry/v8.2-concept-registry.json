@@ -1,0 +1,399 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.concept-registry",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "canonical_namespace": "V82-",
+  "provisional_namespace": "ULTRA-PROV-",
+  "concept_count": 9,
+  "concepts": [
+    {
+      "concept_id": "V82-M01",
+      "canonical_zh": "聚合",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "transformation",
+      "definition": "聚合的签名是“单位—总体分区聚合”。",
+      "source_anchors": [
+        "V82-P0936"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在登记逐单位映射、权重、缺失、替代规则与异质性后重现总体"
+      ],
+      "forbidden_substitutions": [
+        "总体属性回填为个体属性",
+        "聚合支持直接转化为成员处置"
+      ],
+      "common_misuses": [
+        "只报告总体而删除尾部、次序、协方差、局部时序或少数位置可见度"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "须与多对一表示压缩区分：M01 固定单位—总体分区"
+      ],
+      "evidence_requirements": [
+        "逐单位映射、成员与排除、权重与缺失、替代聚合规则和异质性"
+      ],
+      "counterexamples": [
+        "合理替代聚合规则造成方向反转"
+      ],
+      "withdrawal_conditions": [
+        "总体不能按登记规则复现"
+      ],
+      "inference_interfaces": [
+        "SP",
+        "N0"
+      ],
+      "action_ceiling": "只能登记当前分区与聚合规则下的总体，不得据总体结果直接处置成员"
+    },
+    {
+      "concept_id": "V82-M02",
+      "canonical_zh": "嵌套",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "transformation",
+      "definition": "签名是“边界—成员嵌入”。",
+      "source_anchors": [
+        "V82-P0938",
+        "V82-P0939",
+        "V82-P0940",
+        "V82-P0941",
+        "V82-P0942"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "描述性嵌套只检验边界、成员、重叠、退出和接口映射",
+        "跨层因果必须链接预注册 G4a 或 G4b root-instance，固定子型和唯一成功判据，并通过 CAUSAL 与三态/null 门",
+        "记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支，并分别绑定描述、因果、对象转换或干预转换模式"
+      ],
+      "forbidden_substitutions": [
+        "不得用描述性嵌套的边界材料支持后面三支",
+        "描述性嵌套不生成上位优先、下位义务或 J 轴扩展"
+      ],
+      "common_misuses": [
+        "控制当前状态与共同环境后没有条件增量，并不自动证明“没有跨层作用”",
+        "用描述性嵌套的边界材料支持后面三支"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "描述性嵌套只检验边界、成员、重叠、退出和接口映射；它可以成立而没有任何跨层因果",
+        "记录时必须在 descriptive_nesting、cross_layer_causal、object_conversion、intervention_conversion 中选一支"
+      ],
+      "evidence_requirements": [
+        "边界、成员、重叠、退出和接口映射",
+        "固定子型和唯一成功判据",
+        "分别绑定描述、因果、对象转换或干预转换模式"
+      ],
+      "counterexamples": [
+        "控制当前状态与共同环境后没有条件增量"
+      ],
+      "withdrawal_conditions": [
+        "跨层因果必须链接预注册 G4a 或 G4b root-instance",
+        "不得用描述性嵌套的边界材料支持后面三支"
+      ],
+      "inference_interfaces": [
+        "Rcc",
+        "Rac",
+        "G4",
+        "CAUSAL"
+      ],
+      "action_ceiling": "描述性嵌套不生成上位优先、下位义务或 J 轴扩展。"
+    },
+    {
+      "concept_id": "V82-M03",
+      "canonical_zh": "网络传播",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "transformation",
+      "definition": "网络传播的签名是“沿时间化路径传导”。",
+      "source_anchors": [
+        "V82-P0943",
+        "V82-P0944"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在已登记路径、时延与损耗上记录条件传播"
+      ],
+      "forbidden_substitutions": [
+        "连接或同步直接等同于传播支持",
+        "中心性替代意图、责任或处置权限"
+      ],
+      "common_misuses": [
+        "只保留终点影响并声称恢复了传播次序"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "须与共同环境或同步变化区分，候选路径与替代路径分别登记"
+      ],
+      "evidence_requirements": [
+        "节点、边、方向、权重、容量、采样边界、候选与替代路径、时延和损耗"
+      ],
+      "counterexamples": [
+        "切断候选路径后结果不变且零结论门未通过时保持未决"
+      ],
+      "withdrawal_conditions": [
+        "节点、边、方向、采样边界或路径时间次序无法追踪"
+      ],
+      "inference_interfaces": [
+        "Rcc",
+        "Q",
+        "E",
+        "T"
+      ],
+      "action_ceiling": "只能描述有证据的传播路径，不能由中心性推出意图、责任或处置权限"
+    },
+    {
+      "concept_id": "V82-M04",
+      "canonical_zh": "时间累积",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "recursive-inference",
+      "definition": "时间累积的签名是“带窗口的纵向组合”。",
+      "source_anchors": [
+        "V82-P0945",
+        "V82-P0946"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在冻结时间基准、窗口与组合规则后登记累积、衰减或恢复"
+      ],
+      "forbidden_substitutions": [
+        "控制后效应消失直接写成无累积",
+        "基础时间组合预先证明 G3"
+      ],
+      "common_misuses": [
+        "结果后更换窗口或忽略共同趋势、季节与队列"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "时间组合与历史条件增量分开，后者另链 G3-instance"
+      ],
+      "evidence_requirements": [
+        "时间基准、基线、窗口、时滞、持久阈值、累积或衰减或恢复规则及替代窗口"
+      ],
+      "counterexamples": [
+        "效应随合理替代窗口改变且正向支持不足"
+      ],
+      "withdrawal_conditions": [
+        "时间基准、窗口、时滞或组合规则未在结果前冻结"
+      ],
+      "inference_interfaces": [
+        "T",
+        "G3"
+      ],
+      "action_ceiling": "只能登记冻结窗口内的纵向组合，不能自动推出历史条件增量或现实行动授权"
+    },
+    {
+      "concept_id": "V82-M05",
+      "canonical_zh": "制度化",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "judgment-governance",
+      "definition": "制度化的签名是“持久制度写回”。",
+      "source_anchors": [
+        "V82-P0948",
+        "V82-P0949"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在记录、角色、资源、决策规则或后续转移持久改变时登记制度化事实"
+      ],
+      "forbidden_substitutions": [
+        "制度存在替代法律有效、规范正当、保护成立或应继续",
+        "治理失败抹掉已经存在的制度事实"
+      ],
+      "common_misuses": [
+        "把法律有效性、治理质量或规范正当性伪装成 institutional_fact"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "制度事实、制度因果效应、制度对象转换和制度干预转换必须选择独立支路"
+      ],
+      "evidence_requirements": [
+        "记录、角色、资源、决策规则或后续转移的可追踪持久改变"
+      ],
+      "counterexamples": [
+        "只有制度声明而没有任何持久写回"
+      ],
+      "withdrawal_conditions": [
+        "无法证明任何制度字段发生持久改变"
+      ],
+      "inference_interfaces": [
+        "K",
+        "J",
+        "O"
+      ],
+      "action_ceiling": "只能区分制度事实及其支路，制度存在不能推出合法、正当、充分保护或应继续"
+    },
+    {
+      "concept_id": "V82-M06",
+      "canonical_zh": "涌现",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "recursive-inference",
+      "definition": "涌现的签名是“互动生成目标尺度模式”。",
+      "source_anchors": [
+        "V82-P0950",
+        "V82-P0951"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在同一指标上比较互动生成目标模式与预登记简单加和模型"
+      ],
+      "forbidden_substitutions": [
+        "宏观模式反推唯一微观原因",
+        "涌现自动证明下行因果"
+      ],
+      "common_misuses": [
+        "简单加和模型表现相当但零结论门未通过时宣布加和已经足够"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "目标尺度模式与下行约束分开，后者另链 G4 或 CAUSAL 实例"
+      ],
+      "evidence_requirements": [
+        "源单位、互动规则、目标对象、目标模式、同指标的预登记简单加和模型"
+      ],
+      "counterexamples": [
+        "简单加和模型在同一指标上表现相当且充分性或等价门通过"
+      ],
+      "withdrawal_conditions": [
+        "源单位、互动规则、目标模式或比较模型不可追踪"
+      ],
+      "inference_interfaces": [
+        "G4",
+        "CAUSAL"
+      ],
+      "action_ceiling": "只能登记目标尺度模式的条件支持，不能自动推出下行因果或行动授权"
+    },
+    {
+      "concept_id": "V82-M07",
+      "canonical_zh": "委托/代表",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "judgment-governance",
+      "definition": "委托/代表的签名是“代表事实分类与可选授权转移”。",
+      "source_anchors": [
+        "V82-P0952",
+        "V82-P0953",
+        "V82-P0954"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "无授权时记录实际代行及其影响和责任",
+        "仅在授权元组、独立有效性证据与 j_authorization 同时通过时登记 J 转移"
+      ],
+      "forbidden_substitutions": [
+        "多数、可见性、影响力、自称或实际控制替代有效委托",
+        "实际代行自动扩展 J 轴"
+      ],
+      "common_misuses": [
+        "把代表性主张、实际代行、授权有效性与 J 转移混成一支"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "representation_claim、actual_acts、delegation_validity 与 J_transfer 必须选择独立支路"
+      ],
+      "evidence_requirements": [
+        "代表主张、实际代行事实、争议状态、委托记录、结构化授权元组与独立有效性证据"
+      ],
+      "counterexamples": [
+        "自称代表或实际控制但不存在有效授权"
+      ],
+      "withdrawal_conditions": [
+        "代表主体、代行动作或授权来源无法识别"
+      ],
+      "inference_interfaces": [
+        "Rac",
+        "J"
+      ],
+      "action_ceiling": "前三支不能改变 J；只有有效 J_transfer 才能在原子授权范围内扩展权限"
+    },
+    {
+      "concept_id": "V82-M08",
+      "canonical_zh": "压缩/抽象",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "transformation",
+      "definition": "压缩/抽象的签名是“多对一表示压缩”。",
+      "source_anchors": [
+        "V82-P0955",
+        "V82-P0956"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "在来源、算法、误差与任务不变量可追踪时登记多对一表示"
+      ],
+      "forbidden_substitutions": [
+        "unknown、not_applicable、not_observable 或 withheld_for_protection 压成不存在",
+        "高损失表示支持高影响行动"
+      ],
+      "common_misuses": [
+        "只保留压缩结果而删除算法版本、阈值、误差和不可恢复信息"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "须与单位—总体分区聚合区分：M08 的对象是多对一表示"
+      ],
+      "evidence_requirements": [
+        "源材料、算法、阈值、版本、误差、不可恢复信息和任务所需不变量"
+      ],
+      "counterexamples": [
+        "压缩后无法区分不同缺失身份或保护性不公开"
+      ],
+      "withdrawal_conditions": [
+        "源材料、算法版本、误差或任务不变量无法追踪"
+      ],
+      "inference_interfaces": [
+        "W",
+        "Unknowns",
+        "Residuals"
+      ],
+      "action_ceiling": "高损失表示不得支持高影响行动，压缩结果也不能把缺失身份改写为不存在"
+    },
+    {
+      "concept_id": "V82-M09",
+      "canonical_zh": "横向迁移",
+      "concept_type": "scale-transformation-operator",
+      "responsibility_layer": "transformation",
+      "definition": "横向迁移的签名是“跨领域类比迁移”。",
+      "source_anchors": [
+        "V82-P0957",
+        "V82-P0958"
+      ],
+      "prerequisites": [],
+      "allowed_inferences": [
+        "把源域材料作为目标域的可检验候选"
+      ],
+      "forbidden_substitutions": [
+        "源域支持替代独立目标实例",
+        "类比生成目标领域行动授权"
+      ],
+      "common_misuses": [
+        "目标证据不足时宣布目标机制不存在"
+      ],
+      "required_neighbors": [],
+      "conflicts": [],
+      "disambiguation_conditions": [
+        "映射、差异、断裂、禁止映射、目标责任链和 J 轴差异分别登记"
+      ],
+      "evidence_requirements": [
+        "源目标映射、差异、断裂、禁止映射、目标责任链、J 轴差异与独立目标实例"
+      ],
+      "counterexamples": [
+        "独立目标实例不支持源域类比产生的候选"
+      ],
+      "withdrawal_conditions": [
+        "源目标映射、禁止映射或目标责任链无法登记"
+      ],
+      "inference_interfaces": [
+        "SP",
+        "J"
+      ],
+      "action_ceiling": "类比只能生成目标候选，不能生成目标真值、目标机制不存在的证明或行动授权"
+    }
+  ]
+}

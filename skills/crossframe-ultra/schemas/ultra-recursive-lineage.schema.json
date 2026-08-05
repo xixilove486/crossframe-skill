@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-recursive-lineage.schema.json",
+  "title": "CrossFrame Ultra order one through three recursive lineage",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "world_volume_artifact_sha256",
+        "transformation_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_state_artifact_hashes",
+        "nodes",
+        "branches",
+        "maximum_order"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.recursive-lineage"},
+        "phase_id": {"const": "U7"},
+        "world_volume_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "transformation_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "concept_disposition_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "claim_mechanism_graph_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "recursive_state_artifact_hashes": {
+          "allOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
+            {"minItems": 1}
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/node"}
+        },
+        "branches": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/branch"}
+        },
+        "maximum_order": {"type": "integer", "minimum": 1, "maximum": 3}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "path_id",
+        "parent_node_ids",
+        "order",
+        "recursive_state_artifact_sha256"
+      ],
+      "properties": {
+        "node_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "path_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "parent_node_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "order": {"type": "integer", "minimum": 1, "maximum": 3},
+        "recursive_state_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"order": {"minimum": 2}}, "required": ["order"]},
+          "then": {"properties": {"parent_node_ids": {"minItems": 1}}}
+        }
+      ]
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch_id",
+        "kind",
+        "node_ids",
+        "status",
+        "merge_parent_branch_ids",
+        "prune_reason",
+        "retained_residual_ids"
+      ],
+      "properties": {
+        "branch_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["main", "strongest-rival", "mixture", "residual"]},
+        "node_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "status": {"enum": ["active", "merged", "pruned", "stopped"]},
+        "merge_parent_branch_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "prune_reason": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
+        "retained_residual_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "merged"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "merge_parent_branch_ids": {"minItems": 1},
+              "prune_reason": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"const": "pruned"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "merge_parent_branch_ids": {"maxItems": 0},
+              "prune_reason": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"status": {"enum": ["active", "stopped"]}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "merge_parent_branch_ids": {"maxItems": 0},
+              "prune_reason": {"type": "null"}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

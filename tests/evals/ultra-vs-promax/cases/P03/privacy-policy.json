@@ -1,0 +1,28 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-privacy-policy",
+  "schema_version": 2,
+  "case_id": "P03",
+  "default_deny": true,
+  "product_packet_allowlist": [
+    "tests/evals/ultra-vs-promax/cases/P03/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/P03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/P03/materials/analytic-standards-fact-card.md",
+    "tests/evals/ultra-vs-promax/cases/P03/materials/source-deconfliction-fact-card.md"
+  ],
+  "grader_case_packet_allowlist": [
+    "tests/evals/ultra-vs-promax/cases/P03/prompt.md",
+    "tests/evals/ultra-vs-promax/cases/P03/evidence-cutoff.json",
+    "tests/evals/ultra-vs-promax/cases/P03/materials/analytic-standards-fact-card.md",
+    "tests/evals/ultra-vs-promax/cases/P03/materials/source-deconfliction-fact-card.md"
+  ],
+  "grader_injected_slots": [
+    "rubric",
+    "article-a",
+    "article-b"
+  ],
+  "audit_only_paths": [
+    "tests/evals/ultra-vs-promax/cases/P03/materials/manifest.json",
+    "tests/evals/ultra-vs-promax/cases/P03/privacy-policy.json",
+    "tests/evals/ultra-vs-promax/cases/P03/expected-pressure.json"
+  ]
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-framework-gap-ledger.schema.json",
+  "title": "CrossFrame Ultra isolated framework-gap candidates",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "evidence_ledger_artifact_sha256",
+        "claim_mechanism_graph_artifact_sha256",
+        "recursive_lineage_artifact_sha256",
+        "order_evaluation_artifact_sha256",
+        "red_team_report_artifact_sha256",
+        "verdict_artifact_sha256",
+        "action_ranking_artifact_sha256",
+        "forecast_ledger_artifact_sha256",
+        "candidates",
+        "isolated_from_current_reasoning"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.framework-gap-ledger"},
+        "phase_id": {"const": "U10"},
+        "evidence_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "claim_mechanism_graph_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "recursive_lineage_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "order_evaluation_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "red_team_report_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "verdict_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "action_ranking_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "forecast_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "candidates": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+        "isolated_from_current_reasoning": {"const": true}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_id",
+        "description",
+        "evidence_refs",
+        "claim_ids",
+        "mechanism_ids",
+        "recursive_node_ids",
+        "route_ids",
+        "concept_ids",
+        "future_revision_proposal",
+        "status"
+      ],
+      "properties": {
+        "gap_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "description": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "claim_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "mechanism_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "recursive_node_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "route_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "concept_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "future_revision_proposal": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "status": {"enum": ["candidate", "rejected", "deferred"]}
+      }
+    }
+  }
+}

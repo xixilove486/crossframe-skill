@@ -37,24 +37,41 @@ def sha256(path: Path) -> str:
 
 
 class MirrorIntegrityTests(unittest.TestCase):
-    def test_mirror_inventory_has_sixteen_skills_and_exact_promax_tree(self) -> None:
-        self.assertEqual(len(CROSSFRAME_SKILLS), 16)
-        self.assertEqual(len(set(CROSSFRAME_SKILLS)), 16)
+    def test_mirror_inventory_has_seventeen_skills_and_exact_runtime_trees(self) -> None:
+        self.assertEqual(len(CROSSFRAME_SKILLS), 17)
+        self.assertEqual(len(set(CROSSFRAME_SKILLS)), 17)
         self.assertIn("crossframe-promax", CROSSFRAME_SKILLS)
+        self.assertIn("crossframe-ultra", CROSSFRAME_SKILLS)
         self.assertTrue(
             same_tree(
                 ROOT / "skills/crossframe-promax",
                 ROOT / ".claude/skills/crossframe-promax",
             )
         )
+        self.assertTrue(
+            same_tree(
+                ROOT / "skills/crossframe-ultra",
+                ROOT / ".claude/skills/crossframe-ultra",
+            )
+        )
 
-    def test_integrity_inventory_includes_promax_but_legacy_scans_exclude_it(self) -> None:
-        self.assertEqual(len(integrity.CURRENT_CROSSFRAME_SKILLS), 16)
+    def test_integrity_inventory_only_adds_ultra_to_current_skills(self) -> None:
+        self.assertEqual(len(integrity.CURRENT_CROSSFRAME_SKILLS), 17)
+        self.assertEqual(len(set(integrity.CURRENT_CROSSFRAME_SKILLS)), 17)
         self.assertIn("crossframe-promax", integrity.CURRENT_CROSSFRAME_SKILLS)
+        self.assertIn("crossframe-ultra", integrity.CURRENT_CROSSFRAME_SKILLS)
         self.assertNotIn("crossframe-promax", integrity.LEGACY_CROSSFRAME_SKILLS)
         self.assertNotIn("crossframe-promax", integrity.CLAIM_LEDGER_DELTA_SKILLS)
         self.assertNotIn("crossframe-promax", integrity.SIBLING_CLAIM_BRIDGE_SKILLS)
+        for excluded in (
+            integrity.LEGACY_CROSSFRAME_SKILLS,
+            integrity.CLAIM_LEDGER_DELTA_SKILLS,
+            integrity.SIBLING_CLAIM_BRIDGE_SKILLS,
+            integrity.SIBLING_AGENT_PROMPT_SKILLS,
+        ):
+            self.assertNotIn("crossframe-ultra", excluded)
         integrity.check_crossframe_promax_skill(ROOT / "skills", "test")
+        integrity.check_crossframe_ultra_skill(ROOT / "skills", "test")
 
     def test_integrity_inventory_requires_all_promax_101_prose_assets(self) -> None:
         expected = {

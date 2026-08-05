@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "P03",
+  "decisive_pressure": "shared-source pollution",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "shared-source-pollution",
+    "false-user-premise"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

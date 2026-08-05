@@ -1,0 +1,70 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-materials-manifest",
+  "schema_version": 2,
+  "case_id": "L03",
+  "bundle_status": "frozen",
+  "retrieval_mode": "frozen-bundle-only",
+  "source_files": [
+    {
+      "path": "context.md",
+      "sha256": "036ed50b1ba68b7b8f6a28f73560e67c32effe9ce1e01f5b3adc48fc05d06f4e",
+      "media_type": "text/markdown; charset=utf-8",
+      "license": "CC0-1.0"
+    }
+  ],
+  "source_count": 1,
+  "source_set_sha256": "a6c6769660cf40ee27c725c693b4b0e5c874be24c936f70c99cece3cdba911ac",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-license-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:34:40Z",
+      "subject_sha256": "a6c6769660cf40ee27c725c693b4b0e5c874be24c936f70c99cece3cdba911ac",
+      "evidence": [
+        "context.md is a regular non-reparse file; its relative path is unique, sorted, and confined to materials.",
+        "Actual context.md SHA-256 036ed50b1ba68b7b8f6a28f73560e67c32effe9ce1e01f5b3adc48fc05d06f4e matches source_files; canonical hashing of that exact array yields the bound source_set_sha256.",
+        "The source declares project authorship, wholly synthetic non-real-person content, no third-party material, and CC0-1.0; inspection found no external URL, link, quotation, or attribution."
+      ],
+      "source_decisions": [
+        {
+          "path": "context.md",
+          "sha256": "036ed50b1ba68b7b8f6a28f73560e67c32effe9ce1e01f5b3adc48fc05d06f4e",
+          "license": "CC0-1.0",
+          "redistribution_allowed": true,
+          "basis": "Verified project-authored synthetic bytes contain no observed third-party material; CC0-1.0 is a valid SPDX expression and permits redistribution."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-privacy-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:33:10Z",
+      "subject_sha256": "a6c6769660cf40ee27c725c693b4b0e5c874be24c936f70c99cece3cdba911ac",
+      "evidence": [
+        "context.md declares wholly synthetic non-real-person content; manual inspection and identifier, contact, URL, secret, and sensitive-path pattern checks found no matches.",
+        "Both packet allowlists contain exactly prompt.md, evidence-cutoff.json, and materials/context.md under default_deny=true.",
+        "grader_injected_slots is exactly rubric, article-a, article-b; audit_only_paths is exactly manifest, privacy-policy, expected-pressure.",
+        "The actual privacy-policy SHA-256 matches this review and the review subject equals the frozen source_set_sha256."
+      ],
+      "privacy_policy_sha256": "dfdb680b6625d9fab6a1afba120e898b714ab26fc29062352fec6fcfc2c2f05e",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "ultra-task16-outcome-reviewer-20260804",
+      "reviewed_at": "2026-08-03T21:32:56Z",
+      "subject_sha256": "a6c6769660cf40ee27c725c693b4b0e5c874be24c936f70c99cece3cdba911ac",
+      "evidence": [
+        "The source supplies neutral stay and move ranges, care capacity, affected-party and partner preferences, and explicit review or exit thresholds.",
+        "No ordering, recommendation, winner, score, grader criterion, expected pressure, or result disclosure was found.",
+        "context.md is evidence-dated 2026-08-01T12:00:00Z; the cutoff is 2026-08-02T00:00:00Z and evidence_state is frozen.",
+        "The actual cutoff SHA-256 and supplied LF-byte expected-pressure SHA-256 reference match this manifest without exposing expected-pressure content."
+      ],
+      "evidence_cutoff_sha256": "3c10da27352b05082cc857295e76218a4a3969f3ef89d6f4608bd0a0aae75a6f",
+      "expected_pressure_sha256": "08b5dbb805d379246633bea12f8969b62d33f24317f5379eddd17e096102462f",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
+}

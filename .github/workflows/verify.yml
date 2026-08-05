@@ -86,6 +86,47 @@ jobs:
             tests/test_promax_materializer.py \
             tests/test_promax_repository_integration.py
 
+  ultra-contracts-and-artifacts:
+    name: ultra-contracts-and-artifacts
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Prepare fixed Windows roots
+        shell: pwsh
+        run: |
+          $driveRoot = Join-Path $env:RUNNER_TEMP "crossframe-ultra-drive"
+          New-Item -ItemType Directory -Force -Path $driveRoot | Out-Null
+          if (-not (Test-Path "E:\")) {
+            subst.exe E: $driveRoot
+          }
+          if (-not (Test-Path "E:\")) {
+            throw "Unable to prepare the required E: fixed-root drive"
+          }
+          New-Item -ItemType Directory -Force -Path "E:\世界模型\output" | Out-Null
+      - name: Install Ultra test dependencies
+        run: python -m pip install jsonschema pytest PyYAML
+      - name: Validate Ultra v8.2 source and knowledge
+        run: |
+          python -I -S -B scripts/check_crossframe_ultra_v82_source.py --repo .
+          python -B scripts/check_crossframe_ultra_v82_knowledge.py --repo .
+      - name: Parse every Ultra JSON schema
+        run: |
+          for schema in skills/crossframe-ultra/schemas/*.json; do
+            python -m json.tool "$schema" > /dev/null
+          done
+      - name: Run Ultra contracts and artifact tests
+        run: python -B -m pytest -q tests/test_ultra_*.py --basetemp=E:/pt
+
   schemas-and-fixtures:
     name: schemas-and-fixtures
     runs-on: ubuntu-latest

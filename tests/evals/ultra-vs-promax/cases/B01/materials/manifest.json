@@ -1,0 +1,92 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-materials-manifest",
+  "schema_version": 2,
+  "case_id": "B01",
+  "bundle_status": "frozen",
+  "retrieval_mode": "frozen-bundle-only",
+  "source_files": [
+    {
+      "path": "source-01.json",
+      "sha256": "6e7738d41608c6cf4a92bbbf337b23a4e02e3c81eb7e1a5909ea15cd25c98251",
+      "media_type": "application/json",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "path": "source-02.json",
+      "sha256": "de3fe793f9a26d2c0234b634d6915d3bc5f457c7afed1ed7cccd334a8caebab7",
+      "media_type": "application/json",
+      "license": "MIT"
+    },
+    {
+      "path": "source-03.json",
+      "sha256": "974bd5f07564d157738d7601011528d1adf23b1805a12fe8b346b189c5e16bcf",
+      "media_type": "application/json",
+      "license": "MIT"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-r1",
+      "reviewed_at": "2026-08-03T21:40:48.268Z",
+      "subject_sha256": "8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1",
+      "evidence": [
+        "Recomputed all three source SHA-256 values and build_results.py canonical source_set_sha256=8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1. Root LICENSE is SPDX MIT; the OECD b21df222-en copyright page states CC-BY-4.0, and source-01 preserves attribution and the required adaptation notice while excluding third-party tables, figures, logos, and cover art. Synthetic ownership supports source-02 and source-03; every source_decision binds path, hash, license, and redistribution_allowed=true."
+      ],
+      "source_decisions": [
+        {
+          "path": "source-01.json",
+          "sha256": "6e7738d41608c6cf4a92bbbf337b23a4e02e3c81eb7e1a5909ea15cd25c98251",
+          "license": "CC-BY-4.0",
+          "redistribution_allowed": true,
+          "basis": "The OECD publication copyright page states CC BY 4.0; the file includes attribution and the required adaptation notice and excludes third-party tables, figures, logos, and cover art."
+        },
+        {
+          "path": "source-02.json",
+          "sha256": "de3fe793f9a26d2c0234b634d6915d3bc5f457c7afed1ed7cccd334a8caebab7",
+          "license": "MIT",
+          "redistribution_allowed": true,
+          "basis": "Project-owned synthetic workflow fixture distributed under the repository MIT license."
+        },
+        {
+          "path": "source-03.json",
+          "sha256": "974bd5f07564d157738d7601011528d1adf23b1805a12fe8b346b189c5e16bcf",
+          "license": "MIT",
+          "redistribution_allowed": true,
+          "basis": "Project-owned synthetic measurement dictionary distributed under the repository MIT license."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-r4",
+      "reviewed_at": "2026-08-03T22:19:09.285Z",
+      "subject_sha256": "8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1",
+      "evidence": [
+        "Current privacy-policy.json SHA-256 is 971a1eb2a6096228c3bfcf53f010b08fe291be31a5eb0a240a50d580019a330a and matches reviews.privacy.privacy_policy_sha256; the policy has exactly the eight required fields, default_deny=true, and the exact required allowlists, injected slots, and audit-only paths.",
+        "Privacy review of source-01.json through source-03.json found only public-source metadata/paraphrases and explicitly project-owned synthetic fixtures; no secrets, credentials, sensitive PII, real customer or incident data, or reusable sensitive details were found.",
+        "Reviewer IDs are exact and distinct: license=task16-license-r1, privacy=task16-privacy-r4, outcome_leakage=task16-outcome-r3."
+      ],
+      "privacy_policy_sha256": "971a1eb2a6096228c3bfcf53f010b08fe291be31a5eb0a240a50d580019a330a",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-r3",
+      "reviewed_at": "2026-08-03T21:40:30.970Z",
+      "subject_sha256": "8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1",
+      "evidence": [
+        "Independent source SHA-256 recomputation and canonical rebinding produced source_set_sha256=8c851055289ce15591703a64e112e47b74e1ab47be0b1aa6df0771e94917dfb1, matching the manifest and review subject.",
+        "evidence-cutoff.json SHA-256=d16e89f5b0bb4a940d7d5683f46e3b30a292410f2d70cbab530d11a664b7cb9a matches the binding; evidence_state is frozen, and all publication or observation dates precede 2026-08-02T00:00:00Z.",
+        "Manual review found only neutral publication, workflow, and measurement evidence, with no benchmark verdict, expected-pressure or rubric guidance, model output, grading target, winner, or downstream outcome; expected_pressure_sha256 was inspected as a manifest reference only and expected-pressure.json was not accessed."
+      ],
+      "evidence_cutoff_sha256": "d16e89f5b0bb4a940d7d5683f46e3b30a292410f2d70cbab530d11a664b7cb9a",
+      "expected_pressure_sha256": "3d374d7a32d8cb88c83536dd148f4b997b6db1a15f24e4c132f8d8815f04584b",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
+}

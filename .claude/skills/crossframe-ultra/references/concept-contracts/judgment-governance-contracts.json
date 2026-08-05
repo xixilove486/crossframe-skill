@@ -1,0 +1,138 @@
+{
+  "schema_id": "crossframe.ultra.v8.2.contract",
+  "schema_version": 1,
+  "framework_version": "v8.2",
+  "framework_revision": "v8.2",
+  "raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+  "semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+  "contract_id": "V82-CONTRACT-JUDGMENT-GOVERNANCE",
+  "responsibility": "证据身份，事实、前瞻、价值、责任与授权分离，行动上限及框架治理。",
+  "source_anchors": [
+    "V82-P2133",
+    "V82-P2156",
+    "V82-P2604",
+    "V82-P2605",
+    "V82-P2606",
+    "V82-P2607",
+    "V82-P2644",
+    "V82-P2646",
+    "V82-P2780",
+    "V82-P2781",
+    "V82-P2890",
+    "V82-P2815",
+    "V82-P2884",
+    "V82-P2885",
+    "V82-P4610",
+    "V82-P4614",
+    "V82-P4620"
+  ],
+  "concept_ids": [
+    "V82-M05",
+    "V82-M07",
+    "V82-M08",
+    "V82-M09"
+  ],
+  "machine_requirements": [
+    {
+      "requirement_id": "V82-REQ-GOVERNANCE-MACHINE",
+      "requirement_type": "governance_invariants",
+      "source_refs": [
+        "V82-P2780",
+        "V82-P2781",
+        "V82-P2890"
+      ],
+      "framework_self_proof_allowed": false,
+      "governance_record_generates_real_world_authorization": false,
+      "terminal_to_active_forbidden": [
+        "replaced",
+        "retired"
+      ],
+      "applied_change_requires": "resolvable_external_approval",
+      "invalid_approval_evidence": [
+        "alias",
+        "self_reported_independent_true",
+        "self_issued_authorization"
+      ],
+      "contrary_permission_text_overrides": false,
+      "machine_invariants": [
+        "framework_self_proof_forbidden",
+        "governance_record_authorization_generation_forbidden",
+        "replaced_to_active_forbidden",
+        "retired_to_active_forbidden",
+        "applied_requires_resolvable_external_approval",
+        "alias_approval_invalid",
+        "self_reported_independence_invalid",
+        "self_issued_authorization_invalid",
+        "contrary_permission_text_cannot_override_structured_constraints"
+      ],
+      "external_approval_required_bindings": [
+        "governance_record_ref",
+        "subject_ref",
+        "target_version",
+        "transition",
+        "objection_refs",
+        "decision_ref"
+      ],
+      "runtime_registry_resolution_fields": [
+        "reviewer_refs",
+        "decision_member_refs",
+        "decision_body_ref",
+        "issuer_ref",
+        "authorization_scope",
+        "subject_ref",
+        "target_version",
+        "validity_window",
+        "conflict_refs"
+      ],
+      "external_approval_resolution_invariants": [
+        "externality_cannot_be_self_reported",
+        "decision_must_resolve_to_approved",
+        "alias_resolved_identity_must_be_external",
+        "internal_signature_is_rejected",
+        "self_issued_authorization_is_rejected"
+      ]
+    }
+  ],
+  "clauses": [
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-IDENTITY",
+      "statement": "报告、观测、模型信念、模拟、证据与授权保持不同身份，任何产物不得静默跨越来源、建模、前瞻、评价、授权和执行责任。",
+      "source_anchors": [
+        "V82-P4610",
+        "V82-P4620"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-SEPARATION",
+      "statement": "推演、前瞻和有限选择使用不同合同；事实不自行选择价值或制造授权，现实行动必须经过事实、规范、方案与有限执行的独立转换。",
+      "source_anchors": [
+        "V82-P2133",
+        "V82-P2156",
+        "V82-P2604",
+        "V82-P2605",
+        "V82-P2606",
+        "V82-P4614"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-CEILING",
+      "statement": "证据增强只能提高描述判断上限；授权前只允许补证或保护性保全，最终行动上限取描述、规范、保护、方案、管辖、可逆性和期限的最窄交集。",
+      "source_anchors": [
+        "V82-P2607",
+        "V82-P2644",
+        "V82-P2646"
+      ]
+    },
+    {
+      "clause_id": "V82-CLAUSE-JUDGMENT-GOVERNANCE",
+      "statement": "框架不能自证现实安全或行动授权；断言必须登记证据、反证、替代解释、撤回条件和行动上限，反例必须写回文本、流程或行动上限。",
+      "source_anchors": [
+        "V82-P2780",
+        "V82-P2781",
+        "V82-P2815",
+        "V82-P2884",
+        "V82-P2885"
+      ]
+    }
+  ]
+}

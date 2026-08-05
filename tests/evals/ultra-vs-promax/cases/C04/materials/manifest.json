@@ -1,0 +1,73 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-materials-manifest",
+  "schema_version": 2,
+  "case_id": "C04",
+  "bundle_status": "frozen",
+  "retrieval_mode": "prohibited",
+  "source_files": [
+    {
+      "path": "record-01.json",
+      "sha256": "0f145f93844e9e5adb888213ab1b004b3514027960d163478f4de12c03d62dc0",
+      "media_type": "application/json",
+      "license": "MIT"
+    }
+  ],
+  "source_count": 1,
+  "source_set_sha256": "ed28277872f2572045e88ee5283f4dcf6b9ad5459dd3314294a55f06efea37d2",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-r1",
+      "reviewed_at": "2026-08-03T21:34:35.238Z",
+      "subject_sha256": "ed28277872f2572045e88ee5283f4dcf6b9ad5459dd3314294a55f06efea37d2",
+      "evidence": [
+        "Actual-byte SHA-256 matches the declared source.",
+        "source_files contains 1/1 safe relative path; it remains inside materials and is a regular non-reparse file with no duplicate.",
+        "build_results.py sha256_json(source_files)=ed28277872f2572045e88ee5283f4dcf6b9ad5459dd3314294a55f06efea37d2, matching source_set_sha256 and license subject_sha256.",
+        "The source byte content explicitly describes a complete synthetic-project statement record, uses a constructed claim identifier, and contains no third-party attribution.",
+        "MIT is a valid SPDX identifier; root LICENSE SHA-256 dd6cd13aa980e08faabf660a453f5e773111e54e47b31866aa7f955f72a2fc3 contains the MIT redistribution and sublicensing grant subject to notice retention.",
+        "The sole source_decision has the exact five-field shape and exact path+sha256+license binding, boolean redistribution_allowed=true, and a project-authored-synthetic/root-MIT basis."
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.json",
+          "sha256": "0f145f93844e9e5adb888213ab1b004b3514027960d163478f4de12c03d62dc0",
+          "license": "MIT",
+          "redistribution_allowed": true,
+          "basis": "Project-authored synthetic material covered by the repository root MIT LICENSE."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-r2",
+      "reviewed_at": "2026-08-03T21:34:05Z",
+      "subject_sha256": "ed28277872f2572045e88ee5283f4dcf6b9ad5459dd3314294a55f06efea37d2",
+      "evidence": [
+        "Canonical source-set hash and the declared source-file hash matched the manifest.",
+        "Privacy-policy v2 fields, default_deny=true, both exact packet allowlists, injected slots, and audit-only paths passed.",
+        "Policy SHA binding matched; all referenced paths existed.",
+        "Manual content and filename inspection found only a generic synthetic claim record, with no secrets, PII, real-person data, unsafe outbound material, or hidden paths."
+      ],
+      "privacy_policy_sha256": "cd3e2ad69a91430341e67ad8c5133d3b99b97a6063e012ba9adfed0b4bfc5aa6",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-r3",
+      "reviewed_at": "2026-08-03T21:36:55Z",
+      "subject_sha256": "ed28277872f2572045e88ee5283f4dcf6b9ad5459dd3314294a55f06efea37d2",
+      "evidence": [
+        "The source byte hash matches the manifest; build_results.py sha256_json(source_files) equals subject_sha256.",
+        "Cutoff schema v1 is frozen at 2026-08-02T00:00:00Z; source evidence is dated 2026-07-24T10:00:00Z.",
+        "Cutoff and expected-pressure bindings match; expected-pressure raw Git blob 64a726d15413a87b8e37018a8aea79f5c829633a equals HEAD.",
+        "Prompt and record state only the object-level claim plus absent comparator, criteria, and measurements; no prescribed judgment, benchmark grading criterion, answer key, evaluator instruction, or later outcome appears."
+      ],
+      "evidence_cutoff_sha256": "e0e7e9bfa53f00ccf7aa3477d620a60a59b2932c4d064466a1e442fc09486a7a",
+      "expected_pressure_sha256": "329bd0a2c9056e6e3e17bcd2270256a50673d2c723077d1e051c889b418d04bc",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
+}

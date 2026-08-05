@@ -1,0 +1,94 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-materials-manifest",
+  "schema_version": 2,
+  "case_id": "H02",
+  "bundle_status": "frozen",
+  "retrieval_mode": "frozen-bundle-only",
+  "source_files": [
+    {
+      "path": "record-01.txt",
+      "sha256": "76a19ac27806a0ea2aa8423a234720bdf5e51eed21f1a91cd3b2715d37211a80",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-02.txt",
+      "sha256": "6d634b72074cf6c29a78f4d1c106e556e763e4273641f8101ebd26ebf5e03aea",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    },
+    {
+      "path": "record-03.txt",
+      "sha256": "80e7b6ed2d6a0d7a50d69dbdf8745fac1c94d1f144befff7c1f633e53c24e0c5",
+      "media_type": "text/plain; charset=utf-8",
+      "license": "Public Domain (United States)"
+    }
+  ],
+  "source_count": 3,
+  "source_set_sha256": "3194b2f193d768a168aa0e2b7974e494af2229e685d4a29014e48b7e1d549fc1",
+  "reviews": {
+    "license": {
+      "status": "passed",
+      "reviewer_id": "task16-license-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:00:17.032Z",
+      "subject_sha256": "3194b2f193d768a168aa0e2b7974e494af2229e685d4a29014e48b7e1d549fc1",
+      "evidence": [
+        "Exact-byte SHA-256 recomputation matched all three supplied record bindings.",
+        "Canonical SHA-256 recomputation over the path-sorted source-item array, using paths record-01.txt through record-03.txt and the specified media_type and license values, matched the subject binding.",
+        "Founders Online and the National Archives substantiate the primary texts; the Library of Congress identifies Federalist No. 43 as James Madison and uses the venue line “For the Independent Journal.” U.S. Copyright Office Circular 15A supplies the pre-1931 public-domain rule: https://www.copyright.gov/circs/circ15a.pdf"
+      ],
+      "source_decisions": [
+        {
+          "path": "record-01.txt",
+          "sha256": "76a19ac27806a0ea2aa8423a234720bdf5e51eed21f1a91cd3b2715d37211a80",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "Founders Online/NARA reproduces Madison's June 5, 1787 primary text: https://founders.archives.gov/documents/Madison/01-10-02-0017. The record excludes the page's separately copyrighted modern annotations and contains only historical primary text plus minimal factual headings. The historical work predates 1931 and is public domain under https://www.copyright.gov/circs/circ15a.pdf."
+        },
+        {
+          "path": "record-02.txt",
+          "sha256": "6d634b72074cf6c29a78f4d1c106e556e763e4273641f8101ebd26ebf5e03aea",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "The National Archives' Constitution transcription gives Article VII verbatim: https://www.archives.gov/founding-docs/constitution-transcript. The 1787 text predates 1931 and is public domain under https://www.copyright.gov/circs/circ15a.pdf."
+        },
+        {
+          "path": "record-03.txt",
+          "sha256": "80e7b6ed2d6a0d7a50d69dbdf8745fac1c94d1f144befff7c1f633e53c24e0c5",
+          "license": "Public Domain (United States)",
+          "redistribution_allowed": true,
+          "basis": "Founders Online/NARA provides Federalist No. 43 and its January 23, 1788 text: https://founders.archives.gov/documents/Madison/01-10-02-0248. The Library of Congress identifies No. 43 as James Madison and “For the Independent Journal”: https://guides.loc.gov/federalist-papers/text-41-50. The extracted historical text excludes modern annotations and predates 1931, satisfying https://www.copyright.gov/circs/circ15a.pdf."
+        }
+      ]
+    },
+    "privacy": {
+      "status": "passed",
+      "reviewer_id": "task16-privacy-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T21:59:16.673Z",
+      "subject_sha256": "3194b2f193d768a168aa0e2b7974e494af2229e685d4a29014e48b7e1d549fc1",
+      "evidence": [
+        "Canonical source-set recomputation from path-sorted record-01.txt through record-03.txt entries matched 3194b2f193d768a168aa0e2b7974e494af2229e685d4a29014e48b7e1d549fc1; actual record SHA-256 values were 76a19ac27806a0ea2aa8423a234720bdf5e51eed21f1a91cd3b2715d37211a80, 6d634b72074cf6c29a78f4d1c106e556e763e4273641f8101ebd26ebf5e03aea, and 80e7b6ed2d6a0d7a50d69dbdf8745fac1c94d1f144befff7c1f633e53c24e0c5.",
+        "privacy-policy.json had exactly the eight required top keys in order, schema version 2, matching case_id, boolean default_deny=true, identical exact five-path product/grader allowlists, exact rubric/article-a/article-b slots, and manifest/privacy/expected audit-only ordering. Its SHA-256 matched 8e67a5086b7b408d8fe9a5f66309daa67187180b4fb9bb230112a7c814a3097d.",
+        "All five product-packet files plus the policy were regular non-link files, 70–1173 bytes, strict UTF-8 with LF only and no BOM/NUL. Every declared path was relative, forward-slash normalized, dot-segment-free, and resolved inside H02. Inspection found only public historical constitutional material, with no secrets, credentials, private personal data, URLs, or outbound commands."
+      ],
+      "privacy_policy_sha256": "8e67a5086b7b408d8fe9a5f66309daa67187180b4fb9bb230112a7c814a3097d",
+      "sensitive_paths": [],
+      "outbound_safe": true
+    },
+    "outcome_leakage": {
+      "status": "passed",
+      "reviewer_id": "task16-outcome-reviewer-r2-20260804",
+      "reviewed_at": "2026-08-03T22:15:28.583Z",
+      "subject_sha256": "3194b2f193d768a168aa0e2b7974e494af2229e685d4a29014e48b7e1d549fc1",
+      "evidence": [
+        "Canonical path-sorted source-set recomputation over record-01.txt through record-03.txt matched the bound subject SHA-256; the raw evidence-cutoff.json SHA-256 also matched its binding.",
+        "The three source dates—1787-06-05, 1787-09-17, and 1788-01-23—are strictly before 1788-06-21T00:00:00Z. Their bodies, versions, and dates match https://founders.archives.gov/documents/Madison/01-10-02-0017, https://www.archives.gov/founding-docs/constitution-transcript, and https://founders.archives.gov/documents/Madison/01-10-02-0248; record-03's Independent Journal attribution is consistent with the historical source.",
+        "The National Archives identifies New Hampshire as the ninth ratifying state on 1788-06-21 at https://www.archives.gov/founding-docs/constitution-q-and-a. None of the inspected materials names New Hampshire's ratification or otherwise states the realized outcome."
+      ],
+      "evidence_cutoff_sha256": "cacce3f9f73e6a4fcabf6f82c111ca42f399e1eb0dd4288f483dbec1dc689be5",
+      "expected_pressure_sha256": "fea064a2071eef64f5ae7e627055136961d04afe26928699e558f50adf6f3f91",
+      "post_cutoff_paths": [],
+      "outcome_disclosure_paths": []
+    }
+  }
+}

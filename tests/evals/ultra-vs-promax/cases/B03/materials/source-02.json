@@ -1,0 +1,41 @@
+{
+  "record_type": "synthetic-unit-economics-snapshot",
+  "fixture_id": "B03-ECON-2026-07",
+  "synthetic": true,
+  "as_of": "2026-07-31T12:00:00Z",
+  "units": {
+    "revenue_and_cost": "index points per account-month",
+    "share": "percent",
+    "term": "months"
+  },
+  "segments": [
+    {
+      "segment": "self-serve",
+      "account_share": 56,
+      "revenue": 100,
+      "variable_cost": 31,
+      "support_cost": 9,
+      "median_remaining_term": 1,
+      "baseline_monthly_churn": 4.8
+    },
+    {
+      "segment": "managed",
+      "account_share": 31,
+      "revenue": 168,
+      "variable_cost": 46,
+      "support_cost": 21,
+      "median_remaining_term": 7,
+      "baseline_monthly_churn": 1.9
+    },
+    {
+      "segment": "enterprise",
+      "account_share": 13,
+      "revenue": 310,
+      "variable_cost": 82,
+      "support_cost": 55,
+      "median_remaining_term": 15,
+      "baseline_monthly_churn": 0.7
+    }
+  ],
+  "provenance": "Project-owned synthetic fixture; no customer-level records or real financials are included."
+}

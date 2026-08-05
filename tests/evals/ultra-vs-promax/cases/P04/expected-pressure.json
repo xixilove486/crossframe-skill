@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "P04",
+  "decisive_pressure": "asynchronous clocks",
+  "v82_decisive": true,
+  "adversarial_targets": [
+    "asynchronous-clocks",
+    "sparse-evidence-ranking"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

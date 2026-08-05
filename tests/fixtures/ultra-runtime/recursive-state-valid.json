@@ -1,0 +1,60 @@
+{
+  "schema_id": "crossframe.ultra.v82.recursive-state",
+  "schema_version": 1,
+  "run_id": "ultra-world-fixture-run",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+  },
+  "generated_at": "2026-08-02T10:00:00Z",
+  "content_sha256": "ed668035d8f3937fa99ba73afcfc51a75bcbbf2e490fdf19657b09915c648482",
+  "phase_id": "U7",
+  "path_id": "PATH-MAIN",
+  "node_id": "NODE-MAIN-ORDER-1",
+  "parent_run_id": "ultra-world-fixture-run",
+  "parent_path_id": "PATH-MAIN",
+  "parent_node_id": "OMEGA-FIXTURE",
+  "order": 1,
+  "world_volume_artifact_sha256": "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5",
+  "transformation_ledger_artifact_sha256": "196e169890e2900713d0a9b42d46779ea59e2c26faf6f542cc7a9269c72abe1c",
+  "concept_disposition_artifact_sha256": "f5a176c3d6cc5edba0adc4ddb689979e046eb071baf97416c492b3a8bae8d226",
+  "claim_mechanism_graph_artifact_sha256": "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c",
+  "full_state_sha256": "01a9cd12d2870e5725c9795b461fb3d3047041c07740757e63129774276764dc",
+  "inherited_fact_ids": [
+    "WORLD-EVENT-LOCAL"
+  ],
+  "inherited_evidence_ids": [
+    "EVIDENCE-ASSOCIATION-CHARTER",
+    "EVIDENCE-INTERVIEW-ONE",
+    "EVIDENCE-ROSTER-ATLAS"
+  ],
+  "inherited_unknown_ids": [
+    "UNKNOWN-ADAPTATION"
+  ],
+  "inherited_loss_ids": [
+    "LOSS-CIRCLE-DELAY",
+    "LOSS-REPRESENTATION-FAMILY",
+    "LOSS-REPRESENTATION-TEAM"
+  ],
+  "inherited_residual_ids": [
+    "RESIDUAL-PEER-EFFECT"
+  ],
+  "event_id": "WORLD-EVENT-LOCAL",
+  "mechanism_ids": [
+    "MECHANISM-REVIEW-CHANNEL"
+  ],
+  "state_diff_sha256": "15a4ea69409f04a49fd8820f70d0dd809eb55d01d47730aa1e1ac963f9908a4d",
+  "signal_ids": [
+    "SIGNAL-LOCAL-REVIEW"
+  ],
+  "evidence_identity": "inferred-from-material",
+  "declared_evidence_grade": "medium"
+}

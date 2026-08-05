@@ -1,0 +1,44 @@
+{
+  "record_type": "versioned-specification-note",
+  "curation": {
+    "cutoff_checked_against": "2026-08-02T00:00:00Z",
+    "method": "Project-authored factual metadata and paraphrase; no RFC prose, code component, figure, or protocol example is reproduced.",
+    "curation_license": "MIT"
+  },
+  "specifications": [
+    {
+      "publisher": "RFC Editor",
+      "identifier": "RFC 9000",
+      "title": "QUIC: A UDP-Based Multiplexed and Secure Transport",
+      "status": "Proposed Standard",
+      "published_on": "2021-05-01",
+      "doi": "10.17487/RFC9000",
+      "url": "https://www.rfc-editor.org/info/rfc9000",
+      "rights_reference": "BCP 78 and IETF Trust Legal Provisions in effect at publication"
+    },
+    {
+      "publisher": "RFC Editor",
+      "identifier": "RFC 9114",
+      "title": "HTTP/3",
+      "status": "Proposed Standard",
+      "published_on": "2022-06-01",
+      "doi": "10.17487/RFC9114",
+      "url": "https://www.rfc-editor.org/info/rfc9114",
+      "rights_reference": "BCP 78 and IETF Trust Legal Provisions in effect at publication"
+    }
+  ],
+  "deployment_facts": [
+    {
+      "fact_id": "S1",
+      "observation": "QUIC version 1 uses UDP as its transport substrate and integrates encrypted connection establishment."
+    },
+    {
+      "fact_id": "S2",
+      "observation": "HTTP/3 maps HTTP semantics onto QUIC and defines endpoint discovery and connection setup mechanisms."
+    },
+    {
+      "fact_id": "S3",
+      "observation": "The HTTP/3 specification retains a TCP-based fallback path when QUIC connectivity cannot be established."
+    }
+  ]
+}

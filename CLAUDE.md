@@ -16,6 +16,7 @@ CrossFrame skills 在 Claude Code 中也是显式调用 only。不要因为普�
 - `.claude/skills/crossframe-inquiry/SKILL.md`
 - `.claude/skills/crossframe-max/SKILL.md`
 - `.claude/skills/crossframe-promax/SKILL.md`
+- `.claude/skills/crossframe-ultra/SKILL.md`
 - `.claude/skills/crossframe-public/SKILL.md`
 - `.claude/skills/crossframe-org/SKILL.md`
 - `.claude/skills/crossframe-teach/SKILL.md`
@@ -33,6 +34,7 @@ CrossFrame skills 在 Claude Code 中也是显式调用 only。不要因为普�
 - `.claude/commands/crossframe-inquiry.md`
 - `.claude/commands/crossframe-max.md`
 - `.claude/commands/crossframe-promax.md`
+- `.claude/commands/crossframe-ultra.md`
 - `.claude/commands/crossframe-public.md`
 - `.claude/commands/crossframe-org.md`
 - `.claude/commands/crossframe-teach.md`
@@ -54,6 +56,7 @@ CrossFrame skills 在 Claude Code 中也是显式调用 only。不要因为普�
 /crossframe-inquiry 基于刚才完成的分析，继续追问反证、补证和迁移条件
 /crossframe-max 把这件事当作一个局部世界，做全尺度结构推演并写完整解释
 /crossframe-promax 用 v8 框架穷尽分析这个判断，主动搜索反例并给出明确立场
+/crossframe-ultra 用固定 v8.2 参考运行时分析这个判断
 /crossframe-public 分析这个平台申诉机制是否只是表面治理
 /crossframe-org 给这个项目失败写组织修复备忘录
 /crossframe-teach 用人话解释开放断言
@@ -64,6 +67,10 @@ CrossFrame skills 在 Claude Code 中也是显式调用 only。不要因为普�
 本文件保持轻量。若任务确实涉及 CrossFrame 使用、文档修订或适配层维护，再按需读取：
 
 CrossFrame ProMax is a v8-only, exact-name only independent skill. Read `skills/crossframe-promax/SKILL.md` only when the user writes `crossframe-promax`, `CrossFrame ProMax`, `$crossframe-promax`, or `/crossframe-promax`. If both Max and ProMax are named, ProMax wins; generic maximality remains Max; suite never auto-upgrades; ProMax uses its own audit with no review chain and never falls back to Max.
+
+<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
+CrossFrame Ultra Skill is a fixed v8.2 reference runtime. Read `skills/crossframe-ultra/SKILL.md` only when the user writes exactly `crossframe-ultra`, `CrossFrame Ultra`, `$crossframe-ultra`, or `/crossframe-ultra`. An exact Ultra-only request routes to Ultra. Routing policy: generic maximum/deep/full requests remain Max; ProMax-over-Max remains unchanged; when Ultra and another runtime are both named, an explicit comparison runs each independently; when both are named without an explicit comparison, pause for runtime choice; suite without an exact Ultra name never routes to Ultra; Ultra failure never falls back.
+<!-- CROSSFRAME-ULTRA-ROUTING-END -->
 
 - `README.md`
 - `skills/crossframe-suite/SKILL.md`
@@ -113,6 +120,7 @@ CrossFrame ProMax is a v8-only, exact-name only independent skill. Read `skills/
 - `skills/crossframe-inquiry/SKILL.md`
 - `skills/crossframe-max/SKILL.md`
 - `skills/crossframe-promax/SKILL.md`
+- `skills/crossframe-ultra/SKILL.md`
 - `skills/crossframe-public/SKILL.md`
 - `skills/crossframe-org/SKILL.md`
 - `skills/crossframe-teach/SKILL.md`

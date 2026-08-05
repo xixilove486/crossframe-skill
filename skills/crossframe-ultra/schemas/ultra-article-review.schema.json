@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-article-review.schema.json",
+  "title": "CrossFrame Ultra mechanical blind-reader article review",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "output_plan_artifact_sha256",
+        "semantic_universe_sha256",
+        "article_sha256",
+        "coverage_artifact_sha256",
+        "blind_recovery_contract_sha256",
+        "blind_reader_fields",
+        "quality_checks",
+        "external_dependencies",
+        "overall_status",
+        "official_filename_allowed",
+        "review_stage",
+        "needs_u12_validation",
+        "u12_validator_artifact_required"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.article-review"},
+        "phase_id": {"const": "U11"},
+        "output_plan_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "semantic_universe_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "article_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "coverage_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "blind_recovery_contract_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "blind_reader_fields": {
+          "type": "array",
+          "minItems": 15,
+          "maxItems": 15,
+          "items": {"$ref": "#/$defs/blindReaderField"},
+          "allOf": [
+            {"contains": {"properties": {"field_id": {"const": "main_verdict"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "confidence"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "steelmanned_user_position"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "decisive_evidence"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "unknowns"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "circle_relations"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "mechanisms"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "strongest_rival"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "order_1"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "order_2"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "order_3"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "five_verdicts"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "action"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "residuals"}}, "required": ["field_id"]}},
+            {"contains": {"properties": {"field_id": {"const": "reversal_conditions"}}, "required": ["field_id"]}}
+          ]
+        },
+        "quality_checks": {
+          "type": "array",
+          "minItems": 11,
+          "maxItems": 11,
+          "items": {"$ref": "#/$defs/qualityCheck"},
+          "allOf": [
+            {"contains": {"properties": {"check_id": {"const": "reader-contract"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "repeated-paragraph"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "template-language"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "jargon-before-explanation"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "unresolved-pronoun"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "unsupported-certainty"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "truncation-promise"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "machine-dump"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "independent-article"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "semantic-coverage"}}, "required": ["check_id"]}},
+            {"contains": {"properties": {"check_id": {"const": "blind-recovery"}}, "required": ["check_id"]}}
+          ]
+        },
+        "external_dependencies": {"$ref": "ultra-common.schema.json#/$defs/stringArray"},
+        "overall_status": {"enum": ["mechanical-complete", "mechanical-fail"]},
+        "official_filename_allowed": {"const": false},
+        "review_stage": {"const": "mechanical-precheck"},
+        "needs_u12_validation": {"const": true},
+        "u12_validator_artifact_required": {"const": true}
+      }
+    },
+    {
+      "if": {"$ref": "#/$defs/mechanicalCompletionConditions"},
+      "then": {
+        "properties": {"overall_status": {"const": "mechanical-complete"}}
+      },
+      "else": {
+        "properties": {"overall_status": {"const": "mechanical-fail"}}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "blindFieldId": {
+      "enum": [
+        "main_verdict",
+        "confidence",
+        "steelmanned_user_position",
+        "decisive_evidence",
+        "unknowns",
+        "circle_relations",
+        "mechanisms",
+        "strongest_rival",
+        "order_1",
+        "order_2",
+        "order_3",
+        "five_verdicts",
+        "action",
+        "residuals",
+        "reversal_conditions"
+      ]
+    },
+    "blindReaderField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_id", "recovered", "excerpt"],
+      "properties": {
+        "field_id": {"$ref": "#/$defs/blindFieldId"},
+        "recovered": {"type": "boolean"},
+        "excerpt": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"recovered": {"const": true}},
+            "required": ["recovered"]
+          },
+          "then": {
+            "properties": {"excerpt": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}}
+          },
+          "else": {
+            "properties": {"excerpt": {"enum": [null, ""]}}
+          }
+        }
+      ]
+    },
+    "qualityCheckId": {
+      "enum": [
+        "reader-contract",
+        "repeated-paragraph",
+        "template-language",
+        "jargon-before-explanation",
+        "unresolved-pronoun",
+        "unsupported-certainty",
+        "truncation-promise",
+        "machine-dump",
+        "independent-article",
+        "semantic-coverage",
+        "blind-recovery"
+      ]
+    },
+    "qualityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check_id", "status", "evidence"],
+      "properties": {
+        "check_id": {"$ref": "#/$defs/qualityCheckId"},
+        "status": {"enum": ["pass", "fail", "blocked"]},
+        "evidence": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "mechanicalCompletionConditions": {
+      "type": "object",
+      "required": ["blind_reader_fields", "quality_checks", "external_dependencies"],
+      "properties": {
+        "blind_reader_fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["recovered"],
+            "properties": {"recovered": {"const": true}}
+          }
+        },
+        "quality_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["status"],
+            "properties": {"status": {"const": "pass"}}
+          }
+        },
+        "external_dependencies": {"type": "array", "maxItems": 0}
+      }
+    }
+  }
+}

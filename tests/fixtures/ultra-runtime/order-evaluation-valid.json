@@ -1,0 +1,174 @@
+{
+  "schema_id": "crossframe.ultra.v82.order-evaluation",
+  "schema_version": 1,
+  "run_id": "ultra-world-fixture-run",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+  },
+  "generated_at": "2026-08-02T10:30:00Z",
+  "content_sha256": "511c2cc84ecbb40610424221efa343c20a9db9cc0ce03402cb627bbf233f822c",
+  "phase_id": "U8",
+  "claim_mechanism_graph_artifact_sha256": "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c",
+  "recursive_lineage_artifact_sha256": "032ec27a6d3a6ddf353927a27a5e1df2d3b5efaf8573878f65d7c2cfb8a4e9aa",
+  "evaluations": [
+    {
+      "order": 1,
+      "branch_coverage": [
+        {
+          "branch_kind": "main",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-MAIN"],
+          "not_applicable": null
+        },
+        {
+          "branch_kind": "strongest-rival",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-RIVAL"],
+          "not_applicable": null
+        },
+        {
+          "branch_kind": "mixture",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-MIXTURE"],
+          "not_applicable": null
+        },
+        {
+          "branch_kind": "residual",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-RESIDUAL"],
+          "not_applicable": null
+        }
+      ],
+      "baseline": {
+        "baseline_id": "BASELINE-ORDER-1",
+        "description": "The simple baseline projects the local U4 event without recursive adaptation."
+      },
+      "explanation_gain": "The first order exposes the direct channel and the strongest local rival.",
+      "forecast_gain": "The first order adds a bounded review-response signal.",
+      "added_assumptions": ["The frozen channel remains available through the immediate clock."],
+      "added_losses": ["LOSS-CIRCLE-DELAY"],
+      "local_predictability": "high",
+      "continuation_value": "high",
+      "continue_recursive": true,
+      "stop_kind": null,
+      "rationale": "The direct effect changes the next action set, so a second order is material."
+    },
+    {
+      "order": 2,
+      "branch_coverage": [
+        {
+          "branch_kind": "main",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-MAIN"],
+          "not_applicable": null
+        },
+        {
+          "branch_kind": "strongest-rival",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "The rival was pruned after its first-order signal added no distinct test.",
+            "evidence_refs": ["EVIDENCE-INTERVIEW-ONE"],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        },
+        {
+          "branch_kind": "mixture",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "The mixture merged at order one and has no independent second-order node.",
+            "evidence_refs": ["EVIDENCE-ROSTER-ATLAS"],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        },
+        {
+          "branch_kind": "residual",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "The residual lacks a sealed channel for a deeper transition.",
+            "evidence_refs": [],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        }
+      ],
+      "baseline": {
+        "baseline_id": "BASELINE-ORDER-2",
+        "description": "The simple baseline preserves the first-order action set without adaptation."
+      },
+      "explanation_gain": "The second order reveals the action-set reversal induced by workload allocation.",
+      "forecast_gain": "The reversal supplies a discriminating action signal absent from the baseline.",
+      "added_assumptions": ["The reported workload remains binding during the interaction clock."],
+      "added_losses": ["LOSS-REPRESENTATION-FAMILY"],
+      "local_predictability": "bounded",
+      "continuation_value": "bounded",
+      "continue_recursive": true,
+      "stop_kind": null,
+      "rationale": "The reversal may become institutionalized, so one final order remains material."
+    },
+    {
+      "order": 3,
+      "branch_coverage": [
+        {
+          "branch_kind": "main",
+          "applicability": "applicable",
+          "branch_ids": ["BRANCH-MAIN"],
+          "not_applicable": null
+        },
+        {
+          "branch_kind": "strongest-rival",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "No sealed rival state survives to the third order.",
+            "evidence_refs": ["EVIDENCE-INTERVIEW-ONE"],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        },
+        {
+          "branch_kind": "mixture",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "The merged mixture has no independent third-order state.",
+            "evidence_refs": ["EVIDENCE-ROSTER-ATLAS"],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        },
+        {
+          "branch_kind": "residual",
+          "applicability": "not-applicable",
+          "branch_ids": [],
+          "not_applicable": {
+            "reason": "The unresolved peer effect remains outside any validated channel.",
+            "evidence_refs": [],
+            "residual_ids": ["RESIDUAL-PEER-EFFECT"]
+          }
+        }
+      ],
+      "baseline": {
+        "baseline_id": "BASELINE-ORDER-3",
+        "description": "The simple baseline does not institutionalize the second-order reversal."
+      },
+      "explanation_gain": "The third order identifies a bounded institutional lock-in mechanism.",
+      "forecast_gain": "The lock-in yields a longer-horizon rule persistence signal.",
+      "added_assumptions": ["The combined-pressure mechanism remains active through the institutional clock."],
+      "added_losses": ["LOSS-REPRESENTATION-TEAM"],
+      "local_predictability": "bounded",
+      "continuation_value": "none",
+      "continue_recursive": false,
+      "stop_kind": "order-limit",
+      "rationale": "The frozen contract stops at order three while retaining the peer residual."
+    }
+  ]
+}

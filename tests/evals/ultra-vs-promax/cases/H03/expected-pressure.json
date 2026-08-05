@@ -1,0 +1,15 @@
+{
+  "schema_id": "crossframe.ultra.benchmark-expected-pressure",
+  "schema_version": 1,
+  "case_id": "H03",
+  "decisive_pressure": "lineage deduplication",
+  "v82_decisive": false,
+  "adversarial_targets": [
+    "shared-source-pollution",
+    "lineage-deduplication"
+  ],
+  "visibility": {
+    "product": false,
+    "grader": false
+  }
+}

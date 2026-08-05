@@ -1,0 +1,160 @@
+{
+  "schema_id": "crossframe.ultra.v82.compatibility-matrix",
+  "schema_version": 1,
+  "run_id": "ultra-run-20260802-0001",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+  },
+  "generated_at": "2026-08-02T08:00:00Z",
+  "content_sha256": "203143ed8ef960c2e1f4083427280dc901ffd694351d295cd33b3b1df3c3a1a2",
+  "matrix_version": 1,
+  "binding_fields": [
+    "framework_version",
+    "framework_revision",
+    "framework_raw_sha256",
+    "framework_semantic_sha256",
+    "runtime_version",
+    "artifact_schema_version",
+    "compiler_version",
+    "validator_version",
+    "article_contract_version",
+    "source_tree_sha256"
+  ],
+  "allowed_results": [
+    "resume",
+    "read-only",
+    "fork-required",
+    "reject"
+  ],
+  "known_migrations": {
+    "framework_revisions": [
+      {
+        "from_binding": {
+          "framework_version": "8.2",
+          "framework_revision": "v8.2-r0",
+          "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+          "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+          "runtime_version": "1.0.0",
+          "artifact_schema_version": 1,
+          "compiler_version": "1.0.0",
+          "validator_version": "1.0.0",
+          "article_contract_version": "1.0.0",
+          "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+        },
+        "to_binding": {
+          "framework_version": "8.2",
+          "framework_revision": "v8.2-r1",
+          "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+          "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+          "runtime_version": "1.0.0",
+          "artifact_schema_version": 1,
+          "compiler_version": "1.0.0",
+          "validator_version": "1.0.0",
+          "article_contract_version": "1.0.0",
+          "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+        },
+        "result": "fork-required"
+      }
+    ],
+    "artifact_schemas": [
+      {
+        "from_binding": {
+          "framework_version": "8.2",
+          "framework_revision": "v8.2-r1",
+          "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+          "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+          "runtime_version": "1.0.0",
+          "artifact_schema_version": 0,
+          "compiler_version": "1.0.0",
+          "validator_version": "1.0.0",
+          "article_contract_version": "1.0.0",
+          "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+        },
+        "to_binding": {
+          "framework_version": "8.2",
+          "framework_revision": "v8.2-r1",
+          "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+          "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+          "runtime_version": "1.0.0",
+          "artifact_schema_version": 1,
+          "compiler_version": "1.0.0",
+          "validator_version": "1.0.0",
+          "article_contract_version": "1.0.0",
+          "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+        },
+        "result": "fork-required"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "known-framework-migration",
+      "priority": 10,
+      "match_kind": "known-migration",
+      "allowed_mismatch_fields": [
+        "framework_revision"
+      ],
+      "result": "fork-required"
+    },
+    {
+      "rule_id": "known-schema-migration",
+      "priority": 11,
+      "match_kind": "known-migration",
+      "allowed_mismatch_fields": [
+        "artifact_schema_version"
+      ],
+      "result": "fork-required"
+    },
+    {
+      "rule_id": "readable-runtime",
+      "priority": 20,
+      "match_kind": "mismatch-subset",
+      "allowed_mismatch_fields": [
+        "runtime_version",
+        "validator_version"
+      ],
+      "result": "read-only"
+    },
+    {
+      "rule_id": "exact-binding",
+      "priority": 30,
+      "match_kind": "exact",
+      "allowed_mismatch_fields": [],
+      "result": "resume"
+    },
+    {
+      "rule_id": "reject-unsupported",
+      "priority": 100,
+      "match_kind": "fallback",
+      "allowed_mismatch_fields": [],
+      "result": "reject"
+    }
+  ],
+  "source_revision_promotion": {
+    "same_semantic": {
+      "action": "record-alternate-raw-package",
+      "keep_revision": true,
+      "build_beside_current": false,
+      "requires_validation": false,
+      "promote_stable_after_validation": false,
+      "overwrite_existing_release": false
+    },
+    "changed_semantic": {
+      "action": "build-new-immutable-revision",
+      "keep_revision": false,
+      "build_beside_current": true,
+      "requires_validation": true,
+      "promote_stable_after_validation": true,
+      "overwrite_existing_release": false
+    }
+  }
+}

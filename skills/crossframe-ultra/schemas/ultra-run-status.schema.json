@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-run-status.schema.json",
+  "title": "CrossFrame Ultra authoritative run status",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["status", "previous_status", "current_phase", "last_complete_phase", "reason", "tools_allowed", "validation_passed", "updated_at", "created_at", "revision"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.run-status"},
+        "status": {"$ref": "ultra-common.schema.json#/$defs/runStatus"},
+        "previous_status": {
+          "oneOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/runStatus"},
+            {"type": "null"}
+          ]
+        },
+        "current_phase": {"$ref": "ultra-common.schema.json#/$defs/phaseId"},
+        "last_complete_phase": {
+          "oneOf": [
+            {"$ref": "ultra-common.schema.json#/$defs/phaseId"},
+            {"type": "null"}
+          ]
+        },
+        "reason": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
+        "tools_allowed": {"type": "boolean"},
+        "validation_passed": {"type": "boolean"},
+        "updated_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "created_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "revision": {"type": "integer", "minimum": 0}
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "created"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "previous_status": {"type": "null"},
+          "phase_id": {"const": "U0"},
+          "current_phase": {"const": "U0"},
+          "last_complete_phase": {"type": "null"},
+          "tools_allowed": {"const": false},
+          "validation_passed": {"const": false},
+          "revision": {"const": 0}
+        }
+      },
+      "else": {
+        "properties": {
+          "previous_status": {"$ref": "ultra-common.schema.json#/$defs/runStatus"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "running"}}, "required": ["status"]},
+      "then": {"properties": {"tools_allowed": {"const": true}}},
+      "else": {"properties": {"tools_allowed": {"const": false}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "complete"}}, "required": ["status"]},
+      "then": {
+        "properties": {
+          "phase_id": {"const": "U12"},
+          "current_phase": {"const": "U12"},
+          "last_complete_phase": {"const": "U12"},
+          "tools_allowed": {"const": false},
+          "validation_passed": {"const": true}
+        }
+      },
+      "else": {"properties": {"validation_passed": {"const": false}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "cancelled"}}, "required": ["status"]},
+      "then": {"properties": {"tools_allowed": {"const": false}}}
+    }
+  ],
+  "unevaluatedProperties": false
+}

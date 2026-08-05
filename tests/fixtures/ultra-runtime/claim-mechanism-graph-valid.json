@@ -1,0 +1,159 @@
+{
+  "schema_id": "crossframe.ultra.v82.claim-mechanism-graph",
+  "schema_version": 1,
+  "run_id": "ultra-world-fixture-run",
+  "version_binding": {
+    "framework_version": "8.2",
+    "framework_revision": "v8.2-r1",
+    "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
+    "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
+    "runtime_version": "1.0.0",
+    "artifact_schema_version": 1,
+    "compiler_version": "1.0.0",
+    "validator_version": "1.0.0",
+    "article_contract_version": "1.0.0",
+    "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+  },
+  "generated_at": "2026-08-02T09:30:00Z",
+  "content_sha256": "3a9fb63b8bf7b4e6db616a62a29a3f499d6809d077cd7bbf67d60470a811af8a",
+  "phase_id": "U6",
+  "evidence_ledger_artifact_sha256": "b2e92cdb80bc8c497b8d215ac490a418d68c7142484f6af0f073c18df8794981",
+  "world_volume_artifact_sha256": "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5",
+  "transformation_ledger_artifact_sha256": "196e169890e2900713d0a9b42d46779ea59e2c26faf6f542cc7a9269c72abe1c",
+  "concept_disposition_artifact_sha256": "f5a176c3d6cc5edba0adc4ddb689979e046eb071baf97416c492b3a8bae8d226",
+  "central_claim_id": "CLAIM-CHANNEL-CONSTRAINT",
+  "partial_ranking_justification": null,
+  "claims": [
+    {
+      "claim_id": "CLAIM-CHANNEL-CONSTRAINT",
+      "statement": "The frozen review channel changes the team manager's local action set.",
+      "identity": "inferred-from-material",
+      "evidence_refs": ["EVIDENCE-ROSTER-ATLAS"],
+      "status": "active"
+    },
+    {
+      "claim_id": "CLAIM-WORKLOAD-RIVAL",
+      "statement": "The observed response may instead follow from the reported cross-role workload.",
+      "identity": "competing-explanation",
+      "evidence_refs": ["EVIDENCE-INTERVIEW-ONE"],
+      "status": "active"
+    },
+    {
+      "claim_id": "CLAIM-MIXED-EXPLANATION",
+      "statement": "The channel constraint and reported workload may jointly produce the response.",
+      "identity": "competing-explanation",
+      "evidence_refs": ["EVIDENCE-ROSTER-ATLAS", "EVIDENCE-INTERVIEW-ONE"],
+      "status": "active"
+    },
+    {
+      "claim_id": "CLAIM-PEER-RESIDUAL",
+      "statement": "The remaining peer effect is unresolved on the frozen evidence.",
+      "identity": "unknown",
+      "evidence_refs": [],
+      "status": "unknown"
+    }
+  ],
+  "mechanisms": [
+    {
+      "mechanism_id": "MECHANISM-REVIEW-CHANNEL",
+      "description": "The sealed self-channel exposes a bounded review action to the team manager position.",
+      "input_refs": ["CLAIM-CHANNEL-CONSTRAINT"],
+      "output_refs": ["POS-TEAM-MANAGER"],
+      "channel_refs": ["CHANNEL-TEAM-SELF"],
+      "evidence_refs": ["EVIDENCE-ROSTER-ATLAS"]
+    },
+    {
+      "mechanism_id": "MECHANISM-WORKLOAD-ALLOCATION",
+      "description": "Reported care commitments reduce the actor's available team response capacity.",
+      "input_refs": ["CLAIM-WORKLOAD-RIVAL"],
+      "output_refs": ["POS-TEAM-MANAGER"],
+      "channel_refs": ["CHANNEL-TEAM-SELF"],
+      "evidence_refs": ["EVIDENCE-INTERVIEW-ONE"]
+    },
+    {
+      "mechanism_id": "MECHANISM-COMBINED-PRESSURE",
+      "description": "The bounded review channel and reported workload interact at the manager position.",
+      "input_refs": ["CLAIM-CHANNEL-CONSTRAINT", "CLAIM-WORKLOAD-RIVAL"],
+      "output_refs": ["POS-TEAM-MANAGER"],
+      "channel_refs": ["CHANNEL-TEAM-SELF"],
+      "evidence_refs": ["EVIDENCE-ROSTER-ATLAS", "EVIDENCE-INTERVIEW-ONE"]
+    },
+    {
+      "mechanism_id": "MECHANISM-PEER-RESIDUAL",
+      "description": "An unresolved peer effect remains outside the sealed channel explanation.",
+      "input_refs": ["CLAIM-PEER-RESIDUAL"],
+      "output_refs": ["RESIDUAL-PEER-EFFECT"],
+      "channel_refs": [],
+      "evidence_refs": []
+    }
+  ],
+  "edges": [
+    {
+      "edge_id": "EDGE-MAIN-SUPPORT",
+      "source": {"claim_id": "CLAIM-CHANNEL-CONSTRAINT"},
+      "target": {"mechanism_id": "MECHANISM-REVIEW-CHANNEL"},
+      "edge_type": "supported-by"
+    },
+    {
+      "edge_id": "EDGE-RIVAL-CAUSE",
+      "source": {"mechanism_id": "MECHANISM-WORKLOAD-ALLOCATION"},
+      "target": {"claim_id": "CLAIM-WORKLOAD-RIVAL"},
+      "edge_type": "causes"
+    },
+    {
+      "edge_id": "EDGE-MAIN-RIVAL-COMPETITION",
+      "source": {"explanation_id": "EXPLANATION-MAIN"},
+      "target": {"explanation_id": "EXPLANATION-RIVAL"},
+      "edge_type": "competes-with"
+    },
+    {
+      "edge_id": "EDGE-MIXTURE-QUALIFIES-MAIN",
+      "source": {"explanation_id": "EXPLANATION-MIXTURE"},
+      "target": {"explanation_id": "EXPLANATION-MAIN"},
+      "edge_type": "qualifies"
+    },
+    {
+      "edge_id": "EDGE-INSIGHT-QUALIFIES-MAIN",
+      "source": {"insight_id": "INSIGHT-CHANNEL-LOCALITY"},
+      "target": {"claim_id": "CLAIM-CHANNEL-CONSTRAINT"},
+      "edge_type": "qualifies"
+    }
+  ],
+  "explanations": [
+    {
+      "explanation_id": "EXPLANATION-MAIN",
+      "kind": "main",
+      "claim_ids": ["CLAIM-CHANNEL-CONSTRAINT"],
+      "mechanism_ids": ["MECHANISM-REVIEW-CHANNEL"],
+      "rank": 1
+    },
+    {
+      "explanation_id": "EXPLANATION-RIVAL",
+      "kind": "strongest-rival",
+      "claim_ids": ["CLAIM-WORKLOAD-RIVAL"],
+      "mechanism_ids": ["MECHANISM-WORKLOAD-ALLOCATION"],
+      "rank": 2
+    },
+    {
+      "explanation_id": "EXPLANATION-MIXTURE",
+      "kind": "mixture",
+      "claim_ids": ["CLAIM-MIXED-EXPLANATION", "CLAIM-CHANNEL-CONSTRAINT", "CLAIM-WORKLOAD-RIVAL"],
+      "mechanism_ids": ["MECHANISM-COMBINED-PRESSURE", "MECHANISM-REVIEW-CHANNEL", "MECHANISM-WORKLOAD-ALLOCATION"],
+      "rank": 3
+    },
+    {
+      "explanation_id": "EXPLANATION-RESIDUAL",
+      "kind": "residual",
+      "claim_ids": ["CLAIM-PEER-RESIDUAL"],
+      "mechanism_ids": ["MECHANISM-PEER-RESIDUAL"],
+      "rank": 4
+    }
+  ],
+  "insights": [
+    {
+      "insight_id": "INSIGHT-CHANNEL-LOCALITY",
+      "effects": ["changes-intervention", "identifies-circle-scale-channel"],
+      "reason": "The local channel exposes a reversible intervention without upgrading evidence identity."
+    }
+  ]
+}
