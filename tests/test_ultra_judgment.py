@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]

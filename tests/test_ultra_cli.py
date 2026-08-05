@@ -8,7 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

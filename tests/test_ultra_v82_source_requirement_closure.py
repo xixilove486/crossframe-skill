@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from jsonschema import Draft202012Validator
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]

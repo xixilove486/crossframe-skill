@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Iterator
 
-import pytest
+from tests.pytest_import_guard import pytest
 from jsonschema import Draft202012Validator, ValidationError
 from referencing.exceptions import NoSuchResource
 

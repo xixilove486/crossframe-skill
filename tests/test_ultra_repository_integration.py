@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 from scripts import check_crossframe_skill_integrity as integrity
 from scripts.sync_skill_mirrors import CROSSFRAME_SKILLS, same_tree

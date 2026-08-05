@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]

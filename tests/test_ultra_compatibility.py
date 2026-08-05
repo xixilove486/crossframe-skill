@@ -8,7 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
-import pytest
+from tests.pytest_import_guard import pytest
 from jsonschema import ValidationError
 
 

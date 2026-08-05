@@ -9,7 +9,7 @@ import subprocess
 import sys
 from typing import Iterable
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]

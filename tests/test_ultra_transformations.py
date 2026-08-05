@@ -9,7 +9,7 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, get_type_hints
 
-import pytest
+from tests.pytest_import_guard import pytest
 from jsonschema import ValidationError
 
 

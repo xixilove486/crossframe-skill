@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 from scripts.sync_skill_mirrors import same_tree
 

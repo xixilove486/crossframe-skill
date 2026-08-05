@@ -9,7 +9,7 @@ from pathlib import Path
 import shutil
 import sys
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 from tests.ultra_closed_fixture_support import (
     CLOSED_ORGANIZATION_CASE,

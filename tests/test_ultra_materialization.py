@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import sys
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 from tests.ultra_closed_fixture_support import (
     write_closed_u4_u10_authoring,

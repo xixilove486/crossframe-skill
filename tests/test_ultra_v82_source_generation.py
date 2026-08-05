@@ -20,7 +20,7 @@ import warnings
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 import xml.etree.ElementTree as ET
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]

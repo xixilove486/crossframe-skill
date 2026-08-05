@@ -6,7 +6,7 @@ import importlib
 import json
 from pathlib import Path
 
-import pytest
+from tests.pytest_import_guard import pytest
 
 
 from tests import test_ultra_validation as support

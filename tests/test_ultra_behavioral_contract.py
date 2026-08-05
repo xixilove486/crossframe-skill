@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from tests.yaml_import_guard import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 EVAL_ROOT = ROOT / "tests/evals/ultra-red"
@@ -194,8 +196,6 @@ def test_ultra_canonical_skill_freezes_triggers_judgment_and_failure_closure():
     metadata_text = require_nonempty_file(
         ULTRA / "agents/openai.yaml", "OpenAI metadata"
     )
-    import yaml
-
     metadata = yaml.safe_load(metadata_text)
     assert isinstance(metadata, dict)
     policy = metadata.get("policy")
