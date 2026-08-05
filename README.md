@@ -158,7 +158,7 @@ request → v8 full-source → concept closure → local world model
 ProMax 是 v8-only、exact-name only 的独立 runtime，仅在用户明确使用以下四种名称之一时触发：`crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax`、`/crossframe-promax`。仅说「最大算力」「全尺度」或「穷尽推演」不构成 ProMax 点名，泛化最大化请求仍由 Max 承接；suite 不得自动升级。若 Max 与 ProMax 同时出现，ProMax 优先；一旦进入 ProMax，也不得降级回 Max。
 
 <!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
-CrossFrame Ultra 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
+CrossFrame Ultra Skill 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
 <!-- CROSSFRAME-ULTRA-ROUTING-END -->
 
 > **消耗警告：** 基础完整轮次会连续读取 v8 全源，逐项处置 709 个概念，并执行检索、反方攻击、长文物化与验证修复；仅在用户明确要求建议时，才额外执行建议比较。完整运行可能消耗数百万至数千万 token。用户提供的一次 DeepSeek V4 Pro 完整单轮观察约为 **17,000,000 token**；它不是通用 benchmark、平均值或固定成本。请只在确实需要时显式点名，并预先确认模型额度、上下文续跑能力和成本上限。

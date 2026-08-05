@@ -221,6 +221,12 @@ def test_ultra_ci_job_is_isolated_and_preserves_frozen_runtime_jobs() -> None:
         assert jobs[frozen_job] == manifest[frozen_job]["raw_text"]
 
     ultra_job = jobs["ultra-contracts-and-artifacts"]
+    assert (
+        "      - name: Checkout\n"
+        "        uses: actions/checkout@v4\n"
+        "        with:\n"
+        "          fetch-depth: 0\n"
+    ) in ultra_job
     for marker in (
         "name: ultra-contracts-and-artifacts",
         "runs-on: windows-latest",
@@ -232,6 +238,6 @@ def test_ultra_ci_job_is_isolated_and_preserves_frozen_runtime_jobs() -> None:
         "python -B scripts/check_crossframe_ultra_v82_knowledge.py --repo .",
         "for schema in skills/crossframe-ultra/schemas/*.json; do",
         'python -m json.tool "$schema" > /dev/null',
-        "python -B -m pytest -q tests/test_ultra_*.py",
+        "python -B -m pytest -q tests/test_ultra_*.py --basetemp=E:/pt",
     ):
         assert marker in ultra_job

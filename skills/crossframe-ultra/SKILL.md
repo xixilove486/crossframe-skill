@@ -3,7 +3,7 @@ name: crossframe-ultra
 description: "Use only when the user explicitly invokes crossframe-ultra, CrossFrame Ultra, $crossframe-ultra, or /crossframe-ultra; reject generic maximum, full, or Ultra-analysis wording."
 ---
 
-# CrossFrame Ultra
+# CrossFrame Ultra Skill
 
 把本 skill 作为《跨尺度多圈层结构推演框架 v8.2》已构建、已验证、已晋升快照的薄执行控制器。运行完整 U0–U12，保存可验证工件，形成当前最佳判断，并只在 U12 通过后发布一篇可独立阅读的中文文章。详细语义留在权威快照、注册表、合同、协议和 schema 中；不要在本入口复写理论正文。
 

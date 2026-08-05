@@ -1370,7 +1370,10 @@ def test_committed_live_survives_nonfatal_backup_cleanup_failure(
 def test_generate_rejects_repo_or_reference_junction_escape(
     tmp_path: Path,
     link_repo_root: bool,
+    real_source_bytes: bytes,
 ) -> None:
+    source = tmp_path / "source.docx"
+    source.write_bytes(real_source_bytes)
     outside = tmp_path / "outside"
     outside.mkdir()
     if link_repo_root:
@@ -1392,7 +1395,7 @@ def test_generate_rejects_repo_or_reference_junction_escape(
             side_effect=AssertionError("unsafe render path reached"),
         ):
             with pytest.raises(ValueError, match="symlink|reparse|outside repo"):
-                generator.generate(repo, REAL_SOURCE)
+                generator.generate(repo, source)
     finally:
         remove_directory_reparse(junction)
     assert list(outside.iterdir()) == []

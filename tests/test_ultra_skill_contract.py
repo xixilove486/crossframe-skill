@@ -87,18 +87,19 @@ def _marked_code_items(text: str, name: str) -> tuple[str, ...]:
 
 def test_skill_frontmatter_and_openai_metadata_expose_the_exact_interface() -> None:
     skill = _required_text(SKILL_PATH)
-    metadata, _body = _frontmatter(skill)
+    metadata, body = _frontmatter(skill)
     assert set(metadata) == {"name", "description"}
     assert metadata["name"] == "crossframe-ultra"
     description = metadata["description"]
     assert isinstance(description, str) and description.startswith("Use only when")
     assert all(form in description for form in EXACT_ULTRA_FORMS)
     assert _marked_code_items(skill, "ULTRA-ACCEPTED-FORMS") == EXACT_ULTRA_FORMS
+    assert body.lstrip("\r\n").splitlines()[0] == "# CrossFrame Ultra Skill"
 
     openai = yaml.safe_load(_required_text(OPENAI_PATH))
     assert openai == {
         "interface": {
-            "display_name": "CrossFrame Ultra",
+            "display_name": "CrossFrame Ultra Skill",
             "short_description": (
                 "Explicit-only v8.2 world-volume inference with hard judgments."
             ),

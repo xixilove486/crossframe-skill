@@ -1,4 +1,4 @@
-# CrossFrame Ultra U2 retrieval policy
+# CrossFrame Ultra Skill U2 retrieval policy
 
 Apply this policy only after U1 has sealed the run, request bytes, inputs, capability matrix, sensitivity, outbound permission, network availability, current-user ACL, version binding, and parent phase event. The executable authority remains `scripts/ultra_runtime/retrieval.py` and `schemas/ultra-retrieval-ledger.schema.json`.
 

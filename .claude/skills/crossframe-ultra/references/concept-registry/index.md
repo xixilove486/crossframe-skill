@@ -1,4 +1,4 @@
-# CrossFrame Ultra v8.2 Canonical Concept Registry
+# CrossFrame Ultra Skill v8.2 Canonical Concept Registry
 
 This index lists only concepts promoted from the immutable v8.2 source snapshot.
 Runtime candidates remain in the separate `ULTRA-PROV-*` namespace and are not

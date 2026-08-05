@@ -90,7 +90,7 @@ EXPECTED_CONTRACT_HASHES = {
 }
 EXPECTED_AUTHORITY_HASHES = {
     "skills/crossframe-ultra/references/concept-registry/v8.2-concept-registry.json": "8c88d2b3d47c378b7beccd74082f8b460f5e91780f18aae1fd74d3a26242ff6d",
-    "skills/crossframe-ultra/references/concept-registry/index.md": "48a9c90f9d6b1f08588a0b61f1ab343439175c92652c6d9899eb10c4d844b9df",
+    "skills/crossframe-ultra/references/concept-registry/index.md": "996cdb19d4584fa23d64da931c2fd20440c07db08bc4c1a5eb022069a1156a48",
     "skills/crossframe-ultra/references/concept-contracts/v8.2-contract-map.json": "f21f844022d7b67aae1596c154cfe75ecb7b000b0d7959533b71c41c2293e84e",
     "skills/crossframe-ultra/references/v8.2-route-map.json": "b4b14305303db066f1ecc7bfd1f8e5703925632131f13aba0cd9955e6534b20f",
     "skills/crossframe-ultra/schemas/ultra-source-manifest.schema.json": "8e3dbf483987a99ca61a159bd723a134129242789ca848657741b8982ee690ca",
@@ -3061,6 +3061,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "semantic_sha256": SEMANTIC_SHA256,
         "errors": errors,
     }
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure):
+        reconfigure(encoding="utf-8")
     if args.as_json:
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     elif errors:

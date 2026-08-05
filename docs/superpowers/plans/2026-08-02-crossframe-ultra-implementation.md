@@ -1,4 +1,4 @@
-# CrossFrame Ultra Implementation Plan
+# CrossFrame Ultra Skill Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Every behavior change follows test-driven-development. The root agent is the only planner, integrator, Git committer, and authority allowed to declare project completion.
 
@@ -2382,7 +2382,7 @@ Each protocol names inputs, outputs, dependencies, stop/failure conditions and c
 
 ~~~yaml
 interface:
-  display_name: "CrossFrame Ultra"
+  display_name: "CrossFrame Ultra Skill"
   short_description: "Explicit-only v8.2 world-volume inference with hard judgments."
   default_prompt: "Use $crossframe-ultra to run the complete v8.2 world-volume workflow and publish one independently readable Chinese article."
 
@@ -2713,7 +2713,7 @@ Expected: all existing tests remain green and the Task 1 preservation manifest r
 python -m py_compile scripts/*.py
 Get-ChildItem skills/crossframe-ultra -Recurse -Filter *.py | ForEach-Object { python -m py_compile $_.FullName }
 Get-ChildItem skills/crossframe-ultra/schemas -Filter *.json | ForEach-Object { python -m json.tool $_.FullName > $null }
-python scripts/package_crossframe_skill.py --repo . --version ultra-rc
+python scripts/package_crossframe_skill.py --repo . --version 1.0.0
 python -B -m pytest -q tests/test_ultra_installers.py tests/test_package_crossframe_skill.py
 ~~~
 

@@ -95,6 +95,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -123,7 +125,7 @@ jobs:
             python -m json.tool "$schema" > /dev/null
           done
       - name: Run Ultra contracts and artifact tests
-        run: python -B -m pytest -q tests/test_ultra_*.py
+        run: python -B -m pytest -q tests/test_ultra_*.py --basetemp=E:/pt
 
   schemas-and-fixtures:
     name: schemas-and-fixtures

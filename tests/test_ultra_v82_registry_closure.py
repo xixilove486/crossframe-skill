@@ -4,6 +4,7 @@ import copy
 from collections import Counter
 import hashlib
 import importlib.util
+from io import BytesIO, TextIOWrapper
 import json
 from pathlib import Path
 import shutil
@@ -66,6 +67,7 @@ def run_checker(repo: Path) -> subprocess.CompletedProcess[str]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         check=False,
     )
 
@@ -113,6 +115,44 @@ def test_authority_registry_contains_source_supported_m02_operator_fixture() -> 
 def test_knowledge_checker_accepts_clean_authority_tree() -> None:
     checker = load_checker()
     assert checker.validate_knowledge(ROOT) == []
+
+
+@pytest.mark.parametrize(
+    ("initial_encoding", "as_json"),
+    (("cp1252", False), ("utf-8", True)),
+    ids=("cp1252-diagnostic", "utf8-json"),
+)
+def test_knowledge_checker_main_emits_utf8_for_text_and_json_streams(
+    monkeypatch: pytest.MonkeyPatch,
+    initial_encoding: str,
+    as_json: bool,
+) -> None:
+    checker = load_checker()
+    diagnostic = "中文诊断"
+    output = BytesIO()
+    stream = TextIOWrapper(output, encoding=initial_encoding, newline="\n")
+    arguments = ["--repo", str(ROOT)]
+    if as_json:
+        arguments.append("--json")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(checker, "validate_knowledge", lambda _repo: [diagnostic])
+        patch.setattr(checker.sys, "stdout", stream)
+        exit_code = checker.main(arguments)
+        stream.flush()
+        configured_encoding = stream.encoding
+        payload = output.getvalue()
+
+    assert exit_code == 1
+    assert configured_encoding == "utf-8"
+    decoded = payload.decode("utf-8")
+    if as_json:
+        assert json.loads(decoded)["errors"] == [diagnostic]
+    else:
+        assert decoded == (
+            "CrossFrame Ultra v8.2 knowledge authority: FAIL\n"
+            f"- {diagnostic}\n"
+        )
 
 
 def test_validator_consumes_each_knowledge_file_from_one_bytes_snapshot(

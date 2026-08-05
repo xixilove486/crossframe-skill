@@ -1,4 +1,4 @@
-# CrossFrame Ultra runtime routing map
+# CrossFrame Ultra Skill runtime routing map
 
 This file is the compact execution map. It does not replace the promoted v8.2 source, concept registry, contracts, schemas, or responsibility protocols.
 

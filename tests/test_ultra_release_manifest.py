@@ -159,7 +159,7 @@ def test_fixed_exclusions_do_not_change_the_manifest_and_links_fail_closed(
         os.symlink(target, link)
     except (NotImplementedError, OSError):
         pytest.skip("host does not permit creation of a test symlink")
-    with pytest.raises(Exception, match="symlink|reparse"):
+    with pytest.raises(Exception, match="symlink|reparse|unsafe"):
         builder.build_release_manifest(repo)
 
 

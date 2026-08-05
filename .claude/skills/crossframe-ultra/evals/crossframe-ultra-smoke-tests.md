@@ -1,4 +1,4 @@
-# CrossFrame Ultra smoke matrix
+# CrossFrame Ultra Skill smoke matrix
 
 Use this matrix after installation with a fresh context. Record the selected skill, runtime status, emitted artifact paths, validator result, and whether a final chat projection appeared. A passing prose answer without the required runtime evidence is a failure.
 

@@ -23,7 +23,7 @@ CrossFrame skills 在 Gemini CLI 中也是显式调用 only。不要因为普通
 CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
 
 <!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
-CrossFrame Ultra 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
+CrossFrame Ultra Skill 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
 <!-- CROSSFRAME-ULTRA-ROUTING-END -->
 
 如果用户显式调用 `crossframe-essay` 或经 `crossframe-suite` 路由到写作，并要求写中文文章、长文、评论、思想文章、批判性洞察文章或结构洞察文章，请读取：
