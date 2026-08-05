@@ -79,7 +79,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/P01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/P01/ultra/run-metadata.json"
         }
@@ -135,7 +135,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/P02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/P02/ultra/run-metadata.json"
         }
@@ -191,7 +191,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/P03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/P03/ultra/run-metadata.json"
         }
@@ -247,7 +247,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/P04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/P04/ultra/run-metadata.json"
         }
@@ -303,7 +303,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/O01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/O01/ultra/run-metadata.json"
         }
@@ -359,7 +359,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/O02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/O02/ultra/run-metadata.json"
         }
@@ -415,7 +415,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/O03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/O03/ultra/run-metadata.json"
         }
@@ -471,7 +471,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/O04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/O04/ultra/run-metadata.json"
         }
@@ -527,7 +527,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/B01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/B01/ultra/run-metadata.json"
         }
@@ -583,7 +583,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/B02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/B02/ultra/run-metadata.json"
         }
@@ -639,7 +639,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/B03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/B03/ultra/run-metadata.json"
         }
@@ -695,7 +695,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/B04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/B04/ultra/run-metadata.json"
         }
@@ -751,7 +751,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/L01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/L01/ultra/run-metadata.json"
         }
@@ -807,7 +807,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/L02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/L02/ultra/run-metadata.json"
         }
@@ -863,7 +863,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/L03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/L03/ultra/run-metadata.json"
         }
@@ -919,7 +919,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/L04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/L04/ultra/run-metadata.json"
         }
@@ -975,7 +975,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/H01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/H01/ultra/run-metadata.json"
         }
@@ -1031,7 +1031,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/H02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/H02/ultra/run-metadata.json"
         }
@@ -1087,7 +1087,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/H03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/H03/ultra/run-metadata.json"
         }
@@ -1143,7 +1143,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/H04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/H04/ultra/run-metadata.json"
         }
@@ -1199,7 +1199,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/C01/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/C01/ultra/run-metadata.json"
         }
@@ -1255,7 +1255,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/C02/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/C02/ultra/run-metadata.json"
         }
@@ -1311,7 +1311,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/C03/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/C03/ultra/run-metadata.json"
         }
@@ -1367,7 +1367,7 @@
           "framework_version": "v8.2",
           "status": "execution-ready",
           "fallback_allowed": false,
-          "skill_tree_sha256": "be49f1a712ca416cdb8f55022a0cb855e30372a76b3ea3d054b9a74d3da9103e",
+          "skill_tree_sha256": "2158500a06bdc2b18a9d353a66ac18b44d19f6667bec2d459536589a6235ad26",
           "article_path": "tests/evals/ultra-vs-promax/raw/C04/ultra/article.md",
           "metadata_path": "tests/evals/ultra-vs-promax/raw/C04/ultra/run-metadata.json"
         }

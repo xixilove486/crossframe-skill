@@ -8,14 +8,20 @@ This file is the compact execution map. It does not replace the promoted v8.2 so
 | --- | --- |
 | canonical source | `E:\世界模型\skill\crossframe-skill\skills\crossframe-ultra` |
 | Codex install | `C:\Users\cangm\.codex\skills\crossframe-ultra` |
+| Reasonix install | `C:\Users\cangm\.agents\skills\crossframe-ultra` |
+| Claude install | `C:\Users\cangm\.claude\skills\crossframe-ultra` |
 | production | `E:\世界模型\output\crossframe-ultra` |
 | test | `E:\世界模型\output\crossframe-ultra-tests` |
 
 Resolve every generated path beneath the selected production or test root. Reject an unavailable root, a root collision, traversal, symlink, reparse point, or path escape; never choose a replacement root.
 
+## Runtime installation coherence
+
+Execute `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py` and pass that exact same `<repo>` to `--repo`. Codex uses `C:\Users\cangm\.codex`, Reasonix uses `C:\Users\cangm\.agents`, and Claude uses `C:\Users\cangm\.claude`. Never mix a script from one installation tree with authority files from another tree or from the canonical source checkout.
+
 ## Exact CLI
 
-Prefix every signature below with `python -B scripts/crossframe_ultra_runtime.py`. Do not add a parameter that is not present in the Task 13 parser.
+Prefix every signature below with `python -B <repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py`, and pass that same resolved `<repo>` to `--repo`. Do not add a parameter that is not present in the Task 13 parser.
 
 <!-- ULTRA-CLI-BEGIN -->
 ```text
@@ -42,7 +48,23 @@ The production CLI contains none of:
 - `--fallback`
 <!-- ULTRA-FORBIDDEN-CLI-OPTIONS-END -->
 
-Use `--request-stdin` when request text should not enter process arguments. `start` copies the exact request bytes into the run input directory and records their hash; it never embeds request text in a run ID, path, or index.
+Use `--request-stdin` when request text should not enter process arguments. `start` copies the exact request bytes into the run input directory, records their hash, and independently seals `recovery/request-intake-authority.json`; it never embeds request text in a run ID, path, or index. Replacing both request bytes and metadata after `start` does not replace that authority and is rejected.
+
+### Fresh U0–U3 foundation
+
+For a fresh CLI run, stdin or the request file must contain exactly one canonical closed-input envelope:
+
+```json
+{"analysis_kind":"closed-input","claim":"non-empty claim or question","material":"complete non-empty closed material"}
+```
+
+Encode it as UTF-8 without BOM, sort keys, use compact JSON separators, and terminate it with exactly one LF. The three keys above are the complete allowlist. Do not include caller-authored IDs, hashes, version bindings, policy fields, capability assertions, read receipts, retrieval dispositions, evidence envelopes, phase events, or checkpoints.
+
+The supported order is `start` → `prepare` → write the U4–U11 semantic authoring slots → `materialize`. When no resumable checkpoint exists and the run is otherwise fresh, `materialize` establishes issuer-owned U0, performs the real U1 source read and seals all 4,753 read events, records closed-input U2 as `not-applicable`, freezes the request-bound U3 evidence, writes the four phase checkpoints, and then continues at U4. A retry resumes an existing U0, U1, U2, or U3 checkpoint and must not recreate sealed phases. Uncheckpointed downstream residue is never overwritten; it moves the run to `needs_attention`.
+
+Selecting this eligible closed-input branch selects the frozen runtime-owned bootstrap profile: `sensitivity=private`, `retention=retain`, and `outbound_permission=deidentified-only`; filesystem, validators, and model context are `available`; the DOCX parser, network, retrieval, and subagents are `not-applicable`; resource limits are the promoted U0 values `64 / 2 / 3 / 3`. The caller cannot override this profile, and it grants no outbound or real-world retrieval authority.
+
+If the request is ordinary free text, lacks a complete closed material universe, or requires real-world retrieval, do not relabel it as `closed-input`. Fresh materialization marks the run `blocked` and fails closed. Report that boundary once; do not loop through `resume`, `checkpoint`, `materialize`, or searches for an undocumented initializer.
 
 ## Phase routing
 
@@ -66,7 +88,7 @@ Do not advance a phase until its upstream artifacts and phase event validate. Ne
 
 ## Model-owned authoring slots
 
-`prepare` is the only authority that creates model-owned slots. The complete set is:
+`prepare` declares the complete compatibility slot-path superset; ownership is branch-specific. The complete set is:
 
 <!-- ULTRA-AUTHORING-SLOTS-BEGIN -->
 - `work/authoring/U01-read-events.jsonl`
@@ -92,6 +114,8 @@ Do not advance a phase until its upstream artifacts and phase event validate. Ne
 <!-- ULTRA-AUTHORING-SLOTS-END -->
 
 The runtime owns IDs, version bindings, hashes, phase events, status, manifests, indexes, validation reports, and delivery paths. It overwrites runtime-owned fields from sealed control state and never trusts a model-authored control value.
+
+For the fresh foundation path, the listed U01–U03 authoring names are reserved compatibility slots and must remain absent. Caller-authored U01 read events, U02 retrieval ledgers, and U03 evidence envelopes cannot authorize those phases; `materialize` generates their canonical artifacts from frozen input and issuer measurements. Fresh authoring therefore begins at U04.
 
 ## Template authority
 
@@ -127,7 +151,7 @@ These are references to Task 11/Task 13-owned files, not permission for Task 14 
 
 ## Materialization and delivery order
 
-Validate and freeze recursive states before lineage, order evaluation before red team, verdict before action/forecast, and output plan before packets/coverage/review. `materialize` then validates every semantic artifact, assembles only a partial article, writes staging control state, and starts the fresh checker from disk.
+On an eligible fresh canonical closed-input run, `materialize` first establishes U0–U3 as described above. It then validates and freezes recursive states before lineage, order evaluation before red team, verdict before action/forecast, and output plan before packets/coverage/review. It validates every semantic artifact, assembles only a partial article, writes staging control state, and starts the fresh checker from disk.
 
 Only a passing U12 transaction may atomically promote:
 

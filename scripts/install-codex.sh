@@ -146,6 +146,11 @@ assert_canonical_source() {
     echo "Canonical mirror checker not found: $mirror_script" >&2
     return 1
   fi
+  local root_wrapper="$candidate_root/scripts/check_crossframe_ultra_artifacts.py"
+  if [[ ! -f "$root_wrapper" ]]; then
+    echo "Canonical Ultra root wrapper not found: $root_wrapper" >&2
+    return 1
+  fi
   local skill_path source_skill
   for skill_path in "${skills[@]}"; do
     source_skill="$candidate_root/$skill_path"
@@ -204,9 +209,11 @@ resolve_child_path "$destination_root" "$transaction_root" "transaction director
 
 staging_root="$transaction_root/staging"
 backup_root="$transaction_root/backups"
-mkdir "$staging_root" "$backup_root"
+wrapper_staging_root="$transaction_root/root-wrapper"
+mkdir "$staging_root" "$backup_root" "$wrapper_staging_root"
 resolve_child_path "$transaction_root" "$staging_root" "staging directory" >/dev/null
 resolve_child_path "$transaction_root" "$backup_root" "backup directory" >/dev/null
+resolve_child_path "$transaction_root" "$wrapper_staging_root" "wrapper staging directory" >/dev/null
 
 if [[ "$local_repository" -eq 1 ]]; then
   canonical_root="$(resolve_existing_path "$repo")"
@@ -229,6 +236,18 @@ else
 fi
 
 assert_canonical_source "$canonical_root"
+
+canonical_wrapper="$canonical_root/scripts/check_crossframe_ultra_artifacts.py"
+staged_wrapper="$wrapper_staging_root/check_crossframe_ultra_artifacts.py"
+resolve_child_path "$wrapper_staging_root" "$staged_wrapper" "staged root wrapper" >/dev/null
+if ! cp "$canonical_wrapper" "$staged_wrapper"; then
+  echo "Could not stage Ultra root wrapper" >&2
+  exit 1
+fi
+if [[ ! -f "$staged_wrapper" ]] || ! cmp -s "$canonical_wrapper" "$staged_wrapper"; then
+  echo "Staged Ultra root wrapper verification failed" >&2
+  exit 1
+fi
 
 resolved_skills_root="$staging_root"
 if [[ "$use_installer" -eq 0 ]]; then
@@ -261,11 +280,51 @@ if ! "$python_bin" "$canonical_root/scripts/sync_skill_mirrors.py" --repo "$cano
   exit 1
 fi
 
+installation_root="$(resolve_existing_path "$(dirname "$destination_root")")"
+destination_scripts_root="$installation_root/scripts"
+resolve_child_path "$installation_root" "$destination_scripts_root" "destination scripts directory" >/dev/null
+live_wrapper="$destination_scripts_root/check_crossframe_ultra_artifacts.py"
+resolve_child_path "$installation_root" "$live_wrapper" "root wrapper destination" >/dev/null
+backup_wrapper="$backup_root/check_crossframe_ultra_artifacts.py"
+resolve_child_path "$backup_root" "$backup_wrapper" "root wrapper backup" >/dev/null
 backed_up_skills=()
 promoted_skills=()
+wrapper_backed_up=0
+wrapper_promoted=0
+scripts_root_created=0
 
 commit_installation() {
   local skill_path skill_name live_path backup_path staged_skill
+  if [[ -e "$destination_scripts_root" || -L "$destination_scripts_root" ]]; then
+    if [[ ! -d "$destination_scripts_root" ]]; then
+      echo "Destination scripts path is not a directory: $destination_scripts_root" >&2
+      return 1
+    fi
+  else
+    if ! mkdir "$destination_scripts_root"; then
+      echo "Could not create destination scripts directory: $destination_scripts_root" >&2
+      return 1
+    fi
+    scripts_root_created=1
+  fi
+
+  if [[ -e "$live_wrapper" || -L "$live_wrapper" ]]; then
+    if [[ ! -f "$live_wrapper" ]]; then
+      echo "Destination Ultra root wrapper is not a file: $live_wrapper" >&2
+      return 1
+    fi
+    if ! mv "$live_wrapper" "$backup_wrapper"; then
+      echo "Could not back up existing Ultra root wrapper" >&2
+      return 1
+    fi
+    wrapper_backed_up=1
+  fi
+  if ! mv "$staged_wrapper" "$live_wrapper"; then
+    echo "Could not promote staged Ultra root wrapper" >&2
+    return 1
+  fi
+  wrapper_promoted=1
+
   for skill_path in "${skills[@]}"; do
     skill_name="${skill_path##*/}"
     live_path="$destination_root/$skill_name"
@@ -331,6 +390,35 @@ rollback_installation() {
       fi
     fi
   done
+
+  if [[ "$wrapper_promoted" -eq 1 && ( -e "$live_wrapper" || -L "$live_wrapper" ) ]]; then
+    if ! mv "$live_wrapper" "$staged_wrapper"; then
+      if ! rm -f "$live_wrapper"; then
+        echo "Could not roll back promoted Ultra root wrapper" >&2
+        rollback_failed=1
+      fi
+    fi
+  fi
+
+  if [[ "$wrapper_backed_up" -eq 1 ]]; then
+    if [[ -e "$live_wrapper" || -L "$live_wrapper" ]]; then
+      if ! rm -f "$live_wrapper"; then
+        echo "Could not clear Ultra root wrapper while restoring" >&2
+        rollback_failed=1
+      fi
+    fi
+    if [[ ! -f "$backup_wrapper" ]]; then
+      echo "Ultra root wrapper backup is missing: $backup_wrapper" >&2
+      rollback_failed=1
+    elif ! mv "$backup_wrapper" "$live_wrapper"; then
+      echo "Could not restore Ultra root wrapper backup" >&2
+      rollback_failed=1
+    fi
+  fi
+
+  if [[ "$scripts_root_created" -eq 1 && -d "$destination_scripts_root" ]]; then
+    rmdir "$destination_scripts_root" 2>/dev/null || true
+  fi
 
   return "$rollback_failed"
 }

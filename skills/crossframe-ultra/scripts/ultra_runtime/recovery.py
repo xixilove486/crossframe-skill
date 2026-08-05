@@ -1001,6 +1001,56 @@ def _restore_phase_store(
         )
         if state in {"available", "required"}
     }
+    source_repository = Path(__file__).resolve().parents[4]
+    u1_event = next(
+        (
+            event
+            for event in events
+            if event.get("phase_id") == "U1" and event.get("status") == "complete"
+        ),
+        None,
+    )
+    u1_prerequisite_measurement = None
+    if u1_event is None:
+        from . import source_integrity
+
+        try:
+            manifest = source_integrity.load_source_manifest(
+                source_repository
+                / "skills"
+                / "crossframe-ultra"
+                / "references"
+                / "source-manifest.json",
+                expected_sha256=str(authority["source_sha256"]),
+            )
+            measurement_arguments: dict[str, object] = {
+                "manifest": manifest,
+                "run_mode": str(contract["run_mode"]),
+            }
+            if contract["run_mode"] == "test":
+                measurement_arguments["release_manifest_path"] = (
+                    source_repository
+                    / "skills"
+                    / "crossframe-ultra"
+                    / "references"
+                    / "release-manifest.json"
+                )
+            u1_prerequisite_measurement = (
+                source_integrity.measure_u1_prerequisites(
+                    source_repository,
+                    **measurement_arguments,
+                )
+            )
+            if not u1_prerequisite_measurement.ready:
+                raise RecoveryIntegrityError(
+                    "restored U0 has no current U1 prerequisite authority"
+                )
+        except RecoveryIntegrityError:
+            raise
+        except Exception as error:
+            raise RecoveryIntegrityError(
+                "restored U0 cannot remeasure U1 prerequisites"
+            ) from error
     try:
         store = PhaseStore(
             run_id=str(authority["run_id"]),
@@ -1012,6 +1062,8 @@ def _restore_phase_store(
             now=generated_at,
             run_contract=contract,
             capability_availability=availability,
+            source_repository=source_repository,
+            u1_prerequisite_measurement=u1_prerequisite_measurement,
             run_layout=layout,
         )
         if store.run_contract_artifact_sha256 != authority["run_contract_sha256"]:
@@ -1258,7 +1310,24 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
     if status.status in {"cancelled", "failed", "complete"}:
         raise RecoveryStateError(f"{status.status} run is terminal and cannot resume")
     checkpoint = _select_latest(checkpoints)
-    phase_store = _restore_phase_store(layout, authority, events, checkpoints)
+    checkpoint_event_sha256 = checkpoint.get("phase_event_sha256")
+    try:
+        checkpoint_event_ordinal = next(
+            index
+            for index, event in enumerate(events)
+            if event.get("event_sha256") == checkpoint_event_sha256
+        )
+    except StopIteration as error:
+        raise RecoveryIntegrityError(
+            "resume checkpoint phase event is unavailable"
+        ) from error
+    durable_events = events[: checkpoint_event_ordinal + 1]
+    phase_store = _restore_phase_store(
+        layout,
+        authority,
+        durable_events,
+        checkpoints,
+    )
     if status.status == "running":
         resumed = status
     else:

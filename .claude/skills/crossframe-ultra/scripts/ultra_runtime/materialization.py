@@ -54,6 +54,29 @@ AUTHORING_SLOT_RELATIVE_PATHS = (
 
 MATERIALIZATION_CONTROL_FILENAME = "ultra-materialization-control.json"
 PARTIAL_ARTICLE_RELATIVE_PATH = "article.partial.md"
+REQUEST_INTAKE_AUTHORITY_RELATIVE_PATH = Path(
+    "recovery/request-intake-authority.json"
+)
+_REQUEST_INTAKE_AUTHORITY_FIELDS = frozenset(
+    {
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "version_binding",
+        "generated_at",
+        "request_sha256",
+        "request_size",
+        "content_sha256",
+    }
+)
+
+
+class FoundationInputError(ValueError):
+    """The immutable request cannot authorize a fresh U0-U3 foundation."""
+
+
+class FoundationRecoveryError(RuntimeError):
+    """A partial foundation cannot continue from its durable checkpoint."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2154,6 +2177,838 @@ def _strictly_later(now: datetime, timestamp: str) -> datetime:
     return now if now > previous else previous + timedelta(microseconds=1)
 
 
+def _request_intake_authority_path(layout: RunLayout) -> Path:
+    path = layout.run_dir / REQUEST_INTAKE_AUTHORITY_RELATIVE_PATH
+    assert_safe_descendant(layout.root, path)
+    return path
+
+
+def seal_request_intake_authority(
+    layout: RunLayout,
+    *,
+    request_sha256: str,
+    request_size: int,
+    created_at: str,
+) -> dict[str, object]:
+    if (
+        not isinstance(request_sha256, str)
+        or len(request_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in request_sha256)
+    ):
+        raise ValueError("request intake SHA-256 is invalid")
+    if not isinstance(request_size, int) or isinstance(request_size, bool) or request_size < 0:
+        raise ValueError("request intake size is invalid")
+    if not isinstance(created_at, str) or not created_at.endswith("Z"):
+        raise ValueError("request intake time is not canonical UTC")
+    authority: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.request-intake-authority",
+        "schema_version": 1,
+        "run_id": layout.run_dir.name,
+        "version_binding": current_version_binding(),
+        "generated_at": created_at,
+        "request_sha256": request_sha256,
+        "request_size": request_size,
+        "content_sha256": "0" * 64,
+    }
+    authority["content_sha256"] = compute_artifact_content_sha256(authority)
+    path = _request_intake_authority_path(layout)
+    if path.exists():
+        raise FileExistsError("request intake authority already exists")
+    atomic_write_json(path, authority)
+    return copy.deepcopy(authority)
+
+
+def _validated_request_intake_authority(
+    layout: RunLayout,
+    *,
+    status_record: object,
+) -> dict[str, object]:
+    path = _request_intake_authority_path(layout)
+    try:
+        raw = path.read_bytes()
+        authority = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(
+            "request intake authority is absent or unreadable"
+        ) from error
+    if (
+        raw != canonical_json_bytes(authority)
+        or set(authority) != _REQUEST_INTAKE_AUTHORITY_FIELDS
+        or authority.get("schema_id")
+        != "crossframe.ultra.v82.request-intake-authority"
+        or authority.get("schema_version") != 1
+        or authority.get("run_id") != layout.run_dir.name
+        or authority.get("version_binding") != current_version_binding()
+        or authority.get("generated_at") != getattr(status_record, "created_at", None)
+        or authority.get("content_sha256")
+        != compute_artifact_content_sha256(authority)
+    ):
+        raise FoundationInputError("request intake authority is invalid")
+    request_sha256 = authority.get("request_sha256")
+    request_size = authority.get("request_size")
+    if (
+        not isinstance(request_sha256, str)
+        or len(request_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in request_sha256)
+        or not isinstance(request_size, int)
+        or isinstance(request_size, bool)
+        or request_size < 0
+    ):
+        raise FoundationInputError("request intake authority payload is invalid")
+    return authority
+
+
+def _foundation_input_inventory(
+    layout: RunLayout,
+    *,
+    status_record: object,
+) -> tuple[bytes, dict[str, object], tuple[dict[str, str], ...], str]:
+    request_path = layout.input_dir / "request.bin"
+    metadata_path = layout.input_dir / "request-metadata.json"
+    try:
+        for path in (request_path, metadata_path):
+            assert_safe_descendant(layout.root, path)
+            if not path.is_file():
+                raise FoundationInputError(
+                    f"fresh foundation input is absent: {path.name}"
+                )
+        request_bytes = request_path.read_bytes()
+        request_sha256 = sha256_bytes(request_bytes)
+        metadata_raw = metadata_path.read_bytes()
+        metadata = load_json_object_bytes(metadata_raw, source=str(metadata_path))
+    except FoundationInputError:
+        raise
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(
+            "fresh foundation request metadata is unreadable"
+        ) from error
+    if (
+        set(metadata) != {"request_sha256", "request_size"}
+        or metadata.get("request_sha256") != request_sha256
+        or metadata.get("request_size") != len(request_bytes)
+        or metadata_raw != canonical_json_bytes(metadata)
+    ):
+        raise FoundationInputError(
+            "request metadata differs from the immutable request bytes"
+        )
+    intake = _validated_request_intake_authority(
+        layout,
+        status_record=status_record,
+    )
+    if (
+        intake["request_sha256"] != request_sha256
+        or intake["request_size"] != len(request_bytes)
+    ):
+        raise FoundationInputError(
+            "request intake authority differs from the current input bytes"
+        )
+
+    files = tuple(
+        sorted(
+            (request_path, metadata_path),
+            key=lambda path: path.relative_to(layout.input_dir).as_posix(),
+        )
+    )
+    inputs = tuple(
+        {
+            "path": path.relative_to(layout.input_dir).as_posix(),
+            "sha256": _sha256_file(path),
+            "media_type": (
+                "application/json"
+                if path.suffix.casefold() == ".json"
+                else "application/octet-stream"
+            ),
+        }
+        for path in files
+    )
+    input_snapshot_sha256 = sha256_bytes(canonical_json_bytes(inputs))
+    return request_bytes, metadata, inputs, input_snapshot_sha256
+
+
+def _closed_input_request(request_bytes: bytes) -> tuple[str, str]:
+    try:
+        request = load_json_object_bytes(
+            request_bytes,
+            source="input/request.bin",
+        )
+    except (TypeError, ValueError) as error:
+        raise FoundationInputError(
+            "fresh U0-U3 materialization requires a canonical closed-input JSON request"
+        ) from error
+    if request_bytes != canonical_json_bytes(request):
+        raise FoundationInputError("closed-input request bytes must be canonical JSON")
+    if set(request) != {"analysis_kind", "claim", "material"}:
+        raise FoundationInputError(
+            "closed-input request must contain exactly analysis_kind, claim, and material"
+        )
+    claim = request.get("claim")
+    material = request.get("material")
+    if (
+        request.get("analysis_kind") != "closed-input"
+        or not isinstance(claim, str)
+        or not claim.strip()
+        or not isinstance(material, str)
+        or not material.strip()
+    ):
+        raise FoundationInputError(
+            "fresh U0-U3 materialization supports only explicit closed-input requests"
+        )
+    return claim, material
+
+
+def _assert_fresh_foundation(layout: RunLayout) -> None:
+    fixed_paths = (
+        layout.artifacts_dir / "ultra-run-contract.json",
+        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl",
+        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json",
+        layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json",
+        layout.authoring_dir / "U01-read-events.jsonl",
+        layout.authoring_dir / "U02-retrieval-ledger.json",
+        layout.authoring_dir / "U03-evidence-ledger.json",
+    )
+    residuals = [path for path in fixed_paths if path.exists()]
+    if layout.recovery_dir.exists():
+        intake_path = _request_intake_authority_path(layout)
+        residuals.extend(
+            path
+            for path in layout.recovery_dir.rglob("*")
+            if path.is_file() and path != intake_path
+        )
+    if residuals:
+        relative = sorted(
+            path.relative_to(layout.run_dir).as_posix() for path in residuals
+        )
+        raise FoundationInputError(
+            "fresh foundation contains residual durable state: " + ", ".join(relative)
+        )
+
+
+def _assert_no_uncheckpointed_foundation_residuals(
+    layout: RunLayout,
+    current_phase: str,
+) -> None:
+    phase_paths = {
+        "U1": (
+            layout.recovery_dir / "u1-authority/source-lock.json",
+            layout.recovery_dir / "u1-authority/read-plan.json",
+            layout.recovery_dir / "u1-authority/source-coverage.json",
+            layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl",
+        ),
+        "U2": (
+            layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json",
+        ),
+        "U3": (
+            layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json",
+        ),
+    }
+    start = PHASES.index(current_phase) + 1
+    residuals = [
+        path
+        for phase_id in PHASES[start:4]
+        for path in phase_paths[phase_id]
+        if path.exists()
+    ]
+    residuals.extend(
+        path
+        for path in (
+            layout.authoring_dir / "U01-read-events.jsonl",
+            layout.authoring_dir / "U02-retrieval-ledger.json",
+            layout.authoring_dir / "U03-evidence-ledger.json",
+        )
+        if path.exists()
+    )
+    if residuals:
+        relative = sorted(
+            path.relative_to(layout.run_dir).as_posix() for path in residuals
+        )
+        raise FoundationRecoveryError(
+            "partial foundation contains uncheckpointed downstream state: "
+            + ", ".join(relative)
+        )
+
+
+def _foundation_run_contract(
+    *,
+    mode: RunMode,
+    request_sha256: str,
+    evidence_cutoff: str,
+) -> tuple[dict[str, object], dict[str, str]]:
+    contract: dict[str, object] = {
+        "trigger": "crossframe-ultra",
+        "request_sha256": request_sha256,
+        "run_mode": mode.value,
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": evidence_cutoff,
+        "capabilities": {
+            "filesystem": "available",
+            "docx_parser": "not-applicable",
+            "network": "not-applicable",
+            "retrieval": "not-applicable",
+            "validators": "available",
+            "subagents": "not-applicable",
+            "model_context": "available",
+        },
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    availability = {
+        "filesystem": "available",
+        "docx_parser": "unavailable",
+        "network": "unavailable",
+        "retrieval": "unavailable",
+        "validators": "available",
+        "subagents": "unavailable",
+        "model_context": "available",
+    }
+    return contract, availability
+
+
+def _u1_coverage_artifact(
+    *,
+    run_id: str,
+    version_binding: Mapping[str, object],
+    parent_event_sha256: str,
+    source_lock_sha256: str,
+    receipts: Sequence[object],
+    events: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    return {
+        "artifact_type": "crossframe.ultra.v82.u1-source-coverage",
+        "run_id": run_id,
+        "version_binding": copy.deepcopy(dict(version_binding)),
+        "parent_event_sha256": parent_event_sha256,
+        "source_lock_sha256": source_lock_sha256,
+        "receipt_sha256s": [
+            str(getattr(receipt, "receipt_sha256")) for receipt in receipts
+        ],
+        "read_event_sha256s": [
+            str(event["read_event_sha256"]) for event in events
+        ],
+    }
+
+
+def _create_phase_checkpoint(
+    recovery: object,
+    layout: RunLayout,
+    phase_store: object,
+    phase_id: str,
+    artifact_paths: Sequence[Path],
+    *,
+    now: datetime,
+) -> object:
+    create_checkpoint = getattr(recovery, "create_checkpoint", None)
+    if not callable(create_checkpoint):
+        raise RuntimeError("recovery checkpoint producer is unavailable")
+    return create_checkpoint(
+        layout,
+        phase_store,
+        boundary_kind="phase",
+        boundary_id=phase_id,
+        boundary_ordinal=0,
+        artifact_paths=tuple(artifact_paths),
+        now=now,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _FoundationContext:
+    claim: str
+    material: str
+    request_sha256: str
+    evidence_cutoff: str
+    inputs: tuple[dict[str, str], ...]
+    input_snapshot_sha256: str
+    binding: dict[str, object]
+    timestamp: str
+    manifest: object | None
+    measurement: object | None
+
+
+def _load_foundation_context(
+    repo: Path,
+    layout: RunLayout,
+    mode: RunMode,
+    *,
+    now: datetime,
+    status_record: object,
+    require_u1_measurement: bool,
+) -> _FoundationContext:
+    from . import source_integrity
+
+    request_bytes, metadata, inputs, input_snapshot_sha256 = (
+        _foundation_input_inventory(layout, status_record=status_record)
+    )
+    claim, material = _closed_input_request(request_bytes)
+    evidence_cutoff = getattr(status_record, "created_at", None)
+    if not isinstance(evidence_cutoff, str) or not evidence_cutoff:
+        raise FoundationInputError(
+            "run status does not expose the immutable creation time"
+        )
+    manifest = None
+    measurement = None
+    if require_u1_measurement:
+        manifest = source_integrity.load_source_manifest(
+            repo / "skills/crossframe-ultra/references/source-manifest.json"
+        )
+        measurement_arguments: dict[str, object] = {
+            "manifest": manifest,
+            "run_mode": mode.value,
+        }
+        if mode is RunMode.TEST:
+            measurement_arguments["release_manifest_path"] = (
+                repo / "skills/crossframe-ultra/references/release-manifest.json"
+            )
+        measurement = source_integrity.measure_u1_prerequisites(
+            repo,
+            **measurement_arguments,
+        )
+        if not measurement.ready:
+            raise RuntimeError(
+                "U1 prerequisites are not ready: "
+                + ", ".join(measurement.missing)
+            )
+    return _FoundationContext(
+        claim=claim,
+        material=material,
+        request_sha256=str(metadata["request_sha256"]),
+        evidence_cutoff=evidence_cutoff,
+        inputs=inputs,
+        input_snapshot_sha256=input_snapshot_sha256,
+        binding=current_version_binding(),
+        timestamp=_canonical_utc(now),
+        manifest=manifest,
+        measurement=measurement,
+    )
+
+
+def _complete_foundation_u1(
+    repo: Path,
+    layout: RunLayout,
+    phase_store: object,
+    context: _FoundationContext,
+    *,
+    now: datetime,
+    recovery: object,
+) -> None:
+    from . import source_integrity
+
+    manifest = context.manifest
+    measurement = context.measurement
+    if manifest is None or measurement is None:
+        raise FoundationRecoveryError("U0 recovery lacks fresh U1 prerequisites")
+    u0_event = phase_store.events[-1]
+    if u0_event.get("phase_id") != "U0":
+        raise FoundationRecoveryError("U1 continuation does not follow U0")
+    u0_event_sha256 = _event_sha256(u0_event)
+    source_lock = source_integrity.build_source_lock(
+        run_id=phase_store.run_id,
+        version_binding=context.binding,
+        generated_at=context.timestamp,
+        prerequisite_measurement=measurement,
+        parent_event_sha256=u0_event_sha256,
+        evidence_cutoff=context.evidence_cutoff,
+        run_layout=layout,
+        inputs=context.inputs,
+    )
+    source_lock_seal = source_integrity.validate_source_lock(
+        source_lock,
+        prerequisite_measurement=measurement,
+        expected_run_id=phase_store.run_id,
+        expected_version_binding=context.binding,
+        expected_parent_event_sha256=u0_event_sha256,
+        expected_evidence_cutoff=context.evidence_cutoff,
+        expected_inputs=context.inputs,
+        run_layout=layout,
+    )
+    read_plan = source_integrity.build_read_plan(
+        manifest,
+        promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+        source_manifest_sha256=manifest.sha256,
+        source_lock_sha256=source_lock_seal.artifact_sha256,
+        parent_event_sha256=u0_event_sha256,
+    )
+    read_session = source_integrity.open_source_read_session(
+        repo,
+        manifest=manifest,
+        run_id=phase_store.run_id,
+        version_binding=context.binding,
+        source_lock_sha256=source_lock_seal.artifact_sha256,
+        parent_event_sha256=u0_event_sha256,
+        reader_mode="full-source",
+        read_at=context.timestamp,
+    )
+    receipts = []
+    for source_unit_id in read_plan["source_unit_ids"]:
+        _record, receipt = source_integrity.capture_source_unit_read(
+            read_session,
+            str(source_unit_id),
+        )
+        receipts.append(receipt)
+    read_events = tuple(
+        source_integrity.make_read_event(
+            run_id=phase_store.run_id,
+            version_binding=context.binding,
+            source_unit=receipt.source_unit,
+            promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+            source_manifest_sha256=manifest.sha256,
+            source_lock_sha256=source_lock_seal.artifact_sha256,
+            parent_event_sha256=u0_event_sha256,
+            receipt=receipt,
+        )
+        for receipt in receipts
+    )
+    read_audit = source_integrity.audit_read_capture(
+        read_events,
+        manifest,
+        receipts=tuple(receipts),
+        promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+        expected_run_id=phase_store.run_id,
+        expected_version_binding=context.binding,
+        expected_source_lock_sha256=source_lock_seal.artifact_sha256,
+        expected_parent_event_sha256=u0_event_sha256,
+    )
+    u1_authority = source_integrity.validate_u1_authority(
+        source_lock_seal,
+        read_audit,
+    )
+    source_lock_path = layout.recovery_dir / "u1-authority/source-lock.json"
+    source_coverage_path = layout.recovery_dir / "u1-authority/source-coverage.json"
+    read_events_path = (
+        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
+    )
+    atomic_write_json(source_lock_path, source_lock)
+    source_coverage = _u1_coverage_artifact(
+        run_id=phase_store.run_id,
+        version_binding=context.binding,
+        parent_event_sha256=u0_event_sha256,
+        source_lock_sha256=source_lock_seal.artifact_sha256,
+        receipts=tuple(receipts),
+        events=read_events,
+    )
+    atomic_write_json(source_coverage_path, source_coverage)
+    if _sha256_file(source_coverage_path) != read_audit.artifact_sha256:
+        raise RuntimeError("persisted U1 source coverage differs from its authority")
+    atomic_write_bytes(
+        read_events_path,
+        b"".join(canonical_json_bytes(event) for event in read_events),
+    )
+    phase_store.complete(
+        "U1",
+        artifact_hashes=(
+            u1_authority.source_lock_artifact_sha256,
+            u1_authority.read_coverage_artifact_sha256,
+        ),
+        u1_authority=u1_authority,
+    )
+    _create_phase_checkpoint(
+        recovery,
+        layout,
+        phase_store,
+        "U1",
+        (source_lock_path, source_coverage_path),
+        now=now,
+    )
+
+
+def _complete_foundation_u2(
+    layout: RunLayout,
+    phase_store: object,
+    context: _FoundationContext,
+    *,
+    now: datetime,
+    recovery: object,
+) -> None:
+    from . import retrieval
+
+    decision = retrieval.assess_retrieval_eligibility(
+        context.claim,
+        phase_store=phase_store,
+        material_inventory=context.inputs,
+        material_universe_sha256=context.input_snapshot_sha256,
+    )
+    retrieval_ledger = retrieval.build_retrieval_ledger(
+        decision,
+        generated_at=context.timestamp,
+        phase_store=phase_store,
+    )
+    retrieval_seal = retrieval.validate_retrieval_ledger(
+        retrieval_ledger,
+        phase_store=phase_store,
+        expected_run_id=phase_store.run_id,
+        expected_version_binding=context.binding,
+        expected_phase_id="U2",
+        expected_u1_parent_event_sha256=_event_sha256(phase_store.events[-1]),
+        expected_request_sha256=context.request_sha256,
+        expected_decision_sha256=decision.decision_sha256,
+        expected_authorization_sha256=None,
+    )
+    retrieval_path = (
+        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
+    )
+    atomic_write_json(retrieval_path, retrieval_ledger)
+    phase_store.complete(
+        "U2",
+        artifact_hashes=(retrieval_seal.artifact_sha256,),
+        retrieval_authority=retrieval_seal,
+    )
+    _create_phase_checkpoint(
+        recovery,
+        layout,
+        phase_store,
+        "U2",
+        (retrieval_path,),
+        now=now,
+    )
+
+
+def _complete_foundation_u3(
+    layout: RunLayout,
+    phase_store: object,
+    context: _FoundationContext,
+    *,
+    now: datetime,
+    recovery: object,
+) -> None:
+    from . import evidence
+
+    request_source_id = "REQUEST-" + context.request_sha256[:24].upper()
+    phase_store.append_evidence(
+        {
+            "evidence_id": "EVIDENCE-" + context.request_sha256[:24].upper(),
+            "identity": "user-claim",
+            "statement": f"{context.claim}\n\n{context.material}",
+            "source_refs": [request_source_id],
+            "observed_at": None,
+            "confidence": "unknown",
+            "event_date": context.evidence_cutoff[:10],
+            "publication_date": context.evidence_cutoff[:10],
+            "interest": "The sealed request is user-supplied material.",
+            "upstream_lineage": [request_source_id],
+            "supported_claim": context.claim,
+            "cannot_prove": (
+                "The supplied claim and material do not independently prove a real-world fact."
+            ),
+        }
+    )
+    evidence_artifact = phase_store.evidence_artifact
+    evidence_seal = evidence.validate_evidence_artifact(
+        evidence_artifact,
+        expected_run_id=phase_store.run_id,
+        expected_version_binding=context.binding,
+        expected_phase_id="U3",
+        expected_evidence_cutoff=context.evidence_cutoff,
+    )
+    evidence_path = (
+        layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    atomic_write_json(evidence_path, evidence_artifact)
+    phase_store.complete(
+        "U3",
+        artifact_hashes=(evidence_seal.artifact_sha256,),
+        evidence_authority=evidence_seal,
+    )
+    _create_phase_checkpoint(
+        recovery,
+        layout,
+        phase_store,
+        "U3",
+        (evidence_path,),
+        now=now,
+    )
+
+
+def _continue_foundation_u0_u3(
+    repo: Path,
+    layout: RunLayout,
+    mode: RunMode,
+    phase_store: object,
+    context: _FoundationContext,
+    *,
+    now: datetime,
+    recovery: object,
+) -> object:
+    current_phase = getattr(phase_store, "current_phase", None)
+    if current_phase not in {"U0", "U1", "U2"}:
+        raise FoundationRecoveryError(
+            "partial foundation checkpoint does not end at U0, U1, or U2"
+        )
+    run_contract = getattr(phase_store, "run_contract", None)
+    if (
+        getattr(phase_store, "run_id", None) != layout.run_dir.name
+        or getattr(phase_store, "evidence_cutoff", None) != context.evidence_cutoff
+        or not isinstance(run_contract, Mapping)
+        or run_contract.get("request_sha256") != context.request_sha256
+        or run_contract.get("run_mode") != mode.value
+    ):
+        raise FoundationRecoveryError(
+            "partial foundation authority differs from the frozen request"
+        )
+    _assert_no_uncheckpointed_foundation_residuals(layout, current_phase)
+    if current_phase == "U0":
+        _complete_foundation_u1(
+            repo,
+            layout,
+            phase_store,
+            context,
+            now=now,
+            recovery=recovery,
+        )
+        current_phase = "U1"
+    if current_phase == "U1":
+        _assert_no_uncheckpointed_foundation_residuals(layout, current_phase)
+        _complete_foundation_u2(
+            layout,
+            phase_store,
+            context,
+            now=now,
+            recovery=recovery,
+        )
+        current_phase = "U2"
+    if current_phase == "U2":
+        _assert_no_uncheckpointed_foundation_residuals(layout, current_phase)
+        _complete_foundation_u3(
+            layout,
+            phase_store,
+            context,
+            now=now,
+            recovery=recovery,
+        )
+    return phase_store
+
+
+def _establish_fresh_u0_u3(
+    repo: Path,
+    layout: RunLayout,
+    mode: RunMode,
+    *,
+    now: datetime,
+    recovery: object,
+    status_record: object,
+) -> object:
+    from .state_machine import PhaseStore
+
+    if (
+        getattr(status_record, "status", None) != "running"
+        or getattr(status_record, "current_phase", None) != "U0"
+        or getattr(status_record, "last_complete_phase", None) is not None
+    ):
+        raise FoundationInputError(
+            "fresh foundation status boundary must be running/U0 with no completed phase"
+        )
+    _assert_fresh_foundation(layout)
+    context = _load_foundation_context(
+        repo,
+        layout,
+        mode,
+        now=now,
+        status_record=status_record,
+        require_u1_measurement=True,
+    )
+    manifest = context.manifest
+    measurement = context.measurement
+    if manifest is None or measurement is None:
+        raise RuntimeError("fresh foundation U1 prerequisites are unavailable")
+    run_contract, capability_availability = _foundation_run_contract(
+        mode=mode,
+        request_sha256=context.request_sha256,
+        evidence_cutoff=context.evidence_cutoff,
+    )
+    phase_store = PhaseStore(
+        run_id=layout.run_dir.name,
+        version_binding=context.binding,
+        source_sha256=manifest.sha256,
+        input_artifact_hashes=tuple(item["sha256"] for item in context.inputs),
+        input_snapshot_sha256=context.input_snapshot_sha256,
+        evidence_cutoff=context.evidence_cutoff,
+        now=now,
+        run_contract=run_contract,
+        capability_availability=capability_availability,
+        source_repository=repo,
+        u1_prerequisite_measurement=measurement,
+        run_layout=layout,
+    )
+    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+    atomic_write_json(run_contract_path, dict(phase_store.run_contract))
+    phase_store.complete(
+        "U0",
+        artifact_hashes=(phase_store.run_contract_artifact_sha256,),
+    )
+    _create_phase_checkpoint(
+        recovery,
+        layout,
+        phase_store,
+        "U0",
+        (run_contract_path,),
+        now=now,
+    )
+    return _continue_foundation_u0_u3(
+        repo,
+        layout,
+        mode,
+        phase_store,
+        context,
+        now=now,
+        recovery=recovery,
+    )
+
+
+def _resume_or_establish_u0_u3(
+    repo: Path,
+    layout: RunLayout,
+    mode: RunMode,
+    *,
+    now: datetime,
+    recovery: object,
+    status_record: object,
+) -> object:
+    resume_run = getattr(recovery, "resume_run", None)
+    error_type = getattr(recovery, "RecoveryStateError", None)
+    if not callable(resume_run) or not isinstance(error_type, type):
+        raise RuntimeError("recovery foundation APIs are unavailable")
+    try:
+        resumed = resume_run(layout, now=now)
+    except error_type as error:
+        if str(error) != "no completed resumable checkpoint is available":
+            raise
+        return _establish_fresh_u0_u3(
+            repo,
+            layout,
+            mode,
+            now=now,
+            recovery=recovery,
+            status_record=status_record,
+        )
+    phase_store = _resume_phase_store(resumed)
+    current_phase = getattr(phase_store, "current_phase", None)
+    if current_phase in {"U0", "U1", "U2"}:
+        context = _load_foundation_context(
+            repo,
+            layout,
+            mode,
+            now=now,
+            status_record=status_record,
+            require_u1_measurement=current_phase == "U0",
+        )
+        return _continue_foundation_u0_u3(
+            repo,
+            layout,
+            mode,
+            phase_store,
+            context,
+            now=now,
+            recovery=recovery,
+        )
+    if current_phase not in PHASES[3:]:
+        raise FoundationRecoveryError("durable foundation phase is invalid")
+    return phase_store
+
+
 def _validator_set_authority(repo: Path, validation: object) -> str:
     authority = getattr(validation, "validator_set_sha256", None)
     if not callable(authority):
@@ -2380,7 +3235,7 @@ def materialize_complete_run(
     from .status import RunStatusStore
 
     status_store = RunStatusStore(layout)
-    lease = acquire_run_lease(layout, now, timedelta(minutes=30))
+    lease = None
     attention_marked = False
     phase_store_restored = False
     publication_journal_path = layout.recovery_dir / "publish-transaction.json"
@@ -2408,7 +3263,13 @@ def materialize_complete_run(
         return changed
 
     try:
+        lease = acquire_run_lease(layout, now, timedelta(minutes=30))
         current = status_store.read()
+        checkpoints_dir = layout.recovery_dir / "checkpoints"
+        if checkpoints_dir.is_dir() and any(
+            path.is_file() for path in checkpoints_dir.glob("*.json")
+        ):
+            _foundation_input_inventory(layout, status_record=current)
         if current.status == "complete":
             recovered_publication = recover_publish_transaction(
                 layout, mark_needs_attention=mark_needs_attention
@@ -2432,8 +3293,14 @@ def materialize_complete_run(
                 postcheck_passed=True,
             )
 
-        resumed = recovery.resume_run(layout, now=now)
-        phase_store = _resume_phase_store(resumed)
+        phase_store = _resume_or_establish_u0_u3(
+            repo,
+            layout,
+            mode,
+            now=now,
+            recovery=recovery,
+            status_record=current,
+        )
         phase_store_restored = True
         recovered_publication = recover_publish_transaction(
             layout, mark_needs_attention=mark_needs_attention
@@ -2551,6 +3418,38 @@ def materialize_complete_run(
             postcheck_passed=True,
         )
     except BaseException as error:
+        if isinstance(error, FoundationInputError):
+            try:
+                rejected = status_store.read()
+                if rejected.status in {"created", "running", "interrupted"}:
+                    status_store.transition(
+                        rejected,
+                        "blocked",
+                        _strictly_later(now, rejected.updated_at),
+                        current_phase=rejected.current_phase,
+                        last_complete_phase=rejected.last_complete_phase,
+                        reason=f"fresh foundation input rejected: {error}",
+                        validation_passed=False,
+                    )
+            except BaseException as status_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "failed to mark rejected foundation blocked: "
+                        f"{status_error}"
+                    )
+        elif isinstance(error, FoundationRecoveryError) and not attention_marked:
+            try:
+                mark_needs_attention(
+                    f"foundation recovery requires attention: {error}"
+                )
+            except BaseException as status_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "failed to mark foundation recovery needs_attention: "
+                        f"{status_error}"
+                    )
         if (
             phase_store_restored
             and publication_journal_path.is_file()
@@ -2567,7 +3466,8 @@ def materialize_complete_run(
                     )
         raise
     finally:
-        release_run_lease(layout, lease)
+        if lease is not None:
+            release_run_lease(layout, lease)
 
 
 __all__ = (
@@ -2586,5 +3486,6 @@ __all__ = (
     "materialize_u4_u11",
     "prepare_authoring",
     "record_materialized_phase",
+    "seal_request_intake_authority",
     "seal_authoring_artifact",
 )

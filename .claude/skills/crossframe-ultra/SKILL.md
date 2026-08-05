@@ -49,10 +49,14 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 
 - canonical source：`E:\世界模型\skill\crossframe-skill\skills\crossframe-ultra`
 - Codex install：`C:\Users\cangm\.codex\skills\crossframe-ultra`
+- Reasonix install：`C:\Users\cangm\.agents\skills\crossframe-ultra`
+- Claude install：`C:\Users\cangm\.claude\skills\crossframe-ultra`
 - production root：`E:\世界模型\output\crossframe-ultra`
 - test root：`E:\世界模型\output\crossframe-ultra-tests`
 
 固定根不可用、不可安全解析或不可写时失败关闭。生产与测试根不得互换，不得回退到当前目录、临时目录、源码目录或安装目录。
+
+执行脚本与 `--repo` 必须来自同一棵已安装树：脚本位于 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py`，`--repo` 必须逐字传入对应的 `<repo>`。Codex 使用 `C:\Users\cangm\.codex`；Reasonix 使用 `C:\Users\cangm\.agents`；Claude 使用 `C:\Users\cangm\.claude`。禁止用一棵安装树的脚本搭配另一棵树或 canonical source 的 `--repo`。
 
 ## Required reads
 
@@ -75,10 +79,24 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 
 ## Runtime command boundary
 
-只通过 `scripts/crossframe_ultra_runtime.py` 的固定接口调用 `start`、`prepare`、`checkpoint`、`materialize`、`validate`、`repair-plan`、`resume`、`fork`、`cancel`、`rebuild-index`。逐字使用 `references/runtime-routing-map.md` 中的签名。
+只通过 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py` 的固定接口调用 `start`、`prepare`、`checkpoint`、`materialize`、`validate`、`repair-plan`、`resume`、`fork`、`cancel`、`rebuild-index`，并让同一命令的 `--repo` 指向这个 `<repo>`。逐字使用 `references/runtime-routing-map.md` 中的签名。
+
+fresh CLI 运行只接受宿主根据已确认用户材料构造的 canonical closed-input envelope：UTF-8、无 BOM、键排序、紧凑分隔符、末尾一个 LF，且字段只能是 `analysis_kind`、`claim`、`material`。固定形状为：
+
+```json
+{"analysis_kind":"closed-input","claim":"待判断的非空命题或问题","material":"本次运行的完整非空封闭材料"}
+```
+
+这里的 envelope 只是不可变输入，不是 authority。不得加入或自填 run ID、版本、散列、敏感级别、能力、读取凭据、检索结论、证据 ID、phase event 或 checkpoint。`start` 会独立封存 runtime-owned request intake authority；之后同时替换 request 与 metadata 仍会被拒绝。`start` 后调用 `prepare`；fresh `materialize` 由 runtime 自动建立并封存 U0–U3，再从 U4 继续。不要写 `U01-read-events.jsonl`、`U02-retrieval-ledger.json` 或 `U03-evidence-ledger.json` 来替代 runtime authority。
+
+若进程在已完成的 U0、U1 或 U2 checkpoint 后中断，下一次 `materialize` 从该 checkpoint 继续，不能重建已封存阶段。若发现没有对应 checkpoint 的下游残留，进入 `needs_attention`，不得覆盖或冒充成功恢复。
+
+选择这个 eligible closed-input 分支即选择冻结的 runtime-owned bootstrap profile：`sensitivity=private`、`retention=retain`、`outbound_permission=deidentified-only`；filesystem、validators、model context 为 `available`，DOCX parser、network、retrieval、subagents 为 `not-applicable`；资源上限沿用已晋升 U0 合同的 `64 / 2 / 3 / 3`。该 profile 不允许 caller 覆盖，也不授权任何外发或现实检索。
+
+只有当用户已提供足够且封闭的材料时才能使用该 envelope。普通自由文本、缺少完整材料或需要现实检索的请求不得伪装为 `closed-input`；当前 runtime 会将该 fresh run 标记为 `blocked` 并失败关闭。此时直接报告边界，不要循环调用 `resume`、`checkpoint`、`materialize` 或搜索隐藏入口。
 
 <!-- ULTRA-NO-ARBITRARY-PATH-FLAGS -->
-禁止添加 `--run-dir`、`--authoring-dir`、`--output-root`、`--destination` 或 `--fallback`；也禁止创造任意输出格式、任意目录或跳阶段参数。模型只写 `prepare` 返回的 authoring slots；runtime 写身份、版本、散列、阶段、状态、索引、manifest 和正式 delivery。
+禁止添加 `--run-dir`、`--authoring-dir`、`--output-root`、`--destination` 或 `--fallback`；也禁止创造任意输出格式、任意目录或跳阶段参数。模型只写 `prepare` 返回且当前分支明确为 model-owned 的 authoring slots；fresh foundation 中 U01–U03 必须不存在，模型 authoring 从 U04 开始。runtime 写身份、版本、散列、阶段、状态、索引、manifest 和正式 delivery。
 
 ## U0–U12
 

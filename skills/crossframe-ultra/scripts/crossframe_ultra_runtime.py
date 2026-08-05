@@ -28,7 +28,7 @@ from ultra_runtime.jsonio import (
     sha256_bytes,
 )
 from ultra_runtime.locks import acquire_run_lease, release_run_lease
-from ultra_runtime.materialization import prepare_authoring
+from ultra_runtime.materialization import prepare_authoring, seal_request_intake_authority
 from ultra_runtime.paths import (
     RootPolicy,
     RunLayout,
@@ -37,7 +37,7 @@ from ultra_runtime.paths import (
     create_run_id,
     default_root_policy,
 )
-from ultra_runtime.status import RunStatusStore
+from ultra_runtime.status import RunStatusStore, _record_to_object
 
 
 FORBIDDEN_CLI_OPTIONS = (
@@ -98,7 +98,9 @@ def build_parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("--phase", required=True, choices=tuple(f"U{number}" for number in range(12)))
 
     materialize = subparsers.add_parser(
-        "materialize", help="materialize and publish a complete run", add_help=False
+        "materialize",
+        help="bootstrap eligible fresh U0-U3 or resume, then materialize and publish",
+        add_help=False,
     )
     _add_run(materialize)
 
@@ -243,7 +245,13 @@ def _start(
         layout.input_dir / "request-metadata.json",
         {"request_sha256": request_sha256, "request_size": len(request_bytes)},
     )
-    RunStatusStore(layout).create(now)
+    created = RunStatusStore(layout).create(now)
+    seal_request_intake_authority(
+        layout,
+        request_sha256=request_sha256,
+        request_size=len(request_bytes),
+        created_at=created.created_at,
+    )
     IndexStore(layout.root).rebuild()
     _emit_json(
         stdout,
@@ -497,7 +505,17 @@ def _resume(
     with _run_lease(layout, now):
         result = recovery.resume_run(layout, now=now)
     IndexStore(layout.root).rebuild()
-    _emit_json(stdout, result)
+    _emit_json(
+        stdout,
+        {
+            "outcome": result.outcome,
+            "compatibility_result": result.compatibility_result,
+            "checkpoint": result.checkpoint,
+            "status": (
+                None if result.status is None else _record_to_object(result.status)
+            ),
+        },
+    )
     return 0
 
 
