@@ -564,6 +564,75 @@ def test_partial_cancellation_blocks_new_lease_and_retry_converges(
 
 
 @pytest.mark.parametrize(
+    "prior_status",
+    ("created", "running", "interrupted", "blocked", "needs_attention"),
+)
+def test_cancel_pre_u0_without_recovery_authority_is_status_only_and_idempotent(
+    tmp_path,
+    prior_status,
+):
+    recovery = _recovery_module()
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
+    from ultra_runtime.status import RunStatusStore
+
+    policy = RootPolicy(tmp_path / "production", tmp_path / "test")
+    layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
+    statuses = RunStatusStore(layout)
+    status = statuses.create(NOW)
+    if prior_status == "interrupted":
+        running = statuses.transition(
+            status,
+            "running",
+            NOW + timedelta(seconds=1),
+        )
+        status = statuses.transition(
+            running,
+            prior_status,
+            NOW + timedelta(seconds=2),
+            reason="pre-U0 interrupted",
+        )
+    elif prior_status != "created":
+        status = statuses.transition(
+            status,
+            prior_status,
+            NOW + timedelta(seconds=1),
+            reason=None if prior_status == "running" else f"pre-U0 {prior_status}",
+        )
+    status_path = layout.run_dir / "run-status.json"
+    events_path = layout.recovery_dir / "phase-events.jsonl"
+    status_before = status_path.read_bytes()
+    cancelled = recovery.cancel_run(
+        layout,
+        reason="user requested cancellation",
+        now=NOW + timedelta(seconds=3),
+    )
+    cancelled_bytes = status_path.read_bytes()
+    repeated = recovery.cancel_run(
+        layout,
+        reason="ignored repeated reason",
+        now=NOW + timedelta(seconds=4),
+    )
+
+    assert status_before != cancelled_bytes
+    assert cancelled.status == "cancelled"
+    assert cancelled.previous_status == prior_status
+    assert cancelled.current_phase == "U0"
+    assert cancelled.last_complete_phase is None
+    assert cancelled.reason == "user requested cancellation"
+    assert cancelled.tools_allowed is False
+    assert cancelled.created_at == status.created_at
+    assert cancelled.updated_at == "2026-08-04T00:00:03Z"
+    assert cancelled.revision == status.revision + 1
+    assert statuses.read() == cancelled
+    assert repeated == cancelled
+    assert status_path.read_bytes() == cancelled_bytes
+    assert not events_path.exists()
+    assert not (layout.recovery_dir / "run-authority.json").exists()
+    assert not (layout.recovery_dir / "checkpoints").exists()
+    assert not (layout.artifacts_dir / "ultra-run-contract.json").exists()
+
+
+@pytest.mark.parametrize(
     "existing_bytes",
     (
         b"",

@@ -559,7 +559,7 @@ def _cancel(
             now=now,
         )
     IndexStore(layout.root).rebuild()
-    _emit_json(stdout, status)
+    _emit_json(stdout, _record_to_object(status))
     return 0
 
 
