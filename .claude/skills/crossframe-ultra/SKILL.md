@@ -56,7 +56,7 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 
 固定根不可用、不可安全解析或不可写时失败关闭。生产与测试根不得互换，不得回退到当前目录、临时目录、源码目录或安装目录。
 
-执行脚本与 `--repo` 必须来自同一棵已安装树：脚本位于 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py`，`--repo` 必须逐字传入对应的 `<repo>`。Codex 使用 `C:\Users\cangm\.codex`；Reasonix 使用 `C:\Users\cangm\.agents`；Claude 使用 `C:\Users\cangm\.claude`。禁止用一棵安装树的脚本搭配另一棵树或 canonical source 的 `--repo`。
+执行脚本与 `--repo` 必须来自同一棵已安装树：正式仓库相对路径为 `skills/crossframe-ultra/scripts/crossframe_ultra_runtime.py`，Windows 路径位于 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py`，`--repo` 必须逐字传入对应的 `<repo>`。Codex 使用 `C:\Users\cangm\.codex`；Reasonix 使用 `C:\Users\cangm\.agents`；Claude 使用 `C:\Users\cangm\.claude`。禁止用一棵安装树的脚本搭配另一棵树或 canonical source 的 `--repo`。
 
 ## Required reads
 

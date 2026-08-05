@@ -17,7 +17,9 @@ SCRIPTS = ROOT / "skills/crossframe-ultra/scripts"
 RUN_ID = "20260804T000000Z-010203040506"
 NOW = datetime(2026, 8, 4, tzinfo=timezone.utc)
 STAMP = "2026-08-02T00:00:00Z"
-SOURCE_SHA256 = hashlib.sha256(b"source-manifest").hexdigest()
+SOURCE_SHA256 = hashlib.sha256(
+    (ROOT / "skills/crossframe-ultra/references/source-manifest.json").read_bytes()
+).hexdigest()
 U1_SOURCE_LOCK = Path("recovery/u1-authority/source-lock.json")
 U1_SOURCE_COVERAGE = Path("recovery/u1-authority/source-coverage.json")
 U1_READ_PLAN = Path("recovery/u1-authority/read-plan.json")
@@ -508,12 +510,37 @@ def test_partial_cancellation_blocks_new_lease_and_retry_converges(
     ]
     assert persisted_events[-1]["status"] == "cancelled"
     assert statuses.read().status == "running"
+
+    from ultra_runtime import jsonio
+    from ultra_runtime.schemas import compute_artifact_content_sha256
+
+    authority_path = layout.recovery_dir / "run-authority.json"
+    authority_bytes = authority_path.read_bytes()
+    authority = jsonio.load_json_object(authority_path)
+    malformed_ref = dict(authority["input_refs"][0])
+    malformed_ref.pop("media_type")
+    authority["input_refs"][0] = malformed_ref
+    authority["content_sha256"] = compute_artifact_content_sha256(authority)
+    jsonio.atomic_write_json(authority_path, authority)
+    with pytest.raises(locks.LeaseNeedsAttentionError) as caught:
+        locks.acquire_run_lease(
+            layout,
+            NOW + timedelta(seconds=3),
+            timedelta(seconds=30),
+        )
+    assert isinstance(caught.value.__cause__, recovery.RecoveryIntegrityError)
+    jsonio.atomic_write_bytes(authority_path, authority_bytes)
+
+    input_path = layout.input_dir / "AGENTS.md"
+    original_input = input_path.read_bytes()
+    input_path.write_bytes(b"tampered after durable cancellation\n")
     with pytest.raises(locks.CancelledRunError):
         locks.acquire_run_lease(
             layout,
             NOW + timedelta(seconds=3),
             timedelta(seconds=30),
         )
+    input_path.write_bytes(original_input)
 
     monkeypatch.setattr(recovery.RunStatusStore, "transition", real_transition)
     cancelled = recovery.cancel_run(

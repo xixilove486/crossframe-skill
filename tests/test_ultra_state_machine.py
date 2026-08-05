@@ -37,16 +37,31 @@ def _canonical(value: object) -> bytes:
     ).encode("utf-8")
 
 
-LOCKED_INPUT_SHA256 = hashlib.sha256((ROOT / "AGENTS.md").read_bytes()).hexdigest()
+REQUEST_BYTES = _canonical(
+    {
+        "analysis_kind": "closed-input",
+        "claim": "Apply the provided repository instructions.",
+        "material": (ROOT / "AGENTS.md").read_text(encoding="utf-8"),
+    }
+)
+REQUEST_SHA256 = hashlib.sha256(REQUEST_BYTES).hexdigest()
+REQUEST_METADATA_BYTES = _canonical(
+    {"request_sha256": REQUEST_SHA256, "request_size": len(REQUEST_BYTES)}
+)
 _LOCKED_INPUTS = [
     {
-        "path": "AGENTS.md",
-        "sha256": LOCKED_INPUT_SHA256,
-        "media_type": "text/markdown",
-    }
+        "path": "request-metadata.json",
+        "sha256": hashlib.sha256(REQUEST_METADATA_BYTES).hexdigest(),
+        "media_type": "application/json",
+    },
+    {
+        "path": "request.bin",
+        "sha256": REQUEST_SHA256,
+        "media_type": "application/octet-stream",
+    },
 ]
+INPUT_ARTIFACT_HASHES = tuple(item["sha256"] for item in _LOCKED_INPUTS)
 INPUT_SNAPSHOT_SHA256 = hashlib.sha256(_canonical(_LOCKED_INPUTS)).hexdigest()
-REQUEST_SHA256 = LOCKED_INPUT_SHA256
 
 
 def _hash_without(value: dict[str, object], *fields: str) -> str:
@@ -126,7 +141,7 @@ def _store(
         run_id=run_id,
         version_binding=_binding(),
         source_sha256=SOURCE_MANIFEST_SHA256,
-        input_artifact_hashes=(REQUEST_SHA256,),
+        input_artifact_hashes=INPUT_ARTIFACT_HASHES,
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
@@ -222,10 +237,15 @@ def u1_prerequisite_context(tmp_path_factory):
     skill_root.parent.mkdir(parents=True)
     shutil.copytree(ROOT / "skills/crossframe-ultra", skill_root)
     shutil.copy2(ROOT / "AGENTS.md", authority_repo / "AGENTS.md")
+    root_scripts = authority_repo / "scripts"
+    root_scripts.mkdir()
+    shutil.copy2(
+        ROOT / "scripts/check_crossframe_ultra_artifacts.py",
+        root_scripts / "check_crossframe_ultra_artifacts.py",
+    )
     jsonio = skill_root / "scripts/ultra_runtime/jsonio.py"
     jsonio.write_bytes(jsonio.read_bytes().replace(b"\r\n", b"\n"))
-    release_path = fixture_root / "release-manifest.json"
-    _write_release_manifest(authority_repo, release_path)
+    release_path = skill_root / "references/release-manifest.json"
     manifest = source_integrity.load_source_manifest(
         skill_root / "references/source-manifest.json",
         expected_sha256=SOURCE_MANIFEST_SHA256,
@@ -243,7 +263,10 @@ def u1_prerequisite_context(tmp_path_factory):
     )
     run_layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
     run_layout.input_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / "AGENTS.md", run_layout.input_dir / "AGENTS.md")
+    (run_layout.input_dir / "request.bin").write_bytes(REQUEST_BYTES)
+    (run_layout.input_dir / "request-metadata.json").write_bytes(
+        REQUEST_METADATA_BYTES
+    )
     _AUTHORITY_REPO = authority_repo
     _AUTHORITY_MEASUREMENT = measurement
     _AUTHORITY_LAYOUT = run_layout
@@ -472,12 +495,13 @@ def test_phase_store_accepts_only_the_canonical_control_plane_run_layout(tmp_pat
     policy = RootPolicy(tmp_path / "production-control", tmp_path / "test-control")
     layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
     layout.input_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(ROOT / "AGENTS.md", layout.input_dir / "AGENTS.md")
+    (layout.input_dir / "request.bin").write_bytes(REQUEST_BYTES)
+    (layout.input_dir / "request-metadata.json").write_bytes(REQUEST_METADATA_BYTES)
     arguments = {
         "run_id": RUN_ID,
         "version_binding": _binding(),
         "source_sha256": SOURCE_MANIFEST_SHA256,
-        "input_artifact_hashes": (REQUEST_SHA256,),
+        "input_artifact_hashes": INPUT_ARTIFACT_HASHES,
         "input_snapshot_sha256": INPUT_SNAPSHOT_SHA256,
         "evidence_cutoff": STAMP,
         "now": datetime(2026, 8, 2, tzinfo=timezone.utc),
@@ -777,7 +801,7 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
         run_id=RUN_ID,
         version_binding=_binding(),
         source_sha256=SOURCE_MANIFEST_SHA256,
-        input_artifact_hashes=(REQUEST_SHA256,),
+        input_artifact_hashes=INPUT_ARTIFACT_HASHES,
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
@@ -796,7 +820,7 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
             run_id=RUN_ID,
             version_binding=_binding(),
             source_sha256=SOURCE_MANIFEST_SHA256,
-            input_artifact_hashes=(REQUEST_SHA256,),
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2, tzinfo=timezone.utc),
@@ -1030,7 +1054,7 @@ def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
             run_id=RUN_ID,
             version_binding=_binding(),
             source_sha256=SOURCE_MANIFEST_SHA256,
-            input_artifact_hashes=(REQUEST_SHA256,),
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2),
@@ -1043,7 +1067,7 @@ def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
             run_id=RUN_ID,
             version_binding={**_binding(), "runtime_version": "9.9.9"},
             source_sha256=SOURCE_MANIFEST_SHA256,
-            input_artifact_hashes=(REQUEST_SHA256,),
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2, tzinfo=timezone.utc),
@@ -1086,7 +1110,7 @@ def _complete_through_u11(store, authority) -> None:
             phase_id,
             artifact_hashes=outputs,
             parent_event_sha256=parent,
-            input_artifact_hashes=(REQUEST_SHA256,),
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
             version_binding=_binding(),
             source_sha256=SOURCE_MANIFEST_SHA256,
             evidence_cutoff=STAMP,
@@ -1119,7 +1143,7 @@ def test_phase_store_extends_the_single_ordered_chain_through_u11(u1_authority):
             phase_id,
             artifact_hashes=outputs,
             parent_event_sha256=store.events[-1]["event_sha256"],
-            input_artifact_hashes=(REQUEST_SHA256,),
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
             version_binding=_binding(),
             source_sha256=SOURCE_MANIFEST_SHA256,
             evidence_cutoff=STAMP,

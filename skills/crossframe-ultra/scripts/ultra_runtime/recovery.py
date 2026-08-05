@@ -128,6 +128,10 @@ class RecoveryIntegrityError(RecoveryError):
     pass
 
 
+class _RecoveryInputDriftError(RecoveryIntegrityError):
+    pass
+
+
 class RecoveryCompatibilityError(RecoveryError):
     pass
 
@@ -311,7 +315,7 @@ def _read_canonical_object(path: Path) -> dict[str, object]:
     return value
 
 
-def _validate_disk_ref(layout: RunLayout, value: object, *, role: str) -> dict[str, str]:
+def _validate_ref_record(value: object, *, role: str) -> dict[str, str]:
     if not isinstance(value, Mapping) or set(value) != {"path", "sha256", "media_type"}:
         raise RecoveryIntegrityError(f"{role} artifact hash record is invalid")
     relative_text = value.get("path")
@@ -326,21 +330,14 @@ def _validate_disk_ref(layout: RunLayout, value: object, *, role: str) -> dict[s
     ):
         raise RecoveryIntegrityError(f"{role} artifact hash record is invalid")
     relative = Path(relative_text)
-    if relative.is_absolute() or relative.as_posix() != relative_text:
+    if (
+        relative.is_absolute()
+        or relative.drive
+        or relative.as_posix() != relative_text
+        or not relative.parts
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
         raise RecoveryIntegrityError(f"{role} artifact path is not canonical")
-    candidate = layout.run_dir / relative
-    try:
-        assert_safe_descendant(layout.root, candidate)
-        candidate.relative_to(layout.run_dir)
-        if not candidate.is_file():
-            raise RecoveryIntegrityError(f"{role} artifact is missing: {relative_text}")
-        actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
-    except RecoveryIntegrityError:
-        raise
-    except (OSError, TypeError, ValueError) as error:
-        raise RecoveryIntegrityError(f"{role} artifact path is invalid") from error
-    if actual != digest:
-        raise RecoveryIntegrityError(f"{role} artifact hash differs from disk: {relative_text}")
     return {
         "path": relative_text,
         "sha256": str(digest),
@@ -348,7 +345,39 @@ def _validate_disk_ref(layout: RunLayout, value: object, *, role: str) -> dict[s
     }
 
 
-def _validate_authority(layout: RunLayout) -> tuple[dict[str, object], str]:
+def _validate_disk_ref(layout: RunLayout, value: object, *, role: str) -> dict[str, str]:
+    ref = _validate_ref_record(value, role=role)
+    relative_text = ref["path"]
+    relative = Path(relative_text)
+    candidate = layout.run_dir / relative
+    try:
+        assert_safe_descendant(layout.root, candidate)
+        candidate.relative_to(layout.run_dir)
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(f"{role} artifact path is invalid") from error
+    drift_error = _RecoveryInputDriftError if role == "input" else RecoveryIntegrityError
+    try:
+        if not candidate.is_file():
+            raise drift_error(
+                f"{role} artifact is missing: {relative_text}"
+            )
+        actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
+    except RecoveryIntegrityError:
+        raise
+    except OSError as error:
+        raise drift_error(
+            f"{role} artifact cannot be read: {relative_text}"
+        ) from error
+    if actual != ref["sha256"]:
+        raise drift_error(
+            f"{role} artifact hash differs from disk: {relative_text}"
+        )
+    return ref
+
+
+def _validate_authority_record(
+    layout: RunLayout,
+) -> tuple[dict[str, object], str, list[dict[str, str]]]:
     _, _, authority_path, _, _ = _paths(layout)
     authority = _read_canonical_object(authority_path)
     if set(authority) != _AUTHORITY_FIELDS:
@@ -387,9 +416,16 @@ def _validate_authority(layout: RunLayout) -> tuple[dict[str, object], str]:
     raw_refs = authority.get("input_refs")
     if not isinstance(raw_refs, list) or not raw_refs:
         raise RecoveryIntegrityError("recovery frozen input refs are missing")
-    refs = [_validate_disk_ref(layout, item, role="input") for item in raw_refs]
+    refs = [_validate_ref_record(item, role="input") for item in raw_refs]
     if len({item["path"] for item in refs}) != len(refs):
         raise RecoveryIntegrityError("recovery frozen input refs contain duplicates")
+    return authority, compatibility, refs
+
+
+def _validate_authority(layout: RunLayout) -> tuple[dict[str, object], str]:
+    authority, compatibility, raw_refs = _validate_authority_record(layout)
+    for item in raw_refs:
+        _validate_disk_ref(layout, item, role="input")
     return authority, compatibility
 
 

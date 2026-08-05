@@ -769,7 +769,7 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
     assert status["reason"].startswith("foundation recovery requires attention:")
 
 
-def test_checkpointed_foundation_intake_mismatch_blocks_materialize(
+def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corruption(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -871,6 +871,33 @@ def test_checkpointed_foundation_intake_mismatch_blocks_materialize(
             + "\n"
         ).encode("utf-8")
     )
+
+    from ultra_runtime import jsonio, locks, recovery
+    from ultra_runtime.schemas import compute_artifact_content_sha256
+
+    authority_path = layout.recovery_dir / "run-authority.json"
+    authority_bytes = authority_path.read_bytes()
+    authority = jsonio.load_json_object(authority_path)
+    malformed_ref = dict(authority["input_refs"][0])
+    malformed_ref.pop("media_type")
+    authority["input_refs"][0] = malformed_ref
+    authority["content_sha256"] = compute_artifact_content_sha256(authority)
+    jsonio.atomic_write_json(authority_path, authority)
+
+    with pytest.raises(locks.LeaseNeedsAttentionError) as caught:
+        cli.execute(
+            ["materialize", *common, "--run-id", run_id],
+            stdin=BytesIO(),
+            stdout=StringIO(),
+            stderr=StringIO(),
+            root_policy=policy,
+            now=lambda: start_time + timedelta(seconds=3),
+            entropy=lambda: b"checkpointed-authority-corruption",
+        )
+    assert isinstance(caught.value.__cause__, recovery.RecoveryIntegrityError)
+    status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
+    assert status["status"] == "running"
+    jsonio.atomic_write_bytes(authority_path, authority_bytes)
 
     with pytest.raises(ValueError, match="request intake authority differs"):
         cli.execute(
