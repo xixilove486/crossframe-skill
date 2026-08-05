@@ -223,6 +223,10 @@ def test_ultra_ci_job_is_isolated_and_preserves_frozen_runtime_jobs() -> None:
     ultra_job = jobs["ultra-contracts-and-artifacts"]
     for marker in (
         "name: ultra-contracts-and-artifacts",
+        "runs-on: windows-latest",
+        "shell: bash",
+        "Prepare fixed Windows roots",
+        "subst.exe E:",
         "python -m pip install jsonschema pytest PyYAML",
         "python -I -S -B scripts/check_crossframe_ultra_v82_source.py --repo .",
         "python -B scripts/check_crossframe_ultra_v82_knowledge.py --repo .",
