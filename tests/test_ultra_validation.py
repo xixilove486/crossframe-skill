@@ -915,8 +915,28 @@ def test_task3_validator_binds_sealed_request_and_read_plan_checkpoint(
     assert captured["expected_read_coverage_sha256"] == u1_refs[
         "recovery/u1-authority/source-coverage.json"
     ]
+def test_fresh_claim_semantics_reuses_the_support_scope_validator() -> None:
+    modules = load_validation_runtime()
+    evidence = seal_fixture(modules, "evidence-ledger-valid.json")
+    graph = seal_fixture(modules, "claim-mechanism-graph-valid.json")
+    roster = next(
+        entry
+        for entry in evidence["entries"]
+        if entry["evidence_id"] == "EVIDENCE-ROSTER-ATLAS"
+    )
+    graph["claims"][0]["statement"] = roster["cannot_prove"]
+    loaded = {
+        "crossframe.ultra.v82.evidence-ledger": [evidence],
+        "crossframe.ultra.v82.claim-mechanism-graph": [graph],
+    }
+    issues = {check_id: [] for check_id in modules.validation._CHECK_ORDER}
 
+    modules.validation._validate_claim_semantics(loaded, issues)
 
+    assert any(
+        code == "ULTRA-EVIDENCE-HOLLOW"
+        for code, _ in issues["semantic-tamper-resistance"]
+    )
 def test_disk_fresh_validation_is_canonical_read_only_and_schema_valid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

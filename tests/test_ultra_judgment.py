@@ -287,6 +287,33 @@ def test_unsupported_contradiction_is_not_rhetorical_toughness() -> None:
         validate_with_authority(verdict)
 
 
+def test_factual_lock_cannot_borrow_structural_refs_without_evidence() -> None:
+    verdict = load_fixture("verdict-valid.json")
+    five_by_kind(verdict)["fact"]["evidence_refs"] = []
+    verdict = rehash_artifact(verdict)
+
+    with pytest.raises(ValueError, match="material support|evidence_refs"):
+        validate_with_authority(verdict)
+
+
+def test_factual_lock_cannot_repeat_an_evidence_cannot_prove_scope() -> None:
+    bundle = authority_bundle()
+    verdict = load_fixture("verdict-valid.json")
+    roster = next(
+        entry
+        for entry in bundle["evidence"]["entries"]
+        if entry["evidence_id"] == "EVIDENCE-ROSTER-ATLAS"
+    )
+    five_by_kind(verdict)["fact"]["proposition"] = roster["cannot_prove"]
+    verdict = rehash_artifact(verdict)
+
+    with pytest.raises(
+        ValueError,
+        match="supported_claim|cannot_prove|support scope",
+    ):
+        validate_with_authority(verdict, bundle)
+
+
 def test_value_lock_cannot_be_reused_as_factual_evidence() -> None:
     verdict = load_fixture("verdict-valid.json")
     fact = five_by_kind(verdict)["fact"]

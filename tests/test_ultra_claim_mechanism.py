@@ -426,6 +426,36 @@ def test_simulated_result_cannot_be_promoted_to_observed_fact() -> None:
         validate_graph(rebound_graph, chain)
 
 
+def test_factual_claim_cannot_repeat_an_evidence_cannot_prove_scope() -> None:
+    chain = make_authority_chain()
+    graph = load_fixture("claim-mechanism-graph-valid.json")
+    roster = next(
+        entry
+        for entry in chain["evidence"]["entries"]
+        if entry["evidence_id"] == "EVIDENCE-ROSTER-ATLAS"
+    )
+    graph["claims"][0]["statement"] = roster["cannot_prove"]
+    graph = rehash_artifact(graph)
+
+    with pytest.raises(
+        ValueError,
+        match="supported_claim|cannot_prove|support scope",
+    ):
+        validate_graph(graph, chain)
+
+
+def test_factual_claim_cannot_exceed_the_evidence_supported_claim_scope() -> None:
+    chain = make_authority_chain()
+    graph = load_fixture("claim-mechanism-graph-valid.json")
+    graph["claims"][0]["statement"] = (
+        "National unemployment fell by thirty percent during the frozen window."
+    )
+    graph = rehash_artifact(graph)
+
+    with pytest.raises(ValueError, match="supported_claim|support scope"):
+        validate_graph(graph, chain)
+
+
 def test_justified_partial_ranking_uses_one_contiguous_ranked_prefix() -> None:
     graph = load_fixture("claim-mechanism-graph-valid.json")
     graph["partial_ranking_justification"] = (

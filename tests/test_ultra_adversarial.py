@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+import importlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 
 from tests.pytest_import_guard import pytest
 
@@ -13,6 +15,9 @@ EVAL_ROOT = ROOT / "tests" / "evals" / "ultra-vs-promax"
 SCENARIOS_PATH = EVAL_ROOT / "scenarios.json"
 PAIRING_PATH = EVAL_ROOT / "pairing-manifest.json"
 CONTRACT_TEST_PATH = ROOT / "tests" / "test_ultra_benchmark_contract.py"
+RUNTIME_SCRIPTS = ROOT / "skills" / "crossframe-ultra" / "scripts"
+if str(RUNTIME_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_SCRIPTS))
 
 CATEGORY_ORDER = (
     "public",
@@ -407,6 +412,40 @@ def test_adversarial_targets_cover_the_frozen_red_failures_without_outcome_leaka
         assert len(case["adversarial_targets"]) == len(
             set(case["adversarial_targets"])
         )
+
+
+def test_shared_upstream_sources_count_as_one_support_cluster() -> None:
+    judgment = importlib.import_module("ultra_runtime.judgment")
+    validate_support_edges = getattr(judgment, "validate_support_edges", None)
+    assert callable(validate_support_edges)
+    supported_claim = "The frozen source records the bounded public decision."
+    evidence_records = {
+        evidence_id: {
+            "evidence_id": evidence_id,
+            "identity": "reported",
+            "source_refs": [source_ref],
+            "upstream_lineage": ["UPSTREAM-SHARED-WIRE"],
+            "supported_claim": supported_claim,
+            "cannot_prove": (
+                "The shared wire cannot prove an independent confirmation."
+            ),
+        }
+        for evidence_id, source_ref in (
+            ("EVIDENCE-WIRE-A", "SOURCE-OUTLET-A"),
+            ("EVIDENCE-WIRE-B", "SOURCE-OUTLET-B"),
+        )
+    }
+
+    clusters = validate_support_edges(
+        claim={
+            "statement": supported_claim,
+            "evidence_refs": list(evidence_records),
+        },
+        evidence_records=evidence_records,
+        factual=True,
+    )
+
+    assert len(clusters) == 1
 
 
 def test_pairing_contract_is_failure_closed_and_never_falls_back() -> None:

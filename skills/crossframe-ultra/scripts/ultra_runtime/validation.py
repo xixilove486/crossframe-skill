@@ -475,16 +475,17 @@ def _validate_claim_semantics(
     loaded: Mapping[str, list[dict[str, object]]],
     issues: dict[str, list[tuple[str, str]]],
 ) -> None:
+    from . import judgment
+
     evidence_docs = loaded.get("crossframe.ultra.v82.evidence-ledger", [])
     graph_docs = loaded.get("crossframe.ultra.v82.claim-mechanism-graph", [])
-    identities: dict[str, str] = {}
+    evidence_records: dict[str, Mapping[str, object]] = {}
     for evidence in evidence_docs:
         for item in evidence.get("entries", []):
             if isinstance(item, Mapping):
                 evidence_id = item.get("evidence_id")
-                identity = item.get("identity")
-                if isinstance(evidence_id, str) and isinstance(identity, str):
-                    identities[evidence_id] = identity
+                if isinstance(evidence_id, str):
+                    evidence_records[evidence_id] = item
     for graph in graph_docs:
         if _has_empty_rival(graph):
             _issue(
@@ -507,19 +508,60 @@ def _validate_claim_semantics(
                 "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
             )
         for claim in graph.get("claims", []):
-            if not isinstance(claim, Mapping) or claim.get("identity") != "observed":
+            if not isinstance(claim, Mapping) or claim.get("identity") not in {
+                "observed",
+                "reported",
+                "inferred-from-material",
+            }:
                 continue
-            refs = claim.get("evidence_refs", [])
-            if isinstance(refs, list) and any(
-                identities.get(ref) == "simulated" for ref in refs
-            ):
+            try:
+                judgment.validate_support_edges(
+                    claim=claim,
+                    evidence_records=evidence_records,
+                    factual=True,
+                )
+            except judgment.ClaimMechanismError as error:
                 _issue(
                     issues,
                     "semantic-tamper-resistance",
-                    "ULTRA-SIMULATION-AS-FACT",
+                    "ULTRA-EVIDENCE-HOLLOW",
                     "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
                 )
-                break
+                if "simulated" in str(error):
+                    _issue(
+                        issues,
+                        "semantic-tamper-resistance",
+                        "ULTRA-SIMULATION-AS-FACT",
+                        "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
+                    )
+
+    for verdict in loaded.get("crossframe.ultra.v82.verdict", []):
+        for lock in verdict.get("five_verdicts", []):
+            if not isinstance(lock, Mapping) or lock.get("kind") != "fact":
+                continue
+            try:
+                judgment.validate_support_edges(
+                    claim={
+                        "statement": lock.get("proposition"),
+                        "evidence_refs": lock.get("evidence_refs"),
+                    },
+                    evidence_records=evidence_records,
+                    factual=True,
+                )
+            except judgment.ClaimMechanismError as error:
+                _issue(
+                    issues,
+                    "semantic-tamper-resistance",
+                    "ULTRA-EVIDENCE-HOLLOW",
+                    "artifacts/U09-verdict-action/ultra-verdict.json",
+                )
+                if "simulated" in str(error):
+                    _issue(
+                        issues,
+                        "semantic-tamper-resistance",
+                        "ULTRA-SIMULATION-AS-FACT",
+                        "artifacts/U09-verdict-action/ultra-verdict.json",
+                    )
 
 
 def _validate_world_and_lineage(

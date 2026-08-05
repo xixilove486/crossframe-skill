@@ -57,6 +57,55 @@ _FACT_IDENTITIES = frozenset(
     {"observed", "reported", "inferred-from-material"}
 )
 _MATERIAL_EVIDENCE_IDENTITIES = frozenset({"observed", "reported", "inferred"})
+_NON_MATERIAL_EVIDENCE_IDENTITIES = frozenset(
+    {
+        "user-claim",
+        "model-candidate",
+        "subagent-candidate",
+        "simulated",
+        "simulated-result",
+        "unknown",
+    }
+)
+_SCOPE_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "with",
+    }
+)
+_PROOF_BOUNDARY_WORDS = frozenset(
+    {
+        "alone",
+        "cannot",
+        "does",
+        "establish",
+        "not",
+        "prove",
+        "report",
+        "source",
+    }
+)
 
 
 class ClaimMechanismError(ValueError):
@@ -402,6 +451,144 @@ def _validate_ranking(graph: Mapping[str, Any]) -> None:
         )
 
 
+def _scope_text(value: object, *, label: str) -> str:
+    if type(value) is not str or not value.strip():
+        raise ClaimMechanismError(f"{label} must be a nonempty string")
+    return "".join(character for character in value.casefold() if character.isalnum())
+
+
+def _scope_units(value: str) -> set[str]:
+    words = {
+        word
+        for word in re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE)
+        if word not in _SCOPE_STOPWORDS and len(word) >= 2
+    }
+    cjk = "".join(re.findall(r"[\u3400-\u9fff]", value))
+    words.update(cjk[index : index + 2] for index in range(max(0, len(cjk) - 1)))
+    return words
+
+
+def _scope_is_supported(statement: str, supported_claim: str) -> bool:
+    statement_text = _scope_text(statement, label="claim statement")
+    supported_text = _scope_text(supported_claim, label="evidence supported_claim")
+    if statement_text == supported_text or statement_text in supported_text:
+        return True
+    statement_units = _scope_units(statement)
+    supported_units = _scope_units(supported_claim)
+    if not statement_units or not supported_units:
+        return False
+    shared = statement_units.intersection(supported_units)
+    required = 1 if min(len(statement_units), len(supported_units)) == 1 else 2
+    return len(shared) >= required and (
+        len(shared) / min(len(statement_units), len(supported_units)) >= 0.3
+    )
+
+
+def _scope_hits_cannot_prove(statement: str, cannot_prove: str) -> bool:
+    statement_text = _scope_text(statement, label="claim statement")
+    boundary_text = _scope_text(cannot_prove, label="evidence cannot_prove")
+    if statement_text == boundary_text or boundary_text in statement_text:
+        return True
+    statement_units = _scope_units(statement)
+    boundary_units = _scope_units(cannot_prove).difference(_PROOF_BOUNDARY_WORDS)
+    return bool(boundary_units) and boundary_units.issubset(statement_units)
+
+
+def _independent_lineage_cluster_ids(
+    records: Mapping[str, Mapping[str, object]],
+) -> tuple[str, ...]:
+    remaining = dict(records)
+    representatives: list[str] = []
+    while remaining:
+        seed_id = min(remaining)
+        members = {seed_id}
+        lineage = {
+            str(item)
+            for field in ("upstream_lineage", "source_refs")
+            for item in remaining[seed_id].get(field, [])
+        }
+        changed = True
+        while changed:
+            changed = False
+            for evidence_id, record in tuple(remaining.items()):
+                if evidence_id in members:
+                    continue
+                record_lineage = {
+                    str(item)
+                    for field in ("upstream_lineage", "source_refs")
+                    for item in record.get(field, [])
+                }
+                if lineage.intersection(record_lineage):
+                    members.add(evidence_id)
+                    lineage.update(record_lineage)
+                    changed = True
+        for evidence_id in members:
+            remaining.pop(evidence_id, None)
+        representatives.append(min(members))
+    return tuple(sorted(representatives))
+
+
+def validate_support_edges(
+    *,
+    claim: Mapping[str, object],
+    evidence_records: Mapping[str, Mapping[str, object]],
+    factual: bool,
+) -> tuple[str, ...]:
+    refs_value = claim.get("evidence_refs")
+    if not isinstance(refs_value, list) or any(
+        type(ref) is not str for ref in refs_value
+    ):
+        raise ClaimMechanismError("claim evidence_refs must be an identifier list")
+    refs = tuple(refs_value)
+    if len(set(refs)) != len(refs):
+        raise ClaimMechanismError("claim evidence_refs must be unique")
+    if any(ref not in evidence_records for ref in refs):
+        raise ClaimMechanismError("claim evidence_refs do not resolve the U3 ledger")
+    if factual and not refs:
+        raise ClaimMechanismError("factual claim requires material support in evidence_refs")
+
+    records = {ref: evidence_records[ref] for ref in refs}
+    prohibited_identities = {
+        str(record.get("identity"))
+        for record in records.values()
+        if str(record.get("identity")) in _NON_MATERIAL_EVIDENCE_IDENTITIES
+    }
+    if factual and prohibited_identities.intersection(
+        {"simulated", "simulated-result"}
+    ):
+        raise ClaimMechanismError(
+            "a simulated result cannot be promoted to a material fact"
+        )
+    if factual and "user-claim" in prohibited_identities:
+        raise ClaimMechanismError(
+            "a user claim cannot be treated as material evidence"
+        )
+    if factual and prohibited_identities:
+        raise ClaimMechanismError(
+            "factual claim uses model, subagent, or unknown non-material evidence"
+        )
+    if factual:
+        statement = claim.get("statement")
+        if type(statement) is not str or not statement.strip():
+            raise ClaimMechanismError("factual claim statement must be nonempty")
+        for record in records.values():
+            supported_claim = record.get("supported_claim")
+            cannot_prove = record.get("cannot_prove")
+            if type(supported_claim) is not str or type(cannot_prove) is not str:
+                raise ClaimMechanismError(
+                    "material evidence requires supported_claim and cannot_prove boundaries"
+                )
+            if _scope_hits_cannot_prove(statement, cannot_prove):
+                raise ClaimMechanismError(
+                    "factual claim enters an evidence cannot_prove support scope"
+                )
+            if not _scope_is_supported(statement, supported_claim):
+                raise ClaimMechanismError(
+                    "factual claim exceeds the evidence supported_claim support scope"
+                )
+    return _independent_lineage_cluster_ids(records)
+
+
 def _validate_claim_evidence(
     claims: Mapping[str, Mapping[str, Any]],
     mechanisms: Mapping[str, Mapping[str, Any]],
@@ -414,6 +601,11 @@ def _validate_claim_evidence(
         refs = claim["evidence_refs"]
         if not set(refs).issubset(entries):
             raise ClaimMechanismError("claim evidence_refs do not resolve the U3 ledger")
+        validate_support_edges(
+            claim=claim,
+            evidence_records=entries,
+            factual=claim["identity"] in _FACT_IDENTITIES,
+        )
         identities = {entries[ref]["identity"] for ref in refs}
         claim_identity = claim["identity"]
         if "simulated" in identities and claim_identity != "simulated-result":
@@ -424,15 +616,12 @@ def _validate_claim_evidence(
             raise ClaimMechanismError(
                 "a user claim cannot be treated as material evidence"
             )
-        if claim_identity in _FACT_IDENTITIES:
-            if not refs:
-                raise ClaimMechanismError(
-                    "a material claim must cite frozen U3 evidence"
-                )
-            if not identities.issubset(_MATERIAL_EVIDENCE_IDENTITIES):
-                raise ClaimMechanismError(
-                    "a material claim uses non-material evidence identity"
-                )
+        if claim_identity in _FACT_IDENTITIES and not identities.issubset(
+            _MATERIAL_EVIDENCE_IDENTITIES
+        ):
+            raise ClaimMechanismError(
+                "a material claim uses non-material evidence identity"
+            )
         if claim_identity == "observed" and identities != {"observed"}:
             raise ClaimMechanismError(
                 "an observed claim must resolve only observed evidence"
@@ -790,18 +979,17 @@ def _validate_public_verdict_semantics(
             )
 
     factual = by_kind["fact"]
-    if not any(
-        factual[field]
-        for field in (
-            "evidence_refs",
-            "claim_ids",
-            "mechanism_ids",
-            "recursive_node_ids",
+    try:
+        validate_support_edges(
+            claim={
+                "statement": factual["proposition"],
+                "evidence_refs": factual["evidence_refs"],
+            },
+            evidence_records=evidence_records,
+            factual=True,
         )
-    ):
-        raise JudgmentError(
-            "a factual verdict requires material support rather than rhetoric"
-        )
+    except ClaimMechanismError as error:
+        raise JudgmentError(str(error)) from error
     material_identities = {"observed", "reported", "inferred"}
     if any(
         evidence_records[ref]["identity"] not in material_identities
