@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import MappingProxyType
 
 from tests.pytest_import_guard import pytest
 
@@ -321,6 +322,123 @@ def test_resume_emits_json_projection_without_live_phase_store(
         "status",
     }
     assert "phase_store" not in projected
+
+
+def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
+    tmp_path: Path,
+) -> None:
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    run_id = "20260805T010203Z-caace0123456"
+    started_at = datetime(2026, 8, 5, 1, 2, 3, tzinfo=timezone.utc)
+
+    from ultra_runtime import recovery, state_machine, status
+    from ultra_runtime.constants import current_version_binding
+    from ultra_runtime.jsonio import canonical_json_bytes
+    from ultra_runtime.paths import RunMode, build_run_layout
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    layout.input_dir.mkdir(parents=True)
+    request_bytes = b"cancel-cli-request\n"
+    request_path = layout.input_dir / "request.bin"
+    request_path.write_bytes(request_bytes)
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    source_sha256 = hashlib.sha256(
+        (REPO_ROOT / "skills/crossframe-ultra/references/source-manifest.json").read_bytes()
+    ).hexdigest()
+    phase_store = state_machine.PhaseStore(
+        run_id=run_id,
+        version_binding=current_version_binding(),
+        source_sha256=source_sha256,
+        input_artifact_hashes=(request_sha256,),
+        input_snapshot_sha256=request_sha256,
+        evidence_cutoff="2026-08-05T01:02:03Z",
+        now=started_at,
+        run_contract={
+            "trigger": "crossframe-ultra",
+            "request_sha256": request_sha256,
+            "run_mode": "test",
+            "sensitivity": "private",
+            "retention": "retain",
+            "outbound_permission": "deidentified-only",
+            "evidence_cutoff": "2026-08-05T01:02:03Z",
+            "capabilities": {
+                "filesystem": "available",
+                "docx_parser": "available",
+                "network": "available",
+                "retrieval": "available",
+                "validators": "available",
+                "subagents": "available",
+                "model_context": "available",
+            },
+            "resource_limits": {
+                "maximum_branches": 64,
+                "maximum_retrieval_rounds_without_material_novelty": 2,
+                "maximum_tool_retries": 3,
+                "maximum_repair_attempts": 3,
+            },
+        },
+        capability_availability={"network": "available", "retrieval": "available"},
+        source_repository=REPO_ROOT,
+        run_layout=layout,
+    )
+    phase_store.complete(
+        "U0",
+        artifact_hashes=(phase_store.run_contract_artifact_sha256,),
+    )
+    contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+    contract_path.parent.mkdir(parents=True)
+    contract_path.write_bytes(canonical_json_bytes(dict(phase_store.run_contract)))
+    recovery.create_checkpoint(
+        layout,
+        phase_store,
+        boundary_kind="phase",
+        boundary_id="U0",
+        boundary_ordinal=0,
+        artifact_paths=(contract_path,),
+        now=started_at + timedelta(seconds=1),
+    )
+    status_store = status.RunStatusStore(layout)
+    created = status_store.create(started_at)
+    running = status_store.transition(
+        created,
+        "running",
+        started_at + timedelta(seconds=2),
+    )
+    assert isinstance(running, status.RunStatusRecord)
+    assert isinstance(running.version_binding, MappingProxyType)
+    stdout = StringIO()
+    stderr = StringIO()
+
+    return_code = cli.execute(
+        [
+            "cancel",
+            "--repo",
+            str(REPO_ROOT),
+            "--mode",
+            "test",
+            "--run-id",
+            run_id,
+        ],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=stderr,
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=3),
+        entropy=lambda: b"unused",
+    )
+    persisted_bytes = (layout.run_dir / "run-status.json").read_bytes()
+    persisted_record = status_store.read()
+
+    assert return_code == 0
+    assert stderr.getvalue() == ""
+    assert isinstance(persisted_record.version_binding, MappingProxyType)
+    assert persisted_record.status == "cancelled"
+    assert persisted_record.tools_allowed is False
+    assert stdout.getvalue().encode("utf-8") == persisted_bytes
+    assert persisted_bytes == canonical_json_bytes(status._record_to_object(persisted_record))
+    assert persisted_bytes.endswith(b"\n")
+    assert not persisted_bytes.endswith(b"\n\n")
 
 
 def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(
