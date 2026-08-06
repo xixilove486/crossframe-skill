@@ -11,6 +11,7 @@ from typing import Mapping, Sequence
 from .constants import PHASES, current_version_binding
 from .errors import UltraRuntimeError
 from .jsonio import (
+    _exclusive_path_lock,
     atomic_write_bytes,
     atomic_write_json,
     canonical_json_bytes,
@@ -929,6 +930,7 @@ def apply_repair_plan(
     from . import recovery
     from .locks import (
         CancelledRunError,
+        _cancel_intent_lock_path,
         acquire_run_lease,
         load_cancel_intent,
         release_run_lease,
@@ -1096,8 +1098,10 @@ def apply_repair_plan(
             compatibility=compatibility,
         )
         _, _, _, events_path, lock_path = recovery._paths(layout)
-        with recovery._exclusive_path_lock(lock_path):
-            recovery._sync_events(events_path, (*events, invalidation))
+        with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+            require_repair_write_authority()
+            with recovery._exclusive_path_lock(lock_path):
+                recovery._sync_events(events_path, (*events, invalidation))
         require_repair_write_authority()
         _reopen_status_for_repair(
             layout,

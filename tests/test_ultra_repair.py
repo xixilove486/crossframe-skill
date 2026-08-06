@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -7,6 +8,7 @@ import importlib
 from pathlib import Path
 import subprocess
 import sys
+from threading import Event
 from typing import Iterable
 
 from tests.pytest_import_guard import pytest
@@ -1225,3 +1227,78 @@ def test_cancel_after_repair_snapshot_blocks_all_later_repair_commits(
         / "VALIDATION-1"
         / "superseded-snapshot.json"
     )["repair_attempt_id"] == "VALIDATION-1"
+
+
+def test_repair_invalidation_commit_serializes_with_cancel_intent_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repair, layout, _, plan = _prepare_u11_repair(tmp_path)
+    recovery = _runtime_module("recovery")
+    locks = _runtime_module("locks")
+    jsonio = _runtime_module("jsonio")
+    invalidation_commit_started = Event()
+    allow_invalidation_commit = Event()
+    cancel_started = Event()
+    cancel_finished = Event()
+    original_sync_events = recovery._sync_events
+
+    def pause_invalidation_commit(path: Path, events) -> None:
+        if events and events[-1].get("status") == "invalidated":
+            invalidation_commit_started.set()
+            if not allow_invalidation_commit.wait(timeout=5):
+                raise TimeoutError("test did not release repair invalidation commit")
+        original_sync_events(path, events)
+
+    def request_cancel():
+        cancel_started.set()
+        try:
+            return locks.request_cancel(
+                layout,
+                reason="cancel at repair invalidation commit boundary",
+                now=STAMP + timedelta(minutes=2, seconds=1),
+            )
+        finally:
+            cancel_finished.set()
+
+    monkeypatch.setattr(recovery, "_sync_events", pause_invalidation_commit)
+    lease = locks.acquire_run_lease(
+        layout,
+        STAMP + timedelta(minutes=2),
+        timedelta(minutes=5),
+    )
+    executor = ThreadPoolExecutor(max_workers=2)
+    repair_future = executor.submit(
+        repair.apply_repair_plan,
+        layout,
+        plan=plan,
+        now=STAMP + timedelta(minutes=2, seconds=2),
+        lease=lease,
+    )
+    cancel_future = None
+    try:
+        assert invalidation_commit_started.wait(timeout=2)
+        cancel_future = executor.submit(request_cancel)
+        assert cancel_started.wait(timeout=2)
+        assert not cancel_finished.wait(timeout=0.3), (
+            "cancel intent crossed repair invalidation commit in progress"
+        )
+    finally:
+        allow_invalidation_commit.set()
+        executor.shutdown(wait=True)
+        locks.release_run_lease(layout, lease)
+
+    try:
+        repair_future.result()
+    except locks.CancelledRunError:
+        pass
+    assert cancel_future is not None
+    assert cancel_future.result().run_id == layout.run_dir.name
+    events = [
+        jsonio.load_json_object_bytes(row, source="repair invalidation race event")
+        for row in (layout.recovery_dir / "phase-events.jsonl").read_bytes().splitlines(
+            keepends=True
+        )
+    ]
+    assert events[-1]["status"] == "invalidated"
+    assert locks.load_cancel_intent(layout) is not None

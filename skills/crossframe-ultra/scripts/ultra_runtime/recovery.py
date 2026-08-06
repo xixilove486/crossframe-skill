@@ -1959,6 +1959,7 @@ def _converge_cancel_owned(
                 transition_at,
                 reason=intent.reason,
                 lease=lease,
+                _cancel_convergence_intent=intent,
             )
         except Exception as error:
             raise RecoveryStateError("run status cancellation transition failed") from error
@@ -1981,6 +1982,7 @@ def _converge_cancel_owned(
                 last_complete_phase=last_complete_phase,
                 reason=str(event["failure_code"]),
                 lease=lease,
+                _cancel_convergence_intent=intent,
             )
         except Exception as error:
             raise RecoveryStateError("run status cancellation transition failed") from error
@@ -2004,6 +2006,7 @@ def _converge_cancel_owned(
             last_complete_phase=last_complete_phase,
             reason=intent.reason,
             lease=lease,
+            _cancel_convergence_intent=intent,
         )
     except Exception as error:
         raise RecoveryStateError("run status cancellation transition failed") from error

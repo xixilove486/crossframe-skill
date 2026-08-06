@@ -353,6 +353,7 @@ class RunStatusStore:
         completion_authority: object | None = None,
         repair_authority: object | None = None,
         lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
@@ -372,6 +373,13 @@ class RunStatusStore:
         if not completing and completion_authority is not None:
             raise RunStatusTransitionError(
                 "U12 completion authority cannot be used for an ordinary replacement"
+            )
+        if (
+            _cancel_convergence_intent is not None
+            and replacement.status != "cancelled"
+        ):
+            raise RunStatusTransitionError(
+                "cancel convergence authority can only commit cancelled status"
             )
         if (
             replacement.schema_id != expected.schema_id
@@ -424,27 +432,47 @@ class RunStatusStore:
         self._assert_paths_safe()
         with _exclusive_path_lock(self.authority_lock_path):
             self._assert_paths_safe()
-            with _exclusive_path_lock(self.lifecycle_lock_path):
-                self._assert_paths_safe()
-                from .locks import LeaseOwnershipError, _read_lease, _require_owner
+            from .locks import (
+                CancelledRunError,
+                LeaseOwnershipError,
+                _cancel_intent_lock_path,
+                _read_lease,
+                _require_owner,
+                load_cancel_intent,
+            )
 
-                if lease is None:
-                    raise LeaseOwnershipError(
-                        "status mutation requires the current writer lease"
+            with _exclusive_path_lock(_cancel_intent_lock_path(self.layout)):
+                intent = load_cancel_intent(self.layout)
+                if intent is not None and (
+                    replacement.status != "cancelled"
+                    or _cancel_convergence_intent != intent
+                ):
+                    raise CancelledRunError(
+                        "cancel intent blocks ordinary status mutation"
                     )
-                _require_owner(_read_lease(self.layout), lease)
-                with _exclusive_path_lock(self.lock_path):
+                if intent is None and _cancel_convergence_intent is not None:
+                    raise RunStatusTransitionError(
+                        "cancel convergence authority requires the current cancel intent"
+                    )
+                with _exclusive_path_lock(self.lifecycle_lock_path):
                     self._assert_paths_safe()
-                    current = self.read()
-                    if (
-                        current.revision != expected.revision
-                        or current.updated_at != expected.updated_at
-                        or current != expected
-                    ):
-                        raise RunStatusConflictError(
-                            "status CAS rejected stale revision or updated_at"
+                    if lease is None:
+                        raise LeaseOwnershipError(
+                            "status mutation requires the current writer lease"
                         )
-                    atomic_write_json(self.path, _record_to_object(replacement))
+                    _require_owner(_read_lease(self.layout), lease)
+                    with _exclusive_path_lock(self.lock_path):
+                        self._assert_paths_safe()
+                        current = self.read()
+                        if (
+                            current.revision != expected.revision
+                            or current.updated_at != expected.updated_at
+                            or current != expected
+                        ):
+                            raise RunStatusConflictError(
+                                "status CAS rejected stale revision or updated_at"
+                            )
+                        atomic_write_json(self.path, _record_to_object(replacement))
         return replacement
 
     def replace(
@@ -453,12 +481,18 @@ class RunStatusStore:
         replacement: RunStatusRecord,
         *,
         lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
         _validate_record(replacement, run_id)
         if lease is not None:
-            return self._replace(expected, replacement, lease=lease)
+            return self._replace(
+                expected,
+                replacement,
+                lease=lease,
+                _cancel_convergence_intent=_cancel_convergence_intent,
+            )
         from .locks import acquire_run_lease, release_run_lease
 
         owned = acquire_run_lease(
@@ -467,7 +501,12 @@ class RunStatusStore:
             timedelta(minutes=5),
         )
         try:
-            return self._replace(expected, replacement, lease=owned)
+            return self._replace(
+                expected,
+                replacement,
+                lease=owned,
+                _cancel_convergence_intent=_cancel_convergence_intent,
+            )
         finally:
             release_run_lease(self.layout, owned)
 
@@ -482,6 +521,7 @@ class RunStatusStore:
         reason: str | None = None,
         validation_passed: bool = False,
         lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         if not isinstance(status, str) or status not in RUN_STATUSES:
@@ -511,7 +551,12 @@ class RunStatusStore:
             revision=expected.revision + 1,
             fork_authority_sha256=expected.fork_authority_sha256,
         )
-        return self.replace(expected, replacement, lease=lease)
+        return self.replace(
+            expected,
+            replacement,
+            lease=lease,
+            _cancel_convergence_intent=_cancel_convergence_intent,
+        )
 
     def reopen_for_repair(
         self,

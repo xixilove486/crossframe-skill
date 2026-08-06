@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 import subprocess
 import sys
+from threading import Event
 from types import SimpleNamespace
 
 from tests.pytest_import_guard import pytest
@@ -1697,6 +1699,81 @@ def test_validation_commit_rechecks_authority_between_attempt_and_current(
 
     assert harness.attempt_path.read_bytes() == harness.report_bytes
     assert not harness.current_path.exists()
+
+
+def test_validation_current_commit_serializes_with_cancel_intent_creation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _validation_commit_boundary_harness(
+        tmp_path,
+        monkeypatch,
+        attempt_id="current-cancel-serialization",
+    )
+    monkeypatch.setattr(
+        harness.modules.validation,
+        "validate_run_from_disk",
+        lambda *args: harness.report_bytes,
+    )
+    current_write_started = Event()
+    allow_current_write = Event()
+    cancel_started = Event()
+    cancel_finished = Event()
+    original_write = harness.modules.validation.atomic_write_bytes
+
+    def pause_current_write(path: Path, value: bytes) -> None:
+        if path == harness.current_path:
+            current_write_started.set()
+            if not allow_current_write.wait(timeout=5):
+                raise TimeoutError("test did not release validation/current write")
+        original_write(path, value)
+
+    def request_cancel():
+        cancel_started.set()
+        try:
+            return harness.modules.locks.request_cancel(
+                harness.layout,
+                reason="cancel at validation/current commit boundary",
+                now=datetime(2026, 8, 4, 0, 0, 1, tzinfo=timezone.utc),
+            )
+        finally:
+            cancel_finished.set()
+
+    monkeypatch.setattr(
+        harness.modules.validation,
+        "atomic_write_bytes",
+        pause_current_write,
+    )
+    executor = ThreadPoolExecutor(max_workers=2)
+    commit_future = executor.submit(
+        harness.modules.validation.commit_validation_attempt,
+        harness.layout,
+        attempt_id=harness.attempt_id,
+        report_bytes=harness.report_bytes,
+        expected_manifest_sha256=harness.manifest_sha256,
+        expected_validator_set_sha256=harness.validator_sha256,
+        lease=harness.lease,
+    )
+    cancel_future = None
+    try:
+        assert current_write_started.wait(timeout=2)
+        cancel_future = executor.submit(request_cancel)
+        assert cancel_started.wait(timeout=2)
+        assert not cancel_finished.wait(timeout=0.3), (
+            "cancel intent crossed validation/current commit in progress"
+        )
+    finally:
+        allow_current_write.set()
+        executor.shutdown(wait=True)
+        harness.modules.locks.release_run_lease(
+            harness.layout,
+            harness.lease,
+        )
+
+    assert commit_future.result()["attempt_id"] == harness.attempt_id
+    assert cancel_future is not None
+    assert cancel_future.result().run_id == harness.layout.run_dir.name
+    assert harness.current_path.read_bytes() == harness.report_bytes
 
 
 def test_parent_rejects_stale_report_after_manifest_generation_changes(

@@ -18,6 +18,7 @@ from .artifacts import (
 )
 from .constants import current_version_binding
 from .jsonio import (
+    _exclusive_path_lock,
     atomic_write_bytes,
     canonical_json_bytes,
     load_json_object,
@@ -27,6 +28,7 @@ from .jsonio import (
 from .locks import (
     CancelledRunError,
     Lease,
+    _cancel_intent_lock_path,
     load_cancel_intent,
     require_run_lease_owner,
 )
@@ -1820,8 +1822,9 @@ def commit_validation_attempt(
         manifest_sha256=current_manifest_sha,
         validator_hash=current_validator_hash,
     )
-    _require_validation_commit_authority(layout, lease)
-    atomic_write_bytes(current_path, report_bytes)
-    if current_path.read_bytes() != report_bytes:
-        raise ValueError("validation/current changed during atomic replacement")
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        _require_validation_commit_authority(layout, lease)
+        atomic_write_bytes(current_path, report_bytes)
+        if current_path.read_bytes() != report_bytes:
+            raise ValueError("validation/current changed during atomic replacement")
     return copy.deepcopy(report)

@@ -285,6 +285,142 @@ def test_cancel_intent_is_persisted_without_waiting_for_live_writer(
     assert locks._read_lease(layout) == lease
 
 
+def test_cancel_intent_blocks_owner_status_mutation_until_cancel_converges(
+    runtime_modules,
+    tmp_path: Path,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    recovery = _runtime_module("recovery")
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    running = store.transition(created, "running", now + timedelta(seconds=1))
+    writer = locks.acquire_run_lease(
+        layout,
+        now + timedelta(seconds=2),
+        timedelta(minutes=5),
+    )
+    try:
+        locks.request_cancel(
+            layout,
+            reason="operator requested cancellation",
+            now=now + timedelta(seconds=3),
+        )
+
+        with pytest.raises(locks.CancelledRunError, match="cancel intent"):
+            store.transition(
+                running,
+                "blocked",
+                now + timedelta(seconds=4),
+                reason="owner attempted to continue after cancellation",
+                lease=writer,
+            )
+
+        with pytest.raises(locks.CancelledRunError, match="cancel intent"):
+            store.transition(
+                running,
+                "cancelled",
+                now + timedelta(seconds=4),
+                reason="owner attempted to bypass cancellation convergence",
+                lease=writer,
+            )
+
+        converged = recovery.converge_cancel_if_requested(
+            layout,
+            lease=writer,
+            now=now + timedelta(seconds=5),
+        )
+    finally:
+        locks.release_run_lease(layout, writer)
+
+    assert converged is not None
+    assert converged.status == "cancelled"
+    assert store.read() == converged
+
+
+def test_status_commit_serializes_with_cancel_intent_creation(
+    runtime_modules,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    recovery = _runtime_module("recovery")
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    running = store.transition(created, "running", now + timedelta(seconds=1))
+    writer = locks.acquire_run_lease(
+        layout,
+        now + timedelta(seconds=2),
+        timedelta(minutes=5),
+    )
+    status_write_started = Event()
+    allow_status_write = Event()
+    cancel_started = Event()
+    cancel_finished = Event()
+    original_write = status_module.atomic_write_json
+
+    def pause_status_write(path: Path, value: object) -> None:
+        if isinstance(value, dict) and value.get("status") == "blocked":
+            status_write_started.set()
+            if not allow_status_write.wait(timeout=5):
+                raise TimeoutError("test did not release status CAS")
+        original_write(path, value)
+
+    def request_cancel():
+        cancel_started.set()
+        try:
+            return locks.request_cancel(
+                layout,
+                reason="cancel at status CAS boundary",
+                now=now + timedelta(seconds=3),
+            )
+        finally:
+            cancel_finished.set()
+
+    monkeypatch.setattr(status_module, "atomic_write_json", pause_status_write)
+    executor = ThreadPoolExecutor(max_workers=2)
+    status_future = executor.submit(
+        store.transition,
+        running,
+        "blocked",
+        now + timedelta(seconds=4),
+        reason="blocked before cancellation linearized",
+        lease=writer,
+    )
+    cancel_future = None
+    try:
+        assert status_write_started.wait(timeout=2)
+        cancel_future = executor.submit(request_cancel)
+        assert cancel_started.wait(timeout=2)
+        assert not cancel_finished.wait(timeout=0.3), (
+            "cancel intent crossed status CAS in progress"
+        )
+    finally:
+        allow_status_write.set()
+        executor.shutdown(wait=True)
+
+    try:
+        blocked = status_future.result()
+        assert blocked.status == "blocked"
+        assert cancel_future is not None
+        assert cancel_future.result().run_id == layout.run_dir.name
+        converged = recovery.converge_cancel_if_requested(
+            layout,
+            lease=writer,
+            now=now + timedelta(seconds=5),
+        )
+    finally:
+        locks.release_run_lease(layout, writer)
+
+    assert converged is not None
+    assert converged.status == "cancelled"
+
+
 def test_phase_commit_rechecks_cancel_intent_before_appending_event(
     runtime_modules,
     tmp_path: Path,
