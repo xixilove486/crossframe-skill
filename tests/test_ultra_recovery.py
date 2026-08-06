@@ -891,6 +891,30 @@ def test_resume_uses_last_full_boundary_and_cancel_is_terminal(tmp_path, monkeyp
         recovery.resume_run(layout, now=NOW + timedelta(seconds=5))
 
 
+@pytest.mark.parametrize("terminal_status", ("failed", "blocked"))
+def test_new_cancel_intent_rejects_verified_terminal_event_tail(
+    tmp_path: Path,
+    terminal_status: str,
+) -> None:
+    recovery, _, layout, store, _, _ = _checkpoint(tmp_path)
+    from ultra_runtime import locks
+
+    terminate = store.fail if terminal_status == "failed" else store.blocked
+    terminate("U1", failure_code=f"terminal-{terminal_status}")
+    _, _, _, events_path, lock_path = recovery._paths(layout)
+    with recovery._exclusive_path_lock(lock_path):
+        recovery._sync_events(events_path, store.events)
+
+    with pytest.raises(locks.LeaseConflictError, match="terminal|event"):
+        locks.request_cancel(
+            layout,
+            reason="too late after terminal phase event",
+            now=NOW + timedelta(seconds=2),
+        )
+
+    assert locks.load_cancel_intent(layout) is None
+
+
 def test_partial_cancellation_blocks_new_lease_and_retry_converges(
     tmp_path,
     monkeypatch,

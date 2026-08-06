@@ -931,6 +931,7 @@ def apply_repair_plan(
     from .locks import (
         CancelledRunError,
         _cancel_intent_lock_path,
+        _validation_current_commit_lock_path,
         acquire_run_lease,
         load_cancel_intent,
         release_run_lease,
@@ -951,6 +952,52 @@ def apply_repair_plan(
         if load_cancel_intent(layout) is not None:
             raise CancelledRunError("cancel intent blocks repair commit")
         require_run_lease_owner(layout, lease)
+
+    def recheck_repair_commit_fence(
+        *,
+        expected_attempt_id: str,
+        expected_plan_sha256: str,
+        expected_authority: Mapping[str, object],
+        expected_compatibility: str,
+        expected_events: Sequence[Mapping[str, object]],
+        expected_manifest: Mapping[str, object],
+    ) -> None:
+        current_attempt_id, _, current_plan_sha256 = _committed_plan_identity(
+            layout,
+            plan,
+        )
+        if (
+            current_attempt_id != expected_attempt_id
+            or current_plan_sha256 != expected_plan_sha256
+        ):
+            raise StaleValidationAttemptError(
+                "repair inputs changed before invalidation commit"
+            )
+        current_authority, current_compatibility, _ = recovery._validate_authority_record(
+            layout
+        )
+        current_events = recovery._read_events(
+            layout,
+            current_authority,
+            compatibility=current_compatibility,
+        )
+        if (
+            current_compatibility != expected_compatibility
+            or current_authority != expected_authority
+            or tuple(current_events) != tuple(expected_events)
+        ):
+            raise StaleValidationAttemptError(
+                "repair recovery authority changed before invalidation commit"
+            )
+        _, current_report = _validated_report_at(
+            layout,
+            _current_report_path(layout),
+        )
+        current_manifest = _load_manifest(layout, current_report)
+        if current_manifest != expected_manifest:
+            raise StaleValidationAttemptError(
+                "repair manifest changed before invalidation commit"
+            )
 
     require_repair_write_authority()
     try:
@@ -1098,10 +1145,19 @@ def apply_repair_plan(
             compatibility=compatibility,
         )
         _, _, _, events_path, lock_path = recovery._paths(layout)
-        with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
-            require_repair_write_authority()
-            with recovery._exclusive_path_lock(lock_path):
-                recovery._sync_events(events_path, (*events, invalidation))
+        with _exclusive_path_lock(_validation_current_commit_lock_path(layout)):
+            recheck_repair_commit_fence(
+                expected_attempt_id=attempt_id,
+                expected_plan_sha256=plan_sha256,
+                expected_authority=authority,
+                expected_compatibility=compatibility,
+                expected_events=events,
+                expected_manifest=manifest,
+            )
+            with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+                require_repair_write_authority()
+                with recovery._exclusive_path_lock(lock_path):
+                    recovery._sync_events(events_path, (*events, invalidation))
         require_repair_write_authority()
         _reopen_status_for_repair(
             layout,

@@ -30,6 +30,7 @@ LEASE_FILENAME = ".writer-lease.json"
 LEASE_LOCK_FILENAME = ".writer-lease.lock"
 CANCEL_INTENT_FILENAME = "cancel-intent.json"
 CANCEL_INTENT_LOCK_FILENAME = ".cancel-intent.lock"
+VALIDATION_CURRENT_COMMIT_LOCK_FILENAME = ".validation-current-commit.lock"
 
 
 class LeaseError(UltraRuntimeError, RuntimeError):
@@ -105,6 +106,11 @@ def _cancel_intent_lock_path(layout: RunLayout) -> Path:
     return layout.recovery_dir / CANCEL_INTENT_LOCK_FILENAME
 
 
+def _validation_current_commit_lock_path(layout: RunLayout) -> Path:
+    _validate_layout(layout)
+    return layout.validation_dir / VALIDATION_CURRENT_COMMIT_LOCK_FILENAME
+
+
 def _validate_layout(layout: RunLayout) -> None:
     if not isinstance(layout, RunLayout):
         raise TypeError("layout must be a RunLayout")
@@ -123,6 +129,7 @@ def _validate_layout(layout: RunLayout) -> None:
         layout.run_dir / "run-status.json",
         layout.recovery_dir / CANCEL_INTENT_FILENAME,
         layout.recovery_dir / CANCEL_INTENT_LOCK_FILENAME,
+        layout.validation_dir / VALIDATION_CURRENT_COMMIT_LOCK_FILENAME,
     ):
         assert_safe_descendant(layout.root, candidate)
 
@@ -218,6 +225,39 @@ def load_cancel_intent(layout: RunLayout) -> CancellationIntent | None:
     return intent
 
 
+def _reject_terminal_cancel_admission(layout: RunLayout) -> None:
+    status_path = layout.run_dir / "run-status.json"
+    if status_path.exists():
+        status = RunStatusStore(layout).read()
+        if status.status in {"failed", "complete", "cancelled"}:
+            raise LeaseConflictError(
+                f"{status.status} run is terminal and cannot accept cancellation"
+            )
+
+    events_path = layout.recovery_dir / "phase-events.jsonl"
+    if not events_path.exists():
+        return
+    assert_safe_descendant(layout.root, events_path)
+    from . import recovery
+
+    authority, compatibility, _ = recovery._validate_authority_record(layout)
+    events = recovery._read_events(
+        layout,
+        authority,
+        compatibility=compatibility,
+    )
+    tail = events[-1] if events else None
+    terminal_tail = tail is not None and (
+        tail.get("status") in {"failed", "blocked", "cancelled"}
+        or (tail.get("status") == "complete" and tail.get("phase_id") == "U12")
+    )
+    if terminal_tail:
+        raise LeaseConflictError(
+            "verified terminal phase event "
+            f"{tail.get('phase_id')} ({tail.get('status')}) cannot accept cancellation"
+        )
+
+
 def request_cancel(
     layout: RunLayout,
     *,
@@ -237,6 +277,7 @@ def request_cancel(
             return existing
         from . import recovery
 
+        _reject_terminal_cancel_admission(layout)
         if recovery._has_durable_u12_checkpoint(layout):
             raise LeaseConflictError(
                 "durable U12 checkpoint rejects cancellation before intent creation"

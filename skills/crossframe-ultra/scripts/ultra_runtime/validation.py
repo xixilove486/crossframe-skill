@@ -29,6 +29,7 @@ from .locks import (
     CancelledRunError,
     Lease,
     _cancel_intent_lock_path,
+    _validation_current_commit_lock_path,
     load_cancel_intent,
     require_run_lease_owner,
 )
@@ -1776,55 +1777,57 @@ def commit_validation_attempt(
 
     _require_validation_commit_authority(layout, lease)
 
-    manifest_path = validation_manifest_path(layout)
-    manifest = validate_artifact_manifest(layout, manifest_path)
-    current_manifest_sha = sha256_bytes(manifest_path.read_bytes())
-    if current_manifest_sha != expected_manifest_sha256:
-        raise ValueError("stale validator report: manifest generation changed")
-    current_validator_hash = validator_set_sha256(_repo_root())
-    if (
-        manifest["validator_set_sha256"] != expected_validator_set_sha256
-        or current_validator_hash != expected_validator_set_sha256
-    ):
-        raise ValueError("validator-set generation changed before report commit")
-    report = _validated_report_bytes(
-        layout,
-        report_bytes,
-        attempt_id=attempt_id,
-        manifest_sha256=current_manifest_sha,
-        validator_hash=current_validator_hash,
-    )
-    fresh_bytes = validate_run_from_disk(
-        _repo_root(), _mode_for_layout(layout), layout.run_dir.name
-    )
-    if fresh_bytes != report_bytes:
-        raise ValueError("parent report bytes differ from fresh disk validation")
-    _require_validation_commit_authority(layout, lease)
-
-    attempt_path = (
-        layout.validation_attempts_dir
-        / attempt_id
-        / "ultra-validator-report.json"
-    )
-    current_path = layout.validation_current_dir / "ultra-validator-report.json"
-    for path in (attempt_path, current_path):
-        assert_safe_descendant(layout.root, path)
-    if attempt_path.exists() and attempt_path.read_bytes() != report_bytes:
-        raise ValueError("validation attempt slot already contains different bytes")
-    _require_validation_commit_authority(layout, lease)
-    atomic_write_bytes(attempt_path, report_bytes)
-    if attempt_path.read_bytes() != report_bytes:
-        raise ValueError("validation attempt changed during durable write")
-    _validated_report_bytes(
-        layout,
-        attempt_path.read_bytes(),
-        attempt_id=attempt_id,
-        manifest_sha256=current_manifest_sha,
-        validator_hash=current_validator_hash,
-    )
-    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+    with _exclusive_path_lock(_validation_current_commit_lock_path(layout)):
         _require_validation_commit_authority(layout, lease)
-        atomic_write_bytes(current_path, report_bytes)
-        if current_path.read_bytes() != report_bytes:
-            raise ValueError("validation/current changed during atomic replacement")
-    return copy.deepcopy(report)
+        manifest_path = validation_manifest_path(layout)
+        manifest = validate_artifact_manifest(layout, manifest_path)
+        current_manifest_sha = sha256_bytes(manifest_path.read_bytes())
+        if current_manifest_sha != expected_manifest_sha256:
+            raise ValueError("stale validator report: manifest generation changed")
+        current_validator_hash = validator_set_sha256(_repo_root())
+        if (
+            manifest["validator_set_sha256"] != expected_validator_set_sha256
+            or current_validator_hash != expected_validator_set_sha256
+        ):
+            raise ValueError("validator-set generation changed before report commit")
+        report = _validated_report_bytes(
+            layout,
+            report_bytes,
+            attempt_id=attempt_id,
+            manifest_sha256=current_manifest_sha,
+            validator_hash=current_validator_hash,
+        )
+        fresh_bytes = validate_run_from_disk(
+            _repo_root(), _mode_for_layout(layout), layout.run_dir.name
+        )
+        if fresh_bytes != report_bytes:
+            raise ValueError("parent report bytes differ from fresh disk validation")
+        _require_validation_commit_authority(layout, lease)
+
+        attempt_path = (
+            layout.validation_attempts_dir
+            / attempt_id
+            / "ultra-validator-report.json"
+        )
+        current_path = layout.validation_current_dir / "ultra-validator-report.json"
+        for path in (attempt_path, current_path):
+            assert_safe_descendant(layout.root, path)
+        if attempt_path.exists() and attempt_path.read_bytes() != report_bytes:
+            raise ValueError("validation attempt slot already contains different bytes")
+        _require_validation_commit_authority(layout, lease)
+        atomic_write_bytes(attempt_path, report_bytes)
+        if attempt_path.read_bytes() != report_bytes:
+            raise ValueError("validation attempt changed during durable write")
+        _validated_report_bytes(
+            layout,
+            attempt_path.read_bytes(),
+            attempt_id=attempt_id,
+            manifest_sha256=current_manifest_sha,
+            validator_hash=current_validator_hash,
+        )
+        with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+            _require_validation_commit_authority(layout, lease)
+            atomic_write_bytes(current_path, report_bytes)
+            if current_path.read_bytes() != report_bytes:
+                raise ValueError("validation/current changed during atomic replacement")
+        return copy.deepcopy(report)

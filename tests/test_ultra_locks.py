@@ -421,6 +421,70 @@ def test_status_commit_serializes_with_cancel_intent_creation(
     assert converged.status == "cancelled"
 
 
+def test_cancel_rechecks_terminal_status_after_failed_cas_wins(
+    runtime_modules,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    recovery = _runtime_module("recovery")
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    running = store.transition(created, "running", now + timedelta(seconds=1))
+    writer = locks.acquire_run_lease(
+        layout,
+        now + timedelta(seconds=2),
+        timedelta(minutes=5),
+    )
+    cancel_reached_request = Event()
+    allow_cancel_request = Event()
+    original_request_cancel = recovery.request_cancel
+
+    def pause_before_cancel_fence(*args, **kwargs):
+        cancel_reached_request.set()
+        if not allow_cancel_request.wait(timeout=5):
+            raise TimeoutError("test did not release cancellation request")
+        return original_request_cancel(*args, **kwargs)
+
+    monkeypatch.setattr(recovery, "request_cancel", pause_before_cancel_fence)
+    executor = ThreadPoolExecutor(max_workers=2)
+    cancel_future = executor.submit(
+        recovery.cancel_run,
+        layout,
+        reason="operator requested cancellation",
+        now=now + timedelta(seconds=3),
+    )
+    failed_future = None
+    try:
+        assert cancel_reached_request.wait(timeout=2)
+        failed_future = executor.submit(
+            store.transition,
+            running,
+            "failed",
+            now + timedelta(seconds=4),
+            reason="terminal failure won the status CAS",
+            lease=writer,
+        )
+        assert failed_future.result(timeout=2).status == "failed"
+        allow_cancel_request.set()
+        with pytest.raises(
+            (recovery.RecoveryStateError, locks.LeaseConflictError),
+            match="failed|terminal",
+        ):
+            cancel_future.result(timeout=2)
+    finally:
+        allow_cancel_request.set()
+        executor.shutdown(wait=True)
+        locks.release_run_lease(layout, writer)
+
+    assert failed_future is not None
+    assert store.read().status == "failed"
+    assert locks.load_cancel_intent(layout) is None
+
+
 def test_phase_commit_rechecks_cancel_intent_before_appending_event(
     runtime_modules,
     tmp_path: Path,

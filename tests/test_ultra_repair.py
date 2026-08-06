@@ -1302,3 +1302,136 @@ def test_repair_invalidation_commit_serializes_with_cancel_intent_creation(
     ]
     assert events[-1]["status"] == "invalidated"
     assert locks.load_cancel_intent(layout) is not None
+
+
+def test_repair_and_validation_share_generation_commit_fence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A validation/current commit must linearize before or after repair."""
+
+    repair, layout, _, plan = _prepare_u11_repair(tmp_path)
+    validation = _runtime_module("validation")
+    paths = _runtime_module("paths")
+    locks = _runtime_module("locks")
+    jsonio = _runtime_module("jsonio")
+    schemas = _runtime_module("schemas")
+
+    current_path = layout.validation_current_dir / REPORT_NAME
+    current = jsonio.load_json_object(current_path)
+    next_report = copy.deepcopy(current)
+    next_report["attempt_id"] = "VALIDATION-2"
+    next_report["generated_at"] = "2026-08-04T04:03:00Z"
+    next_report["validated_at"] = "2026-08-04T04:03:00Z"
+    next_report["content_sha256"] = "0" * 64
+    next_report["content_sha256"] = schemas.compute_artifact_content_sha256(
+        next_report
+    )
+    next_report_bytes = jsonio.canonical_json_bytes(next_report)
+    manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"
+    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    validator_hash = "b" * 64
+    policy = paths.RootPolicy(
+        layout.root.parent / "production",
+        layout.root,
+    )
+
+    monkeypatch.setattr(validation, "default_root_policy", lambda: policy)
+    monkeypatch.setattr(
+        validation,
+        "validate_artifact_manifest",
+        lambda selected_layout, selected_path: {
+            "validator_set_sha256": validator_hash
+        },
+    )
+    monkeypatch.setattr(
+        validation,
+        "validator_set_sha256",
+        lambda repo: validator_hash,
+    )
+    monkeypatch.setattr(
+        validation,
+        "_validated_report_bytes",
+        lambda *args, **kwargs: copy.deepcopy(next_report),
+    )
+    fresh_checked = Event()
+    allow_fresh = Event()
+
+    def pause_fresh_validation(*args: object) -> bytes:
+        fresh_checked.set()
+        if not allow_fresh.wait(timeout=5):
+            raise TimeoutError("test did not release fresh validation")
+        return next_report_bytes
+
+    monkeypatch.setattr(validation, "validate_run_from_disk", pause_fresh_validation)
+
+    identity_entered = Event()
+    allow_identity = Event()
+    repair_done = Event()
+    real_identity = repair._committed_plan_identity
+    identity_calls = 0
+
+    def gate_first_identity(*args, **kwargs):
+        nonlocal identity_calls
+        identity_calls += 1
+        if identity_calls == 1:
+            identity_entered.set()
+            if not allow_identity.wait(timeout=5):
+                raise TimeoutError("test did not release repair identity read")
+        return real_identity(*args, **kwargs)
+
+    monkeypatch.setattr(repair, "_committed_plan_identity", gate_first_identity)
+    lease = locks.acquire_run_lease(
+        layout,
+        STAMP + timedelta(minutes=2),
+        timedelta(minutes=5),
+    )
+    executor = ThreadPoolExecutor(max_workers=2)
+    validation_future = executor.submit(
+        validation.commit_validation_attempt,
+        layout,
+        attempt_id="VALIDATION-2",
+        report_bytes=next_report_bytes,
+        expected_manifest_sha256=manifest_sha256,
+        expected_validator_set_sha256=validator_hash,
+        lease=lease,
+    )
+    repair_future = None
+
+    def apply_repair() -> object:
+        try:
+            return repair.apply_repair_plan(
+                layout,
+                plan=plan,
+                now=STAMP + timedelta(minutes=2, seconds=1),
+                lease=lease,
+            )
+        finally:
+            repair_done.set()
+
+    try:
+        assert fresh_checked.wait(timeout=2)
+        repair_future = executor.submit(apply_repair)
+        assert identity_entered.wait(timeout=2)
+        allow_identity.set()
+        assert not repair_done.wait(timeout=0.3), (
+            "repair crossed validation/current fresh-validation commit"
+        )
+    finally:
+        allow_identity.set()
+        allow_fresh.set()
+        executor.shutdown(wait=True)
+        locks.release_run_lease(layout, lease)
+
+    assert validation_future.result()["attempt_id"] == "VALIDATION-2"
+    assert repair_future is not None
+    with pytest.raises(repair.StaleValidationAttemptError):
+        repair_future.result()
+    assert jsonio.load_json_object(current_path)["attempt_id"] == "VALIDATION-2"
+    events = [
+        jsonio.load_json_object_bytes(row, source="repair/validation race event")
+        for row in (layout.recovery_dir / "phase-events.jsonl").read_bytes().splitlines(
+            keepends=True
+        )
+    ]
+    assert not any(event.get("status") == "invalidated" for event in events)
