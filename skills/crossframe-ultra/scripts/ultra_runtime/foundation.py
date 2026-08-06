@@ -2003,6 +2003,279 @@ def _u2_ledger_path(layout: RunLayout) -> Path:
     )
 
 
+def _load_validated_u2_source_projection(
+    layout: RunLayout,
+    *,
+    expected_ledger_sha256: str,
+    expected_request_sha256: object,
+) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    from . import retrieval
+
+    ledger_path = _u2_ledger_path(layout)
+    try:
+        ledger_raw = ledger_path.read_bytes()
+        ledger = load_json_object_bytes(ledger_raw, source=str(ledger_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError("persisted U2 retrieval ledger is unavailable") from error
+    if ledger_raw != canonical_json_bytes(ledger):
+        raise FoundationInputError("persisted U2 retrieval ledger is not canonical")
+    try:
+        validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+    except Exception as error:
+        raise FoundationInputError("persisted U2 retrieval ledger is invalid") from error
+    ledger_payload = copy.deepcopy(ledger)
+    supplied_ledger_content_sha256 = ledger_payload.pop("content_sha256", None)
+    if (
+        sha256_bytes(ledger_raw) != expected_ledger_sha256
+        or supplied_ledger_content_sha256
+        != sha256_bytes(canonical_json_bytes(ledger_payload))
+        or ledger.get("run_id") != layout.run_dir.name
+        or ledger.get("version_binding") != current_version_binding()
+        or ledger.get("phase_id") != "U2"
+        or ledger.get("request_sha256") != expected_request_sha256
+    ):
+        raise FoundationInputError(
+            "persisted U2 retrieval ledger differs from its checkpoint"
+        )
+
+    action_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "u2-authority/retrieval-action.json",
+    )
+    admitted_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "u2-authority/admitted-host-result.json",
+    )
+    status = ledger.get("retrieval_status")
+    if status == "not-applicable":
+        if action_path.exists() or admitted_path.exists():
+            raise FoundationInputError(
+                "not-applicable U2 has unexpected host retrieval projection"
+            )
+        return {}, ledger
+    if status != "required-complete":
+        raise FoundationInputError("U3 cannot proceed from a blocked U2 retrieval")
+
+    try:
+        action_raw = action_path.read_bytes()
+        action_document = load_json_object_bytes(
+            action_raw,
+            source=str(action_path),
+        )
+        if action_raw != canonical_json_bytes(action_document):
+            raise ValueError("retrieval action is not canonical")
+        action = _seal_action(layout, action_document)
+    except Exception as error:
+        raise FoundationInputError("persisted U2 retrieval action is invalid") from error
+    action_payload = action.document.get("payload")
+    decision = ledger.get("decision")
+    decision_basis = (
+        decision.get("eligibility_basis")
+        if isinstance(decision, Mapping)
+        else None
+    )
+    trigger_kinds = (
+        decision_basis.get("trigger_kinds")
+        if isinstance(decision_basis, Mapping)
+        else None
+    )
+    expected_decision_projection = (
+        {
+            "status": decision.get("status"),
+            "reason": decision.get("reason"),
+            "decision_sha256": decision.get("decision_sha256"),
+            "claim_sha256": decision.get("claim_sha256"),
+            "basis_sha256": decision.get("basis_sha256"),
+            "trigger_kinds": copy.deepcopy(trigger_kinds),
+        }
+        if isinstance(decision, Mapping)
+        else None
+    )
+    authorization = (
+        action_payload.get("authorization")
+        if isinstance(action_payload, Mapping)
+        else None
+    )
+    if (
+        action.document.get("phase_id") != "U2"
+        or action.document.get("action_kind") != "retrieval"
+        or action.document.get("parent_event_sha256")
+        != ledger.get("u1_parent_event_sha256")
+        or action.document.get("request_sha256") != expected_request_sha256
+        or action.document.get("result_relative_path")
+        != "work/host/U02-retrieval-result.json"
+        or not isinstance(action_payload, Mapping)
+        or action_payload.get("decision") != expected_decision_projection
+        or action_payload.get("queries") != ledger.get("queries")
+        or not isinstance(authorization, Mapping)
+        or authorization.get("status") != "authorized"
+        or authorization.get("decision_sha256") != ledger.get("decision_sha256")
+        or authorization.get("authorization_sha256")
+        != ledger.get("authorization_sha256")
+        or authorization.get("network_available") is not ledger.get("network_available")
+        or authorization.get("outbound_authorized")
+        is not ledger.get("outbound_authorized")
+        or authorization.get("block_result") != ledger.get("block_result")
+    ):
+        raise FoundationInputError(
+            "persisted U2 retrieval action differs from ledger authority"
+        )
+
+    accepted_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json",
+    )
+    try:
+        accepted_raw = accepted_path.read_bytes()
+        accepted = load_json_object_bytes(accepted_raw, source=str(accepted_path))
+        if accepted_raw != canonical_json_bytes(accepted):
+            raise ValueError("accepted retrieval receipt is not canonical")
+        receipt = _seal_result(layout, action=action, receipt=accepted)
+        result, result_raw = _load_bound_result_document(
+            layout,
+            action=action,
+            receipt=receipt.document,
+        )
+    except Exception as error:
+        raise FoundationInputError(
+            "accepted U2 retrieval authority is invalid"
+        ) from error
+    if receipt.document.get("result_sha256") != sha256_bytes(result_raw):
+        raise FoundationInputError("accepted U2 retrieval result hash differs")
+
+    result_sources = result.get("sources")
+    source_inventory = ledger.get("sources")
+    if not isinstance(result_sources, list) or not result_sources:
+        raise FoundationInputError("accepted U2 retrieval has no source inventory")
+    if not isinstance(source_inventory, list) or not source_inventory:
+        raise FoundationInputError("required U2 retrieval has no source inventory")
+    record_fields = (
+        "source_id",
+        "url",
+        "event_date",
+        "publication_date",
+        "interest",
+        "upstream_lineage",
+        "supported_claim",
+        "cannot_prove",
+    )
+    result_by_id: dict[str, dict[str, object]] = {}
+    projected_sources: list[dict[str, object]] = []
+    for source in result_sources:
+        if not isinstance(source, Mapping):
+            raise FoundationInputError("accepted U2 retrieval source is invalid")
+        source_id = source.get("source_id")
+        content = source.get("content")
+        query_sha256 = source.get("query_sha256")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or source_id in result_by_id
+            or not isinstance(content, str)
+            or not isinstance(query_sha256, str)
+        ):
+            raise FoundationInputError("accepted U2 retrieval source authority is invalid")
+        try:
+            record = retrieval.validate_source_record(
+                {field: copy.deepcopy(source.get(field)) for field in record_fields}
+            )
+            external = retrieval.store_external_content(content)
+        except Exception as error:
+            raise FoundationInputError(
+                "accepted U2 retrieval source authority is invalid"
+            ) from error
+        if source.get("content_sha256") != external["content_sha256"]:
+            raise FoundationInputError("accepted U2 retrieval source content hash differs")
+        result_by_id[source_id] = {
+            "record": record,
+            "query_sha256": query_sha256,
+            "content_sha256": external["content_sha256"],
+        }
+        projected_sources.append(
+            {
+                "source_id": source_id,
+                "query_sha256": query_sha256,
+                "external_content": external,
+            }
+        )
+
+    sources: dict[str, dict[str, object]] = {}
+    for item in source_inventory:
+        if not isinstance(item, Mapping):
+            raise FoundationInputError("U2 retrieval source inventory entry is invalid")
+        record = item.get("record")
+        source_id = record.get("source_id") if isinstance(record, Mapping) else None
+        accepted_source = result_by_id.get(str(source_id))
+        if (
+            not isinstance(source_id, str)
+            or source_id in sources
+            or accepted_source is None
+            or record != accepted_source["record"]
+            or item.get("query_sha256") != accepted_source["query_sha256"]
+            or item.get("authorization_sha256") != ledger.get("authorization_sha256")
+            or item.get("decision_sha256") != ledger.get("decision_sha256")
+            or item.get("run_id") != ledger.get("run_id")
+            or item.get("u1_parent_event_sha256")
+            != ledger.get("u1_parent_event_sha256")
+            or item.get("request_sha256") != ledger.get("request_sha256")
+            or item.get("version_binding") != ledger.get("version_binding")
+            or item.get("source_record_sha256")
+            != sha256_bytes(canonical_json_bytes(dict(record)))
+        ):
+            raise FoundationInputError(
+                "U2 retrieval source differs from accepted result authority"
+            )
+        inventory_payload = copy.deepcopy(dict(item))
+        supplied_inventory_sha256 = inventory_payload.pop(
+            "inventory_item_sha256",
+            None,
+        )
+        if supplied_inventory_sha256 != sha256_bytes(
+            canonical_json_bytes(inventory_payload)
+        ):
+            raise FoundationInputError("U2 retrieval source inventory hash differs")
+        sources[source_id] = {
+            "source_id": source_id,
+            "record": copy.deepcopy(dict(record)),
+            "content_sha256": str(accepted_source["content_sha256"]),
+        }
+    if set(sources) != set(result_by_id):
+        raise FoundationInputError(
+            "U2 retrieval source set differs from accepted result authority"
+        )
+
+    expected_projection: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.admitted-host-retrieval-result",
+        "schema_version": 1,
+        "action_sha256": action.action_sha256,
+        "receipt_sha256": receipt.receipt_sha256,
+        "provider": copy.deepcopy(dict(receipt.document["provider"])),
+        "tool": copy.deepcopy(dict(receipt.document["tool"])),
+        "sources": projected_sources,
+    }
+    expected_projection["content_sha256"] = sha256_bytes(
+        canonical_json_bytes(expected_projection)
+    )
+    try:
+        admitted_raw = admitted_path.read_bytes()
+        admitted = load_json_object_bytes(admitted_raw, source=str(admitted_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(
+            "U2 admitted host retrieval projection is unavailable"
+        ) from error
+    if (
+        admitted_raw != canonical_json_bytes(admitted)
+        or admitted_raw != canonical_json_bytes(expected_projection)
+    ):
+        raise FoundationInputError(
+            "U2 admitted host retrieval projection differs from accepted result authority"
+        )
+    return sources, ledger
+
+
 def _load_u2_admitted_sources(
     layout: RunLayout,
     *,
@@ -2016,19 +2289,6 @@ def _load_u2_admitted_sources(
     authority.
     """
 
-    path = _u2_ledger_path(layout)
-    try:
-        raw = path.read_bytes()
-        ledger = load_json_object_bytes(raw, source=str(path))
-    except (OSError, TypeError, ValueError) as error:
-        raise FoundationInputError("persisted U2 retrieval ledger is unavailable") from error
-    if raw != canonical_json_bytes(ledger):
-        raise FoundationInputError("persisted U2 retrieval ledger is not canonical")
-    try:
-        validate_instance("ultra-retrieval-ledger.schema.json", ledger)
-    except Exception as error:
-        raise FoundationInputError("persisted U2 retrieval ledger is invalid") from error
-    ledger_sha256 = sha256_bytes(raw)
     if (phase_store is None) == (action is None):
         raise FoundationInputError(
             "U2 source reload requires one phase or action authority"
@@ -2058,86 +2318,16 @@ def _load_u2_admitted_sources(
             raise FoundationInputError("U3 phase run contract is invalid")
         expected_request_sha256 = run_contract.get("request_sha256")
     if (
-        ledger.get("run_id") != layout.run_dir.name
-        or ledger.get("version_binding") != current_version_binding()
-        or ledger.get("phase_id") != "U2"
-        or ledger.get("request_sha256") != expected_request_sha256
-        or not isinstance(output_hashes, list)
-        or ledger_sha256 not in output_hashes
+        not isinstance(output_hashes, list)
+        or len(output_hashes) != 1
+        or not isinstance(output_hashes[0], str)
     ):
         raise FoundationInputError("persisted U2 retrieval ledger differs from its checkpoint")
-
-    status = ledger.get("retrieval_status")
-    if status == "not-applicable":
-        return {}, ledger
-    if status != "required-complete":
-        raise FoundationInputError("U3 cannot proceed from a blocked U2 retrieval")
-
-    admitted_path = assert_safe_descendant(
-        layout.root,
-        layout.recovery_dir / "u2-authority/admitted-host-result.json",
+    return _load_validated_u2_source_projection(
+        layout,
+        expected_ledger_sha256=output_hashes[0],
+        expected_request_sha256=expected_request_sha256,
     )
-    try:
-        admitted_raw = admitted_path.read_bytes()
-        admitted = load_json_object_bytes(admitted_raw, source=str(admitted_path))
-    except (OSError, TypeError, ValueError) as error:
-        raise FoundationInputError("U2 admitted host retrieval result is unavailable") from error
-    if admitted_raw != canonical_json_bytes(admitted):
-        raise FoundationInputError("U2 admitted host retrieval result is not canonical")
-    supplied_content_hash = admitted.get("content_sha256")
-    payload = copy.deepcopy(admitted)
-    payload.pop("content_sha256", None)
-    if supplied_content_hash != sha256_bytes(canonical_json_bytes(payload)):
-        raise FoundationInputError("U2 admitted host retrieval result hash differs")
-    source_inventory = ledger.get("sources")
-    admitted_sources = admitted.get("sources")
-    if not isinstance(source_inventory, list) or not source_inventory:
-        raise FoundationInputError("required U2 retrieval has no source inventory")
-    if not isinstance(admitted_sources, list) or not admitted_sources:
-        raise FoundationInputError("U2 admitted host retrieval has no source inventory")
-    external_by_id: dict[str, Mapping[str, object]] = {}
-    for item in admitted_sources:
-        if not isinstance(item, Mapping):
-            raise FoundationInputError("U2 admitted source entry is invalid")
-        source_id = item.get("source_id")
-        external = item.get("external_content")
-        if (
-            not isinstance(source_id, str)
-            or not source_id
-            or source_id in external_by_id
-            or not isinstance(external, Mapping)
-            or not isinstance(external.get("content"), str)
-            or external.get("content_sha256")
-            != sha256_bytes(str(external["content"]).encode("utf-8"))
-        ):
-            raise FoundationInputError("U2 admitted source content authority is invalid")
-        external_by_id[source_id] = item
-    sources: dict[str, dict[str, object]] = {}
-    for item in source_inventory:
-        if not isinstance(item, Mapping):
-            raise FoundationInputError("U2 retrieval source inventory entry is invalid")
-        record = item.get("record")
-        if not isinstance(record, Mapping):
-            raise FoundationInputError("U2 retrieval source record is invalid")
-        source_id = record.get("source_id")
-        if not isinstance(source_id, str) or source_id in sources:
-            raise FoundationInputError("U2 retrieval source identifiers are invalid")
-        external_item = external_by_id.get(source_id)
-        if external_item is None:
-            raise FoundationInputError("U2 admitted source set differs from its ledger")
-        external = external_item.get("external_content")
-        assert isinstance(external, Mapping)
-        content_sha256 = external.get("content_sha256")
-        if not isinstance(content_sha256, str) or len(content_sha256) != 64:
-            raise FoundationInputError("U2 admitted source content hash is invalid")
-        sources[source_id] = {
-            "source_id": source_id,
-            "record": copy.deepcopy(dict(record)),
-            "content_sha256": content_sha256,
-        }
-    if set(sources) != set(external_by_id):
-        raise FoundationInputError("U2 admitted source set differs from its ledger")
-    return sources, ledger
 
 
 def _validate_host_evidence_result_for_acceptance(

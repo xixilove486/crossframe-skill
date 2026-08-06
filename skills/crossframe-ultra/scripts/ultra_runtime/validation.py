@@ -90,6 +90,9 @@ _SECRET_PATTERNS = (
 _U1_SOURCE_LOCK_PATH = "recovery/u1-authority/source-lock.json"
 _U1_READ_PLAN_PATH = "recovery/u1-authority/read-plan.json"
 _U1_SOURCE_COVERAGE_PATH = "recovery/u1-authority/source-coverage.json"
+_U2_RETRIEVAL_LEDGER_PATH = (
+    "artifacts/U00-U03-evidence/U02-retrieval-ledger.json"
+)
 _RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
 _HOST_CAPABILITY_ATTESTATION_PATH = (
     "artifacts/U00-U03-evidence/U00-host-capability-attestation.json"
@@ -206,6 +209,41 @@ def _active_phase_checkpoints(
         tuple(copy.deepcopy(dict(event)) for event in active_events),
         tuple(selected),
     )
+
+
+def _validate_u2_source_projection_authority(
+    layout: RunLayout,
+    *,
+    u2_refs: Mapping[str, object],
+    request_sha256: object,
+) -> None:
+    from .foundation import (
+        FoundationInputError,
+        _load_validated_u2_source_projection,
+    )
+
+    expected_ledger_sha256 = u2_refs.get(_U2_RETRIEVAL_LEDGER_PATH)
+    if (
+        set(u2_refs) != {_U2_RETRIEVAL_LEDGER_PATH}
+        or not isinstance(expected_ledger_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_ledger_sha256) is None
+        or not isinstance(request_sha256, str)
+    ):
+        raise _AuthorityDAGError(
+            "verified U2 retrieval ledger authority is invalid",
+            phase_id="U2",
+        )
+    try:
+        _load_validated_u2_source_projection(
+            layout,
+            expected_ledger_sha256=expected_ledger_sha256,
+            expected_request_sha256=request_sha256,
+        )
+    except FoundationInputError as error:
+        raise _AuthorityDAGError(
+            f"verified U2 source projection authority is invalid: {error}",
+            phase_id="U2",
+        ) from error
 
 
 def _load_verified_disk_authority(
@@ -395,6 +433,11 @@ def _load_verified_disk_authority(
                 f"finalized evidence lineage authority is invalid: {error}",
                 phase_id="U0",
             ) from error
+    _validate_u2_source_projection_authority(
+        layout,
+        u2_refs=refs_by_phase.get("U2", {}),
+        request_sha256=run_contract.get("request_sha256"),
+    )
     for phase_id in tuple(f"U{number}" for number in range(2, 12)):
         if refs_by_phase.get(phase_id) != manifest_refs.get(phase_id):
             raise _AuthorityDAGError(

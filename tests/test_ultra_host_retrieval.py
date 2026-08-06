@@ -335,6 +335,83 @@ def _advance_fresh_u1_to_u2(fresh_u1):
     return completed.phase_store
 
 
+def _rewrite_admitted_source_projection(fresh_u1, content: str) -> None:
+    admitted_path = (
+        fresh_u1.layout.recovery_dir
+        / "u2-authority/admitted-host-result.json"
+    )
+    admitted = json.loads(admitted_path.read_text("utf-8"))
+    external = admitted["sources"][0]["external_content"]
+    external["content"] = content
+    external["content_sha256"] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    admitted["content_sha256"] = hashlib.sha256(
+        _canonical(
+            {
+                key: value
+                for key, value in admitted.items()
+                if key != "content_sha256"
+            }
+        )
+    ).hexdigest()
+    admitted_path.write_bytes(_canonical(admitted))
+
+
+def test_u3_rejects_rehashed_tampered_u2_source_projection(fresh_u1) -> None:
+    from ultra_runtime import foundation
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    _rewrite_admitted_source_projection(
+        fresh_u1,
+        "Forged source content that was never accepted by the host handshake.",
+    )
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="projection|accepted|authority",
+    ):
+        foundation._advance_u3(
+            fresh_u1.layout,
+            phase_store=phase_store,
+            profile=foundation.RequestProfile(
+                "open-world",
+                fresh_u1.claim,
+                (),
+                None,
+            ),
+            now=fresh_u1.later + timedelta(seconds=1),
+        )
+
+
+def test_fresh_validation_rejects_rehashed_tampered_u2_source_projection(
+    fresh_u1,
+) -> None:
+    from ultra_runtime import validation
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    ledger_path = (
+        fresh_u1.layout.artifacts_dir
+        / "U00-U03-evidence/U02-retrieval-ledger.json"
+    )
+    _rewrite_admitted_source_projection(
+        fresh_u1,
+        "Forged source content that was never accepted by the host handshake.",
+    )
+
+    with pytest.raises(
+        validation._AuthorityDAGError,
+        match="projection|accepted|authority",
+    ):
+        validation._validate_u2_source_projection_authority(
+            fresh_u1.layout,
+            u2_refs={
+                "artifacts/U00-U03-evidence/U02-retrieval-ledger.json": (
+                    hashlib.sha256(ledger_path.read_bytes()).hexdigest()
+                )
+            },
+            request_sha256=phase_store.run_contract["request_sha256"],
+        )
+
+
 def _accept_evidence_authoring_result(
     fresh_u1,
     action,
