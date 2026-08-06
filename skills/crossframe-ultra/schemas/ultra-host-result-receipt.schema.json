@@ -73,7 +73,10 @@
     "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
     "action_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
     "result_relative_path": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
-    "result_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+    "result_sha256": {
+      "$ref": "ultra-common.schema.json#/$defs/sha256",
+      "description": "SHA-256 of the exact canonical result bytes frozen by runtime admission in the action authority directory."
+    },
     "execution_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
     "completed_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
     "provider": {"$ref": "#/$defs/providerIdentity"},

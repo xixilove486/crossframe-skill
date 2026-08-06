@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib
 import json
 from pathlib import Path
 import sys
+from threading import Event
 
 from tests.pytest_import_guard import pytest
 
@@ -419,6 +421,12 @@ def test_invalid_subagent_result_is_rejected_without_consuming_pending_action(
         receipt=receipt,
     )
     assert host_handshake.load_pending_action(run_layout) is None
+    jsonio.atomic_write_json(action.result_path, {"reused": True})
+    assert host_handshake._seal_result(
+        run_layout,
+        action=action,
+        receipt=receipt,
+    ).document == receipt
 
 
 def test_host_action_handshake_module_exists_for_red_gate() -> None:
@@ -528,6 +536,239 @@ def test_host_result_hash_and_result_bytes_must_both_match(runtime, run_layout) 
         host_handshake.accept_host_result(
             run_layout, action=action, receipt=receipt
         )
+
+
+def test_cancel_intent_rejects_result_without_consuming_pending_action(
+    runtime,
+    run_layout,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    locks = _module("locks")
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-after-cancel",
+    )
+    locks.request_cancel(
+        run_layout,
+        reason="operator cancelled before host result admission",
+        now=NOW + timedelta(seconds=2),
+    )
+
+    with pytest.raises(host_handshake.HostHandshakeError, match="cancel"):
+        host_handshake.accept_host_result(
+            run_layout,
+            action=action,
+            receipt=receipt,
+        )
+
+    action_dir = (
+        run_layout.recovery_dir / "host-results" / action.action_sha256
+    )
+    assert host_handshake.load_pending_action(run_layout) == action
+    assert not (action_dir / "accepted.json").exists()
+    assert len(tuple((action_dir / "attempts").glob("*-rejected.json"))) == 1
+
+
+def test_complete_host_action_rejects_cancelled_result_and_preserves_pending(
+    runtime,
+    run_layout,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    locks = _module("locks")
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-complete-after-cancel",
+    )
+    result = host_handshake.HostResultSeal(
+        copy.deepcopy(receipt),
+        str(receipt["receipt_sha256"]),
+        action.action_sha256,
+    )
+    locks.request_cancel(
+        run_layout,
+        reason="operator cancelled before direct completion",
+        now=NOW + timedelta(seconds=2),
+    )
+
+    with pytest.raises(host_handshake.HostHandshakeError, match="cancel"):
+        host_handshake.complete_host_action(
+            run_layout,
+            action=action,
+            result=result,
+        )
+
+    action_dir = run_layout.recovery_dir / "host-results" / action.action_sha256
+    assert host_handshake.load_pending_action(run_layout) == action
+    assert not (action_dir / "accepted.json").exists()
+    assert not (action_dir / "accepted-result.json").exists()
+    assert len(tuple((action_dir / "attempts").glob("*-rejected.json"))) == 1
+
+
+def test_host_action_issuance_cannot_cross_existing_cancel_intent(
+    runtime,
+    run_layout,
+) -> None:
+    host_handshake, _, _, _ = runtime
+    locks = _module("locks")
+    locks.request_cancel(
+        run_layout,
+        reason="operator cancelled before action issuance",
+        now=NOW,
+    )
+
+    with pytest.raises(host_handshake.HostHandshakeError, match="cancel"):
+        _issue(host_handshake, run_layout)
+
+    assert not (run_layout.recovery_dir / "pending-action.json").exists()
+
+
+def test_cancel_intent_creation_serializes_before_host_result_admission(
+    runtime,
+    run_layout,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    locks = _module("locks")
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-cancel-race",
+    )
+    cancel_committed = Event()
+    allow_cancel_return = Event()
+    accept_started = Event()
+    accept_finished = Event()
+    real_atomic_write_bytes = locks.atomic_write_bytes
+
+    def pause_after_cancel_commit(path: Path, value: bytes) -> None:
+        real_atomic_write_bytes(path, value)
+        if path == locks._cancel_intent_path(run_layout):
+            cancel_committed.set()
+            if not allow_cancel_return.wait(timeout=5):
+                raise TimeoutError("test did not release cancel intent commit")
+
+    def accept_result():
+        accept_started.set()
+        try:
+            return host_handshake.accept_host_result(
+                run_layout,
+                action=action,
+                receipt=receipt,
+            )
+        finally:
+            accept_finished.set()
+
+    monkeypatch.setattr(locks, "atomic_write_bytes", pause_after_cancel_commit)
+    executor = ThreadPoolExecutor(max_workers=2)
+    cancel_future = executor.submit(
+        locks.request_cancel,
+        run_layout,
+        reason="cancel linearizes before host admission",
+        now=NOW + timedelta(seconds=2),
+    )
+    accept_future = None
+    try:
+        assert cancel_committed.wait(timeout=2)
+        accept_future = executor.submit(accept_result)
+        assert accept_started.wait(timeout=2)
+        assert not accept_finished.wait(timeout=0.3), (
+            "host result admission crossed a cancel intent commit in progress"
+        )
+    finally:
+        allow_cancel_return.set()
+        executor.shutdown(wait=True)
+
+    assert cancel_future.result().run_id == run_layout.run_dir.name
+    assert accept_future is not None
+    with pytest.raises(host_handshake.HostHandshakeError, match="cancel"):
+        accept_future.result()
+    action_dir = run_layout.recovery_dir / "host-results" / action.action_sha256
+    assert host_handshake.load_pending_action(run_layout) == action
+    assert not (action_dir / "accepted.json").exists()
+    assert len(tuple((action_dir / "attempts").glob("*-rejected.json"))) == 1
+
+
+def test_terminal_run_status_rejects_result_without_consuming_pending(
+    runtime,
+    run_layout,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    status = _module("status")
+    store = status.RunStatusStore(run_layout)
+    created = store.create(NOW)
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-after-terminal-status",
+    )
+    terminal = store.transition(
+        created,
+        "failed",
+        NOW + timedelta(seconds=2),
+        reason="terminal before host result admission",
+    )
+    assert terminal.status == "failed"
+
+    with pytest.raises(host_handshake.HostHandshakeError, match="terminal|failed"):
+        host_handshake.accept_host_result(
+            run_layout,
+            action=action,
+            receipt=receipt,
+        )
+
+    action_dir = run_layout.recovery_dir / "host-results" / action.action_sha256
+    assert host_handshake.load_pending_action(run_layout) == action
+    assert not (action_dir / "accepted.json").exists()
+    assert len(tuple((action_dir / "attempts").glob("*-rejected.json"))) == 1
+
+
+def test_terminal_phase_event_rejects_result_with_stale_status_authority(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    from tests.test_ultra_recovery import _checkpoint
+
+    recovery, _, layout, phase_store, _, _ = _checkpoint(tmp_path)
+    action = _issue(host_handshake, layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-after-terminal-event",
+    )
+    terminal = phase_store.fail(
+        "U1",
+        failure_code="U1_TERMINAL_BEFORE_HOST_ADMISSION",
+    )
+    _, _, _, events_path, lock_path = recovery._paths(layout)
+    with recovery._exclusive_path_lock(lock_path):
+        recovery._sync_events(events_path, phase_store.events)
+    assert terminal["status"] == "failed"
+    assert not (layout.run_dir / "run-status.json").exists()
+    assert _module("locks").load_cancel_intent(layout) is None
+
+    with pytest.raises(host_handshake.HostHandshakeError, match="terminal phase"):
+        host_handshake.accept_host_result(
+            layout,
+            action=action,
+            receipt=receipt,
+        )
+
+    action_dir = layout.recovery_dir / "host-results" / action.action_sha256
+    assert host_handshake.load_pending_action(layout) == action
+    assert not (action_dir / "accepted.json").exists()
+    assert len(tuple((action_dir / "attempts").glob("*-rejected.json"))) == 1
 
 
 def test_complete_host_action_rejects_an_unvalidated_result_seal(

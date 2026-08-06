@@ -2065,11 +2065,6 @@ def make_read_event_from_host_receipt(
     unit = _validate_source_unit(source_unit)
     identity = _host_execution_identity(host_receipt.get("execution_id"))
     read_at = receipt_item.get("read_at")
-    if read_at is None:
-        result = load_json_object_bytes(
-            action.result_path.read_bytes(), source=str(action.result_path)
-        )
-        read_at = result.get("read_at")
     _parse_read_timestamp(read_at)
     source_lock_sha256 = payload.get("source_lock_sha256")
     read_plan_sha256 = payload.get("read_plan_sha256")
@@ -2114,6 +2109,8 @@ def validate_host_read_receipt(
     action: object,
     repo: Path,
     manifest: SourceManifestSnapshot,
+    layout: RunLayout | None = None,
+    result_document: Mapping[str, object] | None = None,
 ) -> tuple[dict[str, object], ...]:
     from .host_handshake import HostActionSeal
 
@@ -2151,11 +2148,26 @@ def validate_host_read_receipt(
         raise SourceCoverageError("host read receipt action authority differs")
     identity = _host_execution_identity(document.get("execution_id"))
     del identity
-    try:
-        result_raw = action.result_path.read_bytes()
-        result = load_json_object_bytes(result_raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
-        raise SourceCoverageError("host source-read result is unavailable") from error
+    if result_document is None and layout is not None:
+        try:
+            from .host_handshake import _load_bound_result_document
+
+            result, result_raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=document,
+            )
+        except Exception as error:
+            raise SourceCoverageError("host source-read result is unavailable") from error
+    elif result_document is None:
+        try:
+            result_raw = action.result_path.read_bytes()
+            result = load_json_object_bytes(result_raw, source=str(action.result_path))
+        except (OSError, TypeError, ValueError) as error:
+            raise SourceCoverageError("host source-read result is unavailable") from error
+    else:
+        result = copy.deepcopy(dict(result_document))
+        result_raw = canonical_json_bytes(result)
     if result_raw != canonical_json_bytes(result):
         raise SourceCoverageError("host source-read result is not canonical JSON")
     if document.get("result_sha256") != sha256_bytes(result_raw):
@@ -2862,6 +2874,7 @@ def _validate_persisted_host_read_authority(
                 action=action,
                 repo=repo,
                 manifest=manifest,
+                layout=run_layout,
             )
         )
     if len(rebuilt_events) != EXPECTED_SOURCE_UNIT_COUNT:

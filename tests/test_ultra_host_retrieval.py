@@ -279,6 +279,7 @@ def test_foundation_u2_admits_the_accepted_result_and_completes_u2(fresh_u1) -> 
     )
     assert first.pending_action is not None
     _accept_retrieval_result(fresh_u1, first.pending_action)
+    first.pending_action.result_path.write_bytes(_canonical({"reused": True}))
 
     progress = foundation.advance_u2(
         fresh_u1.layout,
@@ -514,6 +515,7 @@ def test_u3_accepted_evidence_result_completes_and_checkpoints(fresh_u1) -> None
     )
     assert waiting.pending_action is not None
     _accept_evidence_authoring_result(fresh_u1, waiting.pending_action)
+    waiting.pending_action.result_path.write_bytes(_canonical({"reused": True}))
 
     completed = foundation._advance_u3(
         fresh_u1.layout,

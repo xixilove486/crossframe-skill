@@ -636,7 +636,7 @@ def test_invalid_source_read_result_is_rejected_before_pending_is_consumed(
 def test_valid_source_read_result_is_accepted_after_action_specific_validation(
     tmp_path: Path,
 ) -> None:
-    from ultra_runtime import host_handshake
+    from ultra_runtime import foundation, host_handshake
 
     _, _, layout, action, receipt = _task3_host_read_receipt(
         tmp_path,
@@ -652,6 +652,23 @@ def test_valid_source_read_result_is_accepted_after_action_specific_validation(
 
     assert accepted.action_sha256 == action.action_sha256
     assert host_handshake.load_pending_action(layout) is None
+    accepted_result_path = (
+        layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted-result.json"
+    )
+    accepted_result_bytes = accepted_result_path.read_bytes()
+    action.result_path.write_bytes(_canonical({"reused": True}))
+    assert foundation._load_accepted_u1_result(layout, action) == accepted
+
+    accepted_result_path.write_bytes(_canonical({"tampered": True}))
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="accepted|receipt|result|snapshot|invalid",
+    ):
+        foundation._load_accepted_u1_result(layout, action)
+    assert accepted_result_bytes != accepted_result_path.read_bytes()
 
 
 @pytest.mark.parametrize(

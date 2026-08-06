@@ -199,6 +199,8 @@ def test_semantic_receipt_projects_runtime_envelope_and_replay_fails_closed(
         action=action,
         receipt=receipt,
     )
+    _module("jsonio").atomic_write_json(action.result_path, {"reused": True})
+    assert semantic_review.load_host_semantic_review_result(layout, action) == result
     artifact = semantic_review.project_semantic_review_artifact(
         action=action,
         accepted_result=accepted,

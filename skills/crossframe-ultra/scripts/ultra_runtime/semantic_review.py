@@ -14,6 +14,7 @@ from .errors import UltraRuntimeError
 from .host_handshake import (
     HostActionSeal,
     HostResultSeal,
+    _load_bound_result_document,
     _seal_action,
     _seal_result,
     issue_host_action,
@@ -477,9 +478,19 @@ def load_host_semantic_review_result(
     if not isinstance(action, HostActionSeal):
         raise TypeError("action must be a HostActionSeal")
     try:
-        raw = action.result_path.read_bytes()
-        result = load_json_object_bytes(raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
+        accepted = load_accepted_semantic_review_result(layout, action)
+        if accepted is None:
+            raise SemanticReviewError(
+                "accepted semantic review receipt is unavailable"
+            )
+        result, raw = _load_bound_result_document(
+            layout,
+            action=action,
+            receipt=accepted.document,
+        )
+    except Exception as error:
+        if isinstance(error, SemanticReviewError):
+            raise
         raise SemanticReviewError(
             "host semantic review result is unreadable"
         ) from error
@@ -726,8 +737,21 @@ def validate_host_semantic_result_for_acceptance(
     *,
     action: HostActionSeal,
     result: HostResultSeal,
+    result_document: Mapping[str, object] | None = None,
 ) -> None:
-    host_result = load_host_semantic_review_result(layout, action)
+    if result_document is None:
+        try:
+            host_result, _ = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=result.document,
+            )
+        except Exception as error:
+            raise SemanticReviewError(
+                "host semantic review result is unreadable"
+            ) from error
+    else:
+        host_result = copy.deepcopy(dict(result_document))
     _validate_host_result(action, result, host_result)
 
 

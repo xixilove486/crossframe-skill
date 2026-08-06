@@ -2325,7 +2325,7 @@ def _accepted_retrieval_result_document(
     boundary: Mapping[str, object],
     action,
 ) -> dict[str, object]:
-    from .host_handshake import HostResultSeal
+    from .host_handshake import HostResultSeal, _load_bound_result_document
     from .paths import assert_safe_descendant
 
     if not isinstance(receipt, HostResultSeal):
@@ -2385,9 +2385,12 @@ def _accepted_retrieval_result_document(
     ):
         raise RetrievalPolicyError("accepted host retrieval receipt differs")
     try:
-        result_raw = action.result_path.read_bytes()
-        result = load_json_object_bytes(result_raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
+        result, result_raw = _load_bound_result_document(
+            layout,
+            action=action,
+            receipt=receipt_document,
+        )
+    except Exception as error:
         raise RetrievalPolicyError("host retrieval result is unavailable") from error
     if result_raw != canonical_json_bytes(result):
         raise RetrievalPolicyError("host retrieval result is not canonical")
@@ -2462,6 +2465,7 @@ def _validate_host_retrieval_result_for_acceptance(
     *,
     action: object,
     receipt: object,
+    result_document: Mapping[str, object] | None = None,
 ) -> None:
     from .host_handshake import HostActionSeal, HostResultSeal
     from .paths import RunLayout
@@ -2487,11 +2491,20 @@ def _validate_host_retrieval_result_for_acceptance(
         receipt.document,
         maximum_attempts=maximum_attempts,
     )
-    try:
-        result_raw = action.result_path.read_bytes()
-        result = load_json_object_bytes(result_raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
-        raise RetrievalPolicyError("host retrieval result is unavailable") from error
+    if result_document is None:
+        try:
+            from .host_handshake import _load_bound_result_document
+
+            result, result_raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=receipt.document,
+            )
+        except Exception as error:
+            raise RetrievalPolicyError("host retrieval result is unavailable") from error
+    else:
+        result = copy.deepcopy(dict(result_document))
+        result_raw = canonical_json_bytes(result)
     if result_raw != canonical_json_bytes(result):
         raise RetrievalPolicyError("host retrieval result is not canonical")
     if receipt.document.get("result_sha256") != sha256_bytes(result_raw):
@@ -3029,6 +3042,7 @@ def _validate_host_subagent_result_for_acceptance(
     *,
     action: object,
     receipt: object,
+    result_document: Mapping[str, object] | None = None,
 ) -> None:
     from .host_handshake import HostActionSeal, HostResultSeal
     from .paths import RunLayout
@@ -3044,14 +3058,20 @@ def _validate_host_subagent_result_for_acceptance(
         or action.document.get("phase_id") != "U2"
     ):
         raise RetrievalPolicyError("subagent action authority is invalid")
-    try:
-        result_raw = action.result_path.read_bytes()
-        slot_result = load_json_object_bytes(
-            result_raw,
-            source=str(action.result_path),
-        )
-    except (OSError, TypeError, ValueError) as error:
-        raise RetrievalPolicyError("subagent result is unavailable") from error
+    if result_document is None:
+        try:
+            from .host_handshake import _load_bound_result_document
+
+            slot_result, result_raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=receipt.document,
+            )
+        except Exception as error:
+            raise RetrievalPolicyError("subagent result is unavailable") from error
+    else:
+        slot_result = copy.deepcopy(dict(result_document))
+        result_raw = canonical_json_bytes(slot_result)
     receipt_result = receipt.document.get("result")
     if (
         result_raw != canonical_json_bytes(slot_result)

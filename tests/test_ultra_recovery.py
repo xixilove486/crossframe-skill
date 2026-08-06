@@ -1705,7 +1705,10 @@ def test_evidence_fork_recovers_lineage_finalization_after_u0_checkpoint(
     _accept_capability_result(
         child.layout,
         first.pending_action,
-        _capability_result(network="available"),
+        _capability_result(
+            network="available",
+            measured_at="2026-08-05T00:00:02Z",
+        ),
         completed_at="2026-08-05T00:00:02Z",
     )
 

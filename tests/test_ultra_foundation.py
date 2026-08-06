@@ -54,7 +54,11 @@ def _root_policy(tmp_path: Path):
     return paths.RootPolicy(tmp_path / "production", tmp_path / "test")
 
 
-def _capability_result(*, network: str = "unavailable") -> dict[str, object]:
+def _capability_result(
+    *,
+    network: str = "unavailable",
+    measured_at: str = "2026-08-05T18:00:02Z",
+) -> dict[str, object]:
     return {
         "measured_availability": {
             "filesystem": "available",
@@ -79,7 +83,7 @@ def _capability_result(*, network: str = "unavailable") -> dict[str, object]:
                 "version": "1.0.0",
             }
         ],
-        "measured_at": "2026-08-05T18:00:02Z",
+        "measured_at": measured_at,
         "proof_grade": "host-measured",
     }
 
@@ -254,6 +258,81 @@ def test_host_capability_attestation_advances_u0_with_measured_availability(
     assert (
         fresh_run.layout.artifacts_dir / "ultra-run-contract.json"
     ).is_file()
+
+
+def test_accepted_u0_capability_uses_immutable_result_after_slot_reuse(
+    fresh_run,
+) -> None:
+    foundation = _module("foundation")
+    jsonio = _module("jsonio")
+    first = foundation.advance_u0(
+        fresh_run.layout,
+        repo=fresh_run.repo,
+        now=fresh_run.now,
+    )
+    assert first.pending_action is not None
+    original = _capability_result()
+    _accept_capability_result(
+        fresh_run.layout,
+        first.pending_action,
+        original,
+    )
+    accepted_result_path = (
+        fresh_run.layout.recovery_dir
+        / "host-results"
+        / first.pending_action.action_sha256
+        / "accepted-result.json"
+    )
+    assert accepted_result_path.read_bytes() == _canonical(original)
+
+    jsonio.atomic_write_json(
+        first.pending_action.result_path,
+        _capability_result(network="available"),
+    )
+    progress = foundation.advance_u0(
+        fresh_run.layout,
+        repo=fresh_run.repo,
+        now=fresh_run.now + timedelta(seconds=3),
+    )
+
+    assert progress.outcome == "advanced"
+    assert progress.phase_store.capability_availability["network"] == "unavailable"
+
+
+def test_tampered_accepted_u0_result_snapshot_fails_closed(fresh_run) -> None:
+    foundation = _module("foundation")
+    jsonio = _module("jsonio")
+    first = foundation.advance_u0(
+        fresh_run.layout,
+        repo=fresh_run.repo,
+        now=fresh_run.now,
+    )
+    assert first.pending_action is not None
+    _accept_capability_result(
+        fresh_run.layout,
+        first.pending_action,
+        _capability_result(),
+    )
+    accepted_result_path = (
+        fresh_run.layout.recovery_dir
+        / "host-results"
+        / first.pending_action.action_sha256
+        / "accepted-result.json"
+    )
+    jsonio.atomic_write_json(
+        accepted_result_path,
+        _capability_result(network="available"),
+    )
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="accepted|result|receipt|snapshot|hash",
+    ):
+        foundation.advance_u0(
+            fresh_run.layout,
+            repo=fresh_run.repo,
+            now=fresh_run.now + timedelta(seconds=3),
+        )
 
 
 def test_host_capability_result_cannot_submit_runtime_owned_attestation_fields(
@@ -462,7 +541,12 @@ def _accept_task3_source_read(layout, action, *, batch_ordinal: int) -> int:
     source_units = payload["source_units"]
     assert isinstance(source_units, list)
     execution_id = f"host-reader-{batch_ordinal:06d}"
-    read_at = f"2026-08-05T18:{batch_ordinal // 60:02d}:{batch_ordinal % 60:02d}Z"
+    issued_at = datetime.fromisoformat(
+        str(action.document["issued_at"]).replace("Z", "+00:00")
+    )
+    read_at = (
+        issued_at + timedelta(seconds=1)
+    ).isoformat().replace("+00:00", "Z")
     items = [
         _task3_source_read_item(
             action_sha256=action.action_sha256,

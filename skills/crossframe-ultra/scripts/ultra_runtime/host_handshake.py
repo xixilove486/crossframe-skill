@@ -11,9 +11,11 @@ from .constants import current_version_binding
 from .errors import UltraRuntimeError
 from .jsonio import (
     _exclusive_path_lock,
+    atomic_write_bytes,
     atomic_write_json,
     canonical_json_bytes,
     load_json_object,
+    load_json_object_bytes,
     sha256_bytes,
 )
 from .paths import (
@@ -41,6 +43,8 @@ _RESULT_SCHEMA = "ultra-host-result-receipt.schema.json"
 _ACTION_SCHEMA_ID = "crossframe.ultra.v82.host-action"
 _PENDING_NAME = "pending-action.json"
 _LOCK_NAME = ".host-handshake.lock"
+_ACCEPTED_NAME = "accepted.json"
+_ACCEPTED_RESULT_NAME = "accepted-result.json"
 _HOST_ACTION_TTL = timedelta(minutes=30)
 _RESULT_AUTHORITY_FIELDS = (
     "run_id",
@@ -128,6 +132,20 @@ def _action_directory(layout: RunLayout, action_sha256: str) -> Path:
     )
 
 
+def _accepted_path(layout: RunLayout, action_sha256: str) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        _action_directory(layout, action_sha256) / _ACCEPTED_NAME,
+    )
+
+
+def _accepted_result_path(layout: RunLayout, action_sha256: str) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        _action_directory(layout, action_sha256) / _ACCEPTED_RESULT_NAME,
+    )
+
+
 def _checked_layout(layout: RunLayout) -> None:
     if not isinstance(layout, RunLayout):
         raise TypeError("layout must be a RunLayout")
@@ -200,6 +218,75 @@ def _write_immutable(path: Path, document: object, *, label: str) -> None:
     atomic_write_json(path, document)
 
 
+def _write_immutable_bytes(path: Path, raw: bytes, *, label: str) -> None:
+    if path.exists():
+        try:
+            existing = path.read_bytes()
+        except OSError as error:
+            raise HostHandshakeError(f"{label} is unreadable") from error
+        if existing != raw:
+            raise HostHandshakeError(f"{label} differs from its immutable bytes")
+        return
+    atomic_write_bytes(path, raw)
+
+
+def _terminal_phase_event(layout: RunLayout) -> Mapping[str, object] | None:
+    events_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "phase-events.jsonl",
+    )
+    if not events_path.exists():
+        return None
+    try:
+        from . import recovery
+
+        authority, compatibility, _ = recovery._validate_authority_record(layout)
+        events = recovery._read_events(
+            layout,
+            authority,
+            compatibility=compatibility,
+        )
+    except Exception as error:
+        raise HostHandshakeError(
+            "terminal phase event authority is unreadable or invalid"
+        ) from error
+    if not events:
+        raise HostHandshakeError("phase event authority is empty")
+    tail = events[-1]
+    if tail.get("status") in {"failed", "blocked", "cancelled"} or (
+        tail.get("phase_id") == "U12" and tail.get("status") == "complete"
+    ):
+        return tail
+    return None
+
+
+def _require_open_host_action_boundary(layout: RunLayout) -> None:
+    from .locks import load_cancel_intent
+
+    if load_cancel_intent(layout) is not None:
+        raise HostHandshakeError("cancel intent blocks host action authority")
+    status_path = assert_safe_descendant(
+        layout.root,
+        layout.run_dir / "run-status.json",
+    )
+    if status_path.exists():
+        try:
+            from .status import RunStatusStore
+
+            status = RunStatusStore(layout).read()
+        except Exception as error:
+            raise HostHandshakeError("run status authority is unreadable or invalid") from error
+        if status.status in {"complete", "failed", "cancelled"}:
+            raise HostHandshakeError(
+                f"terminal run status {status.status} blocks host action authority"
+            )
+    terminal_event = _terminal_phase_event(layout)
+    if terminal_event is not None:
+        raise HostHandshakeError(
+            "terminal phase event blocks host action authority"
+        )
+
+
 def issue_host_action(
     layout: RunLayout,
     *,
@@ -240,10 +327,14 @@ def issue_host_action(
         raise ValueError(f"host action is invalid: {error}") from error
     action = _seal_action(layout, document)
     pending_path = _pending_path(layout)
-    with _exclusive_path_lock(_lock_path(layout)):
-        if pending_path.exists():
-            raise HostHandshakeError("a pending host action already holds authority")
-        _write_immutable(pending_path, action.document, label="pending host action")
+    from .locks import _cancel_intent_lock_path
+
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        _require_open_host_action_boundary(layout)
+        with _exclusive_path_lock(_lock_path(layout)):
+            if pending_path.exists():
+                raise HostHandshakeError("a pending host action already holds authority")
+            _write_immutable(pending_path, action.document, label="pending host action")
     return action
 
 
@@ -294,12 +385,59 @@ def _next_attempt_id(attempts_dir: Path) -> str:
     return f"{highest + 1:06d}"
 
 
-def _seal_result(
+def _load_bound_result_document(
     layout: RunLayout,
     *,
     action: HostActionSeal,
     receipt: Mapping[str, object],
-) -> HostResultSeal:
+) -> tuple[dict[str, object], bytes]:
+    accepted_path = _accepted_path(layout, action.action_sha256)
+    if accepted_path.exists():
+        try:
+            accepted_raw = accepted_path.read_bytes()
+            accepted = load_json_object_bytes(
+                accepted_raw,
+                source=str(accepted_path),
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise HostHandshakeError("accepted host result receipt is unreadable") from error
+        if (
+            accepted_raw != canonical_json_bytes(accepted)
+            or accepted != dict(receipt)
+        ):
+            raise HostHandshakeError("accepted host result receipt differs")
+        result_path = _accepted_result_path(layout, action.action_sha256)
+        unavailable = "accepted host result snapshot is unavailable"
+    else:
+        result_path = action.result_path
+        unavailable = "host result is missing from its fixed result slot"
+    try:
+        result_raw = result_path.read_bytes()
+        result_document = load_json_object_bytes(
+            result_raw,
+            source=str(result_path),
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise HostHandshakeError(unavailable) from error
+    if result_raw != canonical_json_bytes(result_document):
+        raise HostHandshakeError("host result bytes are not canonical JSON")
+    if receipt.get("result_sha256") != sha256_bytes(result_raw):
+        raise HostHandshakeError("host result hash differs from accepted result bytes")
+    if action.document.get("action_kind") == "subagent":
+        projection = receipt.get("result")
+        if not isinstance(projection, Mapping) or result_document != projection:
+            raise HostHandshakeError(
+                "subagent accepted result snapshot differs from its receipt projection"
+            )
+    return result_document, result_raw
+
+
+def _seal_result_with_bytes(
+    layout: RunLayout,
+    *,
+    action: HostActionSeal,
+    receipt: Mapping[str, object],
+) -> tuple[HostResultSeal, bytes]:
     try:
         document = copy.deepcopy(dict(receipt))
         _require_native_json(document, label="host result receipt")
@@ -325,11 +463,11 @@ def _seal_result(
     if result_path != action.result_path:
         raise HostHandshakeError("host result slot authority differs from action")
     _validate_execution_receipt(action, document)
-    if not result_path.is_file():
-        raise HostHandshakeError("host result is missing from its fixed result slot")
-    measured_result = sha256_bytes(result_path.read_bytes())
-    if document["result_sha256"] != measured_result:
-        raise HostHandshakeError("host result hash differs from result slot bytes")
+    result_document, result_raw = _load_bound_result_document(
+        layout,
+        action=action,
+        receipt=document,
+    )
     result = HostResultSeal(document, str(supplied), action.action_sha256)
     action_kind = action.document.get("action_kind")
     if action_kind == "capability-attestation":
@@ -340,6 +478,7 @@ def _seal_result(
             action=action,
             result=result,
             profile=None,
+            result_document=result_document,
         )
     elif action_kind == "source-read":
         from . import source_integrity
@@ -361,6 +500,7 @@ def _seal_result(
             action=action,
             repo=repo,
             manifest=manifest,
+            result_document=result_document,
         )
     elif action_kind == "retrieval":
         from .retrieval import _validate_host_retrieval_result_for_acceptance
@@ -369,6 +509,7 @@ def _seal_result(
             layout,
             action=action,
             receipt=result,
+            result_document=result_document,
         )
     elif action_kind == "evidence-authoring":
         from .foundation import _validate_host_evidence_result_for_acceptance
@@ -377,6 +518,7 @@ def _seal_result(
             layout,
             action=action,
             result=result,
+            result_document=result_document,
         )
     elif action_kind == "subagent":
         from .retrieval import _validate_host_subagent_result_for_acceptance
@@ -385,6 +527,7 @@ def _seal_result(
             layout,
             action=action,
             receipt=result,
+            result_document=result_document,
         )
     elif action_kind == "semantic-review":
         from .semantic_review import validate_host_semantic_result_for_acceptance
@@ -393,8 +536,22 @@ def _seal_result(
             layout,
             action=action,
             result=result,
+            result_document=result_document,
         )
-    return result
+    return result, result_raw
+
+
+def _seal_result(
+    layout: RunLayout,
+    *,
+    action: HostActionSeal,
+    receipt: Mapping[str, object],
+) -> HostResultSeal:
+    return _seal_result_with_bytes(
+        layout,
+        action=action,
+        receipt=receipt,
+    )[0]
 
 
 def _validate_execution_receipt(
@@ -462,6 +619,7 @@ def _complete_unlocked(
     *,
     action: HostActionSeal,
     result: HostResultSeal,
+    result_bytes: bytes,
 ) -> None:
     pending = _load_pending_unlocked(layout)
     if pending is None or pending != action:
@@ -470,8 +628,15 @@ def _complete_unlocked(
         )
     if result.action_sha256 != action.action_sha256:
         raise HostHandshakeError("host result action authority differs")
-    action_dir = _action_directory(layout, action.action_sha256)
-    accepted_path = assert_safe_descendant(layout.root, action_dir / "accepted.json")
+    if result.document.get("result_sha256") != sha256_bytes(result_bytes):
+        raise HostHandshakeError("host result snapshot hash authority differs")
+    accepted_path = _accepted_path(layout, action.action_sha256)
+    accepted_result_path = _accepted_result_path(layout, action.action_sha256)
+    _write_immutable_bytes(
+        accepted_result_path,
+        result_bytes,
+        label="accepted host result snapshot",
+    )
     _write_immutable(accepted_path, result.document, label="accepted host result")
     _pending_path(layout).unlink()
 
@@ -487,15 +652,53 @@ def complete_host_action(
         raise TypeError("action must be a HostActionSeal")
     if not isinstance(result, HostResultSeal):
         raise TypeError("result must be a HostResultSeal")
-    with _exclusive_path_lock(_lock_path(layout)):
-        validated_result = _seal_result(
-            layout,
-            action=action,
-            receipt=result.document,
-        )
-        if validated_result != result:
-            raise HostHandshakeError("host result seal authority differs")
-        _complete_unlocked(layout, action=action, result=result)
+    document = copy.deepcopy(result.document)
+    _require_native_json(document, label="host result receipt")
+    attempt_sha256 = sha256_bytes(canonical_json_bytes(document))
+    action_dir = _action_directory(layout, action.action_sha256)
+    attempts_dir = assert_safe_descendant(layout.root, action_dir / "attempts")
+    from .locks import _cancel_intent_lock_path
+
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        with _exclusive_path_lock(_lock_path(layout)):
+            attempt_id = _next_attempt_id(attempts_dir)
+            _write_immutable(
+                assert_safe_descendant(
+                    layout.root,
+                    attempts_dir / f"{attempt_id}-submitted.json",
+                ),
+                document,
+                label="submitted host result attempt",
+            )
+            try:
+                _require_open_host_action_boundary(layout)
+                if _accepted_path(layout, action.action_sha256).exists():
+                    raise HostHandshakeError(
+                        "host action is completed; result replay rejected"
+                    )
+                validated_result, result_bytes = _seal_result_with_bytes(
+                    layout,
+                    action=action,
+                    receipt=document,
+                )
+                if validated_result != result:
+                    raise HostHandshakeError("host result seal authority differs")
+                _complete_unlocked(
+                    layout,
+                    action=action,
+                    result=result,
+                    result_bytes=result_bytes,
+                )
+            except Exception as error:
+                if not isinstance(error, HostHandshakeError):
+                    error = HostHandshakeError(f"host result is invalid: {error}")
+                _reject_attempt(
+                    attempts_dir,
+                    attempt_id,
+                    attempt_sha256,
+                    error,
+                )
+                raise error
 
 
 def accept_host_result(
@@ -514,44 +717,49 @@ def accept_host_result(
     attempt_sha256 = sha256_bytes(canonical_json_bytes(document))
     action_dir = _action_directory(layout, action.action_sha256)
     attempts_dir = assert_safe_descendant(layout.root, action_dir / "attempts")
+    from .locks import _cancel_intent_lock_path
 
-    with _exclusive_path_lock(_lock_path(layout)):
-        attempt_id = _next_attempt_id(attempts_dir)
-        submitted_path = assert_safe_descendant(
-            layout.root,
-            attempts_dir / f"{attempt_id}-submitted.json",
-        )
-        _write_immutable(
-            submitted_path,
-            document,
-            label="submitted host result attempt",
-        )
-        try:
-            accepted_path = assert_safe_descendant(
-                layout.root, action_dir / "accepted.json"
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        with _exclusive_path_lock(_lock_path(layout)):
+            attempt_id = _next_attempt_id(attempts_dir)
+            submitted_path = assert_safe_descendant(
+                layout.root,
+                attempts_dir / f"{attempt_id}-submitted.json",
             )
-            if accepted_path.exists():
-                raise HostHandshakeError(
-                    "host action is completed; result replay rejected"
-                )
-            pending = _load_pending_unlocked(layout)
-            if pending is None:
-                raise HostHandshakeError(
-                    "host action is completed or has no pending authority"
-                )
-            if pending != action:
-                raise HostHandshakeError(
-                    "supplied host action authority differs from pending action"
-                )
-            result = _seal_result(
-                layout,
-                action=action,
-                receipt=document,
+            _write_immutable(
+                submitted_path,
+                document,
+                label="submitted host result attempt",
             )
-            _complete_unlocked(layout, action=action, result=result)
-        except Exception as error:
-            if not isinstance(error, HostHandshakeError):
-                error = HostHandshakeError(f"host result is invalid: {error}")
-            _reject_attempt(attempts_dir, attempt_id, attempt_sha256, error)
-            raise error
+            try:
+                _require_open_host_action_boundary(layout)
+                if _accepted_path(layout, action.action_sha256).exists():
+                    raise HostHandshakeError(
+                        "host action is completed; result replay rejected"
+                    )
+                pending = _load_pending_unlocked(layout)
+                if pending is None:
+                    raise HostHandshakeError(
+                        "host action is completed or has no pending authority"
+                    )
+                if pending != action:
+                    raise HostHandshakeError(
+                        "supplied host action authority differs from pending action"
+                    )
+                result, result_bytes = _seal_result_with_bytes(
+                    layout,
+                    action=action,
+                    receipt=document,
+                )
+                _complete_unlocked(
+                    layout,
+                    action=action,
+                    result=result,
+                    result_bytes=result_bytes,
+                )
+            except Exception as error:
+                if not isinstance(error, HostHandshakeError):
+                    error = HostHandshakeError(f"host result is invalid: {error}")
+                _reject_attempt(attempts_dir, attempt_id, attempt_sha256, error)
+                raise error
     return result

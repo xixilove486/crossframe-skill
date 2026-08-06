@@ -11,7 +11,7 @@ Exact naming limits activation only. After the host has selected Ultra, pass the
 1. Call `start`, then call `prepare` for the returned run ID.
 2. Read the runtime-issued `recovery/pending-action.json` or the model-owned authoring slot returned by `prepare`.
 3. Execute the one pending action with a real authorized host tool. Write only the requested action result to the fixed result slot.
-4. Submit the separate bound receipt through the provider-neutral adapter callback `ultra_runtime.host_handshake.accept_host_result(...)`. This is the existing adapter seam, 不是新的 CLI 命令.
+4. Submit the separate bound receipt through the provider-neutral adapter callback `ultra_runtime.host_handshake.accept_host_result(...)`. Admission first freezes the exact canonical result bytes as the internal `recovery/host-results/<action-sha256>/accepted-result.json`, then writes the existing `accepted.json` receipt whose `result_sha256` binds that snapshot. This is the existing adapter seam, 不是新的 CLI 命令.
 5. After runtime admission succeeds, call `materialize`. Let the runtime seal, release its writer lease, and issue the next action.
 6. Repeat until U12 passes or the runtime returns a terminal boundary.
 
@@ -34,4 +34,4 @@ Codex, Reasonix, Claude, and other adapters translate their real tool results in
 
 The host may write only the action result slot or current model-owned authoring slot. Never hand-edit or delete status, control, pending-action authority, phase events, checkpoints, validation attempts, manifests, indexes, delivery state, or lease files. Never acquire authority by clearing a lease or rebuilding a hash. Use runtime `resume`, `cancel`, repair, and publication commands at their documented boundaries.
 
-Invalid, unauthorized, expired, replayed, parent-mismatched, unsafe, or unavailable required work fails closed. Required retrieval cannot become `not-applicable`. Late evidence uses `evidence-fork` to create a child with a fresh U0 attestation and later cutoff; it never mutates the parent. Ultra failure does not fall back to Max, ProMax, suite, another runtime, or a chat-only answer.
+The fixed `work/host/...` result path is an adapter-owned mutable submission slot only. After admission, U0-U3, subagent, and semantic consumers revalidate `accepted.json` to `accepted-result.json` and their runtime projection; changing or reusing the submission slot cannot change accepted authority, while changing the accepted snapshot fails closed. Invalid, unauthorized, expired, replayed, parent-mismatched, unsafe, cancelled, terminal, or unavailable required work fails closed. Required retrieval cannot become `not-applicable`. Late evidence uses `evidence-fork` to create a child with a fresh U0 attestation and later cutoff; it never mutates the parent. Ultra failure does not fall back to Max, ProMax, suite, another runtime, or a chat-only answer.

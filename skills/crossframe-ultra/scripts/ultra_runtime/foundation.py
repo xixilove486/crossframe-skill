@@ -12,6 +12,7 @@ from .constants import current_version_binding
 from .host_handshake import (
     HostActionSeal,
     HostResultSeal,
+    _load_bound_result_document,
     _seal_action,
     _seal_result,
     issue_host_action,
@@ -691,35 +692,9 @@ def _load_accepted_capability_result(
     if raw != canonical_json_bytes(document):
         raise FoundationInputError("accepted capability result is not canonical")
     try:
-        validate_instance("ultra-host-result-receipt.schema.json", document)
+        return _seal_result(layout, action=action, receipt=document)
     except Exception as error:
         raise FoundationInputError("accepted capability result receipt is invalid") from error
-    supplied = document.get("receipt_sha256")
-    payload = copy.deepcopy(document)
-    payload.pop("receipt_sha256", None)
-    if supplied != sha256_bytes(canonical_json_bytes(payload)):
-        raise FoundationInputError("accepted capability result receipt hash differs")
-    action_fields = (
-        "run_id",
-        "version_binding",
-        "phase_id",
-        "action_kind",
-        "parent_event_sha256",
-        "request_sha256",
-        "result_relative_path",
-    )
-    if (
-        document.get("action_sha256") != action.action_sha256
-        or any(document.get(field) != action.document.get(field) for field in action_fields)
-    ):
-        raise FoundationInputError("accepted capability result authority differs")
-    try:
-        result_bytes = action.result_path.read_bytes()
-    except OSError as error:
-        raise FoundationInputError("accepted host capability result is unavailable") from error
-    if document.get("result_sha256") != sha256_bytes(result_bytes):
-        raise FoundationInputError("accepted host capability result hash differs")
-    return HostResultSeal(document, str(supplied), action.action_sha256)
 
 
 def _build_capability_attestation(
@@ -728,15 +703,20 @@ def _build_capability_attestation(
     action: HostActionSeal,
     result: HostResultSeal,
     profile: RequestProfile | None,
+    result_document: Mapping[str, object] | None = None,
 ) -> HostCapabilitySeal:
-    try:
-        result_raw = action.result_path.read_bytes()
-        result_document = load_json_object_bytes(
-            result_raw,
-            source=str(action.result_path),
-        )
-    except (OSError, TypeError, ValueError) as error:
-        raise FoundationInputError("host capability result is invalid JSON") from error
+    if result_document is None:
+        try:
+            result_document, result_raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=result.document,
+            )
+        except Exception as error:
+            raise FoundationInputError("host capability result is invalid JSON") from error
+    else:
+        result_document = copy.deepcopy(dict(result_document))
+        result_raw = canonical_json_bytes(result_document)
     expected_result_fields = {
         "measured_availability",
         "providers",
@@ -1771,6 +1751,7 @@ def _advance_u1(
                     action=action,
                     repo=repo,
                     manifest=manifest,
+                    layout=layout,
                 )
         except Exception as error:
             raise FoundationInputError("accepted U1 host read receipt is invalid") from error
@@ -2164,16 +2145,24 @@ def _validate_host_evidence_result_for_acceptance(
     *,
     action: HostActionSeal,
     result: HostResultSeal,
+    result_document: Mapping[str, object] | None = None,
 ) -> None:
     from . import evidence
 
-    try:
-        raw = action.result_path.read_bytes()
-        document = load_json_object_bytes(raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
-        raise FoundationInputError(
-            "U3 evidence authoring result is unavailable"
-        ) from error
+    if result_document is None:
+        try:
+            document, raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=result.document,
+            )
+        except Exception as error:
+            raise FoundationInputError(
+                "U3 evidence authoring result is unavailable"
+            ) from error
+    else:
+        document = copy.deepcopy(dict(result_document))
+        raw = canonical_json_bytes(document)
     if raw != canonical_json_bytes(document):
         raise FoundationInputError(
             "U3 evidence authoring result is not canonical"
@@ -2391,9 +2380,12 @@ def _complete_u3_from_host_result(
     lease: object | None = None,
 ):
     try:
-        raw = action.result_path.read_bytes()
-        document = load_json_object_bytes(raw, source=str(action.result_path))
-    except (OSError, TypeError, ValueError) as error:
+        document, raw = _load_bound_result_document(
+            layout,
+            action=action,
+            receipt=result.document,
+        )
+    except Exception as error:
         raise FoundationInputError("U3 evidence authoring result is unavailable") from error
     if raw != canonical_json_bytes(document):
         raise FoundationInputError("U3 evidence authoring result is not canonical")
