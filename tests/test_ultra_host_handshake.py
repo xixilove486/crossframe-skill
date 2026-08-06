@@ -470,6 +470,142 @@ def test_pending_host_action_round_trip_is_parent_bound_and_replay_safe(
     assert len(tuple(attempts_dir.glob("*-rejected.json"))) == 1
 
 
+def test_matching_retry_finishes_pending_cleanup_after_unlink_crash(
+    runtime,
+    run_layout,
+    monkeypatch,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-unlink-recovery",
+    )
+    pending_path = run_layout.recovery_dir / "pending-action.json"
+    real_unlink = Path.unlink
+
+    def crash_pending_unlink(path: Path, *args, **kwargs):
+        if path == pending_path:
+            raise OSError("injected pending unlink crash")
+        return real_unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as crash:
+        crash.setattr(Path, "unlink", crash_pending_unlink)
+        with pytest.raises(
+            host_handshake.HostHandshakeError,
+            match="injected pending unlink crash",
+        ):
+            host_handshake.accept_host_result(
+                run_layout,
+                action=action,
+                receipt=receipt,
+            )
+
+    action_dir = (
+        run_layout.recovery_dir / "host-results" / action.action_sha256
+    )
+    assert pending_path.exists()
+    assert (action_dir / "accepted-result.json").exists()
+    assert (action_dir / "accepted.json").exists()
+
+    mismatched = copy.deepcopy(receipt)
+    mismatched["execution_id"] = "host-exec-replay"
+    mismatched.pop("receipt_sha256")
+    mismatched["receipt_sha256"] = _canonical_sha256(mismatched)
+    with pytest.raises(
+        host_handshake.HostHandshakeError,
+        match="accepted|differs|replay|authority|result",
+    ):
+        host_handshake.accept_host_result(
+            run_layout,
+            action=action,
+            receipt=mismatched,
+        )
+    assert pending_path.exists()
+
+    recovered = host_handshake.accept_host_result(
+        run_layout,
+        action=action,
+        receipt=receipt,
+    )
+
+    assert recovered.document == receipt
+    assert not pending_path.exists()
+
+
+def test_matching_retry_finishes_receipt_commit_from_accepted_snapshot(
+    runtime,
+    run_layout,
+    monkeypatch,
+) -> None:
+    host_handshake, _, jsonio, constants = runtime
+    action = _issue(host_handshake, run_layout)
+    receipt = _write_result_for(
+        action,
+        jsonio,
+        constants,
+        execution_id="host-exec-receipt-recovery",
+    )
+    real_write_immutable_bytes = host_handshake._write_immutable_bytes
+
+    def crash_accepted_receipt_write(path: Path, raw: bytes, *, label: str):
+        if path.name == "accepted.json":
+            raise OSError("injected accepted receipt write crash")
+        return real_write_immutable_bytes(path, raw, label=label)
+
+    with monkeypatch.context() as crash:
+        crash.setattr(
+            host_handshake,
+            "_write_immutable_bytes",
+            crash_accepted_receipt_write,
+        )
+        with pytest.raises(
+            host_handshake.HostHandshakeError,
+            match="injected accepted receipt write crash",
+        ):
+            host_handshake.accept_host_result(
+                run_layout,
+                action=action,
+                receipt=receipt,
+            )
+
+    action_dir = (
+        run_layout.recovery_dir / "host-results" / action.action_sha256
+    )
+    pending_path = run_layout.recovery_dir / "pending-action.json"
+    assert pending_path.exists()
+    assert (action_dir / "accepted-result.json").exists()
+    assert not (action_dir / "accepted.json").exists()
+    action.result_path.unlink()
+
+    mismatched = copy.deepcopy(receipt)
+    mismatched["completed_at"] = "2026-08-05T12:00:02Z"
+    mismatched.pop("receipt_sha256")
+    mismatched["receipt_sha256"] = _canonical_sha256(mismatched)
+    with pytest.raises(
+        host_handshake.HostHandshakeError,
+        match="matching submitted receipt|snapshot|receipt",
+    ):
+        host_handshake.accept_host_result(
+            run_layout,
+            action=action,
+            receipt=mismatched,
+        )
+    assert pending_path.exists()
+
+    recovered = host_handshake.accept_host_result(
+        run_layout,
+        action=action,
+        receipt=receipt,
+    )
+
+    assert recovered.document == receipt
+    assert (action_dir / "accepted.json").exists()
+    assert not pending_path.exists()
+
+
 @pytest.mark.parametrize("mutation", ["run", "request", "parent", "slot", "hash"])
 def test_host_result_cannot_select_or_reseal_its_authority(
     runtime, run_layout, mutation: str

@@ -385,6 +385,40 @@ def _next_attempt_id(attempts_dir: Path) -> str:
     return f"{highest + 1:06d}"
 
 
+def _require_matching_prior_submitted_receipt(
+    attempts_dir: Path,
+    *,
+    receipt: Mapping[str, object],
+    current_attempt_id: str,
+) -> None:
+    expected = canonical_json_bytes(dict(receipt))
+    try:
+        prior_paths = sorted(attempts_dir.glob("*-submitted.json"))
+    except OSError as error:
+        raise HostHandshakeError(
+            "accepted host result snapshot attempts are unavailable"
+        ) from error
+    for path in prior_paths:
+        if path.name == f"{current_attempt_id}-submitted.json":
+            continue
+        try:
+            raw = path.read_bytes()
+            document = load_json_object_bytes(raw, source=str(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise HostHandshakeError(
+                "accepted host result snapshot attempt is unreadable"
+            ) from error
+        if raw != canonical_json_bytes(document):
+            raise HostHandshakeError(
+                "accepted host result snapshot attempt is not canonical"
+            )
+        if raw == expected:
+            return
+    raise HostHandshakeError(
+        "accepted host result snapshot has no matching submitted receipt"
+    )
+
+
 def _load_bound_result_document(
     layout: RunLayout,
     *,
@@ -392,6 +426,7 @@ def _load_bound_result_document(
     receipt: Mapping[str, object],
 ) -> tuple[dict[str, object], bytes]:
     accepted_path = _accepted_path(layout, action.action_sha256)
+    accepted_result_path = _accepted_result_path(layout, action.action_sha256)
     if accepted_path.exists():
         try:
             accepted_raw = accepted_path.read_bytes()
@@ -406,7 +441,10 @@ def _load_bound_result_document(
             or accepted != dict(receipt)
         ):
             raise HostHandshakeError("accepted host result receipt differs")
-        result_path = _accepted_result_path(layout, action.action_sha256)
+        result_path = accepted_result_path
+        unavailable = "accepted host result snapshot is unavailable"
+    elif accepted_result_path.exists():
+        result_path = accepted_result_path
         unavailable = "accepted host result snapshot is unavailable"
     else:
         result_path = action.result_path
@@ -637,7 +675,11 @@ def _complete_unlocked(
         result_bytes,
         label="accepted host result snapshot",
     )
-    _write_immutable(accepted_path, result.document, label="accepted host result")
+    _write_immutable_bytes(
+        accepted_path,
+        canonical_json_bytes(result.document),
+        label="accepted host result",
+    )
     _pending_path(layout).unlink()
 
 
@@ -672,9 +714,14 @@ def complete_host_action(
             )
             try:
                 _require_open_host_action_boundary(layout)
-                if _accepted_path(layout, action.action_sha256).exists():
-                    raise HostHandshakeError(
-                        "host action is completed; result replay rejected"
+                if (
+                    _accepted_result_path(layout, action.action_sha256).exists()
+                    and not _accepted_path(layout, action.action_sha256).exists()
+                ):
+                    _require_matching_prior_submitted_receipt(
+                        attempts_dir,
+                        receipt=document,
+                        current_attempt_id=attempt_id,
                     )
                 validated_result, result_bytes = _seal_result_with_bytes(
                     layout,
@@ -733,10 +780,6 @@ def accept_host_result(
             )
             try:
                 _require_open_host_action_boundary(layout)
-                if _accepted_path(layout, action.action_sha256).exists():
-                    raise HostHandshakeError(
-                        "host action is completed; result replay rejected"
-                    )
                 pending = _load_pending_unlocked(layout)
                 if pending is None:
                     raise HostHandshakeError(
@@ -745,6 +788,15 @@ def accept_host_result(
                 if pending != action:
                     raise HostHandshakeError(
                         "supplied host action authority differs from pending action"
+                    )
+                if (
+                    _accepted_result_path(layout, action.action_sha256).exists()
+                    and not _accepted_path(layout, action.action_sha256).exists()
+                ):
+                    _require_matching_prior_submitted_receipt(
+                        attempts_dir,
+                        receipt=document,
+                        current_attempt_id=attempt_id,
                     )
                 result, result_bytes = _seal_result_with_bytes(
                     layout,

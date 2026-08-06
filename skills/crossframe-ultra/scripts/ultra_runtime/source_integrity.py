@@ -44,6 +44,7 @@ from .paths import (
     RunLayout,
     RunMode,
     RootPolicy,
+    _parse_canonical_utc,
     assert_safe_descendant,
     build_run_layout,
 )
@@ -2215,8 +2216,31 @@ def validate_host_read_receipt(
         or result.get("execution_id") != document.get("execution_id")
     ):
         raise SourceCoverageError("host execution or reader mode differs from action receipt")
-    _parse_read_timestamp(result.get("read_at"))
-    _parse_read_timestamp(document.get("completed_at"))
+    try:
+        issued_at = _parse_canonical_utc(
+            action.document.get("issued_at"),
+            "host action issued_at",
+        )
+        read_at = _parse_canonical_utc(
+            result.get("read_at"),
+            "host source-read read_at",
+        )
+        completed_at = _parse_canonical_utc(
+            document.get("completed_at"),
+            "host result completed_at",
+        )
+        expires_at = _parse_canonical_utc(
+            action.document.get("expires_at"),
+            "host action expires_at",
+        )
+    except (TypeError, ValueError) as error:
+        raise SourceCoverageError(
+            f"host source-read timestamp is invalid: {error}"
+        ) from error
+    if not issued_at <= read_at <= completed_at <= expires_at:
+        raise SourceCoverageError(
+            "host source-read read_at is outside its action completion window"
+        )
     requested = payload.get("source_units")
     items = result.get("items")
     if (

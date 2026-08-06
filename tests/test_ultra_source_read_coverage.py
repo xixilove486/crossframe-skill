@@ -602,6 +602,40 @@ def _task3_host_read_receipt(
     return module, snapshot, layout, action, receipt
 
 
+def _rewrite_task3_host_read_timestamps(
+    action,
+    receipt: dict[str, object],
+    *,
+    read_at: str,
+    completed_at: str,
+) -> dict[str, object]:
+    from ultra_runtime import jsonio
+
+    result = jsonio.load_json_object(action.result_path)
+    result["read_at"] = read_at
+    result["items"] = [
+        _task3_read_item(
+            action_sha256=action.action_sha256,
+            read_plan_sha256=str(result["read_plan_sha256"]),
+            reader_mode=str(result["reader_mode"]),
+            execution_id=str(result["execution_id"]),
+            read_at=read_at,
+            source_unit_id=str(item["source_unit_id"]),
+            source_unit_sha256=str(item["source_unit_sha256"]),
+        )
+        for item in result["items"]
+    ]
+    jsonio.atomic_write_json(action.result_path, result)
+    updated = copy.deepcopy(receipt)
+    updated["result_sha256"] = hashlib.sha256(
+        action.result_path.read_bytes()
+    ).hexdigest()
+    updated["completed_at"] = completed_at
+    updated.pop("receipt_sha256")
+    updated["receipt_sha256"] = hashlib.sha256(_canonical(updated)).hexdigest()
+    return updated
+
+
 def test_invalid_source_read_result_is_rejected_before_pending_is_consumed(
     tmp_path: Path,
 ) -> None:
@@ -669,6 +703,101 @@ def test_valid_source_read_result_is_accepted_after_action_specific_validation(
     ):
         foundation._load_accepted_u1_result(layout, action)
     assert accepted_result_bytes != accepted_result_path.read_bytes()
+
+
+def test_host_source_read_rejects_read_at_after_action_window(
+    tmp_path: Path,
+) -> None:
+    from ultra_runtime import host_handshake
+
+    _, _, layout, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-future-read",
+        mutation="none",
+    )
+    receipt = _rewrite_task3_host_read_timestamps(
+        action,
+        receipt,
+        read_at="2099-01-01T00:00:00Z",
+        completed_at="2026-08-02T00:00:02Z",
+    )
+
+    with pytest.raises(
+        host_handshake.HostHandshakeError,
+        match="read|timestamp|issued|completed|expiry|window",
+    ):
+        host_handshake.accept_host_result(
+            layout,
+            action=action,
+            receipt=receipt,
+        )
+    assert host_handshake.load_pending_action(layout) == action
+
+
+def test_host_source_read_rejects_read_at_before_action_issued(
+    tmp_path: Path,
+) -> None:
+    from ultra_runtime import host_handshake
+
+    _, _, layout, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-early-read",
+        mutation="none",
+    )
+    receipt = _rewrite_task3_host_read_timestamps(
+        action,
+        receipt,
+        read_at="2026-08-01T23:59:59.999999Z",
+        completed_at="2026-08-02T00:00:00.000001Z",
+    )
+
+    with pytest.raises(
+        host_handshake.HostHandshakeError,
+        match="read|timestamp|issued|completed|expiry|window",
+    ):
+        host_handshake.accept_host_result(
+            layout,
+            action=action,
+            receipt=receipt,
+        )
+    assert host_handshake.load_pending_action(layout) == action
+
+
+@pytest.mark.parametrize(
+    ("read_at", "completed_at"),
+    (
+        ("2026-08-02T00:00:00Z", "2026-08-02T00:00:00.000001Z"),
+        ("2026-08-02T00:00:00.000001Z", "2026-08-02T00:00:00.000001Z"),
+        ("2026-08-02T00:29:59.999999Z", "2026-08-02T00:30:00Z"),
+    ),
+)
+def test_host_source_read_accepts_closed_microsecond_boundaries(
+    tmp_path: Path,
+    read_at: str,
+    completed_at: str,
+) -> None:
+    from ultra_runtime import host_handshake
+
+    _, _, layout, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-boundary",
+        mutation="none",
+    )
+    receipt = _rewrite_task3_host_read_timestamps(
+        action,
+        receipt,
+        read_at=read_at,
+        completed_at=completed_at,
+    )
+
+    accepted = host_handshake.accept_host_result(
+        layout,
+        action=action,
+        receipt=receipt,
+    )
+
+    assert accepted.document == receipt
+    assert host_handshake.load_pending_action(layout) is None
 
 
 @pytest.mark.parametrize(
