@@ -946,6 +946,18 @@ def _load_evidence_lineage_request(
         if relative in paths or measured != ref.get("sha256"):
             raise FoundationInputError("evidence lineage input ref binding differs")
         paths.add(relative)
+    from . import recovery
+
+    try:
+        recovery._validate_evidence_fork_authority(
+            layout,
+            lineage_request=request,
+            lineage_request_bytes=raw,
+        )
+    except recovery.RecoveryError as error:
+        raise FoundationInputError(
+            "evidence lineage fork authority differs"
+        ) from error
     return request, raw
 
 
@@ -1219,6 +1231,7 @@ def advance_u0(
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
         raise ValueError("repo must be an existing pathlib.Path directory")
     _require_utc(now, "now")
+    _load_evidence_lineage_request(layout)
     profile = load_request_profile(layout)
     request_sha256 = _request_sha256(layout)
     pending = load_pending_action(layout)
@@ -1876,14 +1889,14 @@ def advance_foundation(
         events = phase_store.events
         if not events or not isinstance(events[-1], Mapping):
             raise FoundationInputError("U0 phase event authority is unavailable")
-        validate_evidence_lineage_admission(
+        _finalize_evidence_lineage(
             layout,
             request_sha256=str(phase_store.run_contract["request_sha256"]),
             capability_attestation_sha256=str(
                 phase_store.run_contract["capability_attestation_sha256"]
             ),
-            run_contract_sha256=phase_store.run_contract_artifact_sha256,
-            u0_event=events[-1],
+            phase_store=phase_store,
+            now=now,
         )
         u1 = _advance_u1(
             layout,

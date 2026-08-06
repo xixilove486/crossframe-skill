@@ -640,6 +640,11 @@ def stubbed_disk_authority(
         "_validate_checkpoint",
         lambda _layout, checkpoint, **_kwargs: dict(checkpoint),
     )
+    monkeypatch.setattr(
+        modules.recovery,
+        "_validate_evidence_fork_authority",
+        lambda _layout, **_kwargs: {},
+    )
 
     manifest_artifacts = [
         {

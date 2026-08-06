@@ -1408,6 +1408,7 @@ def test_evidence_fork_preserves_parent_and_reopens_child_at_u0(tmp_path) -> Non
     from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
     from ultra_runtime import jsonio, recovery
     from ultra_runtime.paths import RootPolicy, RunMode
+    from ultra_runtime.status import RunStatusStore
 
     parent_layout, _ = _prepare_attempt(tmp_path / "parent")
     evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
@@ -1455,10 +1456,170 @@ def test_evidence_fork_preserves_parent_and_reopens_child_at_u0(tmp_path) -> Non
     assert lineage["parent_u3_event_sha256"] == events[-1]["event_sha256"]
     assert lineage["parent_evidence_sha256"] == evidence_sha256
     assert lineage["new_evidence_ref"]["path"] == "input/new-evidence.bin"
+    fork_authority_path = (
+        child.layout.input_dir
+        / f"evidence-lineage-fork-authority-{child.run_id}.json"
+    )
+    fork_authority = jsonio.load_json_object(fork_authority_path)
+    assert fork_authority["lineage_request_sha256"] == hashlib.sha256(
+        (child.layout.recovery_dir / "evidence-lineage-request.json").read_bytes()
+    ).hexdigest()
+    assert fork_authority["parent_u3_event_sha256"] == events[-1]["event_sha256"]
+    assert RunStatusStore(child.layout).read().fork_authority_sha256 == (
+        hashlib.sha256(fork_authority_path.read_bytes()).hexdigest()
+    )
     recovery.validate_instance("ultra-evidence-lineage.schema.json", lineage)
 
 
-def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
+def test_evidence_fork_rejects_rehashed_pending_parent_provenance(
+    tmp_path,
+) -> None:
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from ultra_runtime import foundation, jsonio, recovery, schemas
+    from ultra_runtime.paths import RootPolicy, RunMode
+
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    child = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=RunMode.TEST,
+        policy=RootPolicy(
+            tmp_path / "children-production",
+            tmp_path / "children-test",
+        ),
+        evidence_bytes=b"new admitted evidence candidate\n",
+        now=NOW + timedelta(days=1),
+        entropy=b"evidence-child-forged-parent",
+    )
+    request_path = child.layout.recovery_dir / "evidence-lineage-request.json"
+    forged = jsonio.load_json_object(request_path)
+    forged.update(
+        {
+            "parent_run_id": "20260803T000000Z-abcdef123456",
+            "parent_u3_event_sha256": "c" * 64,
+            "parent_evidence_sha256": "d" * 64,
+        }
+    )
+    forged["content_sha256"] = schemas.compute_artifact_content_sha256(forged)
+    jsonio.atomic_write_json(request_path, forged)
+    request_sha256 = hashlib.sha256(
+        (child.layout.input_dir / "request.bin").read_bytes()
+    ).hexdigest()
+    jsonio.atomic_write_json(
+        child.layout.input_dir / "request-metadata.json",
+        {
+            "request_sha256": request_sha256,
+            "request_size": (child.layout.input_dir / "request.bin").stat().st_size,
+        },
+    )
+    foundation.seal_input_inventory(
+        child.layout,
+        request_sha256=request_sha256,
+        material_files=(),
+        now=NOW + timedelta(days=1),
+    )
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="evidence lineage fork authority",
+    ):
+        foundation.advance_u0(
+            child.layout,
+            repo=ROOT,
+            now=NOW + timedelta(days=1, seconds=1),
+        )
+
+
+def test_evidence_fork_identity_rejects_resealed_other_parent_root(
+    tmp_path,
+) -> None:
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from ultra_runtime import foundation, jsonio, recovery, schemas
+    from ultra_runtime.paths import RootPolicy, RunMode
+
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    other_parent_layout, _ = _prepare_attempt(tmp_path / "other-parent")
+    other_evidence_path = (
+        other_parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    )
+    other_evidence_sha256 = hashlib.sha256(
+        other_evidence_path.read_bytes()
+    ).hexdigest()
+    _write_recovery_chain(
+        other_parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (other_evidence_sha256,)},
+    )
+    child = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=RunMode.TEST,
+        policy=RootPolicy(
+            tmp_path / "children-production",
+            tmp_path / "children-test",
+        ),
+        evidence_bytes=b"new admitted evidence candidate\n",
+        now=NOW + timedelta(days=1),
+        entropy=b"evidence-child-resealed-anchor",
+    )
+    fork_authority_path = (
+        child.layout.input_dir
+        / f"evidence-lineage-fork-authority-{child.run_id}.json"
+    )
+    fork_authority = jsonio.load_json_object(fork_authority_path)
+    fork_authority["parent_root"] = str(other_parent_layout.root)
+    fork_authority["content_sha256"] = schemas.compute_artifact_content_sha256(
+        fork_authority
+    )
+    jsonio.atomic_write_json(fork_authority_path, fork_authority)
+    status_path = child.layout.run_dir / "run-status.json"
+    status = jsonio.load_json_object(status_path)
+    status["fork_authority_sha256"] = hashlib.sha256(
+        fork_authority_path.read_bytes()
+    ).hexdigest()
+    status["content_sha256"] = schemas.compute_artifact_content_sha256(status)
+    jsonio.atomic_write_json(status_path, status)
+    request_sha256 = hashlib.sha256(
+        (child.layout.input_dir / "request.bin").read_bytes()
+    ).hexdigest()
+    jsonio.atomic_write_json(
+        child.layout.input_dir / "request-metadata.json",
+        {
+            "request_sha256": request_sha256,
+            "request_size": (child.layout.input_dir / "request.bin").stat().st_size,
+        },
+    )
+    foundation.seal_input_inventory(
+        child.layout,
+        request_sha256=request_sha256,
+        material_files=(),
+        now=NOW + timedelta(days=1),
+    )
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="evidence lineage fork authority",
+    ):
+        foundation.advance_u0(
+            child.layout,
+            repo=ROOT,
+            now=NOW + timedelta(days=1, seconds=1),
+        )
+
+
+def test_evidence_fork_recovers_lineage_finalization_after_u0_checkpoint(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -1511,6 +1672,10 @@ def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
         child.layout.artifacts_dir
         / "U00-U03-evidence/U00-evidence-lineage.json"
     )
+    fork_authority_path = (
+        child.layout.input_dir
+        / f"evidence-lineage-fork-authority-{child.run_id}.json"
+    )
 
     authority_repo = tmp_path / "authority-repo"
     skill_root = authority_repo / "skills/crossframe-ultra"
@@ -1544,14 +1709,61 @@ def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
         completed_at="2026-08-05T00:00:02Z",
     )
 
-    completed = foundation.advance_u0(
-        child.layout,
-        repo=authority_repo,
-        now=forked_at + timedelta(seconds=3),
+    original_atomic_write_bytes = foundation.atomic_write_bytes
+    injected = False
+
+    def fail_first_finalized_lineage_write(path, payload):
+        nonlocal injected
+        if path == finalized_path and not injected:
+            injected = True
+            raise OSError("injected lineage write crash")
+        return original_atomic_write_bytes(path, payload)
+
+    monkeypatch.setattr(
+        foundation,
+        "atomic_write_bytes",
+        fail_first_finalized_lineage_write,
+    )
+    with pytest.raises(OSError, match="injected lineage write crash"):
+        foundation.advance_u0(
+            child.layout,
+            repo=authority_repo,
+            now=forked_at + timedelta(seconds=3),
+        )
+
+    assert recovery.load_checkpoints(child.layout)[-1]["phase_id"] == "U0"
+    assert not finalized_path.exists()
+    monkeypatch.setattr(
+        foundation,
+        "atomic_write_bytes",
+        original_atomic_write_bytes,
     )
 
-    assert completed.outcome == "advanced"
-    assert completed.completed_phase == "U0"
+    completed = foundation.advance_foundation(
+        child.layout,
+        repo=authority_repo,
+        now=forked_at + timedelta(seconds=4),
+    )
+
+    assert completed.outcome == "awaiting-host-action"
+    assert completed.pending_action is not None
+    assert completed.pending_action.document["phase_id"] == "U1"
+    assert completed.pending_action.document["action_kind"] == "source-read"
+    assert completed.phase_store is not None
+    fork_authority_sha256 = hashlib.sha256(
+        fork_authority_path.read_bytes()
+    ).hexdigest()
+    assert fork_authority_sha256 in completed.phase_store.events[-1][
+        "input_artifact_hashes"
+    ]
+    child_run_authority = jsonio.load_json_object(
+        child.layout.recovery_dir / "run-authority.json"
+    )
+    assert {
+        "path": fork_authority_path.relative_to(child.layout.run_dir).as_posix(),
+        "sha256": fork_authority_sha256,
+        "media_type": "application/json",
+    } in child_run_authority["input_refs"]
     assert request_path.read_bytes() == pending_bytes
     finalized = jsonio.load_json_object(finalized_path)
     pending = jsonio.load_json_object(request_path)
@@ -1588,7 +1800,7 @@ def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
         child.layout,
         phase_chain_head_sha256=completed.phase_store.events[-1]["event_sha256"],
         validator_set_sha256="a" * 64,
-        generated_at=forked_at + timedelta(seconds=3),
+        generated_at=forked_at + timedelta(seconds=4),
     )
     assert next(
         record
@@ -1601,19 +1813,26 @@ def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
         for phase in range(4, 13)
         for value in finalized.values()
     )
-    finalized_path.unlink()
+    assert (child.layout.recovery_dir / "u1-authority").is_dir()
+    evidence_path.write_bytes(b"tampered parent evidence\n")
 
     with pytest.raises(
         foundation.FoundationInputError,
-        match="finalized evidence lineage",
+        match="evidence lineage fork authority",
     ):
-        foundation.advance_foundation(
+        foundation.validate_evidence_lineage_admission(
             child.layout,
-            repo=authority_repo,
-            now=forked_at + timedelta(seconds=4),
+            request_sha256=str(
+                completed.phase_store.run_contract["request_sha256"]
+            ),
+            capability_attestation_sha256=str(
+                completed.phase_store.run_contract[
+                    "capability_attestation_sha256"
+                ]
+            ),
+            run_contract_sha256=completed.phase_store.run_contract_artifact_sha256,
+            u0_event=completed.phase_store.events[-1],
         )
-
-    assert not (child.layout.recovery_dir / "u1-authority").exists()
 
 
 def test_evidence_fork_does_not_overwrite_inherited_prior_evidence(tmp_path) -> None:

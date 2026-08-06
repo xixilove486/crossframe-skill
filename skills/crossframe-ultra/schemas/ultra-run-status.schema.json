@@ -10,6 +10,7 @@
       "required": ["status", "previous_status", "current_phase", "last_complete_phase", "reason", "tools_allowed", "validation_passed", "updated_at", "created_at", "revision"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.run-status"},
+        "fork_authority_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "status": {"$ref": "ultra-common.schema.json#/$defs/runStatus"},
         "previous_status": {
           "oneOf": [

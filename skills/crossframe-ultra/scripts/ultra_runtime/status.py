@@ -79,6 +79,7 @@ class RunStatusRecord:
     version_binding: Mapping[str, object]
     generated_at: str
     content_sha256: str
+    fork_authority_sha256: str | None
     phase_id: str
     status: str
     previous_status: str | None
@@ -113,6 +114,7 @@ _STATUS_FIELDS = frozenset(
         "revision",
     }
 )
+_STATUS_OPTIONAL_FIELDS = frozenset({"fork_authority_sha256"})
 
 
 def _iso_utc(value: datetime) -> str:
@@ -133,7 +135,7 @@ def _parse_utc(value: object, field: str) -> datetime:
 
 
 def _record_to_object(record: RunStatusRecord) -> dict[str, object]:
-    return {
+    value: dict[str, object] = {
         "schema_id": record.schema_id,
         "schema_version": record.schema_version,
         "run_id": record.run_id,
@@ -152,13 +154,17 @@ def _record_to_object(record: RunStatusRecord) -> dict[str, object]:
         "created_at": record.created_at,
         "revision": record.revision,
     }
+    if record.fork_authority_sha256 is not None:
+        value["fork_authority_sha256"] = record.fork_authority_sha256
+    return value
 
 
 def _record_from_object(
     value: dict[str, object], expected_run_id: str
 ) -> RunStatusRecord:
-    if set(value) != _STATUS_FIELDS:
-        unexpected = sorted(set(value) - _STATUS_FIELDS)
+    allowed_fields = _STATUS_FIELDS | _STATUS_OPTIONAL_FIELDS
+    if not _STATUS_FIELDS.issubset(value) or set(value) - allowed_fields:
+        unexpected = sorted(set(value) - allowed_fields)
         missing = sorted(_STATUS_FIELDS - set(value))
         raise ValueError(
             f"run status must be a closed object; unexpected={unexpected}, missing={missing}"
@@ -200,6 +206,11 @@ def _record_from_object(
         version_binding=MappingProxyType(dict(snapshot["version_binding"])),
         generated_at=str(snapshot["generated_at"]),
         content_sha256=str(snapshot["content_sha256"]),
+        fork_authority_sha256=(
+            None
+            if snapshot.get("fork_authority_sha256") is None
+            else str(snapshot["fork_authority_sha256"])
+        ),
         phase_id=str(snapshot["phase_id"]),
         status=str(snapshot["status"]),
         previous_status=(
@@ -238,6 +249,7 @@ def _make_record(
     created_at: str,
     updated_at: str,
     revision: int,
+    fork_authority_sha256: str | None = None,
 ) -> RunStatusRecord:
     value: dict[str, object] = {
         "schema_id": _RUN_STATUS_SCHEMA_ID,
@@ -258,6 +270,8 @@ def _make_record(
         "created_at": created_at,
         "revision": revision,
     }
+    if fork_authority_sha256 is not None:
+        value["fork_authority_sha256"] = fork_authority_sha256
     value["content_sha256"] = compute_artifact_content_sha256(value)
     return _record_from_object(value, run_id)
 
@@ -287,8 +301,22 @@ class RunStatusStore:
         value = load_json_object(self.path)
         return _record_from_object(value, self.layout.run_dir.name)
 
-    def create(self, now: datetime) -> RunStatusRecord:
+    def create(
+        self,
+        now: datetime,
+        *,
+        fork_authority_sha256: str | None = None,
+    ) -> RunStatusRecord:
         _require_utc(now, "now")
+        if fork_authority_sha256 is not None and (
+            not isinstance(fork_authority_sha256, str)
+            or len(fork_authority_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in fork_authority_sha256
+            )
+        ):
+            raise ValueError("fork authority SHA-256 must be lowercase hexadecimal")
         self._assert_paths_safe()
         timestamp = _iso_utc(now)
         record = _make_record(
@@ -302,6 +330,7 @@ class RunStatusStore:
             created_at=timestamp,
             updated_at=timestamp,
             revision=0,
+            fork_authority_sha256=fork_authority_sha256,
         )
         with _exclusive_path_lock(self.authority_lock_path):
             self._assert_paths_safe()
@@ -350,6 +379,7 @@ class RunStatusStore:
             or replacement.run_id != expected.run_id
             or replacement.version_binding != expected.version_binding
             or replacement.created_at != expected.created_at
+            or replacement.fork_authority_sha256 != expected.fork_authority_sha256
         ):
             raise RunStatusTransitionError(
                 "schema, run, version, and created_at authority are immutable"
@@ -479,6 +509,7 @@ class RunStatusStore:
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
         )
         return self.replace(expected, replacement, lease=lease)
 
@@ -542,6 +573,7 @@ class RunStatusStore:
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
         )
         return self._replace(
             expected,
@@ -578,6 +610,7 @@ class RunStatusStore:
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
         )
         if lease is not None:
             return self._replace(

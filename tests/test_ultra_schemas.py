@@ -2494,6 +2494,18 @@ def test_run_status_schema_closes_created_complete_and_cancelled_invariants() ->
         runtime.validate_instance("ultra-run-status.schema.json", cancelled)
 
 
+def test_run_status_schema_accepts_only_canonical_fork_authority_hash() -> None:
+    runtime = load_runtime()
+    anchored = copy.deepcopy(minimal_instances()["ultra-run-status.schema.json"])
+    anchored["fork_authority_sha256"] = HASH_A
+
+    runtime.validate_instance("ultra-run-status.schema.json", anchored)
+
+    anchored["fork_authority_sha256"] = "A" * 64
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-run-status.schema.json", anchored)
+
+
 def test_recovery_checkpoint_schema_distinguishes_phase_and_packet_boundaries() -> None:
     runtime = load_runtime()
     phase = copy.deepcopy(

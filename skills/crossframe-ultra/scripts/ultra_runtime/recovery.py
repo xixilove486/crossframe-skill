@@ -36,6 +36,8 @@ from .locks import (
     require_run_lease_owner,
 )
 from .paths import (
+    PRODUCTION_ROOT,
+    TEST_ROOT,
     RunLayout,
     RunMode,
     RootPolicy,
@@ -73,6 +75,7 @@ _U1_SOURCE_LOCK_PATH = Path("recovery/u1-authority/source-lock.json")
 _U1_SOURCE_COVERAGE_PATH = Path("recovery/u1-authority/source-coverage.json")
 _U1_READ_PLAN_PATH = Path("recovery/u1-authority/read-plan.json")
 _U1_READ_EVENTS_PATH = Path("artifacts/U00-U03-evidence/ultra-read-events.jsonl")
+_EVIDENCE_FORK_AUTHORITY_PREFIX = "evidence-lineage-fork-authority"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}")
 _AUTHORITY_FIELDS = frozenset(
@@ -131,6 +134,27 @@ _EVENT_FIELDS = frozenset(
         "failure_code",
         "invalidated_phases",
         "event_sha256",
+    }
+)
+_EVIDENCE_FORK_AUTHORITY_FIELDS = frozenset(
+    {
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "version_binding",
+        "generated_at",
+        "content_sha256",
+        "phase_id",
+        "fork_entropy_sha256",
+        "lineage_request_sha256",
+        "parent_root",
+        "parent_mode",
+        "parent_run_id",
+        "parent_run_authority_sha256",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+        "status",
     }
 )
 _REPAIR_EVENT_EXTRA_FIELDS = frozenset(
@@ -2185,6 +2209,215 @@ def _active_completed_events(
     return generation, tuple(active)
 
 
+def _verified_evidence_parent(
+    parent_layout: RunLayout,
+) -> tuple[dict[str, object], dict[str, object], str, str]:
+    authority, compatibility = _validate_authority(parent_layout)
+    if compatibility != "resume":
+        raise RecoveryCompatibilityError(
+            "new evidence fork requires an exact current parent"
+        )
+    events = _read_events(parent_layout, authority, compatibility=compatibility)
+    _, active = _active_completed_events(events)
+    if len(active) <= PHASES.index("U3") or active[3].get("phase_id") != "U3":
+        raise RecoveryStateError("new evidence fork requires a frozen active U3")
+    u3_event = active[3]
+    outputs = u3_event.get("output_artifact_hashes")
+    if not isinstance(outputs, list) or len(outputs) != 1 or not _is_sha256(outputs[0]):
+        raise RecoveryIntegrityError("active U3 evidence authority is invalid")
+    parent_evidence_sha256 = str(outputs[0])
+    evidence_matches = []
+    try:
+        for candidate in parent_layout.artifacts_dir.rglob("*"):
+            if (
+                candidate.is_file()
+                and sha256_bytes(candidate.read_bytes()) == parent_evidence_sha256
+            ):
+                evidence_matches.append(candidate)
+    except OSError as error:
+        raise RecoveryIntegrityError(
+            "parent evidence artifact cannot be verified"
+        ) from error
+    if not evidence_matches:
+        raise RecoveryIntegrityError(
+            "active U3 evidence artifact is absent from disk"
+        )
+    authority_path = parent_layout.recovery_dir / _AUTHORITY_FILENAME
+    try:
+        authority_sha256 = sha256_bytes(authority_path.read_bytes())
+    except OSError as error:
+        raise RecoveryIntegrityError(
+            "parent recovery authority cannot be verified"
+        ) from error
+    return authority, u3_event, parent_evidence_sha256, authority_sha256
+
+
+def _parent_layout_from_evidence_fork_authority(
+    authority: Mapping[str, object],
+) -> RunLayout:
+    parent_mode = authority.get("parent_mode")
+    parent_root_text = authority.get("parent_root")
+    parent_run_id = authority.get("parent_run_id")
+    if (
+        parent_mode not in {RunMode.PRODUCTION.value, RunMode.TEST.value}
+        or not isinstance(parent_root_text, str)
+        or not parent_root_text
+        or not isinstance(parent_run_id, str)
+    ):
+        raise RecoveryIntegrityError("evidence fork parent locator is invalid")
+    parent_root = Path(parent_root_text)
+    try:
+        if parent_mode == RunMode.PRODUCTION.value:
+            if parent_root != PRODUCTION_ROOT:
+                raise RecoveryIntegrityError(
+                    "production evidence fork parent must use the fixed root"
+                )
+            policy = RootPolicy(PRODUCTION_ROOT, TEST_ROOT)
+            mode = RunMode.PRODUCTION
+        else:
+            if parent_root == PRODUCTION_ROOT:
+                raise RecoveryIntegrityError(
+                    "test evidence fork parent cannot claim the production root"
+                )
+            policy = RootPolicy(
+                parent_root.parent / ".crossframe-ultra-unselected-production",
+                parent_root,
+            )
+            mode = RunMode.TEST
+        return build_run_layout(mode, parent_run_id, policy)
+    except RecoveryIntegrityError:
+        raise
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(
+            "evidence fork parent locator is invalid"
+        ) from error
+
+
+def _evidence_fork_identity_bytes(
+    authority: Mapping[str, object],
+) -> bytes:
+    fields = (
+        "fork_entropy_sha256",
+        "parent_root",
+        "parent_mode",
+        "parent_run_id",
+        "parent_run_authority_sha256",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+    )
+    if any(field not in authority for field in fields):
+        raise RecoveryIntegrityError("evidence fork identity authority is incomplete")
+    return canonical_json_bytes(
+        {
+            "generated_at": authority.get("generated_at"),
+            **{field: authority[field] for field in fields},
+        }
+    )
+
+
+def _evidence_fork_authority_path(layout: RunLayout) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        layout.input_dir
+        / f"{_EVIDENCE_FORK_AUTHORITY_PREFIX}-{layout.run_dir.name}.json",
+    )
+
+
+def _validate_evidence_fork_authority(
+    child_layout: RunLayout,
+    *,
+    lineage_request: Mapping[str, object],
+    lineage_request_bytes: bytes,
+) -> dict[str, object]:
+    _validate_layout(child_layout)
+    if not isinstance(lineage_request, Mapping) or not isinstance(
+        lineage_request_bytes, bytes
+    ):
+        raise TypeError("evidence lineage request authority is invalid")
+    authority_path = _evidence_fork_authority_path(child_layout)
+    if authority_path.is_symlink() or not authority_path.is_file():
+        raise RecoveryIntegrityError("evidence lineage fork authority is unavailable")
+    authority = _read_canonical_object(authority_path)
+    if (
+        set(authority) != _EVIDENCE_FORK_AUTHORITY_FIELDS
+        or authority.get("schema_id")
+        != "crossframe.ultra.v82.evidence-lineage-fork-authority"
+        or authority.get("schema_version") != 1
+        or authority.get("run_id") != child_layout.run_dir.name
+        or authority.get("version_binding") != current_version_binding()
+        or authority.get("phase_id") != "U0"
+        or authority.get("status") != "anchored-at-fork"
+        or authority.get("content_sha256")
+        != compute_artifact_content_sha256(authority)
+    ):
+        raise RecoveryIntegrityError("evidence lineage fork authority differs")
+    try:
+        generated_at = _parse_canonical_utc(
+            authority.get("generated_at"),
+            "fork generated_at",
+        )
+    except ValueError as error:
+        raise RecoveryIntegrityError(
+            "evidence lineage fork authority time is invalid"
+        ) from error
+    if (
+        not _is_sha256(authority.get("fork_entropy_sha256"))
+        or create_run_id(
+            generated_at,
+            _evidence_fork_identity_bytes(authority),
+        )
+        != child_layout.run_dir.name
+    ):
+        raise RecoveryIntegrityError("evidence fork identity authority differs")
+    try:
+        status = RunStatusStore(child_layout).read()
+        authority_bytes = authority_path.read_bytes()
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(
+            "evidence lineage fork status authority is unavailable"
+        ) from error
+    if status.fork_authority_sha256 != sha256_bytes(authority_bytes):
+        raise RecoveryIntegrityError(
+            "evidence lineage fork status authority differs"
+        )
+    inherited_fields = (
+        "parent_run_id",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+    )
+    if (
+        authority.get("lineage_request_sha256")
+        != sha256_bytes(lineage_request_bytes)
+        or any(
+            authority.get(field) != lineage_request.get(field)
+            for field in inherited_fields
+        )
+    ):
+        raise RecoveryIntegrityError("evidence lineage fork authority differs")
+    parent_layout = _parent_layout_from_evidence_fork_authority(authority)
+    (
+        parent_authority,
+        parent_u3_event,
+        parent_evidence_sha256,
+        parent_authority_sha256,
+    ) = _verified_evidence_parent(parent_layout)
+    if (
+        authority.get("parent_run_authority_sha256")
+        != parent_authority_sha256
+        or authority.get("parent_u3_event_sha256")
+        != parent_u3_event.get("event_sha256")
+        or authority.get("parent_evidence_sha256") != parent_evidence_sha256
+        or authority.get("parent_evidence_cutoff")
+        != parent_authority.get("evidence_cutoff")
+        or lineage_request.get("inherited_input_refs")
+        != parent_authority.get("input_refs")
+    ):
+        raise RecoveryIntegrityError("evidence fork parent authority differs")
+    return copy.deepcopy(authority)
+
+
 def fork_for_new_evidence(
     parent_layout: RunLayout,
     *,
@@ -2204,29 +2437,12 @@ def fork_for_new_evidence(
         raise ValueError("new evidence bytes must be non-empty")
     if not isinstance(entropy, bytes):
         raise TypeError("entropy must be bytes")
-    authority, compatibility = _validate_authority(parent_layout)
-    if compatibility != "resume":
-        raise RecoveryCompatibilityError(
-            "new evidence fork requires an exact current parent"
-        )
-    events = _read_events(parent_layout, authority, compatibility=compatibility)
-    _, active = _active_completed_events(events)
-    if len(active) <= PHASES.index("U3") or active[3].get("phase_id") != "U3":
-        raise RecoveryStateError("new evidence fork requires a frozen active U3")
-    u3_event = active[3]
-    outputs = u3_event.get("output_artifact_hashes")
-    if not isinstance(outputs, list) or len(outputs) != 1 or not _is_sha256(outputs[0]):
-        raise RecoveryIntegrityError("active U3 evidence authority is invalid")
-    parent_evidence_sha256 = str(outputs[0])
-    evidence_matches = []
-    try:
-        for candidate in parent_layout.artifacts_dir.rglob("*"):
-            if candidate.is_file() and sha256_bytes(candidate.read_bytes()) == parent_evidence_sha256:
-                evidence_matches.append(candidate)
-    except OSError as error:
-        raise RecoveryIntegrityError("parent evidence artifact cannot be verified") from error
-    if not evidence_matches:
-        raise RecoveryIntegrityError("active U3 evidence artifact is absent from disk")
+    (
+        authority,
+        u3_event,
+        parent_evidence_sha256,
+        parent_authority_sha256,
+    ) = _verified_evidence_parent(parent_layout)
     parent_cutoff = _parse_canonical_utc(
         authority.get("evidence_cutoff"),
         "parent evidence cutoff",
@@ -2234,7 +2450,28 @@ def fork_for_new_evidence(
     if now <= parent_cutoff:
         raise RecoveryStateError("evidence child cutoff must be strictly later")
 
-    child_run_id = create_run_id(now, entropy)
+    cutoff = _iso_utc(now)
+    parent_mode = (
+        RunMode.PRODUCTION.value
+        if parent_layout.root == PRODUCTION_ROOT
+        else RunMode.TEST.value
+    )
+    fork_entropy_sha256 = sha256_bytes(entropy)
+    fork_identity = {
+        "generated_at": cutoff,
+        "fork_entropy_sha256": fork_entropy_sha256,
+        "parent_root": str(parent_layout.root),
+        "parent_mode": parent_mode,
+        "parent_run_id": parent_layout.run_dir.name,
+        "parent_run_authority_sha256": parent_authority_sha256,
+        "parent_u3_event_sha256": u3_event["event_sha256"],
+        "parent_evidence_sha256": parent_evidence_sha256,
+        "parent_evidence_cutoff": authority["evidence_cutoff"],
+    }
+    child_run_id = create_run_id(
+        now,
+        _evidence_fork_identity_bytes(fork_identity),
+    )
     child_layout = build_run_layout(mode, child_run_id, policy)
     if child_layout.run_dir.exists():
         raise RecoveryStateError("evidence child run already exists")
@@ -2248,8 +2485,6 @@ def fork_for_new_evidence(
     new_evidence_path = _next_evidence_input_path(child_layout, inherited)
     atomic_write_bytes(new_evidence_path, evidence_bytes)
     new_evidence_ref = _artifact_ref(child_layout, new_evidence_path)
-    RunStatusStore(child_layout).create(now)
-    cutoff = _iso_utc(now)
     lineage: dict[str, object] = {
         "schema_id": "crossframe.ultra.v82.evidence-lineage",
         "schema_version": 1,
@@ -2274,9 +2509,39 @@ def fork_for_new_evidence(
         raise RecoveryIntegrityError(
             "evidence lineage request violates the public schema"
         ) from error
+    lineage_bytes = canonical_json_bytes(lineage)
+    fork_authority: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.evidence-lineage-fork-authority",
+        "schema_version": 1,
+        "run_id": child_run_id,
+        "version_binding": current_version_binding(),
+        "generated_at": cutoff,
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "fork_entropy_sha256": fork_entropy_sha256,
+        "lineage_request_sha256": sha256_bytes(lineage_bytes),
+        "parent_root": str(parent_layout.root),
+        "parent_mode": parent_mode,
+        "parent_run_id": parent_layout.run_dir.name,
+        "parent_run_authority_sha256": parent_authority_sha256,
+        "parent_u3_event_sha256": u3_event["event_sha256"],
+        "parent_evidence_sha256": parent_evidence_sha256,
+        "parent_evidence_cutoff": authority["evidence_cutoff"],
+        "status": "anchored-at-fork",
+    }
+    fork_authority["content_sha256"] = compute_artifact_content_sha256(
+        fork_authority
+    )
+    fork_authority_bytes = canonical_json_bytes(fork_authority)
+    RunStatusStore(child_layout).create(
+        now,
+        fork_authority_sha256=sha256_bytes(fork_authority_bytes),
+    )
+    fork_authority_path = _evidence_fork_authority_path(child_layout)
+    _write_immutable(fork_authority_path, fork_authority)
     lineage_path = child_layout.recovery_dir / "evidence-lineage-request.json"
     assert_safe_descendant(child_layout.root, lineage_path)
-    atomic_write_json(lineage_path, lineage)
+    _write_immutable(lineage_path, lineage)
     return EvidenceForkResult(
         run_id=child_run_id,
         layout=child_layout,
