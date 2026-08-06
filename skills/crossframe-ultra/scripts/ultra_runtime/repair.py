@@ -927,7 +927,13 @@ def apply_repair_plan(
     _require_layout(layout)
     _require_utc(now, "now")
     from . import recovery
-    from .locks import acquire_run_lease, release_run_lease, require_run_lease_owner
+    from .locks import (
+        CancelledRunError,
+        acquire_run_lease,
+        load_cancel_intent,
+        release_run_lease,
+        require_run_lease_owner,
+    )
     from .state_machine import (
         PHASE_EVENT_SCHEMA_ID,
         _compute_event_content_sha256,
@@ -938,7 +944,13 @@ def apply_repair_plan(
     if lease is None:
         owned = acquire_run_lease(layout, now, timedelta(minutes=5))
         lease = owned
-    require_run_lease_owner(layout, lease)
+    def require_repair_write_authority() -> None:
+        require_run_lease_owner(layout, lease)
+        if load_cancel_intent(layout) is not None:
+            raise CancelledRunError("cancel intent blocks repair commit")
+        require_run_lease_owner(layout, lease)
+
+    require_repair_write_authority()
     try:
         attempt_id, validated, plan_sha256 = _committed_plan_identity(layout, plan)
         attempt_root = _repair_attempt_root(layout, attempt_id)
@@ -984,6 +996,7 @@ def apply_repair_plan(
                 raise RepairPlanConflictError(
                     "repair invalidation preserved snapshot differs"
                 )
+            require_repair_write_authority()
             _reopen_status_for_repair(
                 layout,
                 invalidation=invalidation,
@@ -1001,6 +1014,7 @@ def apply_repair_plan(
                 if application_path.read_bytes() != encoded:
                     raise RepairPlanConflictError("repair application authority differs")
             else:
+                require_repair_write_authority()
                 atomic_write_bytes(application_path, encoded)
             return copy.deepcopy(application)
 
@@ -1043,6 +1057,7 @@ def apply_repair_plan(
             reset_from_phase=reset_from_phase,
             now=snapshot_time,
         )
+        require_repair_write_authority()
         timestamp = _iso_utc(now)
         invalidation: dict[str, object] = {
             "schema_id": PHASE_EVENT_SCHEMA_ID,
@@ -1083,6 +1098,7 @@ def apply_repair_plan(
         _, _, _, events_path, lock_path = recovery._paths(layout)
         with recovery._exclusive_path_lock(lock_path):
             recovery._sync_events(events_path, (*events, invalidation))
+        require_repair_write_authority()
         _reopen_status_for_repair(
             layout,
             invalidation=invalidation,
@@ -1095,6 +1111,7 @@ def apply_repair_plan(
             plan_sha256=plan_sha256,
             invalidation=invalidation,
         )
+        require_repair_write_authority()
         atomic_write_json(application_path, application)
         return copy.deepcopy(application)
     finally:

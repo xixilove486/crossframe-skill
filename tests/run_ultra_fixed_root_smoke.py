@@ -589,6 +589,7 @@ def run_fixed_root_smoke(
             phase_store,
             now=start + timedelta(seconds=6),
             create_checkpoint=recovery.create_checkpoint,
+            commit_guard=lambda: None,
         )
     except ValueError as error:
         if "packet count" not in str(error):
@@ -613,6 +614,7 @@ def run_fixed_root_smoke(
         phase_store,
         now=u11_time,
         create_checkpoint=recovery.create_checkpoint,
+        commit_guard=lambda: None,
     )
     if pending_semantic.document.get("action_kind") != "semantic-review":
         raise RuntimeError("closed smoke did not issue semantic review action")
@@ -628,6 +630,7 @@ def run_fixed_root_smoke(
         phase_store,
         now=u11_time + timedelta(microseconds=1),
         create_checkpoint=recovery.create_checkpoint,
+        commit_guard=lambda: None,
     )
     if bundle.phase_events[-1]["phase_id"] != "U11":
         raise RuntimeError("closed smoke did not reach U11")

@@ -138,6 +138,11 @@ def _report(
             "attempt_id": attempt_id,
             "manifest_sha256": jsonio.sha256_bytes(manifest_path.read_bytes()),
             "validator_set_sha256": "b" * 64,
+            "active_generation": 0,
+            "article_sha256": hashlib.sha256(
+                (layout.run_dir / ARTICLE_PATH).read_bytes()
+            ).hexdigest(),
+            "semantic_review_artifact_sha256": "c" * 64,
             "checks": [
                 {
                     "validator_id": "semantic-coverage",
@@ -146,7 +151,20 @@ def _report(
                     "artifact_refs": [ARTICLE_PATH],
                 }
             ],
+            "layers": [
+                {
+                    "layer_id": layer_id,
+                    "status": "fail" if layer_id == "fresh-semantic" else "pass",
+                    "artifact_refs": [ARTICLE_PATH],
+                }
+                for layer_id in (
+                    "deterministic",
+                    "adversarial",
+                    "fresh-semantic",
+                )
+            ],
             "overall_status": "fail",
+            "publication_allowed": False,
             "validated_at": generated_at.isoformat().replace("+00:00", "Z"),
             "fresh_context": True,
         }
@@ -197,6 +215,7 @@ def _phase_output_hashes(
         "U9": 3,
         "U10": 2,
         "U11": 5,
+        "U12": 5,
     }
     count = counts.get(phase_id, 1)
     selected = list(overrides.get(phase_id, ()))
@@ -1104,3 +1123,105 @@ def test_non_owner_cannot_commit_repair_plan_while_writer_is_live(
         / "VALIDATION-1"
         / "ultra-repair-plan.json"
     ).exists()
+
+
+def test_cancel_after_repair_invalidation_converges_active_generation(
+    tmp_path: Path,
+) -> None:
+    repair, layout, _, plan = _prepare_u11_repair(tmp_path)
+    recovery = _runtime_module("recovery")
+    jsonio = _runtime_module("jsonio")
+    status_module = _runtime_module("status")
+
+    repair.apply_repair_plan(
+        layout,
+        plan=plan,
+        now=STAMP + timedelta(minutes=2),
+    )
+    (layout.recovery_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
+    cancelled = recovery.cancel_run(
+        layout,
+        reason="operator cancellation after repair",
+        now=STAMP + timedelta(minutes=3),
+    )
+    repeated = recovery.cancel_run(
+        layout,
+        reason="ignored repeated cancellation",
+        now=STAMP + timedelta(minutes=4),
+    )
+
+    events = [
+        jsonio.load_json_object_bytes(row, source="repair cancellation event")
+        for row in (layout.recovery_dir / "phase-events.jsonl").read_bytes().splitlines(
+            keepends=True
+        )
+    ]
+    terminal = events[-1]
+    assert cancelled == repeated == status_module.RunStatusStore(layout).read()
+    assert cancelled.status == "cancelled"
+    assert cancelled.current_phase == "U11"
+    assert cancelled.last_complete_phase == "U10"
+    assert terminal["event_type"] == "phase-cancelled"
+    assert terminal["phase_id"] == "U11"
+    assert terminal["generation"] == 1
+    assert sum(event["status"] == "cancelled" for event in events) == 1
+
+
+def test_cancel_after_repair_snapshot_blocks_all_later_repair_commits(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repair, layout, _, plan = _prepare_u11_repair(tmp_path)
+    jsonio = _runtime_module("jsonio")
+    locks = _runtime_module("locks")
+    status_module = _runtime_module("status")
+    event_path = layout.recovery_dir / "phase-events.jsonl"
+    before_events = event_path.read_bytes()
+    before_status = status_module.RunStatusStore(layout).path.read_bytes()
+    real_preserve = repair._preserve_superseded_artifacts
+
+    def preserve_then_cancel(*args, **kwargs):
+        result = real_preserve(*args, **kwargs)
+        locks.request_cancel(
+            layout,
+            reason="cancel at repair write boundary",
+            now=STAMP + timedelta(minutes=2, seconds=1),
+        )
+        return result
+
+    monkeypatch.setattr(
+        repair,
+        "_preserve_superseded_artifacts",
+        preserve_then_cancel,
+    )
+    lease = locks.acquire_run_lease(
+        layout,
+        STAMP + timedelta(minutes=2),
+        timedelta(minutes=5),
+    )
+    try:
+        with pytest.raises(locks.CancelledRunError, match="cancel"):
+            repair.apply_repair_plan(
+                layout,
+                plan=plan,
+                now=STAMP + timedelta(minutes=2, seconds=2),
+                lease=lease,
+            )
+    finally:
+        locks.release_run_lease(layout, lease)
+
+    assert event_path.read_bytes() == before_events
+    assert status_module.RunStatusStore(layout).path.read_bytes() == before_status
+    assert not (
+        layout.recovery_dir
+        / "repair-attempts"
+        / "VALIDATION-1"
+        / "repair-application.json"
+    ).exists()
+    assert locks.load_cancel_intent(layout) is not None
+    assert jsonio.load_json_object(
+        layout.recovery_dir
+        / "repair-attempts"
+        / "VALIDATION-1"
+        / "superseded-snapshot.json"
+    )["repair_attempt_id"] == "VALIDATION-1"

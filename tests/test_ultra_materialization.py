@@ -291,6 +291,7 @@ def _assert_u10_rejected_before_outputs(
             store,
             now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
             create_checkpoint=lambda *args, **kwargs: kwargs,
+            commit_guard=lambda: None,
         )
     assert expected_fragment in str(captured.value)
     assert all(event["phase_id"] not in {"U10", "U11"} for event in store.events)
@@ -402,6 +403,74 @@ def test_public_materialize_after_only_u4_returns_u5_wait(
     assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
+def test_stale_u4_writer_is_fenced_before_formal_artifact_overwrite(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materialization, paths, jsonio = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    materialization.prepare_authoring(layout)
+    _write_evidence_authority(runtime, layout)
+    store = _RecordingPhaseStore()
+    policy, status_store, checkpoints = _freeze_public_foundation_progress(
+        runtime,
+        layout,
+        store,
+        monkeypatch,
+        created_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    world_source = layout.authoring_dir / "U04-world-volume.json"
+    jsonio.atomic_write_json(
+        world_source,
+        json.loads(
+            (
+                REPO_ROOT / "tests/fixtures/ultra-runtime/world-volume-valid.json"
+            ).read_text("utf-8")
+        ),
+    )
+    destination = materialization.artifact_destination(layout, world_source)
+    sentinel = b"foreign owner U4 formal artifact\n"
+    real_seal = materialization.seal_authoring_artifact
+    transferred = False
+
+    def seal_then_transfer_owner(*args, **kwargs):
+        nonlocal transferred
+        sealed = real_seal(*args, **kwargs)
+        source = args[1]
+        if source == world_source and not transferred:
+            transferred = True
+            lease_path = layout.run_dir / ".writer-lease.json"
+            owner = jsonio.load_json_object(lease_path)
+            owner["owner_nonce"] = "foreign-u4-owner-0000000000000"
+            jsonio.atomic_write_json(lease_path, owner)
+            jsonio.atomic_write_bytes(destination, sentinel)
+        return sealed
+
+    monkeypatch.setattr(
+        materialization,
+        "seal_authoring_artifact",
+        seal_then_transfer_owner,
+    )
+    forbidden_calls: list[tuple[object, ...]] = []
+    with pytest.raises(locks.LeaseOwnershipError):
+        _public_materialize(
+            runtime,
+            layout,
+            policy,
+            now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+            forbidden_calls=forbidden_calls,
+        )
+
+    assert transferred is True
+    assert destination.read_bytes() == sentinel
+    assert all(event["phase_id"] != "U4" for event in store.events)
+    assert checkpoints == []
+    assert status_store.read().status == "running"
+    assert forbidden_calls == []
+
+
 def test_public_authoring_wait_does_not_hide_malformed_present_sibling(
     runtime,
     tmp_path: Path,
@@ -472,6 +541,7 @@ def test_public_u11_waits_for_each_declared_semantic_input_before_review(
             store,
             now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
             create_checkpoint=lambda *args, **kwargs: kwargs,
+            commit_guard=lambda: None,
         )
     assert store.current_phase == "U10"
     policy, status_store, checkpoints = _freeze_public_foundation_progress(
@@ -1176,6 +1246,7 @@ def test_materialization_accepts_owned_transformation_effective_variable_locator
             store,
             now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
             create_checkpoint=lambda *args, **kwargs: kwargs,
+            commit_guard=lambda: None,
         )
     assert any(event["phase_id"] == "U10" for event in store.events)
     assert all(event["phase_id"] != "U11" for event in store.events)
@@ -1197,6 +1268,7 @@ def test_u11_materialization_rejects_external_dependent_mechanical_review(
             store,
             now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
             create_checkpoint=lambda *args, **kwargs: kwargs,
+            commit_guard=lambda: None,
         )
     sealed_plan = jsonio.load_json_object(
         layout.artifacts_dir / "U09-U10-verdict/U10-output-plan.json"
@@ -1270,6 +1342,7 @@ def test_u11_materialization_rejects_external_dependent_mechanical_review(
             store,
             now=datetime(2026, 8, 2, 3, 4, 11, tzinfo=timezone.utc),
             create_checkpoint=lambda *args, **kwargs: kwargs,
+            commit_guard=lambda: None,
         )
     assert all(event["phase_id"] != "U11" for event in store.events)
 

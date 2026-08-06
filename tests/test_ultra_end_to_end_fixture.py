@@ -430,6 +430,7 @@ def real_seam_result(
             restarted.phase_store,
             now=now + timedelta(seconds=11),
             create_checkpoint=recovery.create_checkpoint,
+            commit_guard=lambda: None,
         )
 
     sealed_plan = jsonio.load_json_object(
@@ -448,6 +449,7 @@ def real_seam_result(
         restarted.phase_store,
         now=now + timedelta(seconds=12),
         create_checkpoint=recovery.create_checkpoint,
+        commit_guard=lambda: None,
     )
     assert pending_semantic.document["action_kind"] == "semantic-review"
     assert restarted.phase_store.current_phase == "U10"
@@ -463,6 +465,7 @@ def real_seam_result(
         restarted.phase_store,
         now=now + timedelta(seconds=12, microseconds=100_000),
         create_checkpoint=recovery.create_checkpoint,
+        commit_guard=lambda: None,
     )
     assert bundle.phase_events[-1]["phase_id"] == "U11"
     assert [

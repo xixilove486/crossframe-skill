@@ -20,6 +20,7 @@ from .jsonio import (
 from .locks import (
     CancelledRunError,
     Lease,
+    LeaseNeedsAttentionError,
     LeaseOwnershipError,
     load_cancel_intent,
     require_run_lease_owner,
@@ -625,9 +626,12 @@ def _restore_previous(
     layout: RunLayout,
     paths: PublicationPaths,
     previous: Mapping[Path, bytes | None],
+    *,
+    before_write: Callable[[], None],
 ) -> None:
     for official, prior in previous.items():
         assert_safe_descendant(layout.root, official)
+        before_write()
         if prior is None:
             official.unlink(missing_ok=True)
         else:
@@ -851,9 +855,20 @@ def publish_delivery(
             postcheck_passed=True,
         )
     except BaseException as error:
+        try:
+            require_run_lease_owner(layout, lease)
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         rollback_error: BaseException | None = None
         try:
-            _restore_previous(layout, paths, previous)
+            _restore_previous(
+                layout,
+                paths,
+                previous,
+                before_write=lambda: require_run_lease_owner(layout, lease),
+            )
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as caught:
             rollback_error = caught
         failure = f"{type(error).__name__}: {error}"
@@ -861,6 +876,7 @@ def publish_delivery(
             failure += f"; rollback failed: {type(rollback_error).__name__}: {rollback_error}"
         postcheck_passed = False
         try:
+            require_run_lease_owner(layout, lease)
             _write_journal(
                 layout,
                 paths,
@@ -872,6 +888,8 @@ def publish_delivery(
                 postcheck_passed=postcheck_passed,
                 failure=failure,
             )
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as journal_error:
             _attach_note(error, f"failed to update publish journal: {journal_error}")
         if not isinstance(
@@ -886,7 +904,10 @@ def publish_delivery(
                     f"failed to mark run needs_attention: {attention_error}",
                 )
         try:
+            require_run_lease_owner(layout, lease)
             _remove_staging(layout, paths)
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as staging_error:
             _attach_note(
                 error,
@@ -1081,7 +1102,9 @@ def _mark_u12_durable(
     *,
     event: Mapping[str, object],
     checkpoint: Mapping[str, object],
+    lease: Lease,
 ) -> None:
+    _require_publication_authority(layout, lease)
     journal = load_json_object(paths.journal_path)
     state, authorities = _validate_publish_journal(layout, paths, journal)
     _preflight_recovery_bytes(layout, state, authorities)
@@ -1110,6 +1133,7 @@ def _mark_u12_durable(
         layout, paths, updated
     )
     _preflight_recovery_bytes(layout, updated_state, updated_authorities)
+    _require_publication_authority(layout, lease)
     atomic_write_json(paths.journal_path, updated)
 
 
@@ -1162,8 +1186,9 @@ def _roll_forward_u12_transaction(
     paths: PublicationPaths,
     journal: Mapping[str, object],
     *,
-    lease: object | None = None,
+    lease: Lease,
 ) -> dict[str, object]:
+    _require_publication_authority(layout, lease)
     reread = load_json_object(paths.journal_path)
     if dict(journal) != reread:
         raise RuntimeError("publish journal changed before U12 roll-forward")
@@ -1184,6 +1209,7 @@ def _roll_forward_u12_transaction(
             layout, paths, bound
         )
         _preflight_recovery_bytes(layout, bound_state, bound_authorities)
+        _require_publication_authority(layout, lease)
         atomic_write_json(paths.journal_path, bound)
         reread = bound
 
@@ -1193,6 +1219,7 @@ def _roll_forward_u12_transaction(
     status_store = RunStatusStore(layout)
     current = status_store.read()
     if current.status != "complete":
+        _require_publication_authority(layout, lease)
         previous = datetime.fromisoformat(current.updated_at[:-1] + "+00:00")
         transition_at = max(
             datetime.now(timezone.utc),
@@ -1227,6 +1254,7 @@ def _roll_forward_u12_transaction(
     verdict_path = layout.artifacts_dir / "U09-U10-verdict/U09-verdict.json"
     verdict = load_json_object(verdict_path)
     build_final_chat_projection(layout, verdict, current)
+    _require_publication_authority(layout, lease)
     write_final_chat_projection(layout, verdict, current)
 
     reread = load_json_object(paths.journal_path)
@@ -1247,8 +1275,11 @@ def _roll_forward_u12_transaction(
         layout, paths, final
     )
     _preflight_recovery_bytes(layout, final_state, final_authorities)
+    _require_publication_authority(layout, lease)
     atomic_write_json(paths.journal_path, final)
+    _require_publication_authority(layout, lease)
     IndexStore(layout.root).rebuild()
+    _require_publication_authority(layout, lease)
     _remove_staging(layout, paths)
     return final
 

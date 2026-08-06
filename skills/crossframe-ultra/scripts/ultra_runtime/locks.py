@@ -235,6 +235,12 @@ def request_cancel(
         existing = load_cancel_intent(layout)
         if existing is not None:
             return existing
+        from . import recovery
+
+        if recovery._has_durable_u12_checkpoint(layout):
+            raise LeaseConflictError(
+                "durable U12 checkpoint rejects cancellation before intent creation"
+            )
         value: dict[str, object] = {
             "run_id": layout.run_dir.name,
             "reason": checked_reason,

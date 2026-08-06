@@ -399,6 +399,314 @@ def test_publish_rechecks_current_owner_after_fresh_check(
     assert attentions == []
 
 
+def test_stale_publisher_never_rolls_back_foreign_owner_bytes(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    deliverables, paths, jsonio = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    payload = _payload()
+    report = _layered_report(payload)
+    previous = {
+        target: f"previous {target.name}\n".encode("utf-8")
+        for target in publication.official_paths
+    }
+    for target, value in previous.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(value)
+    owner = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    lease_path = layout.run_dir / ".writer-lease.json"
+    owner_bytes = lease_path.read_bytes()
+    foreign_article = b"foreign owner official generation\n"
+    foreign_journal = b"foreign owner journal generation\n"
+    attentions: list[str] = []
+
+    def transfer_owner_and_publish_sentinels(stage: str) -> bytes:
+        assert stage == "pre-publish"
+        jsonio.atomic_write_json(
+            lease_path,
+            {
+                "run_id": owner.run_id,
+                "owner_pid": owner.owner_pid,
+                "owner_nonce": "foreign-publisher-owner-00000000",
+                "acquired_at": owner.acquired_at,
+                "heartbeat_at": owner.heartbeat_at,
+                "expires_at": owner.expires_at,
+            },
+        )
+        jsonio.atomic_write_bytes(publication.article_path, foreign_article)
+        jsonio.atomic_write_bytes(publication.journal_path, foreign_journal)
+        return report
+
+    try:
+        with pytest.raises(locks.LeaseOwnershipError):
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=transfer_owner_and_publish_sentinels,
+                commit_report=lambda stage, report_bytes, callback_lease: None,
+                mark_needs_attention=attentions.append,
+                lease=owner,
+                **payload,
+            )
+
+        assert publication.article_path.read_bytes() == foreign_article
+        assert publication.journal_path.read_bytes() == foreign_journal
+        assert publication.staging_dir.is_dir()
+        assert attentions == []
+    finally:
+        jsonio.atomic_write_bytes(lease_path, owner_bytes)
+        locks.release_run_lease(layout, owner)
+
+
+def _durable_u12_boundary(runtime, tmp_path: Path):
+    from tests.test_ultra_repair import _write_recovery_chain
+
+    deliverables, paths, jsonio = runtime
+    locks = _module("locks")
+    recovery = _module("recovery")
+    schemas = _module("schemas")
+    status = _module("status")
+    layout = _layout(paths, tmp_path)
+    statuses = status.RunStatusStore(layout)
+    created = statuses.create(
+        datetime(2026, 8, 4, 3, 55, tzinfo=timezone.utc)
+    )
+    statuses.transition(
+        created,
+        "running",
+        datetime(2026, 8, 4, 3, 56, tzinfo=timezone.utc),
+        current_phase="U12",
+        last_complete_phase="U11",
+    )
+    owner = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 4, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    payload = _payload()
+    report = _layered_report(payload)
+
+    def commit_report(
+        stage: str,
+        report_bytes: bytes,
+        callback_lease: object,
+    ) -> None:
+        assert callback_lease is owner
+        assert stage in {"pre-publish", "post-publish"}
+        jsonio.atomic_write_bytes(
+            layout.validation_current_dir / "ultra-validator-report.json",
+            report_bytes,
+        )
+
+    publication_result = deliverables.publish_delivery(
+        layout,
+        transaction_id=TRANSACTION_ID,
+        fresh_check=lambda stage: report,
+        commit_report=commit_report,
+        mark_needs_attention=lambda reason: pytest.fail(reason),
+        lease=owner,
+        **payload,
+    )
+    ordered_paths = (
+        publication_result.paths.manifest_path,
+        layout.validation_current_dir / "ultra-validator-report.json",
+        publication_result.paths.article_path,
+        publication_result.paths.dossier_path,
+        publication_result.paths.artifact_index_path,
+    )
+    output_hashes = tuple(
+        hashlib.sha256(path.read_bytes()).hexdigest() for path in ordered_paths
+    )
+    events = _write_recovery_chain(
+        layout,
+        through_phase="U12",
+        output_overrides={"U12": output_hashes},
+    )
+    u12_event = events[-1]
+    checkpoint = {
+        "schema_id": "crossframe.ultra.v82.recovery-checkpoint",
+        "schema_version": 1,
+        "run_id": layout.run_dir.name,
+        "version_binding": _module("constants").current_version_binding(),
+        "generated_at": "2026-08-04T04:00:13Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U12",
+        "boundary_kind": "phase",
+        "boundary_id": "U12",
+        "boundary_ordinal": 0,
+        "generation": 0,
+        "phase_event_sha256": u12_event["event_sha256"],
+        "artifact_hashes": [
+            {
+                "path": path.relative_to(layout.run_dir).as_posix(),
+                "sha256": digest,
+                "media_type": (
+                    "application/json"
+                    if path.suffix.casefold() == ".json"
+                    else "text/markdown"
+                ),
+            }
+            for path, digest in zip(ordered_paths, output_hashes, strict=True)
+        ],
+        "evidence_cutoff": "2026-08-04T04:00:00Z",
+        "completed_boundary": True,
+        "resumable": True,
+    }
+    checkpoint["content_sha256"] = schemas.compute_artifact_content_sha256(
+        checkpoint
+    )
+    checkpoint_raw = jsonio.canonical_json_bytes(checkpoint)
+    checkpoint_path = layout.recovery_dir / "checkpoints" / (
+        f"{hashlib.sha256(checkpoint_raw).hexdigest()}.json"
+    )
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_path.write_bytes(checkpoint_raw)
+    assert recovery.load_checkpoints(layout)[-1] == checkpoint
+    return (
+        deliverables,
+        jsonio,
+        locks,
+        layout,
+        owner,
+        publication_result.paths,
+        u12_event,
+        checkpoint,
+    )
+
+
+def _replace_lease_with_foreign_owner(jsonio, layout, owner) -> bytes:
+    lease_path = layout.run_dir / ".writer-lease.json"
+    owner_bytes = lease_path.read_bytes()
+    jsonio.atomic_write_json(
+        lease_path,
+        {
+            "run_id": owner.run_id,
+            "owner_pid": owner.owner_pid,
+            "owner_nonce": "foreign-u12-owner-000000000000",
+            "acquired_at": owner.acquired_at,
+            "heartbeat_at": owner.heartbeat_at,
+            "expires_at": owner.expires_at,
+        },
+    )
+    return owner_bytes
+
+
+def test_cancel_after_durable_u12_checkpoint_is_rejected_before_intent(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    (
+        _,
+        _,
+        locks,
+        layout,
+        owner,
+        _,
+        _,
+        _,
+    ) = _durable_u12_boundary(runtime, tmp_path)
+    try:
+        with pytest.raises(locks.LeaseConflictError, match="U12|durable|checkpoint"):
+            locks.request_cancel(
+                layout,
+                reason="too late after durable U12",
+                now=datetime(2026, 8, 4, 4, 6, tzinfo=timezone.utc),
+            )
+        assert locks.load_cancel_intent(layout) is None
+    finally:
+        locks.release_run_lease(layout, owner)
+
+
+def test_mark_u12_durable_requires_the_same_current_owner(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    (
+        deliverables,
+        jsonio,
+        locks,
+        layout,
+        owner,
+        publication,
+        event,
+        checkpoint,
+    ) = _durable_u12_boundary(runtime, tmp_path)
+    journal_before = publication.journal_path.read_bytes()
+    owner_bytes = _replace_lease_with_foreign_owner(jsonio, layout, owner)
+    try:
+        with pytest.raises(locks.LeaseOwnershipError):
+            deliverables._mark_u12_durable(
+                layout,
+                publication,
+                event=event,
+                checkpoint=checkpoint,
+                lease=owner,
+            )
+        assert publication.journal_path.read_bytes() == journal_before
+    finally:
+        jsonio.atomic_write_bytes(layout.run_dir / ".writer-lease.json", owner_bytes)
+        locks.release_run_lease(layout, owner)
+
+
+def test_u12_roll_forward_owner_loss_cannot_advance_journal_or_projections(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    (
+        deliverables,
+        jsonio,
+        locks,
+        layout,
+        owner,
+        publication,
+        _,
+        _,
+    ) = _durable_u12_boundary(runtime, tmp_path)
+    tracked = (
+        publication.journal_path,
+        layout.run_dir / "run-status.json",
+        layout.run_dir / "final-chat.json",
+    )
+    before = {
+        path: path.read_bytes() if path.is_file() else None for path in tracked
+    }
+    index_dir = layout.root / "index"
+    index_before = {
+        path.relative_to(index_dir): path.read_bytes()
+        for path in index_dir.rglob("*")
+        if path.is_file()
+    } if index_dir.is_dir() else {}
+    journal = jsonio.load_json_object(publication.journal_path)
+    owner_bytes = _replace_lease_with_foreign_owner(jsonio, layout, owner)
+    try:
+        with pytest.raises(locks.LeaseOwnershipError):
+            deliverables._roll_forward_u12_transaction(
+                layout,
+                publication,
+                journal,
+                lease=owner,
+            )
+        assert {
+            path: path.read_bytes() if path.is_file() else None for path in tracked
+        } == before
+        index_after = {
+            path.relative_to(index_dir): path.read_bytes()
+            for path in index_dir.rglob("*")
+            if path.is_file()
+        } if index_dir.is_dir() else {}
+        assert index_after == index_before
+    finally:
+        jsonio.atomic_write_bytes(layout.run_dir / ".writer-lease.json", owner_bytes)
+        locks.release_run_lease(layout, owner)
+
+
 def test_publish_cancel_during_first_official_write_rolls_back_and_stops(
     runtime,
     tmp_path: Path,

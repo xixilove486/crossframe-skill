@@ -23,9 +23,11 @@ from .jsonio import (
     sha256_bytes,
 )
 from .locks import (
+    CancelledRunError,
     CancellationIntent,
     Lease,
     LeaseConflictError,
+    _cancel_intent_lock_path,
     acquire_cancel_convergence_lease,
     acquire_run_lease,
     load_cancel_intent,
@@ -1541,8 +1543,6 @@ def create_checkpoint(
 ) -> dict[str, object]:
     _validate_layout(layout)
     if load_cancel_intent(layout) is not None:
-        from .locks import CancelledRunError
-
         raise CancelledRunError("cancel intent blocks checkpoint commit")
     if lease is None:
         owned = acquire_run_lease(layout, now, timedelta(minutes=5))
@@ -1650,24 +1650,50 @@ def create_checkpoint(
     except Exception as error:
         raise RecoveryIntegrityError("checkpoint violates the public schema") from error
     checkpoints_dir, _, authority_path, events_path, lock_path = _paths(layout)
-    with _exclusive_path_lock(lock_path):
-        checkpoints_dir.mkdir(parents=True, exist_ok=True)
-        if authority_path.exists():
-            existing = _read_canonical_object(authority_path)
-            if existing != authority:
-                raise RecoveryIntegrityError("immutable run recovery authority changed")
-        else:
-            _write_immutable(authority_path, authority)
-        _sync_events(events_path, events)
-        existing, _, _, _ = _load_checkpoints_unlocked(layout)
-        slot = _checkpoint_slot(checkpoint)
-        if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
-            raise RecoveryIntegrityError("duplicate logical checkpoint slot")
-        raw = canonical_json_bytes(checkpoint)
-        checkpoint_hash = sha256_bytes(raw)
-        target = checkpoints_dir / f"{checkpoint_hash}.json"
-        _write_immutable(target, checkpoint)
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        if load_cancel_intent(layout) is not None:
+            raise CancelledRunError("cancel intent blocks checkpoint commit")
+        require_run_lease_owner(layout, lease)
+        with _exclusive_path_lock(lock_path):
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            if authority_path.exists():
+                existing = _read_canonical_object(authority_path)
+                if existing != authority:
+                    raise RecoveryIntegrityError("immutable run recovery authority changed")
+            else:
+                _write_immutable(authority_path, authority)
+            _sync_events(events_path, events)
+            existing, _, _, _ = _load_checkpoints_unlocked(layout)
+            slot = _checkpoint_slot(checkpoint)
+            if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
+                raise RecoveryIntegrityError("duplicate logical checkpoint slot")
+            raw = canonical_json_bytes(checkpoint)
+            checkpoint_hash = sha256_bytes(raw)
+            target = checkpoints_dir / f"{checkpoint_hash}.json"
+            _write_immutable(target, checkpoint)
     return copy.deepcopy(checkpoint)
+
+
+def _has_durable_u12_checkpoint(layout: RunLayout) -> bool:
+    _validate_layout(layout)
+    checkpoints_dir, _, _, _, _ = _paths(layout)
+    if not checkpoints_dir.is_dir():
+        return False
+    checkpoints, _, compatibility, events = _load_checkpoints_unlocked(layout)
+    if compatibility == "reject":
+        return False
+    completed_u12_events = {
+        str(event["event_sha256"])
+        for event in events
+        if event.get("phase_id") == "U12" and event.get("status") == "complete"
+    }
+    return any(
+        checkpoint.get("boundary_kind") == "phase"
+        and checkpoint.get("phase_id") == "U12"
+        and checkpoint.get("completed_boundary") is True
+        and checkpoint.get("phase_event_sha256") in completed_u12_events
+        for checkpoint in checkpoints
+    )
 
 
 def load_checkpoints(layout: RunLayout) -> tuple[dict[str, object], ...]:
@@ -1916,7 +1942,7 @@ def _converge_cancel_owned(
         if events[-1].get("status") != "cancelled":
             raise RecoveryIntegrityError("cancelled status lacks terminal phase authority")
         return status
-    completed_events = [item for item in events if item.get("status") == "complete"]
+    _, completed_events = _active_completed_events(events)
     last_complete_phase = (
         None if not completed_events else str(completed_events[-1]["phase_id"])
     )
@@ -1934,7 +1960,7 @@ def _converge_cancel_owned(
             )
         except Exception as error:
             raise RecoveryStateError("run status cancellation transition failed") from error
-    if events[-1].get("status") != "complete":
+    if events[-1].get("status") not in {"complete", "invalidated"}:
         raise RecoveryStateError("run already has a terminal phase event")
     event = _terminal_event(
         authority,

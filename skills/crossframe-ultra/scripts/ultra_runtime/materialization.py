@@ -1649,6 +1649,7 @@ def _seal_json_phase(
     input_artifact_hashes: Sequence[str],
     validate_documents: Callable[[Sequence[Mapping[str, object]]], None],
     create_checkpoint: Callable[..., object],
+    commit_guard: Callable[[], None],
 ) -> tuple[dict[str, object], list[dict[str, object]], list[Path]]:
     completed = _completed_phase_event(phase_store, phase_id)
     if completed is not None:
@@ -1661,6 +1662,7 @@ def _seal_json_phase(
     documents: list[dict[str, object]] = []
     destinations: list[Path] = []
     for source in sources:
+        commit_guard()
         spec = _spec_for_path(layout, source)
         authored_artifact_sha256 = _full_artifact_sha256(load_json_object(source))
         sealed = seal_authoring_artifact(
@@ -1671,6 +1673,7 @@ def _seal_json_phase(
             authority_values=authority_values,
         )
         destination = artifact_destination(layout, source)
+        commit_guard()
         atomic_write_json(destination, sealed)
         documents.append(sealed)
         destinations.append(destination)
@@ -1688,6 +1691,7 @@ def _seal_json_phase(
         else:
             authority_documents[name] = sealed
     validate_documents(documents)
+    commit_guard()
     event = record_materialized_phase(
         layout,
         phase_store,
@@ -1695,6 +1699,7 @@ def _seal_json_phase(
         destinations,
         input_artifact_hashes=input_artifact_hashes,
     )
+    commit_guard()
     create_checkpoint(
         layout,
         phase_store,
@@ -1835,11 +1840,14 @@ def materialize_u4_u11(
     *,
     now: datetime,
     create_checkpoint: Callable[..., object],
+    commit_guard: Callable[[], None],
 ) -> MaterializedBundle | HostActionSeal:
     _validate_layout(layout)
     _require_utc(now, "now")
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
         raise ValueError("repo must be an existing Path")
+    if not callable(create_checkpoint) or not callable(commit_guard):
+        raise TypeError("create_checkpoint and commit_guard must be callable")
     prepared = prepare_authoring(layout)
     documents: dict[str, Mapping[str, object]] = {}
     phase_events: list[dict[str, object]] = []
@@ -1895,6 +1903,7 @@ def materialize_u4_u11(
         input_artifact_hashes=_phase_input_hashes(documents, "evidence"),
         validate_documents=validate_u4,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["world_volume"] = values[0]
     phase_events.append(event)
@@ -1941,6 +1950,7 @@ def materialize_u4_u11(
         input_artifact_hashes=_phase_input_hashes(documents, "evidence", "world_volume"),
         validate_documents=validate_u5,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     if required_concept_semantic_unit_ids is None:
         raise RuntimeError("U5 validation did not return concept semantic units")
@@ -1983,6 +1993,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u6,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["claim_mechanism_graph"] = values[0]
     phase_events.append(event)
@@ -2050,6 +2061,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u7,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     state_values = values[:-1]
     lineage = values[-1]
@@ -2101,6 +2113,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u8,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["order_evaluation"], documents["red_team_report"] = values
     phase_events.append(event)
@@ -2165,6 +2178,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u9,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["verdict"], documents["action_ranking"], documents["forecast_ledger"] = values
     phase_events.append(event)
@@ -2228,6 +2242,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u10,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["framework_gap_ledger"], documents["output_plan"] = values
     phase_events.append(event)
@@ -2241,6 +2256,7 @@ def materialize_u4_u11(
     )
     packets = _packet_mappings(documents["output_plan"], packet_paths)
     partial_path = prepared.authoring_dir / PARTIAL_ARTICLE_RELATIVE_PATH
+    commit_guard()
     assembled = article.assemble_article(documents["output_plan"], packets, partial_path)
     u11_event = _completed_phase_event(phase_store, "U11")
     active_generation = getattr(phase_store, "active_generation", 0)
@@ -2274,6 +2290,7 @@ def materialize_u4_u11(
             existing_timestamp[:-1] + "+00:00"
         )
     if u11_event is None and persisted_semantic_action is None:
+        commit_guard()
         checkpoint_article_packets(
             layout,
             phase_store,
@@ -2283,6 +2300,7 @@ def materialize_u4_u11(
         )
 
     coverage_source = prepared.authoring_dir / "U11-semantic-coverage.json"
+    commit_guard()
     coverage_document = seal_authoring_artifact(
         layout,
         coverage_source,
@@ -2300,10 +2318,12 @@ def materialize_u4_u11(
         coverage_document["mappings"],
     )
     coverage_destination = artifact_destination(layout, coverage_source)
+    commit_guard()
     atomic_write_json(coverage_destination, coverage_document)
     documents["semantic_coverage"] = coverage_document
 
     review_source = prepared.authoring_dir / "U11-article-review.json"
+    commit_guard()
     authored_review = seal_authoring_artifact(
         layout,
         review_source,
@@ -2331,6 +2351,7 @@ def materialize_u4_u11(
     if authored_review != built_review:
         raise ValueError("model-authored article review differs from deterministic runtime review")
     review_destination = artifact_destination(layout, review_source)
+    commit_guard()
     atomic_write_json(review_destination, built_review)
     documents["article_review"] = built_review
 
@@ -2364,6 +2385,7 @@ def materialize_u4_u11(
     u10_event = _completed_phase_event(phase_store, "U10")
     if u10_event is None:
         raise ValueError("semantic review requires the active U10 parent event")
+    commit_guard()
     action = semantic_review.ensure_semantic_review_action(
         layout,
         request_sha256=request_sha256,
@@ -2434,15 +2456,18 @@ def materialize_u4_u11(
         ):
             raise ValueError("runtime semantic review artifact authority differs")
     else:
+        commit_guard()
         atomic_write_json(semantic_destination, semantic_document)
     documents["semantic_review"] = semantic_document
 
     dossier_path = prepared.authoring_dir / "完整推演档案.md"
+    commit_guard()
     _canonical_markdown(dossier_path, "complete dossier")
     artifact_index_path = layout.artifacts_dir / "ultra-artifact-index.md"
     artifact_index_bytes = build_artifact_index_bytes(
         layout, additional_paths=(partial_path, dossier_path)
     )
+    commit_guard()
     atomic_write_bytes(artifact_index_path, artifact_index_bytes)
     u11_paths = (
         coverage_destination,
@@ -2453,6 +2478,7 @@ def materialize_u4_u11(
         artifact_index_path,
     )
     if u11_event is None:
+        commit_guard()
         u11_event = record_materialized_phase(
             layout,
             phase_store,
@@ -2460,6 +2486,7 @@ def materialize_u4_u11(
             u11_paths,
             input_artifact_hashes=_phase_input_hashes(documents, "output_plan"),
         )
+        commit_guard()
         create_checkpoint(
             layout,
             phase_store,
@@ -3507,6 +3534,7 @@ def _close_u12_transaction(
             paths,
             event=event,
             checkpoint=checkpoint,
+            lease=lease,
         )
 
         journal = load_json_object(paths.journal_path)
@@ -3669,6 +3697,7 @@ def materialize_complete_run(
         LeaseOwnershipError,
         LeaseNeedsAttentionError,
         acquire_run_lease,
+        require_run_lease_owner,
         release_run_lease,
     )
     from .status import RunStatusStore
@@ -3832,6 +3861,11 @@ def materialize_complete_run(
                     raise _AuthoringWaitSignal(action)
             return checkpoint
 
+        def require_materialization_commit_authority() -> None:
+            require_run_lease_owner(layout, lease)
+            stop_if_cancel_requested()
+            require_run_lease_owner(layout, lease)
+
         try:
             bundle = materialize_u4_u11(
                 repo,
@@ -3839,6 +3873,7 @@ def materialize_complete_run(
                 phase_store,
                 now=now,
                 create_checkpoint=create_owned_checkpoint,
+                commit_guard=require_materialization_commit_authority,
             )
         except _AuthoringWaitSignal as wait:
             stop_if_cancel_requested()
