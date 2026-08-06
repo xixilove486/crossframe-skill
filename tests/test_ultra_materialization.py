@@ -21,9 +21,6 @@ RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 MATERIALIZATION_PATH = RUNTIME_DIR / "materialization.py"
 
 EXPECTED_AUTHORING_SLOTS = (
-    "U01-read-events.jsonl",
-    "U02-retrieval-ledger.json",
-    "U03-evidence-ledger.json",
     "U04-world-volume.json",
     "U05-transformation-ledger.json",
     "U05-concept-disposition.json",
@@ -104,6 +101,23 @@ def _prepare_u10_authority_case(runtime, tmp_path: Path):
             "content_sha256": "0" * 64,
         }
     )
+    for entry in evidence["entries"]:
+        statement_bytes = entry["statement"].encode("utf-8")
+        if entry["identity"] == "user-claim":
+            origin_kind = "request"
+            origin_ref = "request.bin"
+            span = [0, len(statement_bytes)]
+        else:
+            origin_kind = "source"
+            origin_ref = entry["source_refs"][0]
+            span = None
+        entry["attribution"] = {
+            "origin_kind": origin_kind,
+            "origin_ref": origin_ref,
+            "content_sha256": hashlib.sha256(statement_bytes).hexdigest(),
+            "span": span,
+            "proof_grade": "fixture-bound",
+        }
     evidence["content_sha256"] = _module(
         "schemas"
     ).compute_artifact_content_sha256(evidence)

@@ -39,6 +39,9 @@ from .schemas import (
 
 _SCHEMAS_BY_ID = {
     "crossframe.ultra.v82.run-contract": "ultra-run-contract.schema.json",
+    "crossframe.ultra.v82.host-capability-attestation": (
+        "ultra-host-capability-attestation.schema.json"
+    ),
     "crossframe.ultra.v82.retrieval-ledger": "ultra-retrieval-ledger.schema.json",
     "crossframe.ultra.v82.evidence-ledger": "ultra-evidence-ledger.schema.json",
     "crossframe.ultra.v82.world-volume": "ultra-world-volume.schema.json",
@@ -77,6 +80,9 @@ _U1_SOURCE_LOCK_PATH = "recovery/u1-authority/source-lock.json"
 _U1_READ_PLAN_PATH = "recovery/u1-authority/read-plan.json"
 _U1_SOURCE_COVERAGE_PATH = "recovery/u1-authority/source-coverage.json"
 _RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
+_HOST_CAPABILITY_ATTESTATION_PATH = (
+    "artifacts/U00-U03-evidence/U00-host-capability-attestation.json"
+)
 _COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
 _COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
 
@@ -254,7 +260,46 @@ def _load_verified_disk_authority(
         manifest_refs.setdefault(phase_id, {})[str(record["path"])] = str(
             record["sha256"]
         )
-    for phase_id in ("U0", *tuple(f"U{number}" for number in range(2, 12))):
+    u0_checkpoint_refs = refs_by_phase.get("U0", {})
+    if set(u0_checkpoint_refs) != {_RUN_CONTRACT_PATH}:
+        raise _AuthorityDAGError(
+            "U0 checkpoint does not bind only the fixed run contract",
+            phase_id="U0",
+        )
+    u0_manifest_refs = manifest_refs.get("U0", {})
+    expected_u0_manifest_paths = {
+        _RUN_CONTRACT_PATH,
+        _HOST_CAPABILITY_ATTESTATION_PATH,
+    }
+    if set(u0_manifest_refs) != expected_u0_manifest_paths:
+        raise _AuthorityDAGError(
+            "U0 manifest does not contain the fixed authority files",
+            phase_id="U0",
+        )
+    if (
+        u0_checkpoint_refs[_RUN_CONTRACT_PATH]
+        != u0_manifest_refs[_RUN_CONTRACT_PATH]
+    ):
+        raise _AuthorityDAGError(
+            "U0 checkpoint run contract differs from the manifest",
+            phase_id="U0",
+        )
+    try:
+        run_contract = load_json_object(_artifact_path(layout, _RUN_CONTRACT_PATH))
+    except Exception as error:
+        raise _AuthorityDAGError(
+            "U0 run contract is unavailable",
+            phase_id="U0",
+        ) from error
+    if (
+        run_contract.get("capability_attestation_sha256")
+        != u0_manifest_refs[_HOST_CAPABILITY_ATTESTATION_PATH]
+    ):
+        raise _AuthorityDAGError(
+            "U0 capability attestation differs from the run contract",
+            phase_id="U0",
+        )
+    for phase_id in tuple(f"U{number}" for number in range(2, 12)):
         if refs_by_phase.get(phase_id) != manifest_refs.get(phase_id):
             raise _AuthorityDAGError(
                 "phase checkpoint differs from the manifest artifact set",

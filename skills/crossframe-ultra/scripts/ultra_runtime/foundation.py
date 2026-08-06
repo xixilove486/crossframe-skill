@@ -40,6 +40,8 @@ U2_RETRIEVAL_LEDGER_RELATIVE_PATH = Path(
 U3_EVIDENCE_RELATIVE_PATH = Path(
     "U00-U03-evidence/U03-evidence-ledger.json"
 )
+U3_ACTION_RELATIVE_PATH = Path("u3-authority/evidence-action.json")
+U3_RESULT_RELATIVE_PATH = "work/host/U03-evidence-authoring.json"
 _SAFE_EXTENSION_RE = re.compile(r"[a-z0-9]{1,10}")
 
 
@@ -842,6 +844,17 @@ def _complete_u0(
     manifest = source_integrity.load_source_manifest(
         repo / "skills/crossframe-ultra/references/source-manifest.json"
     )
+    run_mode = str(document["run_mode"])
+    prerequisite_measurement = source_integrity.measure_u1_prerequisites(
+        repo,
+        manifest=manifest,
+        release_manifest_path=(
+            repo / "skills/crossframe-ultra/references/release-manifest.json"
+            if run_mode == "test"
+            else None
+        ),
+        run_mode=run_mode,
+    )
     run_contract = {
         "trigger": "crossframe-ultra",
         "request_sha256": request_sha256,
@@ -866,6 +879,7 @@ def _complete_u0(
         run_contract=run_contract,
         capability_attestation=attestation,
         source_repository=repo,
+        u1_prerequisite_measurement=prerequisite_measurement,
         run_layout=layout,
     )
     attestation_path = assert_safe_descendant(
@@ -1504,37 +1518,103 @@ def advance_foundation(
     repo: Path,
     now: datetime,
 ) -> FoundationProgress:
+    """Advance the runtime-owned U0 through U3 foundation coordinator.
+
+    The coordinator consumes only durable checkpoints and host receipts.  A
+    missing host result is returned as typed progress; malformed or stale
+    authority remains a hard failure.
+    """
+
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
         raise ValueError("repo must be an existing pathlib.Path directory")
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
     _require_utc(now, "now")
     from . import recovery
 
     checkpoints_dir = layout.recovery_dir / "checkpoints"
     if not checkpoints_dir.is_dir():
-        return advance_u0(layout, repo=repo, now=now)
-    try:
-        resumed = recovery.resume_run(
-            layout,
-            now=now,
-            source_repository=repo.resolve(),
-        )
-    except Exception as error:
-        if isinstance(error, FoundationInputError):
-            raise
-        raise FoundationInputError("foundation recovery authority is invalid") from error
-    phase_store = resumed.phase_store
+        first = advance_u0(layout, repo=repo, now=now)
+        if first.outcome != "advanced":
+            return first
+        try:
+            resumed = recovery.resume_run(
+                layout,
+                now=now,
+                source_repository=repo.resolve(),
+            )
+        except Exception as error:
+            if isinstance(error, FoundationInputError):
+                raise
+            raise FoundationInputError(
+                "newly completed U0 authority cannot be restored for U1"
+            ) from error
+        phase_store = resumed.phase_store
+    else:
+        try:
+            resumed = recovery.resume_run(
+                layout,
+                now=now,
+                source_repository=repo.resolve(),
+            )
+        except Exception as error:
+            if isinstance(error, FoundationInputError):
+                raise
+            raise FoundationInputError("foundation recovery authority is invalid") from error
+        phase_store = resumed.phase_store
     if phase_store is None:
         raise FoundationInputError("foundation recovery did not return a phase store")
+
+    profile = load_request_profile(layout)
+    trigger_kinds = ("real-world",) if profile.analysis_kind == "open-world" else ()
+
     if phase_store.current_phase == "U0":
-        return _advance_u1(
+        u1 = _advance_u1(
             layout,
             repo=repo.resolve(),
             phase_store=phase_store,
             now=now,
         )
+        if u1.outcome != "advanced":
+            return u1
+        phase_store = u1.phase_store
+    if phase_store is None:
+        raise FoundationInputError("U1 foundation advancement returned no PhaseStore")
+
     if phase_store.current_phase == "U1":
-        return FoundationProgress("advanced", phase_store, None, "U1")
-    raise FoundationInputError("foundation recovery is outside the U0-U1 Task 3 boundary")
+        u2 = advance_u2(
+            layout,
+            phase_store=phase_store,
+            analysis_kind=profile.analysis_kind,
+            claim=profile.claim,
+            trigger_kinds=trigger_kinds,
+            material_inventory=profile.material_inventory or None,
+            material_universe_sha256=profile.material_universe_sha256,
+            now=now,
+        )
+        if u2.outcome != "advanced":
+            return u2
+        phase_store = u2.phase_store
+    if phase_store is None:
+        raise FoundationInputError("U2 foundation advancement returned no PhaseStore")
+
+    if phase_store.current_phase == "U2":
+        return _advance_u3(
+            layout,
+            phase_store=phase_store,
+            profile=profile,
+            now=now,
+        )
+    if phase_store.current_phase == "U3":
+        return FoundationProgress("advanced", phase_store, None, "U3")
+    if phase_store.current_phase in {"U4", "U5", "U6", "U7", "U8", "U9", "U10", "U11", "U12"}:
+        return FoundationProgress(
+            "advanced",
+            phase_store,
+            None,
+            phase_store.current_phase,
+        )
+    raise FoundationInputError("foundation recovery is outside the U0-U3 boundary")
 def _persist_u2_ledger(
     layout: RunLayout,
     ledger: Mapping[str, object],
@@ -1556,12 +1636,384 @@ def _persist_u2_ledger(
     atomic_write_json(path, document)
 
 
+def _u2_ledger_path(layout: RunLayout) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / U2_RETRIEVAL_LEDGER_RELATIVE_PATH,
+    )
+
+
+def _load_u2_admitted_sources(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
+    """Reload the sealed U2 ledger and its host-admitted source content.
+
+    U3 receives only this disk-derived map.  In-memory retrieval objects and
+    caller-supplied source dictionaries are deliberately not accepted as
+    authority.
+    """
+
+    path = _u2_ledger_path(layout)
+    try:
+        raw = path.read_bytes()
+        ledger = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError("persisted U2 retrieval ledger is unavailable") from error
+    if raw != canonical_json_bytes(ledger):
+        raise FoundationInputError("persisted U2 retrieval ledger is not canonical")
+    try:
+        validate_instance("ultra-retrieval-ledger.schema.json", ledger)
+    except Exception as error:
+        raise FoundationInputError("persisted U2 retrieval ledger is invalid") from error
+    events = getattr(phase_store, "events", ())
+    if not isinstance(events, tuple) or not events or events[-1].get("phase_id") != "U2":
+        raise FoundationInputError("U3 requires a completed U2 phase event")
+    event = events[-1]
+    output_hashes = event.get("output_artifact_hashes")
+    ledger_sha256 = sha256_bytes(raw)
+    if (
+        ledger.get("run_id") != layout.run_dir.name
+        or ledger.get("version_binding") != current_version_binding()
+        or ledger.get("phase_id") != "U2"
+        or ledger.get("request_sha256") != phase_store.run_contract.get("request_sha256")
+        or not isinstance(output_hashes, list)
+        or ledger_sha256 not in output_hashes
+    ):
+        raise FoundationInputError("persisted U2 retrieval ledger differs from its checkpoint")
+
+    status = ledger.get("retrieval_status")
+    if status == "not-applicable":
+        return {}, ledger
+    if status != "required-complete":
+        raise FoundationInputError("U3 cannot proceed from a blocked U2 retrieval")
+
+    admitted_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "u2-authority/admitted-host-result.json",
+    )
+    try:
+        admitted_raw = admitted_path.read_bytes()
+        admitted = load_json_object_bytes(admitted_raw, source=str(admitted_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError("U2 admitted host retrieval result is unavailable") from error
+    if admitted_raw != canonical_json_bytes(admitted):
+        raise FoundationInputError("U2 admitted host retrieval result is not canonical")
+    supplied_content_hash = admitted.get("content_sha256")
+    payload = copy.deepcopy(admitted)
+    payload.pop("content_sha256", None)
+    if supplied_content_hash != sha256_bytes(canonical_json_bytes(payload)):
+        raise FoundationInputError("U2 admitted host retrieval result hash differs")
+    source_inventory = ledger.get("sources")
+    admitted_sources = admitted.get("sources")
+    if not isinstance(source_inventory, list) or not source_inventory:
+        raise FoundationInputError("required U2 retrieval has no source inventory")
+    if not isinstance(admitted_sources, list) or not admitted_sources:
+        raise FoundationInputError("U2 admitted host retrieval has no source inventory")
+    external_by_id: dict[str, Mapping[str, object]] = {}
+    for item in admitted_sources:
+        if not isinstance(item, Mapping):
+            raise FoundationInputError("U2 admitted source entry is invalid")
+        source_id = item.get("source_id")
+        external = item.get("external_content")
+        if (
+            not isinstance(source_id, str)
+            or not source_id
+            or source_id in external_by_id
+            or not isinstance(external, Mapping)
+            or not isinstance(external.get("content"), str)
+            or external.get("content_sha256")
+            != sha256_bytes(str(external["content"]).encode("utf-8"))
+        ):
+            raise FoundationInputError("U2 admitted source content authority is invalid")
+        external_by_id[source_id] = item
+    sources: dict[str, dict[str, object]] = {}
+    for item in source_inventory:
+        if not isinstance(item, Mapping):
+            raise FoundationInputError("U2 retrieval source inventory entry is invalid")
+        record = item.get("record")
+        if not isinstance(record, Mapping):
+            raise FoundationInputError("U2 retrieval source record is invalid")
+        source_id = record.get("source_id")
+        if not isinstance(source_id, str) or source_id in sources:
+            raise FoundationInputError("U2 retrieval source identifiers are invalid")
+        external_item = external_by_id.get(source_id)
+        if external_item is None:
+            raise FoundationInputError("U2 admitted source set differs from its ledger")
+        external = external_item.get("external_content")
+        assert isinstance(external, Mapping)
+        content_sha256 = external.get("content_sha256")
+        if not isinstance(content_sha256, str) or len(content_sha256) != 64:
+            raise FoundationInputError("U2 admitted source content hash is invalid")
+        sources[source_id] = {
+            "source_id": source_id,
+            "record": copy.deepcopy(dict(record)),
+            "content_sha256": content_sha256,
+        }
+    if set(sources) != set(external_by_id):
+        raise FoundationInputError("U2 admitted source set differs from its ledger")
+    return sources, ledger
+
+
+def _u3_action_path(layout: RunLayout) -> Path:
+    return assert_safe_descendant(layout.root, layout.recovery_dir / U3_ACTION_RELATIVE_PATH)
+
+
+def _persist_u3_action(layout: RunLayout, action: HostActionSeal) -> None:
+    path = _u3_action_path(layout)
+    document = copy.deepcopy(action.document)
+    if path.exists():
+        try:
+            raw = path.read_bytes()
+            existing = load_json_object_bytes(raw, source=str(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise FoundationInputError("persisted U3 evidence action is unreadable") from error
+        if raw != canonical_json_bytes(existing) or existing != document:
+            raise FoundationInputError("persisted U3 evidence action changed")
+        return
+    atomic_write_json(path, document)
+
+
+def _load_u3_action(layout: RunLayout) -> HostActionSeal | None:
+    path = _u3_action_path(layout)
+    if not path.exists():
+        return None
+    try:
+        raw = path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError("persisted U3 evidence action is unreadable") from error
+    if raw != canonical_json_bytes(document):
+        raise FoundationInputError("persisted U3 evidence action is not canonical")
+    try:
+        action = _seal_action(layout, document)
+    except Exception as error:
+        raise FoundationInputError("persisted U3 evidence action is invalid") from error
+    if (
+        action.document.get("phase_id") != "U3"
+        or action.document.get("action_kind") != "evidence-authoring"
+        or action.document.get("result_relative_path") != U3_RESULT_RELATIVE_PATH
+    ):
+        raise FoundationInputError("persisted U3 evidence action authority differs")
+    return action
+
+
+def _load_accepted_host_result(
+    layout: RunLayout,
+    action: HostActionSeal,
+) -> HostResultSeal | None:
+    accepted_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "host-results" / action.action_sha256 / "accepted.json",
+    )
+    if not accepted_path.exists():
+        return None
+    try:
+        raw = accepted_path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(accepted_path))
+        if raw != canonical_json_bytes(document):
+            raise ValueError("accepted host result is not canonical")
+        return _seal_result(layout, action=action, receipt=document)
+    except Exception as error:
+        if isinstance(error, FoundationInputError):
+            raise
+        raise FoundationInputError("accepted U3 evidence result is invalid") from error
+
+
+def _issue_u3_evidence_action(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    profile: RequestProfile,
+    sources: Mapping[str, Mapping[str, object]],
+    ledger: Mapping[str, object],
+    now: datetime,
+) -> HostActionSeal:
+    events = getattr(phase_store, "events", ())
+    if not isinstance(events, tuple) or not events or events[-1].get("phase_id") != "U2":
+        raise FoundationInputError("U3 evidence action requires a completed U2 event")
+    parent_event_sha256 = str(events[-1]["event_sha256"])
+    ledger_path = _u2_ledger_path(layout)
+    payload = _u3_evidence_payload(
+        layout,
+        phase_store=phase_store,
+        profile=profile,
+        sources=sources,
+        ledger=ledger,
+        parent_event_sha256=parent_event_sha256,
+    )
+    action = issue_host_action(
+        layout,
+        action_kind="evidence-authoring",
+        phase_id="U3",
+        parent_event_sha256=parent_event_sha256,
+        request_sha256=str(phase_store.run_contract["request_sha256"]),
+        payload=payload,
+        result_relative_path=U3_RESULT_RELATIVE_PATH,
+        now=now,
+    )
+    _persist_u3_action(layout, action)
+    return action
+
+
+def _u3_evidence_payload(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    profile: RequestProfile,
+    sources: Mapping[str, Mapping[str, object]],
+    ledger: Mapping[str, object],
+    parent_event_sha256: str,
+) -> dict[str, object]:
+    ledger_path = _u2_ledger_path(layout)
+    return {
+        "u2_ledger_sha256": sha256_bytes(ledger_path.read_bytes()),
+        "u2_event_sha256": parent_event_sha256,
+        "request_sha256": str(phase_store.run_contract["request_sha256"]),
+        "evidence_cutoff": phase_store.evidence_cutoff,
+        "admitted_sources": [
+            {
+                "source_id": source_id,
+                "content_sha256": str(source["content_sha256"]),
+            }
+            for source_id, source in sorted(sources.items())
+        ],
+        "material_inventory": [copy.deepcopy(dict(item)) for item in profile.material_inventory],
+        "requested_result_fields": [
+            "candidate_entries",
+            "verified_subagent_candidates",
+        ],
+    }
+
+
+def _complete_u3_from_host_result(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    profile: RequestProfile,
+    action: HostActionSeal,
+    result: HostResultSeal,
+    sources: Mapping[str, Mapping[str, object]],
+    now: datetime,
+):
+    try:
+        raw = action.result_path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(action.result_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError("U3 evidence authoring result is unavailable") from error
+    if raw != canonical_json_bytes(document):
+        raise FoundationInputError("U3 evidence authoring result is not canonical")
+    if set(document) != {"candidate_entries", "verified_subagent_candidates"}:
+        raise FoundationInputError("U3 evidence authoring result fields are not closed")
+    candidates = document["candidate_entries"]
+    subagent_candidates = document["verified_subagent_candidates"]
+    if (
+        not isinstance(candidates, list)
+        or not isinstance(subagent_candidates, list)
+        or any(not isinstance(item, Mapping) for item in candidates)
+        or any(not isinstance(item, Mapping) for item in subagent_candidates)
+    ):
+        raise FoundationInputError("U3 evidence authoring candidates are invalid")
+    authority = build_evidence_admission_authority(
+        layout,
+        admitted_sources=sources,
+        evidence_cutoff=phase_store.evidence_cutoff,
+    )
+    return complete_u3_evidence(
+        layout,
+        phase_store=phase_store,
+        authority=authority,
+        candidate_entries=tuple(candidates),
+        verified_subagent_candidates=tuple(subagent_candidates),
+        now=now,
+    )
+
+
+def _advance_u3(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    profile: RequestProfile,
+    now: datetime,
+) -> FoundationProgress:
+    if getattr(phase_store, "current_phase", None) != "U2":
+        raise FoundationInputError("U3 requires a completed U2 boundary")
+    sources, ledger = _load_u2_admitted_sources(layout, phase_store=phase_store)
+    events = getattr(phase_store, "events", ())
+    if not isinstance(events, tuple) or not events:
+        raise FoundationInputError("U3 parent event authority is unavailable")
+    parent_event_sha256 = str(events[-1].get("event_sha256"))
+    expected_payload = _u3_evidence_payload(
+        layout,
+        phase_store=phase_store,
+        profile=profile,
+        sources=sources,
+        ledger=ledger,
+        parent_event_sha256=parent_event_sha256,
+    )
+    action = _load_u3_action(layout)
+    pending = load_pending_action(layout)
+    if action is None:
+        if pending is not None:
+            if (
+                pending.document.get("phase_id") != "U3"
+                or pending.document.get("action_kind") != "evidence-authoring"
+            ):
+                raise FoundationInputError("pending host action differs from U3 authority")
+            action = pending
+            _persist_u3_action(layout, action)
+        else:
+            action = _issue_u3_evidence_action(
+                layout,
+                phase_store=phase_store,
+                profile=profile,
+                sources=sources,
+                ledger=ledger,
+                now=now,
+            )
+            pending = action
+    if (
+        action.document.get("run_id") != layout.run_dir.name
+        or action.document.get("version_binding") != current_version_binding()
+        or action.document.get("phase_id") != "U3"
+        or action.document.get("action_kind") != "evidence-authoring"
+        or action.document.get("parent_event_sha256") != parent_event_sha256
+        or action.document.get("request_sha256") != phase_store.run_contract.get("request_sha256")
+        or action.document.get("result_relative_path") != U3_RESULT_RELATIVE_PATH
+        or action.document.get("payload") != expected_payload
+    ):
+        raise FoundationInputError("U3 evidence action differs from the sealed U2 authority")
+    if pending is not None and pending != action:
+        raise FoundationInputError("pending host action differs from U3 authority")
+    accepted = _load_accepted_host_result(layout, action)
+    if accepted is None:
+        if pending is None:
+            raise FoundationInputError(
+                "persisted U3 evidence action has no pending dispatch or accepted result"
+            )
+        return FoundationProgress("awaiting-host-action", phase_store, action, None)
+    _complete_u3_from_host_result(
+        layout,
+        phase_store=phase_store,
+        profile=profile,
+        action=action,
+        result=accepted,
+        sources=sources,
+        now=now,
+    )
+    return FoundationProgress("advanced", phase_store, None, "U3")
+
+
 def advance_u2(
     layout: RunLayout,
     *,
     phase_store: object,
+    analysis_kind: str | None = None,
     claim: str,
     trigger_kinds: Sequence[str],
+    material_inventory: Sequence[Mapping[str, object]] | None = None,
+    material_universe_sha256: str | None = None,
     now: datetime,
 ) -> FoundationProgress:
     """Advance only the U2 boundary from a caller-supplied sealed U1 store."""
@@ -1576,8 +2028,11 @@ def advance_u2(
     disposition = retrieval.issue_retrieval_action(
         phase_store,
         claim=claim,
+        analysis_kind=analysis_kind,
         trigger_kinds=trigger_kinds,
         generated_at=_canonical_utc(now),
+        material_inventory=material_inventory,
+        material_universe_sha256=material_universe_sha256,
     )
     if isinstance(disposition, HostActionSeal):
         pending = load_pending_action(layout)
@@ -1622,7 +2077,10 @@ def advance_u2(
         decision = retrieval.assess_retrieval_eligibility(
             claim,
             phase_store=phase_store,
+            analysis_kind=analysis_kind,
             trigger_kinds=trigger_kinds,
+            material_inventory=material_inventory,
+            material_universe_sha256=material_universe_sha256,
         )
         authorization = retrieval.gate_retrieval(
             decision,
@@ -1656,19 +2114,41 @@ def advance_u2(
             artifact_hashes=(seal.artifact_sha256,),
             retrieval_authority=seal,
         )
+        from . import recovery
+
+        recovery.create_checkpoint(
+            layout,
+            phase_store,
+            boundary_kind="phase",
+            boundary_id="U2",
+            boundary_ordinal=0,
+            artifact_paths=(_u2_ledger_path(layout),),
+            now=now,
+        )
         return FoundationProgress("advanced", phase_store, None, "U2")
     if not isinstance(disposition, Mapping):
         raise FoundationInputError("U2 retrieval disposition is invalid")
     decision = retrieval.assess_retrieval_eligibility(
         claim,
         phase_store=phase_store,
+        analysis_kind=analysis_kind,
         trigger_kinds=trigger_kinds,
+        material_inventory=material_inventory,
+        material_universe_sha256=material_universe_sha256,
     )
     authorization = retrieval.gate_retrieval(
         decision,
         phase_store=phase_store,
     )
-    if not isinstance(authorization, retrieval.RetrievalAuthorization):
+    if decision.status == "not-applicable":
+        if authorization is not decision:
+            raise FoundationInputError(
+                "not-applicable U2 disposition changed its decision authority"
+            )
+        expected_authorization_sha256 = None
+    elif isinstance(authorization, retrieval.RetrievalAuthorization):
+        expected_authorization_sha256 = authorization.authorization_sha256
+    else:
         raise FoundationInputError("blocked U2 disposition has no authorization")
     boundary = phase_store.retrieval_boundary
     seal = retrieval.validate_retrieval_ledger(
@@ -1680,11 +2160,29 @@ def advance_u2(
         expected_u1_parent_event_sha256=boundary.u1_parent_event_sha256,
         expected_request_sha256=boundary.request_sha256,
         expected_decision_sha256=decision.decision_sha256,
-        expected_authorization_sha256=authorization.authorization_sha256,
+        expected_authorization_sha256=expected_authorization_sha256,
     )
-    if seal.completion_authorized or seal.retrieval_status != "required-blocked":
-        raise FoundationInputError("blocked U2 disposition authorizes completion")
     _persist_u2_ledger(layout, disposition)
+    if seal.completion_authorized:
+        phase_store.complete(
+            "U2",
+            artifact_hashes=(seal.artifact_sha256,),
+            retrieval_authority=seal,
+        )
+        from . import recovery
+
+        recovery.create_checkpoint(
+            layout,
+            phase_store,
+            boundary_kind="phase",
+            boundary_id="U2",
+            boundary_ordinal=0,
+            artifact_paths=(_u2_ledger_path(layout),),
+            now=now,
+        )
+        return FoundationProgress("advanced", phase_store, None, "U2")
+    if seal.retrieval_status != "required-blocked":
+        raise FoundationInputError("blocked U2 disposition has an invalid completion state")
     return FoundationProgress("blocked", phase_store, None, None)
 
 
@@ -1693,6 +2191,8 @@ __all__ = (
     "FoundationProgress",
     "HostCapabilitySeal",
     "RequestProfile",
+    "U3_ACTION_RELATIVE_PATH",
+    "U3_RESULT_RELATIVE_PATH",
     "advance_foundation",
     "advance_u0",
     "advance_u2",

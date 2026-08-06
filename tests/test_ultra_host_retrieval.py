@@ -15,6 +15,7 @@ from tests import test_ultra_retrieval_privacy as privacy_support
 ROOT = Path(__file__).resolve().parents[1]
 STAMP = "2026-08-05T19:00:00Z"
 NOW = datetime(2026, 8, 5, 19, 0, tzinfo=timezone.utc)
+RETRIEVED_CONTENT = "The dated policy notice reports the current bounded rule."
 
 
 def _canonical(value: object) -> bytes:
@@ -39,8 +40,26 @@ def sealed_u1_context(tmp_path_factory):
 
 @pytest.fixture
 def fresh_u1(sealed_u1_context):
+    from ultra_runtime import foundation, jsonio
+
     layout = sealed_u1_context["run_layout"]
     shutil.rmtree(layout.recovery_dir, ignore_errors=True)
+    shutil.rmtree(layout.input_dir, ignore_errors=True)
+    request_bytes = (ROOT / "AGENTS.md").read_bytes()
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    jsonio.atomic_write_bytes(layout.input_dir / "AGENTS.md", request_bytes)
+    jsonio.atomic_write_bytes(layout.input_dir / "request.bin", request_bytes)
+    jsonio.atomic_write_json(
+        layout.input_dir / "request-metadata.json",
+        {"request_sha256": request_sha256, "request_size": len(request_bytes)},
+    )
+    foundation.seal_input_inventory(
+        layout,
+        request_sha256=request_sha256,
+        material_files=(),
+        now=NOW,
+        request_bytes=request_bytes,
+    )
     ledger_path = (
         layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
     )
@@ -73,7 +92,7 @@ def _accept_retrieval_result(
     from ultra_runtime import host_handshake, jsonio
 
     query = action.document["payload"]["queries"][0]
-    content = "The dated policy notice reports the current bounded rule."
+    content = RETRIEVED_CONTENT
     result = {
         "schema_id": "crossframe.ultra.v82.host-retrieval-result",
         "schema_version": 1,
@@ -102,8 +121,8 @@ def _accept_retrieval_result(
                 "url": "https://example.test/policy?lang=en&page=1",
                 "content": content,
                 "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-                "event_date": "2026-08-04",
-                "publication_date": "2026-08-05",
+                "event_date": "2026-08-01",
+                "publication_date": "2026-08-02",
                 "interest": "Publisher states no relevant financial interest.",
                 "upstream_lineage": ["PRIMARY-NOTICE-1"],
                 "supported_claim": "The notice supports the bounded current-policy claim.",
@@ -192,8 +211,64 @@ def test_foundation_u2_boundary_issues_the_pending_retrieval_action(fresh_u1) ->
     assert progress.completed_phase is None
 
 
-def test_foundation_u2_admits_the_accepted_result_and_completes_u2(fresh_u1) -> None:
+def test_open_world_materials_do_not_turn_off_required_retrieval(fresh_u1) -> None:
     from ultra_runtime import foundation
+
+    progress = foundation.advance_u2(
+        fresh_u1.layout,
+        phase_store=fresh_u1.phase_store,
+        analysis_kind="open-world",
+        claim=fresh_u1.claim,
+        trigger_kinds=("real-world",),
+        material_inventory=tuple(privacy_support._locked_inputs()),
+        material_universe_sha256=privacy_support.INPUT_SNAPSHOT_SHA256,
+        now=fresh_u1.now,
+    )
+
+    assert progress.outcome == "awaiting-host-action"
+    assert progress.pending_action is not None
+    assert progress.pending_action.document["payload"]["decision"]["status"] == "required"
+
+
+def test_closed_input_material_authority_completes_u2_without_dispatch(
+    sealed_u1_context,
+) -> None:
+    from ultra_runtime import foundation, recovery
+
+    layout = sealed_u1_context["run_layout"]
+    shutil.rmtree(layout.recovery_dir, ignore_errors=True)
+    layout.input_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(ROOT / "AGENTS.md", layout.input_dir / "AGENTS.md")
+    ledger_path = (
+        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
+    )
+    ledger_path.unlink(missing_ok=True)
+    store = privacy_support._fresh_phase_store(analysis_kind="closed-input")
+
+    progress = foundation.advance_u2(
+        layout,
+        phase_store=store,
+        analysis_kind="closed-input",
+        claim="Use only the supplied sealed material.",
+        trigger_kinds=(),
+        material_inventory=tuple(privacy_support._locked_inputs()),
+        material_universe_sha256=privacy_support.INPUT_SNAPSHOT_SHA256,
+        now=NOW,
+    )
+
+    assert progress.outcome == "advanced"
+    assert progress.completed_phase == "U2"
+    assert not (layout.recovery_dir / "pending-action.json").exists()
+    ledger = json.loads(ledger_path.read_text("utf-8"))
+    assert ledger["retrieval_status"] == "not-applicable"
+    assert ledger["authorization_sha256"] is None
+    assert any(
+        item["phase_id"] == "U2" for item in recovery.load_checkpoints(layout)
+    )
+
+
+def test_foundation_u2_admits_the_accepted_result_and_completes_u2(fresh_u1) -> None:
+    from ultra_runtime import foundation, recovery
 
     first = foundation.advance_u2(
         fresh_u1.layout,
@@ -223,6 +298,201 @@ def test_foundation_u2_admits_the_accepted_result_and_completes_u2(fresh_u1) -> 
     )
     ledger = json.loads(ledger_path.read_text("utf-8"))
     assert ledger["retrieval_status"] == "required-complete"
+    checkpoint = next(
+        item
+        for item in recovery.load_checkpoints(fresh_u1.layout)
+        if item["phase_id"] == "U2"
+    )
+    assert [item["path"] for item in checkpoint["artifact_hashes"]] == [
+        "artifacts/U00-U03-evidence/U02-retrieval-ledger.json"
+    ]
+    assert checkpoint["artifact_hashes"][0]["sha256"] == hashlib.sha256(
+        ledger_path.read_bytes()
+    ).hexdigest()
+
+
+def _advance_fresh_u1_to_u2(fresh_u1):
+    from ultra_runtime import foundation
+
+    first = foundation.advance_u2(
+        fresh_u1.layout,
+        phase_store=fresh_u1.phase_store,
+        claim=fresh_u1.claim,
+        trigger_kinds=("real-world", "current-fact"),
+        now=fresh_u1.now,
+    )
+    assert first.pending_action is not None
+    _accept_retrieval_result(fresh_u1, first.pending_action)
+    completed = foundation.advance_u2(
+        fresh_u1.layout,
+        phase_store=fresh_u1.phase_store,
+        claim=fresh_u1.claim,
+        trigger_kinds=("real-world", "current-fact"),
+        now=fresh_u1.later,
+    )
+    assert completed.completed_phase == "U2"
+    return completed.phase_store
+
+
+def _accept_evidence_authoring_result(fresh_u1, action) -> None:
+    from ultra_runtime import host_handshake, jsonio
+
+    content_sha256 = hashlib.sha256(RETRIEVED_CONTENT.encode("utf-8")).hexdigest()
+    result = {
+        "candidate_entries": [
+            {
+                "evidence_id": "EV-U3-HOST-1",
+                "identity": "reported",
+                "statement": RETRIEVED_CONTENT,
+                "source_refs": ["SOURCE-PRIMARY-1"],
+                "observed_at": None,
+                "confidence": "medium",
+                "event_date": "2026-08-01",
+                "publication_date": "2026-08-02",
+                "interest": "Publisher states no relevant financial interest.",
+                "upstream_lineage": ["PRIMARY-NOTICE-1"],
+                "supported_claim": "The notice supports the bounded current-policy claim.",
+                "cannot_prove": "It cannot prove universal policy effectiveness.",
+                "attribution": {
+                    "origin_kind": "source",
+                    "origin_ref": "SOURCE-PRIMARY-1",
+                    "content_sha256": content_sha256,
+                    "span": None,
+                    "proof_grade": "host-attested",
+                },
+            }
+        ],
+        "verified_subagent_candidates": [],
+    }
+    jsonio.atomic_write_json(action.result_path, result)
+    receipt = {
+        "schema_id": "crossframe.ultra.v82.host-result-receipt",
+        "schema_version": 1,
+        "run_id": action.document["run_id"],
+        "version_binding": copy.deepcopy(action.document["version_binding"]),
+        "phase_id": "U3",
+        "action_kind": "evidence-authoring",
+        "parent_event_sha256": action.document["parent_event_sha256"],
+        "request_sha256": action.document["request_sha256"],
+        "action_sha256": action.action_sha256,
+        "result_relative_path": action.document["result_relative_path"],
+        "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "execution_id": "host-evidence-authoring-1",
+        "completed_at": "2026-08-05T19:00:07Z",
+        "provider": {
+            "provider_id": "test-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "evidence-authoring",
+            "provider_id": "test-host",
+            "version": "1.0.0",
+        },
+        "execution_status": "complete",
+        "attempts": [{"attempt": 1, "status": "success", "error": None}],
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
+    host_handshake.accept_host_result(
+        fresh_u1.layout,
+        action=action,
+        receipt=receipt,
+    )
+
+
+def test_u3_evidence_authoring_wait_is_u2_bound_and_idempotent(fresh_u1) -> None:
+    from ultra_runtime import foundation
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    profile = foundation.RequestProfile("open-world", fresh_u1.claim, (), None)
+    first = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=1),
+    )
+
+    assert first.outcome == "awaiting-host-action"
+    assert first.pending_action is not None
+    assert first.pending_action.document["action_kind"] == "evidence-authoring"
+    assert first.pending_action.document["payload"]["u2_event_sha256"] == (
+        phase_store.events[-1]["event_sha256"]
+    )
+    pending_path = fresh_u1.layout.recovery_dir / "pending-action.json"
+    pending_bytes = pending_path.read_bytes()
+    repeated = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=2),
+    )
+    assert repeated.pending_action == first.pending_action
+    assert pending_path.read_bytes() == pending_bytes
+
+
+def test_u3_persisted_action_without_pending_or_accepted_result_fails_closed(
+    fresh_u1,
+) -> None:
+    from ultra_runtime import foundation
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    profile = foundation.RequestProfile("open-world", fresh_u1.claim, (), None)
+    waiting = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=1),
+    )
+    assert waiting.pending_action is not None
+    (fresh_u1.layout.recovery_dir / "pending-action.json").unlink()
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="pending|accepted|dispatch",
+    ):
+        foundation._advance_u3(
+            fresh_u1.layout,
+            phase_store=phase_store,
+            profile=profile,
+            now=fresh_u1.later + timedelta(seconds=2),
+        )
+
+
+def test_u3_accepted_evidence_result_completes_and_checkpoints(fresh_u1) -> None:
+    from ultra_runtime import foundation, recovery
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    profile = foundation.RequestProfile("open-world", fresh_u1.claim, (), None)
+    waiting = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=1),
+    )
+    assert waiting.pending_action is not None
+    _accept_evidence_authoring_result(fresh_u1, waiting.pending_action)
+
+    completed = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=3),
+    )
+
+    assert completed.outcome == "advanced"
+    assert completed.completed_phase == "U3"
+    assert phase_store.current_phase == "U3"
+    assert not (fresh_u1.layout.recovery_dir / "pending-action.json").exists()
+    evidence_path = (
+        fresh_u1.layout.artifacts_dir
+        / "U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    artifact = json.loads(evidence_path.read_text("utf-8"))
+    assert artifact["entries"][0]["identity"] == "reported"
+    assert any(
+        item["phase_id"] == "U3"
+        for item in recovery.load_checkpoints(fresh_u1.layout)
+    )
 
 
 @pytest.mark.parametrize(
@@ -344,7 +614,7 @@ def test_host_result_becomes_required_complete_ledger(fresh_u1) -> None:
     assert ledger["retrieval_status"] == "required-complete"
     assert ledger["query_count"] >= 1
     assert ledger["sources"][0]["record"]["url"].startswith("https://")
-    assert ledger["sources"][0]["record"]["publication_date"] == "2026-08-05"
+    assert ledger["sources"][0]["record"]["publication_date"] == "2026-08-02"
     admitted_path = (
         fresh_u1.layout.recovery_dir
         / "u2-authority/admitted-host-result.json"

@@ -84,6 +84,7 @@ def _run_contract(
     sensitivity: str = "private",
     run_mode: str = "test",
     run_id: str = RUN_ID,
+    analysis_kind: str = "open-world",
 ) -> dict[str, object]:
     requirements = default_capability_requirements()
     requirements["network"] = (
@@ -92,7 +93,7 @@ def _run_contract(
     contract = {
         "trigger": "crossframe-ultra",
         "request_sha256": REQUEST_SHA256,
-        "analysis_kind": "open-world",
+        "analysis_kind": analysis_kind,
         "run_mode": run_mode,
         "sensitivity": sensitivity,
         "retention": "retain",
@@ -236,6 +237,7 @@ def _phase_store(
     outbound_permission: str = "deidentified-only",
     sensitivity: str = "private",
     authority_variant: str = "host",
+    analysis_kind: str = "open-world",
 ):
     import ultra_runtime.source_integrity as source_integrity
     from ultra_runtime.state_machine import PhaseStore
@@ -248,6 +250,7 @@ def _phase_store(
         network=network,
         outbound_permission=outbound_permission,
         sensitivity=sensitivity,
+        analysis_kind=analysis_kind,
     )
     availability = default_measured_availability()
     availability["network"] = (
@@ -395,10 +398,16 @@ def _fresh_phase_store(
     outbound_permission: str = "deidentified-only",
     sensitivity: str = "private",
     expected_eligibility_basis_sha256: str | None = None,
+    analysis_kind: str = "open-world",
 ):
     from ultra_runtime.state_machine import PhaseStore
 
-    base = _phase_store(network, outbound_permission, sensitivity)
+    base = _phase_store(
+        network,
+        outbound_permission,
+        sensitivity,
+        analysis_kind=analysis_kind,
+    )
     authority = copy.deepcopy(base._u1_authority)
     control_plane_authority = {}
     if expected_eligibility_basis_sha256 is not None:
@@ -409,6 +418,7 @@ def _fresh_phase_store(
         network=network,
         outbound_permission=outbound_permission,
         sensitivity=sensitivity,
+        analysis_kind=analysis_kind,
     )
     availability = default_measured_availability()
     availability["network"] = (
@@ -610,10 +620,13 @@ def test_not_applicable_is_limited_to_pure_logic_or_a_complete_closed_material_a
     assert logic.status == "not-applicable"
     assert logic.document["eligibility_basis"]["analysis_kind"] == "pure-logic"
 
+    closed_store = _phase_store(analysis_kind="closed-input")
+
     with pytest.raises(module.RetrievalPolicyError, match="material"):
         module.assess_retrieval_eligibility(
             "Use only the supplied material.",
-            phase_store=_phase_store(),
+            phase_store=closed_store,
+            analysis_kind="closed-input",
             material_inventory=_locked_inputs(),
             material_universe_sha256="4" * 64,
         )
@@ -621,7 +634,8 @@ def test_not_applicable_is_limited_to_pure_logic_or_a_complete_closed_material_a
     inventory = tuple(_locked_inputs())
     closed = module.assess_retrieval_eligibility(
         "Use only the supplied material.",
-        phase_store=_phase_store(),
+        phase_store=closed_store,
+        analysis_kind="closed-input",
         material_inventory=inventory,
         material_universe_sha256=INPUT_SNAPSHOT_SHA256,
     )
@@ -629,12 +643,24 @@ def test_not_applicable_is_limited_to_pure_logic_or_a_complete_closed_material_a
     assert closed.document["eligibility_basis"]["material_inventory"] == list(inventory)
 
 
-def test_production_raw_pure_logic_override_cannot_bypass_missing_external_authority():
+def test_production_raw_pure_logic_override_cannot_bypass_missing_external_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     import ultra_runtime.retrieval as module
-    from ultra_runtime.paths import RunMode, build_run_layout, default_root_policy
-    from ultra_runtime.state_machine import PhaseStore
+    import ultra_runtime.state_machine as state_machine
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
 
     production_run_id = "20260802T000004Z-8da1c064e255"
+    policy = RootPolicy(
+        (tmp_path / "production-control").resolve(),
+        (tmp_path / "test-control").resolve(),
+    )
+    monkeypatch.setattr(
+        state_machine,
+        "PRODUCTION_ROOT",
+        policy.production_root,
+    )
     run_contract = _run_contract(
         run_mode="production",
         run_id=production_run_id,
@@ -646,7 +672,7 @@ def test_production_raw_pure_logic_override_cannot_bypass_missing_external_autho
         generated_at=STAMP,
     )
     run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
-    production = PhaseStore(
+    production = state_machine.PhaseStore(
         run_id=production_run_id,
         version_binding=_binding(),
         source_sha256=SOURCE_MANIFEST_SHA256,
@@ -660,7 +686,7 @@ def test_production_raw_pure_logic_override_cannot_bypass_missing_external_autho
         run_layout=build_run_layout(
             RunMode.PRODUCTION,
             production_run_id,
-            default_root_policy(),
+            policy,
         ),
     )
     production.complete(

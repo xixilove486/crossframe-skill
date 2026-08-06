@@ -501,6 +501,7 @@ def assess_retrieval_eligibility(
     claim: str,
     *,
     phase_store: object,
+    analysis_kind: str | None = None,
     trigger_kinds: Sequence[str] | None = None,
     pure_logic: bool = False,
     material_inventory: Sequence[Mapping[str, object]] | None = None,
@@ -548,45 +549,88 @@ def assess_retrieval_eligibility(
         }
         status = "not-applicable"
         reason = "pure-logic"
-    elif material_inventory is not None or material_universe_sha256 is not None:
-        if not material_inventory or not isinstance(material_universe_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", material_universe_sha256):
-            raise RetrievalPolicyError("closed input requires complete material authority")
-        normalized_inventory = [copy.deepcopy(dict(item)) for item in material_inventory]
-        if (
-            normalized_inventory != boundary["inputs"]
-            or material_universe_sha256 != boundary["input_snapshot_sha256"]
-            or hashlib.sha256(canonical_json_bytes(normalized_inventory)).hexdigest()
-            != boundary["input_snapshot_sha256"]
-        ):
-            raise RetrievalPolicyError("closed input material differs from sealed U1 authority")
-        basis = {
-            "analysis_kind": "closed-input",
-            "claim": claim_text,
-            "claim_sha256": claim_sha256,
-            "run_id": boundary["run_id"],
-            "u1_parent_event_sha256": boundary["u1_parent_event_sha256"],
-            "request_sha256": boundary["request_sha256"],
-            "version_binding": copy.deepcopy(boundary["version_binding"]),
-            "material_inventory": normalized_inventory,
-            "material_universe_sha256": material_universe_sha256,
-        }
-        status = "not-applicable"
-        reason = "closed-input"
     else:
-        kinds = tuple(trigger_kinds or ("real-world",))
-        if not kinds or len(kinds) != len(set(kinds)) or any(kind not in _TRIGGER_KINDS for kind in kinds):
-            raise RetrievalPolicyError("retrieval trigger kinds are invalid")
-        basis = {
-            "trigger_kinds": list(kinds),
-            "claim": claim_text,
-            "claim_sha256": claim_sha256,
-            "run_id": boundary["run_id"],
-            "u1_parent_event_sha256": boundary["u1_parent_event_sha256"],
-            "request_sha256": boundary["request_sha256"],
-            "version_binding": copy.deepcopy(boundary["version_binding"]),
-        }
-        status = "required"
-        reason = "explicit-trigger"
+        contract = getattr(phase_store, "run_contract", None)
+        expected_analysis_kind = (
+            contract.get("analysis_kind") if isinstance(contract, Mapping) else None
+        )
+        selected_analysis_kind = analysis_kind or expected_analysis_kind
+        if (
+            expected_analysis_kind not in {"open-world", "closed-input"}
+            or selected_analysis_kind != expected_analysis_kind
+        ):
+            raise RetrievalPolicyError(
+                "retrieval analysis kind differs from the sealed run contract"
+            )
+        has_material_authority = (
+            material_inventory is not None or material_universe_sha256 is not None
+        )
+        normalized_inventory: list[dict[str, object]] = []
+        if has_material_authority:
+            if (
+                not material_inventory
+                or not isinstance(material_universe_sha256, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", material_universe_sha256)
+                or any(not isinstance(item, Mapping) for item in material_inventory)
+            ):
+                raise RetrievalPolicyError(
+                    "material authority requires a complete sealed inventory"
+                )
+            normalized_inventory = [
+                copy.deepcopy(dict(item)) for item in material_inventory
+            ]
+            boundary_inputs = boundary["inputs"]
+            paths = [item.get("path") for item in normalized_inventory]
+            if (
+                len(paths) != len(set(paths))
+                or any(item not in boundary_inputs for item in normalized_inventory)
+                or hashlib.sha256(canonical_json_bytes(normalized_inventory)).hexdigest()
+                != material_universe_sha256
+            ):
+                raise RetrievalPolicyError(
+                    "material authority is not a sealed U1 input subset"
+                )
+        if selected_analysis_kind == "closed-input":
+            if not has_material_authority:
+                raise RetrievalPolicyError(
+                    "closed input requires complete material authority"
+                )
+            if trigger_kinds:
+                raise RetrievalPolicyError(
+                    "closed input cannot carry external retrieval triggers"
+                )
+            basis = {
+                "analysis_kind": "closed-input",
+                "claim": claim_text,
+                "claim_sha256": claim_sha256,
+                "run_id": boundary["run_id"],
+                "u1_parent_event_sha256": boundary["u1_parent_event_sha256"],
+                "request_sha256": boundary["request_sha256"],
+                "version_binding": copy.deepcopy(boundary["version_binding"]),
+                "material_inventory": normalized_inventory,
+                "material_universe_sha256": material_universe_sha256,
+            }
+            status = "not-applicable"
+            reason = "closed-input"
+        else:
+            kinds = tuple(trigger_kinds or ("real-world",))
+            if (
+                not kinds
+                or len(kinds) != len(set(kinds))
+                or any(kind not in _TRIGGER_KINDS for kind in kinds)
+            ):
+                raise RetrievalPolicyError("retrieval trigger kinds are invalid")
+            basis = {
+                "trigger_kinds": list(kinds),
+                "claim": claim_text,
+                "claim_sha256": claim_sha256,
+                "run_id": boundary["run_id"],
+                "u1_parent_event_sha256": boundary["u1_parent_event_sha256"],
+                "request_sha256": boundary["request_sha256"],
+                "version_binding": copy.deepcopy(boundary["version_binding"]),
+            }
+            status = "required"
+            reason = "explicit-trigger"
     basis["basis_sha256"] = _hash_without(basis, "basis_sha256")
     document: dict[str, object] = {
         "status": status,
@@ -2184,6 +2228,9 @@ def issue_retrieval_action(
     claim: str,
     trigger_kinds: Sequence[str],
     generated_at: str,
+    analysis_kind: str | None = None,
+    material_inventory: Sequence[Mapping[str, object]] | None = None,
+    material_universe_sha256: str | None = None,
 ):
     """Issue a redacted, persistent U2 action or a zero-dispatch blocked ledger."""
 
@@ -2194,7 +2241,10 @@ def issue_retrieval_action(
     decision = assess_retrieval_eligibility(
         claim,
         phase_store=phase_store,
+        analysis_kind=analysis_kind,
         trigger_kinds=trigger_kinds,
+        material_inventory=material_inventory,
+        material_universe_sha256=material_universe_sha256,
     )
     authorization = gate_retrieval(decision, phase_store=phase_store)
     if not isinstance(authorization, RetrievalAuthorization):

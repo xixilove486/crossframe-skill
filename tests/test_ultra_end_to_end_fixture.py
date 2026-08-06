@@ -69,6 +69,66 @@ def _bind_validation_repo(validation, authority_repo: Path, monkeypatch) -> None
     monkeypatch.setattr(validation, "__file__", str(authority_module))
 
 
+def _accept_source_read_batch(layout, action, *, batch_ordinal: int) -> None:
+    host_handshake = _module("host_handshake")
+    jsonio = _module("jsonio")
+    source_integrity = _module("source_integrity")
+    payload = action.document["payload"]
+    execution_id = f"end-to-end-reader-{batch_ordinal:06d}"
+    issued_at = datetime.fromisoformat(
+        action.document["issued_at"].replace("Z", "+00:00")
+    )
+    read_at = (issued_at + timedelta(seconds=1)).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+    items = [
+        {
+            "source_unit_id": unit["source_unit_id"],
+            "source_unit_sha256": unit["source_unit_sha256"],
+            "receipt_sha256": source_integrity._host_read_item_sha256(
+                action_sha256=action.action_sha256,
+                read_plan_sha256=payload["read_plan_sha256"],
+                reader_mode=payload["reader_mode"],
+                execution_id=execution_id,
+                read_at=read_at,
+                source_unit_id=unit["source_unit_id"],
+                source_unit_sha256=unit["source_unit_sha256"],
+            ),
+        }
+        for unit in payload["source_units"]
+    ]
+    result = {
+        "schema_id": "crossframe.ultra.v82.source-read-result",
+        "schema_version": 1,
+        "action_sha256": action.action_sha256,
+        "read_plan_sha256": payload["read_plan_sha256"],
+        "reader_mode": payload["reader_mode"],
+        "execution_id": execution_id,
+        "read_at": read_at,
+        "items": items,
+    }
+    jsonio.atomic_write_json(action.result_path, result)
+    receipt = {
+        "schema_id": "crossframe.ultra.v82.host-result-receipt",
+        "schema_version": 1,
+        "run_id": action.document["run_id"],
+        "version_binding": copy.deepcopy(action.document["version_binding"]),
+        "phase_id": "U1",
+        "action_kind": "source-read",
+        "parent_event_sha256": action.document["parent_event_sha256"],
+        "request_sha256": action.document["request_sha256"],
+        "action_sha256": action.action_sha256,
+        "result_relative_path": action.document["result_relative_path"],
+        "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "execution_id": execution_id,
+        "completed_at": read_at,
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        jsonio.canonical_json_bytes(receipt)
+    ).hexdigest()
+    host_handshake.accept_host_result(layout, action=action, receipt=receipt)
+
+
 class RecordingPhaseStore:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[str, ...]]] = [
@@ -134,58 +194,55 @@ def real_seam_result(
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(state_machine, "_SOURCE_REPOSITORY", context["repo"])
     layout = context["run_layout"]
-    original_store = state_fixtures._store(state_machine)
-    u1_snapshot = state_fixtures._issue_u1_recovery_snapshot(
-        original_store,
-        context,
-    )
-    u1_authority = u1_snapshot["authority"]
-    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
-    u1_authority_dir = layout.recovery_dir / "u1-authority"
-    source_lock_path = u1_authority_dir / "source-lock.json"
-    source_coverage_path = u1_authority_dir / "source-coverage.json"
-    read_plan_path = u1_authority_dir / "read-plan.json"
-    read_events_path = (
-        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
-    )
+    foundation = _module("foundation")
+    foundation_now = datetime(2026, 8, 2, tzinfo=timezone.utc)
     now = datetime(2026, 8, 4, tzinfo=timezone.utc)
-    jsonio.atomic_write_json(run_contract_path, dict(original_store.run_contract))
-    recovery.create_checkpoint(
+    statuses = status.RunStatusStore(layout)
+    created = statuses.create(foundation_now)
+    materialization.seal_request_intake_authority(
         layout,
-        original_store,
-        boundary_kind="phase",
-        boundary_id="U0",
-        boundary_ordinal=0,
-        artifact_paths=(run_contract_path,),
-        now=now,
+        request_sha256=state_fixtures.REQUEST_SHA256,
+        request_size=len(state_fixtures.REQUEST_BYTES),
+        created_at=created.created_at,
     )
-    original_store.complete(
-        "U1",
-        artifact_hashes=(
-            u1_authority.source_lock_artifact_sha256,
-            u1_authority.read_coverage_artifact_sha256,
-        ),
-        u1_authority=u1_authority,
-    )
-    jsonio.atomic_write_json(source_lock_path, u1_snapshot["source_lock"])
-    jsonio.atomic_write_json(source_coverage_path, u1_snapshot["source_coverage"])
-    jsonio.atomic_write_bytes(
-        read_events_path,
-        b"".join(
-            jsonio.canonical_json_bytes(event)
-            for event in u1_snapshot["read_events"]
-        ),
-    )
-    recovery.create_checkpoint(
+    foundation.seal_input_inventory(
         layout,
-        original_store,
-        boundary_kind="phase",
-        boundary_id="U1",
-        boundary_ordinal=0,
-        artifact_paths=(source_lock_path, source_coverage_path),
-        now=now + timedelta(seconds=1),
+        request_sha256=state_fixtures.REQUEST_SHA256,
+        material_files=(),
+        now=foundation_now,
+        request_bytes=state_fixtures.REQUEST_BYTES,
     )
-    assert jsonio.load_json_object(read_plan_path) == u1_snapshot["read_plan"]
+    original_store = foundation._complete_u0(
+        layout,
+        repo=context["repo"],
+        attestation=state_fixtures._capability_attestation(),
+        now=foundation_now,
+    )
+    progress = foundation._advance_u1(
+        layout,
+        repo=context["repo"],
+        phase_store=original_store,
+        now=foundation_now + timedelta(seconds=1),
+    )
+    batch_ordinal = 0
+    while progress.outcome == "awaiting-host-action":
+        batch_ordinal += 1
+        assert progress.pending_action is not None
+        _accept_source_read_batch(
+            layout,
+            progress.pending_action,
+            batch_ordinal=batch_ordinal,
+        )
+        progress = foundation._advance_u1(
+            layout,
+            repo=context["repo"],
+            phase_store=original_store,
+            now=foundation_now + timedelta(seconds=batch_ordinal * 2 + 1),
+        )
+        assert batch_ordinal <= 16
+    assert progress.outcome == "advanced"
+    assert progress.completed_phase == "U1"
+    assert original_store.current_phase == "U1"
     _, retrieval_ledger = state_fixtures._complete_u2(
         original_store,
         include_artifact=True,
@@ -209,7 +266,26 @@ def real_seam_result(
         ).read_text("utf-8")
     )
     for entry in evidence_fixture["entries"]:
-        original_store.append_evidence(entry)
+        admitted_entry = copy.deepcopy(entry)
+        if admitted_entry["identity"] == "user-claim":
+            admitted_entry["attribution"] = {
+                "origin_kind": "request",
+                "origin_ref": "request.bin",
+                "content_sha256": state_fixtures.REQUEST_SHA256,
+                "span": [0, len(state_fixtures.REQUEST_BYTES)],
+                "proof_grade": "fixture-bound",
+            }
+        else:
+            admitted_entry["attribution"] = {
+                "origin_kind": "source",
+                "origin_ref": admitted_entry["source_refs"][0],
+                "content_sha256": hashlib.sha256(
+                    admitted_entry["statement"].encode("utf-8")
+                ).hexdigest(),
+                "span": None,
+                "proof_grade": "fixture-bound",
+            }
+        original_store.append_evidence(admitted_entry)
     evidence_seal = evidence.validate_evidence_artifact(
         original_store.evidence_artifact,
         expected_run_id=original_store.run_id,
@@ -238,18 +314,14 @@ def real_seam_result(
     expected_events = original_store.events
     del original_store
 
-    statuses = status.RunStatusStore(layout)
-    created = statuses.create(now + timedelta(seconds=4))
-    materialization.seal_request_intake_authority(
-        layout,
-        request_sha256=state_fixtures.REQUEST_SHA256,
-        request_size=len(state_fixtures.REQUEST_BYTES),
-        created_at=created.created_at,
-    )
     running = statuses.transition(created, "running", now + timedelta(seconds=5))
     statuses.transition(running, "interrupted", now + timedelta(seconds=6))
 
-    resumed = recovery.resume_run(layout, now=now + timedelta(seconds=7))
+    resumed = recovery.resume_run(
+        layout,
+        now=now + timedelta(seconds=7),
+        source_repository=context["repo"],
+    )
 
     assert resumed.checkpoint == checkpoint
     assert resumed.phase_store.events == expected_events
@@ -257,6 +329,8 @@ def real_seam_result(
     assert resumed.phase_store.events[-1]["status"] == "complete"
     assert resumed.phase_store.evidence_frozen is True
     assert resumed.phase_store.evidence_sha256 == evidence_seal.artifact_sha256
+    u3_snapshot_root = layout.root.parent / "u3-seam-snapshot"
+    shutil.copytree(layout.root, u3_snapshot_root)
 
     world_source = layout.authoring_dir / "U04-world-volume.json"
     jsonio.atomic_write_json(
@@ -295,12 +369,23 @@ def real_seam_result(
         artifact_paths=(world_path,),
         now=now + timedelta(seconds=9),
     )
-    restarted = recovery.resume_run(layout, now=now + timedelta(seconds=10))
+    statuses.transition(
+        statuses.read(),
+        "interrupted",
+        now + timedelta(seconds=9, microseconds=500_000),
+    )
+    restarted = recovery.resume_run(
+        layout,
+        now=now + timedelta(seconds=10),
+        source_repository=context["repo"],
+    )
     assert restarted.phase_store.evidence_frozen is True
     assert restarted.phase_store.evidence_sha256 == evidence_seal.artifact_sha256
     assert [
         event["phase_id"] for event in restarted.phase_store.events
     ].count("U4") == 1
+    u4_snapshot_root = layout.root.parent / "u4-seam-snapshot"
+    shutil.copytree(layout.root, u4_snapshot_root)
 
     output_authority = write_closed_u4_u10_authoring(REPO_ROOT, layout)
 
@@ -334,6 +419,17 @@ def real_seam_result(
     assert [
         event["phase_id"] for event in restarted.phase_store.events
     ] == [f"U{ordinal}" for ordinal in range(12)]
+    statuses.transition(
+        statuses.read(),
+        "interrupted",
+        now + timedelta(seconds=12, microseconds=250_000),
+    )
+    u11_resumed = recovery.resume_run(
+        layout,
+        now=now + timedelta(seconds=12, microseconds=500_000),
+        source_repository=context["repo"],
+    )
+    assert u11_resumed.phase_store.current_phase == "U11"
     snapshot_root = layout.root.parent / "u11-seam-snapshot"
     shutil.copytree(layout.root, snapshot_root)
 
@@ -373,7 +469,7 @@ def real_seam_result(
         )
 
     complete = materialization.materialize_complete_run(
-        REPO_ROOT,
+        context["repo"],
         paths.RunMode.TEST,
         layout.run_dir.name,
         policy=policy,
@@ -441,6 +537,8 @@ def real_seam_result(
     return {
         "layout": layout,
         "authority_repo": context["repo"],
+        "u3_snapshot_root": u3_snapshot_root,
+        "u4_snapshot_root": u4_snapshot_root,
         "u11_snapshot_root": snapshot_root,
         "u3_evidence_frozen": resumed.phase_store.evidence_frozen,
         "u3_evidence_sha256": resumed.phase_store.evidence_sha256,
@@ -492,6 +590,149 @@ def test_task12_task13_real_disk_seam_commits_atomic_complete_run(
     assert real_seam_result["manifest"]["official_delivery_published"] is True
     assert real_seam_result["journal"]["state"] == "complete"
     assert real_seam_result["latest_complete"]["run_id"] == status_record.run_id
+
+
+def _snapshot_progress_runtime(
+    real_seam_result,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    snapshot_key: str,
+):
+    paths = _module("paths")
+    state_machine = _module("state_machine")
+    test_root = tmp_path / "test-control"
+    shutil.copytree(real_seam_result[snapshot_key], test_root)
+    policy = paths.RootPolicy(tmp_path / "production-control", test_root)
+    layout = paths.build_run_layout(
+        paths.RunMode.TEST,
+        real_seam_result["final_status"].run_id,
+        policy,
+    )
+    monkeypatch.setattr(
+        state_machine,
+        "_SOURCE_REPOSITORY",
+        real_seam_result["authority_repo"],
+    )
+    return paths, layout, policy
+
+
+def _foundation_authority_bytes(layout) -> dict[str, bytes]:
+    selected = {
+        layout.run_dir / "run-status.json",
+        *(path for path in layout.input_dir.rglob("*") if path.is_file()),
+        *(
+            path
+            for path in (layout.artifacts_dir / "U00-U03-evidence").rglob("*")
+            if path.is_file()
+        ),
+        *(
+            path
+            for path in layout.recovery_dir.rglob("*")
+            if path.is_file() and not path.name.endswith(".lock")
+        ),
+    }
+    return {
+        path.relative_to(layout.run_dir).as_posix(): path.read_bytes()
+        for path in sorted(selected)
+    }
+
+
+def test_sealed_u3_missing_u4_is_idempotent_authoring_wait(
+    real_seam_result,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths, layout, policy = _snapshot_progress_runtime(
+        real_seam_result,
+        tmp_path,
+        monkeypatch,
+        "u3_snapshot_root",
+    )
+    materialization = _module("materialization")
+    status = _module("status")
+    forbidden_calls: list[tuple[object, ...]] = []
+
+    def forbidden(*args):
+        forbidden_calls.append(args)
+        pytest.fail("validation or publication ran on an authoring wait")
+
+    before = _foundation_authority_bytes(layout)
+    first = materialization.materialize_complete_run(
+        real_seam_result["authority_repo"],
+        paths.RunMode.TEST,
+        layout.run_dir.name,
+        policy=policy,
+        now=datetime(2026, 8, 4, 0, 0, 20, tzinfo=timezone.utc),
+        entropy=b"task-6-u4-wait-first",
+        fresh_check=forbidden,
+        commit_report=forbidden,
+    )
+    second = materialization.materialize_complete_run(
+        real_seam_result["authority_repo"],
+        paths.RunMode.TEST,
+        layout.run_dir.name,
+        policy=policy,
+        now=datetime(2026, 8, 4, 0, 0, 21, tzinfo=timezone.utc),
+        entropy=b"task-6-u4-wait-second",
+        fresh_check=forbidden,
+        commit_report=forbidden,
+    )
+
+    assert first == second
+    assert first.outcome == "awaiting-authoring"
+    assert first.current_phase == "U4"
+    assert first.last_complete_phase == "U3"
+    assert first.next_action is not None
+    assert first.next_action["relative_path"] == "U04-world-volume.json"
+    assert status.RunStatusStore(layout).read().status == "running"
+    assert _foundation_authority_bytes(layout) == before
+    assert forbidden_calls == []
+    assert not (layout.recovery_dir / "publish-transaction.json").exists()
+    assert not (layout.artifacts_dir / "ultra-artifact-manifest.json").exists()
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+def test_missing_u5_sibling_does_not_hide_malformed_existing_authoring(
+    real_seam_result,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths, layout, policy = _snapshot_progress_runtime(
+        real_seam_result,
+        tmp_path,
+        monkeypatch,
+        "u4_snapshot_root",
+    )
+    materialization = _module("materialization")
+    status = _module("status")
+    malformed_path = layout.authoring_dir / "U05-transformation-ledger.json"
+    malformed_bytes = b'{"malformed":\n'
+    malformed_path.write_bytes(malformed_bytes)
+    assert not (layout.authoring_dir / "U05-concept-disposition.json").exists()
+    forbidden_calls: list[tuple[object, ...]] = []
+
+    def forbidden(*args):
+        forbidden_calls.append(args)
+        pytest.fail("validation or publication ran before authoring admission")
+
+    with pytest.raises(ValueError, match="authoring|JSON|malformed|invalid"):
+        materialization.materialize_complete_run(
+            real_seam_result["authority_repo"],
+            paths.RunMode.TEST,
+            layout.run_dir.name,
+            policy=policy,
+            now=datetime(2026, 8, 4, 0, 0, 22, tzinfo=timezone.utc),
+            entropy=b"task-6-malformed-u5",
+            fresh_check=forbidden,
+            commit_report=forbidden,
+        )
+
+    assert malformed_path.read_bytes() == malformed_bytes
+    assert status.RunStatusStore(layout).read().status == "running"
+    assert forbidden_calls == []
+    assert not (layout.recovery_dir / "publish-transaction.json").exists()
+    assert not (layout.artifacts_dir / "ultra-artifact-manifest.json").exists()
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
 def _snapshot_materialization_runtime(

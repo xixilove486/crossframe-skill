@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timedelta, timezone
 from io import BytesIO, StringIO
 import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from types import MappingProxyType
@@ -59,6 +61,155 @@ def _root_policy(tmp_path: Path):
     from ultra_runtime.paths import RootPolicy
 
     return RootPolicy(tmp_path / "production", tmp_path / "test")
+
+
+def _fresh_u1_authority_repo(tmp_path: Path) -> Path:
+    from tests.test_ultra_source_read_coverage import _write_release_manifest
+
+    authority_repo = tmp_path / "u1-authority-repo"
+    skill_root = authority_repo / "skills/crossframe-ultra"
+    skill_root.parent.mkdir(parents=True)
+    shutil.copytree(REPO_ROOT / "skills/crossframe-ultra", skill_root)
+    _write_release_manifest(
+        authority_repo,
+        skill_root / "references/release-manifest.json",
+    )
+    return authority_repo
+
+
+def _host_result_completed_at(action) -> str:
+    issued_at = datetime.fromisoformat(
+        str(action.document["issued_at"]).replace("Z", "+00:00")
+    )
+    return (issued_at + timedelta(seconds=1)).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+
+
+def _accept_closed_input_evidence_result(layout, action) -> None:
+    from ultra_runtime import host_handshake, jsonio
+
+    payload = action.document["payload"]
+    assert isinstance(payload, dict)
+    materials = payload["material_inventory"]
+    assert isinstance(materials, list) and materials
+    material = materials[0]
+    assert isinstance(material, dict)
+    relative_path = str(material["path"])
+    material_bytes = (layout.input_dir / relative_path).read_bytes()
+    statement = material_bytes.decode("utf-8")
+    source_ref = "SEALED-MATERIAL-1"
+    result = {
+        "candidate_entries": [
+            {
+                "evidence_id": "EV-U3-SEALED-MATERIAL-1",
+                "identity": "user-claim",
+                "statement": statement,
+                "source_refs": [source_ref],
+                "observed_at": None,
+                "confidence": "unknown",
+                "event_date": None,
+                "publication_date": None,
+                "interest": "The user supplied this sealed material.",
+                "upstream_lineage": [source_ref],
+                "supported_claim": "The material records the user's supplied statement.",
+                "cannot_prove": "The supplied statement does not independently prove truth.",
+                "attribution": {
+                    "origin_kind": "material",
+                    "origin_ref": relative_path,
+                    "content_sha256": hashlib.sha256(material_bytes).hexdigest(),
+                    "span": [0, len(material_bytes)],
+                    "proof_grade": "self-reported",
+                },
+            }
+        ],
+        "verified_subagent_candidates": [],
+    }
+    jsonio.atomic_write_json(action.result_path, result)
+    completed_at = _host_result_completed_at(action)
+    receipt = {
+        "schema_id": "crossframe.ultra.v82.host-result-receipt",
+        "schema_version": 1,
+        "run_id": action.document["run_id"],
+        "version_binding": copy.deepcopy(action.document["version_binding"]),
+        "phase_id": "U3",
+        "action_kind": "evidence-authoring",
+        "parent_event_sha256": action.document["parent_event_sha256"],
+        "request_sha256": action.document["request_sha256"],
+        "action_sha256": action.action_sha256,
+        "result_relative_path": action.document["result_relative_path"],
+        "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "execution_id": "test-host-evidence-authoring",
+        "completed_at": completed_at,
+        "provider": {
+            "provider_id": "test-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "evidence-authoring",
+            "provider_id": "test-host",
+            "version": "1.0.0",
+        },
+        "execution_status": "complete",
+        "attempts": [{"attempt": 1, "status": "success", "error": None}],
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(
+        jsonio.canonical_json_bytes(receipt)
+    ).hexdigest()
+    host_handshake.accept_host_result(layout, action=action, receipt=receipt)
+
+
+def _drive_cli_foundation_host_loop(
+    cli,
+    *,
+    common: list[str],
+    run_id: str,
+    policy,
+    layout,
+    start_time: datetime,
+) -> dict[str, object]:
+    from ultra_runtime import host_handshake
+    from tests.test_ultra_end_to_end_fixture import _accept_source_read_batch
+
+    source_batch = 0
+    for ordinal in range(1, 40):
+        pending = host_handshake.load_pending_action(layout)
+        if pending is not None:
+            action_kind = pending.document["action_kind"]
+            if action_kind == "capability-attestation":
+                accept_pending_capability_result(
+                    layout,
+                    completed_at=_host_result_completed_at(pending),
+                )
+            elif action_kind == "source-read":
+                source_batch += 1
+                _accept_source_read_batch(
+                    layout,
+                    pending,
+                    batch_ordinal=source_batch,
+                )
+            elif action_kind == "evidence-authoring":
+                _accept_closed_input_evidence_result(layout, pending)
+            else:
+                pytest.fail(f"unexpected foundation host action: {action_kind}")
+
+        stdout = StringIO()
+        current_time = start_time + timedelta(seconds=ordinal * 2)
+        assert cli.execute(
+            ["materialize", *common, "--run-id", run_id],
+            stdin=BytesIO(),
+            stdout=stdout,
+            stderr=StringIO(),
+            root_policy=policy,
+            now=lambda current_time=current_time: current_time,
+            entropy=lambda: f"foundation-host-loop-{ordinal}".encode(),
+        ) == 0
+        response = json.loads(stdout.getvalue())
+        if response["outcome"] == "awaiting-authoring":
+            return response
+        assert response["outcome"] == "awaiting-host-action", response
+    pytest.fail("foundation host loop did not reach the U4 authoring wait")
 
 
 def test_task13_cli_and_wrapper_exist_for_red_gate() -> None:
@@ -494,21 +645,168 @@ def test_materialize_plain_request_emits_pending_capability_attestation(
 
     response = json.loads(stdout.getvalue())
     assert result == 0
-    assert response["status"] == "awaiting-host-action"
-    assert response["pending_action"]["action_kind"] == "capability-attestation"
+    assert response["status"] == "running"
+    assert response["outcome"] == "awaiting-host-action"
+    assert response["next_action"]["action_kind"] == "capability-attestation"
     from ultra_runtime.paths import RunMode, build_run_layout
 
     layout = build_run_layout(RunMode.TEST, run_id, policy)
     assert (layout.recovery_dir / "pending-action.json").is_file()
     assert not (layout.artifacts_dir / "ultra-run-contract.json").exists()
+    assert json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))[
+        "status"
+    ] == "running"
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
-def test_materialize_accepts_host_attestation_and_stops_after_u0(
+def test_plain_text_fresh_run_returns_u0_next_action(
     tmp_path: Path,
+) -> None:
+    """A normal natural-language run is a typed progress result, not a stop error."""
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    started_at = datetime(2026, 8, 5, 1, 3, 35, tzinfo=timezone.utc)
+    start_stdout = StringIO()
+    assert cli.execute(
+        ["start", *common, "--request-stdin"],
+        stdin=BytesIO("请分析当前 AI 就业问题。\n".encode("utf-8")),
+        stdout=start_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at,
+        entropy=lambda: b"task-6-plain-text-progress",
+    ) == 0
+    run_id = json.loads(start_stdout.getvalue())["run_id"]
+
+    stdout = StringIO()
+    assert cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=1),
+        entropy=lambda: b"unused-task-6-progress",
+    ) == 0
+
+    response = json.loads(stdout.getvalue())
+    assert response["outcome"] == "awaiting-host-action"
+    assert response["status"] == "running"
+    assert response["current_phase"] == "U0"
+    assert response["next_action"]["action_kind"] == "capability-attestation"
+
+    from ultra_runtime.paths import RunMode, build_run_layout
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    pending_path = layout.recovery_dir / "pending-action.json"
+    pending_bytes = pending_path.read_bytes()
+    repeated_stdout = StringIO()
+    assert cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=repeated_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=2),
+        entropy=lambda: b"unused-task-6-progress-repeat",
+    ) == 0
+    assert json.loads(repeated_stdout.getvalue()) == response
+    assert pending_path.read_bytes() == pending_bytes
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+@pytest.mark.parametrize("mutation", ("paired-input", "interrupted"))
+def test_prepare_rejects_invalid_preflight_before_control_or_host_dispatch(
+    tmp_path: Path,
+    mutation: str,
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
     common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    started_at = datetime(2026, 8, 5, 1, 3, 37, tzinfo=timezone.utc)
+    start_stdout = StringIO()
+    assert cli.execute(
+        ["start", *common, "--request-stdin"],
+        stdin=BytesIO("原始请求。\n".encode("utf-8")),
+        stdout=start_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at,
+        entropy=lambda: f"task-6-prepare-{mutation}".encode(),
+    ) == 0
+    run_id = json.loads(start_stdout.getvalue())["run_id"]
+
+    from ultra_runtime.paths import RunMode, build_run_layout
+    from ultra_runtime.status import RunStatusStore
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    expected_status = "created"
+    if mutation == "paired-input":
+        replacement = "替换请求。\n".encode("utf-8")
+        (layout.input_dir / "request.bin").write_bytes(replacement)
+        (layout.input_dir / "request-metadata.json").write_bytes(
+            (
+                json.dumps(
+                    {
+                        "request_sha256": hashlib.sha256(replacement).hexdigest(),
+                        "request_size": len(replacement),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        expected_error = "intake"
+    else:
+        store = RunStatusStore(layout)
+        created = store.read()
+        running = store.transition(
+            created,
+            "running",
+            started_at + timedelta(seconds=1),
+            reason="test running boundary",
+        )
+        store.transition(
+            running,
+            "interrupted",
+            started_at + timedelta(seconds=2),
+            reason="test interrupted boundary",
+        )
+        expected_status = "interrupted"
+        expected_error = "status boundary"
+
+    with pytest.raises(ValueError, match=expected_error):
+        cli.execute(
+            ["prepare", *common, "--run-id", run_id],
+            stdin=BytesIO(),
+            stdout=StringIO(),
+            stderr=StringIO(),
+            root_policy=policy,
+            now=lambda: started_at + timedelta(seconds=3),
+            entropy=lambda: b"unused-task-6-prepare-preflight",
+        )
+
+    status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
+    assert status["status"] == expected_status
+    assert not (layout.artifacts_dir / "ultra-materialization-control.json").exists()
+    assert not (layout.recovery_dir / "pending-action.json").exists()
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+
+def test_materialize_accepts_host_attestation_and_advances_to_u1_wait(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
+    common = ["--repo", str(authority_repo), "--mode", "test"]
     start_stdout = StringIO()
     started_at = datetime(2026, 8, 5, 1, 3, 40, tzinfo=timezone.utc)
     cli.execute(
@@ -552,13 +850,14 @@ def test_materialize_accepts_host_attestation_and_stops_after_u0(
 
     response = json.loads(stdout.getvalue())
     assert result == 0
-    assert response == {
-        "completed_phase": "U0",
-        "run_id": run_id,
-        "status": "u0-complete",
-    }
+    assert response["status"] == "running"
+    assert response["outcome"] == "awaiting-host-action"
+    assert response["current_phase"] == "U1"
+    assert response["last_complete_phase"] == "U0"
+    assert response["next_action"]["action_kind"] == "source-read"
     assert (layout.artifacts_dir / "ultra-run-contract.json").is_file()
-    assert not (layout.recovery_dir / "u1-authority/source-lock.json").exists()
+    assert (layout.recovery_dir / "u1-authority/source-lock.json").is_file()
+    assert (layout.recovery_dir / "u1-authority/read-plan.json").is_file()
     assert not (
         layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
     ).exists()
@@ -573,18 +872,24 @@ def test_materialize_accepts_host_attestation_and_stops_after_u0(
         entropy=lambda: b"unused-repeat-u0",
     ) == 0
     assert json.loads(repeated_stdout.getvalue()) == response
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
 def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
     request_bytes = (
         '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
         '"material":"本请求是完整且封闭的材料全集。"}\n'
     ).encode("utf-8")
-    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    common = ["--repo", str(authority_repo), "--mode", "test"]
+    start_time = datetime(2026, 8, 5, 1, 2, 3, tzinfo=timezone.utc)
     start_stdout = StringIO()
 
     assert cli.execute(
@@ -593,40 +898,43 @@ def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(
         stdout=start_stdout,
         stderr=StringIO(),
         root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 2, 3, tzinfo=timezone.utc),
+        now=lambda: start_time,
         entropy=lambda: b"fresh-u0-u3-cli-start",
     ) == 0
     run_id = json.loads(start_stdout.getvalue())["run_id"]
 
+    prepare_stdout = StringIO()
     assert cli.execute(
         ["prepare", *common, "--run-id", run_id],
         stdin=BytesIO(),
-        stdout=StringIO(),
+        stdout=prepare_stdout,
         stderr=StringIO(),
         root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 2, 4, tzinfo=timezone.utc),
+        now=lambda: start_time + timedelta(seconds=1),
         entropy=lambda: b"unused",
     ) == 0
+    prepared = json.loads(prepare_stdout.getvalue())
+    assert prepared["outcome"] == "awaiting-host-action"
+    assert prepared["current_phase"] == "U0"
+    assert prepared["next_action"]["action_kind"] == "capability-attestation"
 
-    with pytest.raises(Exception) as raised:
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: datetime(2026, 8, 5, 1, 2, 5, tzinfo=timezone.utc),
-            entropy=lambda: b"fresh-u0-u3-cli-materialize",
-        )
-
-    from ultra_runtime import recovery
     from ultra_runtime.paths import RunMode, build_run_layout
 
-    assert not isinstance(raised.value, recovery.RecoveryStateError), str(raised.value)
-    assert isinstance(raised.value, (FileNotFoundError, ValueError))
-    assert "U04-world-volume.json" in str(raised.value)
-
     layout = build_run_layout(RunMode.TEST, run_id, policy)
+    response = _drive_cli_foundation_host_loop(
+        cli,
+        common=common,
+        run_id=run_id,
+        policy=policy,
+        layout=layout,
+        start_time=start_time + timedelta(seconds=2),
+    )
+    assert response["status"] == "running"
+    assert response["outcome"] == "awaiting-authoring"
+    assert response["current_phase"] == "U4"
+    assert response["last_complete_phase"] == "U3"
+    assert response["next_action"]["relative_path"] == "U04-world-volume.json"
+
     contract = json.loads(
         (layout.artifacts_dir / "ultra-run-contract.json").read_text("utf-8")
     )
@@ -635,13 +943,13 @@ def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(
     assert contract["retention"] == "retain"
     assert contract["outbound_permission"] == "deidentified-only"
     assert contract["capabilities"] == {
-        "filesystem": "available",
+        "filesystem": "required",
         "docx_parser": "not-applicable",
         "network": "not-applicable",
         "retrieval": "not-applicable",
-        "validators": "available",
+        "validators": "required",
         "subagents": "not-applicable",
-        "model_context": "available",
+        "model_context": "required",
     }
     assert contract["resource_limits"] == {
         "maximum_branches": 64,
@@ -710,17 +1018,19 @@ def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(
 
     before_retry = foundation_snapshot()
 
-    with pytest.raises((FileNotFoundError, ValueError), match="U04-world-volume.json"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: datetime(2026, 8, 5, 1, 2, 6, tzinfo=timezone.utc),
-            entropy=lambda: b"fresh-u0-u3-cli-retry",
-        )
+    retry_stdout = StringIO()
+    assert cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=retry_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: start_time + timedelta(minutes=1),
+        entropy=lambda: b"fresh-u0-u3-cli-retry",
+    ) == 0
+    assert json.loads(retry_stdout.getvalue()) == response
     assert foundation_snapshot() == before_retry
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
 @pytest.mark.parametrize("failure_phase", ["U0", "U1", "U2"])
@@ -731,11 +1041,15 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
     request_bytes = (
         '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
         '"material":"完整封闭材料。"}\n'
     ).encode("utf-8")
-    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    common = ["--repo", str(authority_repo), "--mode", "test"]
+    start_time = datetime(2026, 8, 5, 1, 4, 3, tzinfo=timezone.utc)
     start_stdout = StringIO()
     assert cli.execute(
         ["start", *common, "--request-stdin"],
@@ -743,7 +1057,7 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
         stdout=start_stdout,
         stderr=StringIO(),
         root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 4, 3, tzinfo=timezone.utc),
+        now=lambda: start_time,
         entropy=lambda: f"partial-{failure_phase}-start".encode(),
     ) == 0
     run_id = json.loads(start_stdout.getvalue())["run_id"]
@@ -753,73 +1067,69 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
         stdout=StringIO(),
         stderr=StringIO(),
         root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 4, 4, tzinfo=timezone.utc),
+        now=lambda: start_time + timedelta(seconds=1),
         entropy=lambda: b"unused",
     ) == 0
 
-    from ultra_runtime import materialization
+    from ultra_runtime import recovery
+    from ultra_runtime.paths import RunMode, build_run_layout
 
-    original_checkpoint = materialization._create_phase_checkpoint
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    original_checkpoint = recovery.create_checkpoint
     injected = False
 
     def inject_after_checkpoint(
-        recovery,
         layout,
         phase_store,
-        phase_id,
-        artifact_paths,
         *,
+        boundary_kind,
+        boundary_id,
+        boundary_ordinal,
+        artifact_paths,
         now,
     ):
         nonlocal injected
         checkpoint = original_checkpoint(
-            recovery,
             layout,
             phase_store,
-            phase_id,
-            artifact_paths,
+            boundary_kind=boundary_kind,
+            boundary_id=boundary_id,
+            boundary_ordinal=boundary_ordinal,
+            artifact_paths=artifact_paths,
             now=now,
         )
-        if phase_id == failure_phase and not injected:
+        if (
+            boundary_kind == "phase"
+            and boundary_id == failure_phase
+            and not injected
+        ):
             injected = True
-            raise RuntimeError(f"injected after {phase_id} checkpoint")
+            raise RuntimeError(f"injected after {boundary_id} checkpoint")
         return checkpoint
 
-    monkeypatch.setattr(
-        materialization,
-        "_create_phase_checkpoint",
-        inject_after_checkpoint,
-    )
+    monkeypatch.setattr(recovery, "create_checkpoint", inject_after_checkpoint)
     with pytest.raises(RuntimeError, match=f"after {failure_phase} checkpoint"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: datetime(2026, 8, 5, 1, 4, 5, tzinfo=timezone.utc),
-            entropy=lambda: b"partial-first-materialize",
+        _drive_cli_foundation_host_loop(
+            cli,
+            common=common,
+            run_id=run_id,
+            policy=policy,
+            layout=layout,
+            start_time=start_time + timedelta(seconds=2),
         )
-    monkeypatch.setattr(
-        materialization,
-        "_create_phase_checkpoint",
-        original_checkpoint,
+    monkeypatch.setattr(recovery, "create_checkpoint", original_checkpoint)
+
+    response = _drive_cli_foundation_host_loop(
+        cli,
+        common=common,
+        run_id=run_id,
+        policy=policy,
+        layout=layout,
+        start_time=start_time + timedelta(minutes=1),
     )
-
-    with pytest.raises((FileNotFoundError, ValueError), match="U04-world-volume.json"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: datetime(2026, 8, 5, 1, 4, 6, tzinfo=timezone.utc),
-            entropy=lambda: b"partial-retry-materialize",
-        )
-
-    from ultra_runtime.paths import RunMode, build_run_layout
-
-    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    assert response["outcome"] == "awaiting-authoring"
+    assert response["current_phase"] == "U4"
+    assert response["next_action"]["relative_path"] == "U04-world-volume.json"
     phase_events = [
         json.loads(line)
         for line in (layout.recovery_dir / "phase-events.jsonl")
@@ -827,6 +1137,10 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
         .splitlines()
     ]
     assert [event["phase_id"] for event in phase_events] == ["U0", "U1", "U2", "U3"]
+    assert [
+        checkpoint["phase_id"] for checkpoint in recovery.load_checkpoints(layout)
+    ] == ["U0", "U1", "U2", "U3"]
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
 def test_event_written_without_foundation_checkpoint_resumes_last_durable_boundary(
@@ -835,11 +1149,14 @@ def test_event_written_without_foundation_checkpoint_resumes_last_durable_bounda
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
     request_bytes = (
         '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
         '"material":"完整封闭材料。"}\n'
     ).encode("utf-8")
-    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    common = ["--repo", str(authority_repo), "--mode", "test"]
     start_stdout = StringIO()
     start_time = datetime(2026, 8, 5, 1, 4, 15, tzinfo=timezone.utc)
     assert cli.execute(
@@ -880,14 +1197,13 @@ def test_event_written_without_foundation_checkpoint_resumes_last_durable_bounda
 
     monkeypatch.setattr(recovery, "_write_immutable", fail_before_u1_checkpoint)
     with pytest.raises(RuntimeError, match="before U1 checkpoint write"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=2),
-            entropy=lambda: b"event-without-checkpoint-first",
+        _drive_cli_foundation_host_loop(
+            cli,
+            common=common,
+            run_id=run_id,
+            policy=policy,
+            layout=layout,
+            start_time=start_time + timedelta(seconds=2),
         )
     monkeypatch.setattr(recovery, "_write_immutable", original_write_immutable)
 
@@ -909,7 +1225,7 @@ def test_event_written_without_foundation_checkpoint_resumes_last_durable_bounda
             stdout=StringIO(),
             stderr=StringIO(),
             root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=3),
+            now=lambda: start_time + timedelta(minutes=1),
             entropy=lambda: b"event-without-checkpoint-retry",
         )
     status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
@@ -924,11 +1240,14 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
     request_bytes = (
         '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
         '"material":"完整封闭材料。"}\n'
     ).encode("utf-8")
-    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    common = ["--repo", str(authority_repo), "--mode", "test"]
     start_stdout = StringIO()
     start_time = datetime(2026, 8, 5, 1, 4, 30, tzinfo=timezone.utc)
     assert cli.execute(
@@ -951,51 +1270,46 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
         entropy=lambda: b"unused",
     ) == 0
 
-    from ultra_runtime import materialization
-
-    original_checkpoint = materialization._create_phase_checkpoint
-
-    def stop_after_u0(
-        recovery,
-        layout,
-        phase_store,
-        phase_id,
-        artifact_paths,
-        *,
-        now,
-    ):
-        checkpoint = original_checkpoint(
-            recovery,
-            layout,
-            phase_store,
-            phase_id,
-            artifact_paths,
-            now=now,
-        )
-        if phase_id == "U0":
-            raise RuntimeError("injected after U0 checkpoint")
-        return checkpoint
-
-    monkeypatch.setattr(materialization, "_create_phase_checkpoint", stop_after_u0)
-    with pytest.raises(RuntimeError, match="after U0 checkpoint"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=2),
-            entropy=lambda: b"partial-residual-first",
-        )
-    monkeypatch.setattr(
-        materialization,
-        "_create_phase_checkpoint",
-        original_checkpoint,
-    )
-
+    from ultra_runtime import recovery
     from ultra_runtime.paths import RunMode, build_run_layout
 
     layout = build_run_layout(RunMode.TEST, run_id, policy)
+    original_checkpoint = recovery.create_checkpoint
+
+    def stop_after_u0(
+        layout,
+        phase_store,
+        *,
+        boundary_kind,
+        boundary_id,
+        boundary_ordinal,
+        artifact_paths,
+        now,
+    ):
+        checkpoint = original_checkpoint(
+            layout,
+            phase_store,
+            boundary_kind=boundary_kind,
+            boundary_id=boundary_id,
+            boundary_ordinal=boundary_ordinal,
+            artifact_paths=artifact_paths,
+            now=now,
+        )
+        if boundary_kind == "phase" and boundary_id == "U0":
+            raise RuntimeError("injected after U0 checkpoint")
+        return checkpoint
+
+    monkeypatch.setattr(recovery, "create_checkpoint", stop_after_u0)
+    with pytest.raises(RuntimeError, match="after U0 checkpoint"):
+        _drive_cli_foundation_host_loop(
+            cli,
+            common=common,
+            run_id=run_id,
+            policy=policy,
+            layout=layout,
+            start_time=start_time + timedelta(seconds=2),
+        )
+    monkeypatch.setattr(recovery, "create_checkpoint", original_checkpoint)
     residual = (
         layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
     )
@@ -1012,7 +1326,7 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
             stdout=StringIO(),
             stderr=StringIO(),
             root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=3),
+            now=lambda: start_time + timedelta(minutes=1),
             entropy=lambda: b"partial-residual-retry",
         )
     status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
@@ -1027,11 +1341,14 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = importlib.import_module("ultra_runtime.source_integrity")
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
+    authority_repo = _fresh_u1_authority_repo(tmp_path)
     request_bytes = (
         '{"analysis_kind":"closed-input","claim":"原命题",'
         '"material":"原封闭材料"}\n'
     ).encode("utf-8")
-    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    common = ["--repo", str(authority_repo), "--mode", "test"]
     start_stdout = StringIO()
     start_time = datetime(2026, 8, 5, 1, 4, 45, tzinfo=timezone.utc)
     assert cli.execute(
@@ -1054,50 +1371,47 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         entropy=lambda: b"unused",
     ) == 0
 
-    from ultra_runtime import materialization
+    from ultra_runtime import recovery
     from ultra_runtime.paths import RunMode, build_run_layout
 
-    original_checkpoint = materialization._create_phase_checkpoint
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    original_checkpoint = recovery.create_checkpoint
 
     def stop_after_u0(
-        recovery,
         layout,
         phase_store,
-        phase_id,
-        artifact_paths,
         *,
+        boundary_kind,
+        boundary_id,
+        boundary_ordinal,
+        artifact_paths,
         now,
     ):
         checkpoint = original_checkpoint(
-            recovery,
             layout,
             phase_store,
-            phase_id,
-            artifact_paths,
+            boundary_kind=boundary_kind,
+            boundary_id=boundary_id,
+            boundary_ordinal=boundary_ordinal,
+            artifact_paths=artifact_paths,
             now=now,
         )
-        if phase_id == "U0":
+        if boundary_kind == "phase" and boundary_id == "U0":
             raise RuntimeError("injected after U0 checkpoint")
         return checkpoint
 
-    monkeypatch.setattr(materialization, "_create_phase_checkpoint", stop_after_u0)
+    monkeypatch.setattr(recovery, "create_checkpoint", stop_after_u0)
     with pytest.raises(RuntimeError, match="after U0 checkpoint"):
-        cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
-            stdout=StringIO(),
-            stderr=StringIO(),
-            root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=2),
-            entropy=lambda: b"checkpointed-intake-first",
+        _drive_cli_foundation_host_loop(
+            cli,
+            common=common,
+            run_id=run_id,
+            policy=policy,
+            layout=layout,
+            start_time=start_time + timedelta(seconds=2),
         )
-    monkeypatch.setattr(
-        materialization,
-        "_create_phase_checkpoint",
-        original_checkpoint,
-    )
+    monkeypatch.setattr(recovery, "create_checkpoint", original_checkpoint)
 
-    layout = build_run_layout(RunMode.TEST, run_id, policy)
     intake = json.loads(
         (layout.recovery_dir / "request-intake-authority.json").read_text("utf-8")
     )
@@ -1124,7 +1438,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         ).encode("utf-8")
     )
 
-    from ultra_runtime import jsonio, locks, recovery
+    from ultra_runtime import jsonio, locks
     from ultra_runtime.schemas import compute_artifact_content_sha256
 
     authority_path = layout.recovery_dir / "run-authority.json"
@@ -1143,7 +1457,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
             stdout=StringIO(),
             stderr=StringIO(),
             root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=3),
+            now=lambda: start_time + timedelta(minutes=1),
             entropy=lambda: b"checkpointed-authority-corruption",
         )
     assert isinstance(caught.value.__cause__, recovery.RecoveryIntegrityError)
@@ -1158,7 +1472,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
             stdout=StringIO(),
             stderr=StringIO(),
             root_policy=policy,
-            now=lambda: start_time + timedelta(seconds=3),
+            now=lambda: start_time + timedelta(minutes=1),
             entropy=lambda: b"checkpointed-intake-retry",
         )
     status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
@@ -1278,67 +1592,31 @@ def test_materialize_rejects_intake_tamper_and_nonfresh_status(
     assert not (layout.recovery_dir / "phase-events.jsonl").exists()
 
 
-@pytest.mark.parametrize(
-    "request_bytes",
-    [
-        "请直接分析这段普通文本。\n".encode("utf-8"),
-        (
-            '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
-            '"material":"封闭材料。","sensitivity":"private"}\n'
-        ).encode("utf-8"),
-    ],
-)
-def test_materialize_rejects_noncanonical_foundation_without_self_sealing(
+def test_start_rejects_malformed_explicit_closed_input_without_creating_run(
     tmp_path: Path,
-    request_bytes: bytes,
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
     common = ["--repo", str(REPO_ROOT), "--mode", "test"]
-    start_stdout = StringIO()
+    request_bytes = (
+        '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
+        '"material":"封闭材料。","sensitivity":"private"}\n'
+    ).encode("utf-8")
 
-    assert cli.execute(
-        ["start", *common, "--request-stdin"],
-        stdin=BytesIO(request_bytes),
-        stdout=start_stdout,
-        stderr=StringIO(),
-        root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 3, 3, tzinfo=timezone.utc),
-        entropy=lambda: b"invalid-u0-u3-cli-start",
-    ) == 0
-    run_id = json.loads(start_stdout.getvalue())["run_id"]
-    assert cli.execute(
-        ["prepare", *common, "--run-id", run_id],
-        stdin=BytesIO(),
-        stdout=StringIO(),
-        stderr=StringIO(),
-        root_policy=policy,
-        now=lambda: datetime(2026, 8, 5, 1, 3, 4, tzinfo=timezone.utc),
-        entropy=lambda: b"unused",
-    ) == 0
-
-    with pytest.raises(ValueError, match="closed-input"):
+    with pytest.raises(ValueError, match="exactly analysis_kind, claim, and material"):
         cli.execute(
-            ["materialize", *common, "--run-id", run_id],
-            stdin=BytesIO(),
+            ["start", *common, "--request-stdin"],
+            stdin=BytesIO(request_bytes),
             stdout=StringIO(),
             stderr=StringIO(),
             root_policy=policy,
-            now=lambda: datetime(2026, 8, 5, 1, 3, 5, tzinfo=timezone.utc),
-            entropy=lambda: b"invalid-u0-u3-cli-materialize",
+            now=lambda: datetime(2026, 8, 5, 1, 3, 3, tzinfo=timezone.utc),
+            entropy=lambda: b"malformed-closed-input-start",
         )
 
-    from ultra_runtime.paths import RunMode, build_run_layout
-
-    layout = build_run_layout(RunMode.TEST, run_id, policy)
-    assert not (layout.artifacts_dir / "ultra-run-contract.json").exists()
-    assert not (layout.recovery_dir / "phase-events.jsonl").exists()
-    assert not (layout.recovery_dir / "checkpoints").exists()
-    status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
-    assert status["status"] == "blocked"
-    assert status["current_phase"] == "U0"
-    assert status["last_complete_phase"] is None
-    assert status["reason"].startswith("fresh foundation input rejected:")
+    assert not (policy.test_root / "runs").exists()
+    assert not tuple(tmp_path.rglob("run-authority.json"))
+    assert not tuple(tmp_path.rglob("request-intake-authority.json"))
 
 
 def test_root_wrapper_is_a_thin_forwarder_and_help_has_no_escape_hatches() -> None:

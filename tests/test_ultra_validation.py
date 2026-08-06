@@ -14,6 +14,10 @@ import sys
 from types import SimpleNamespace
 
 from tests.pytest_import_guard import pytest
+from tests.ultra_capability_support import (
+    capability_attestation_for_contract,
+    default_capability_requirements,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +26,15 @@ FIXTURES = REPO_ROOT / "tests/fixtures/ultra-runtime"
 RUN_ENTROPY = b"ultra-validation-authority-template"
 RUN_ID = f"20260804T000000Z-{hashlib.sha256(RUN_ENTROPY).hexdigest()[:12]}"
 STAMP = "2026-08-04T00:00:00Z"
+RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
+HOST_CAPABILITY_ATTESTATION_PATH = (
+    "artifacts/U00-U03-evidence/U00-host-capability-attestation.json"
+)
+HOST_CAPABILITY_ATTESTATION_SCHEMA_ID = (
+    "crossframe.ultra.v82.host-capability-attestation"
+)
+EXTRA_U0_PATH = "artifacts/U00-U03-evidence/unexpected-u0-artifact.json"
+CAPABILITY_ATTESTATION_SHA256 = "c" * 64
 UNIT_KINDS = (
     "claim",
     "evidence",
@@ -439,6 +452,269 @@ def report_error_codes(report: dict[str, object]) -> set[str]:
         for check in report["checks"]
         for code in check["error_codes"]
     }
+
+
+def stubbed_disk_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    checkpoint_u0_paths: tuple[str, ...] = (RUN_CONTRACT_PATH,),
+    manifest_u0_paths: tuple[str, ...] = (
+        RUN_CONTRACT_PATH,
+        HOST_CAPABILITY_ATTESTATION_PATH,
+    ),
+    contract_capability_sha256: str = CAPABILITY_ATTESTATION_SHA256,
+    manifest_capability_sha256: str = CAPABILITY_ATTESTATION_SHA256,
+) -> tuple[SimpleNamespace, object, dict[str, object]]:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=(tmp_path / "prod").resolve(),
+        test_root=(tmp_path / "test").resolve(),
+    )
+    layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
+    run_contract = {
+        "capability_attestation_sha256": contract_capability_sha256,
+    }
+    write_json(layout.run_dir / RUN_CONTRACT_PATH, run_contract)
+    run_contract_sha256 = hashlib.sha256(
+        (layout.run_dir / RUN_CONTRACT_PATH).read_bytes()
+    ).hexdigest()
+
+    def authority_sha256(path: str) -> str:
+        if path == RUN_CONTRACT_PATH:
+            return run_contract_sha256
+        if path == HOST_CAPABILITY_ATTESTATION_PATH:
+            return manifest_capability_sha256
+        return "d" * 64
+
+    refs_by_phase: dict[str, dict[str, str]] = {
+        "U0": {
+            path: authority_sha256(path)
+            for path in checkpoint_u0_paths
+        },
+        "U1": {
+            "recovery/u1-authority/source-lock.json": "1" * 64,
+            "recovery/u1-authority/read-plan.json": "2" * 64,
+            "recovery/u1-authority/source-coverage.json": "3" * 64,
+        },
+    }
+    for number in range(2, 12):
+        phase_id = f"U{number}"
+        refs_by_phase[phase_id] = {
+            f"artifacts/{phase_id}-authority.json": f"{number + 4:064x}",
+        }
+
+    events = tuple(
+        {
+            "phase_id": f"U{number}",
+            "status": "complete",
+            "event_sha256": f"{number + 32:064x}",
+        }
+        for number in range(12)
+    )
+    checkpoints_dir = layout.recovery_dir / "checkpoints"
+    checkpoints_dir.mkdir(parents=True)
+    for event in events:
+        phase_id = str(event["phase_id"])
+        checkpoint = {
+            "phase_id": phase_id,
+            "boundary_kind": "phase",
+            "boundary_ordinal": 0,
+            "artifact_hashes": [
+                {"path": path, "sha256": digest}
+                for path, digest in refs_by_phase[phase_id].items()
+            ],
+        }
+        encoded = canonical_bytes(checkpoint)
+        (checkpoints_dir / f"{hashlib.sha256(encoded).hexdigest()}.json").write_bytes(
+            encoded
+        )
+
+    monkeypatch.setattr(modules.recovery, "_validate_layout", lambda _layout: None)
+    monkeypatch.setattr(
+        modules.recovery,
+        "_validate_authority",
+        lambda _layout: ({"run_id": RUN_ID}, "resume"),
+    )
+    monkeypatch.setattr(
+        modules.recovery,
+        "_read_events",
+        lambda *_args, **_kwargs: events,
+    )
+    monkeypatch.setattr(
+        modules.recovery,
+        "_validate_checkpoint",
+        lambda _layout, checkpoint, **_kwargs: dict(checkpoint),
+    )
+
+    manifest_artifacts = [
+        {
+            "schema_id": (
+                "crossframe.ultra.v82.run-contract"
+                if path == RUN_CONTRACT_PATH
+                else HOST_CAPABILITY_ATTESTATION_SCHEMA_ID
+                if path == HOST_CAPABILITY_ATTESTATION_PATH
+                else "crossframe.ultra.v82.unexpected-u0-artifact"
+            ),
+            "phase_id": "U0",
+            "path": path,
+            "sha256": authority_sha256(path),
+        }
+        for path in manifest_u0_paths
+    ]
+    for number in range(2, 12):
+        phase_id = f"U{number}"
+        manifest_artifacts.extend(
+            {
+                "schema_id": "crossframe.ultra.v82.fixture-authority",
+                "phase_id": phase_id,
+                "path": path,
+                "sha256": digest,
+            }
+            for path, digest in refs_by_phase[phase_id].items()
+        )
+    manifest = {
+        "artifacts": manifest_artifacts,
+        "phase_chain_head_sha256": events[-1]["event_sha256"],
+    }
+    return modules, layout, manifest
+
+
+def test_host_capability_attestation_is_a_known_structured_artifact(
+    tmp_path: Path,
+) -> None:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=(tmp_path / "prod").resolve(),
+        test_root=(tmp_path / "test").resolve(),
+    )
+    layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
+    contract = {
+        "request_sha256": "a" * 64,
+        "analysis_kind": "open-world",
+        "run_mode": "test",
+        "sensitivity": "public",
+        "retention": "retain",
+        "outbound_permission": "allowed",
+        "evidence_cutoff": STAMP,
+        "capabilities": default_capability_requirements(),
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    attestation = capability_attestation_for_contract(
+        run_id=RUN_ID,
+        version_binding=modules.constants.current_version_binding(),
+        contract=contract,
+        generated_at=STAMP,
+    )
+    attestation_path = layout.run_dir / HOST_CAPABILITY_ATTESTATION_PATH
+    attestation_path.parent.mkdir(parents=True)
+    attestation_path.write_bytes(attestation.artifact_bytes)
+    manifest = {
+        "artifacts": [
+            {
+                "schema_id": HOST_CAPABILITY_ATTESTATION_SCHEMA_ID,
+                "phase_id": "U0",
+                "path": HOST_CAPABILITY_ATTESTATION_PATH,
+            }
+        ]
+    }
+    issues: dict[str, list[tuple[str, str]]] = {"artifact-integrity": []}
+
+    loaded = modules.validation._load_structured_artifacts(
+        layout,
+        manifest,
+        issues,
+    )
+
+    assert issues == {"artifact-integrity": []}
+    assert loaded == {HOST_CAPABILITY_ATTESTATION_SCHEMA_ID: [attestation.document]}
+
+
+def test_disk_authority_accepts_fixed_u0_manifest_only_attestation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+    )
+
+    authority = modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert authority["refs_by_phase"]["U0"] == {
+        RUN_CONTRACT_PATH: hashlib.sha256(
+            (layout.run_dir / RUN_CONTRACT_PATH).read_bytes()
+        ).hexdigest()
+    }
+
+
+@pytest.mark.parametrize(
+    "manifest_u0_paths",
+    (
+        (RUN_CONTRACT_PATH,),
+        (HOST_CAPABILITY_ATTESTATION_PATH,),
+        (RUN_CONTRACT_PATH, HOST_CAPABILITY_ATTESTATION_PATH, EXTRA_U0_PATH),
+    ),
+    ids=("missing-attestation", "missing-run-contract", "unexpected-extra"),
+)
+def test_disk_authority_rejects_non_exact_u0_manifest_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_u0_paths: tuple[str, ...],
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+        manifest_u0_paths=manifest_u0_paths,
+    )
+
+    with pytest.raises(modules.validation._AuthorityDAGError) as captured:
+        modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert captured.value.phase_id == "U0"
+
+
+@pytest.mark.parametrize(
+    "checkpoint_u0_paths",
+    ((), (RUN_CONTRACT_PATH, EXTRA_U0_PATH)),
+    ids=("missing-run-contract", "unexpected-extra"),
+)
+def test_disk_authority_rejects_non_exact_u0_checkpoint_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    checkpoint_u0_paths: tuple[str, ...],
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+        checkpoint_u0_paths=checkpoint_u0_paths,
+    )
+
+    with pytest.raises(modules.validation._AuthorityDAGError) as captured:
+        modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert captured.value.phase_id == "U0"
+
+
+def test_disk_authority_rejects_u0_attestation_hash_not_bound_by_run_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+        contract_capability_sha256="e" * 64,
+    )
+
+    with pytest.raises(modules.validation._AuthorityDAGError) as captured:
+        modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert captured.value.phase_id == "U0"
 
 
 def test_validator_set_binds_every_runtime_and_u1_authority_checker(

@@ -118,12 +118,31 @@ def _accept_capability_result(
 
 
 @pytest.fixture
-def fresh_run(tmp_path: Path):
+def fresh_run(tmp_path: Path, monkeypatch):
     cli = _load_cli()
     policy = _root_policy(tmp_path)
+    source_integrity = _module("source_integrity")
+    from tests.test_ultra_source_read_coverage import _write_release_manifest
+
+    authority_repo = tmp_path / "foundation-authority-repo"
+    skill_root = authority_repo / "skills/crossframe-ultra"
+    skill_root.parent.mkdir(parents=True)
+    shutil.copytree(ROOT / "skills/crossframe-ultra", skill_root)
+    _write_release_manifest(
+        authority_repo,
+        skill_root / "references/release-manifest.json",
+    )
+    monkeypatch.setattr(source_integrity, "PRODUCTION_ROOT", policy.production_root)
     stdout = StringIO()
     cli.execute(
-        ["start", "--repo", str(ROOT), "--mode", "test", "--request-stdin"],
+        [
+            "start",
+            "--repo",
+            str(authority_repo),
+            "--mode",
+            "test",
+            "--request-stdin",
+        ],
         stdin=BytesIO("AI 会怎样改变就业？\n".encode("utf-8")),
         stdout=stdout,
         stderr=StringIO(),
@@ -134,7 +153,11 @@ def fresh_run(tmp_path: Path):
     run_id = json.loads(stdout.getvalue())["run_id"]
     paths = _module("paths")
     layout = paths.build_run_layout(paths.RunMode.TEST, run_id, policy)
-    return SimpleNamespace(layout=layout, repo=ROOT, now=NOW + timedelta(seconds=1))
+    return SimpleNamespace(
+        layout=layout,
+        repo=authority_repo,
+        now=NOW + timedelta(seconds=1),
+    )
 
 
 def test_plain_natural_language_defaults_to_open_world_profile() -> None:
@@ -376,6 +399,7 @@ def task3_fresh_u0(fresh_run, tmp_path: Path, monkeypatch):
     return SimpleNamespace(
         layout=fresh_run.layout,
         repo=authority_repo,
+        phase_store=completed.phase_store,
         now=fresh_run.now + timedelta(seconds=4),
     )
 
@@ -405,6 +429,23 @@ def _task3_source_read_item(
         "source_unit_sha256": source_unit_sha256,
         "receipt_sha256": hashlib.sha256(_canonical(payload)).hexdigest(),
     }
+
+
+def test_completed_u0_store_can_issue_u1_read_without_recovery_round_trip(
+    task3_fresh_u0,
+) -> None:
+    foundation = _module("foundation")
+
+    progress = foundation._advance_u1(
+        task3_fresh_u0.layout,
+        repo=task3_fresh_u0.repo,
+        phase_store=task3_fresh_u0.phase_store,
+        now=task3_fresh_u0.now,
+    )
+
+    assert progress.outcome == "awaiting-host-action"
+    assert progress.pending_action is not None
+    assert progress.pending_action.document["action_kind"] == "source-read"
 
 
 def _accept_task3_source_read(layout, action, *, batch_ordinal: int) -> int:
@@ -464,9 +505,10 @@ def test_task3_u1_persists_plan_before_requesting_host_reads(task3_fresh_u0) -> 
     jsonio = _module("jsonio")
     schemas = _module("schemas")
 
-    progress = foundation.advance_foundation(
+    progress = foundation._advance_u1(
         task3_fresh_u0.layout,
         repo=task3_fresh_u0.repo,
+        phase_store=task3_fresh_u0.phase_store,
         now=task3_fresh_u0.now,
     )
 
@@ -511,9 +553,10 @@ def test_task3_u1_partial_batches_resume_and_seal_three_distinct_hashes(
             progress.pending_action,
             batch_ordinal=batch_ordinal,
         )
-        progress = foundation.advance_foundation(
+        progress = foundation._advance_u1(
             task3_fresh_u0.layout,
             repo=task3_fresh_u0.repo,
+            phase_store=task3_fresh_u0.phase_store,
             now=task3_fresh_u0.now + timedelta(seconds=batch_ordinal),
         )
         if progress.completed_phase == "U1":

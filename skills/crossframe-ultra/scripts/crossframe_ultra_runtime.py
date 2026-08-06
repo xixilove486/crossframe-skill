@@ -21,7 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from ultra_runtime.indexes import IndexStore
 from ultra_runtime.foundation import (
-    advance_u0,
+    advance_foundation,
     parse_request_profile,
     seal_input_inventory,
 )
@@ -33,7 +33,12 @@ from ultra_runtime.jsonio import (
     sha256_bytes,
 )
 from ultra_runtime.locks import acquire_run_lease, release_run_lease
-from ultra_runtime.materialization import prepare_authoring, seal_request_intake_authority
+from ultra_runtime.materialization import (
+    foundation_progress_projection,
+    preflight_foundation_progress,
+    prepare_authoring,
+    seal_request_intake_authority,
+)
 from ultra_runtime.paths import (
     RootPolicy,
     RunLayout,
@@ -288,24 +293,6 @@ def _start(
     return 0
 
 
-def _advance_to_running(layout: RunLayout, now: datetime) -> object:
-    store = RunStatusStore(layout)
-    current = store.read()
-    if current.status == "running":
-        return current
-    if current.status not in {"created", "interrupted", "blocked", "needs_attention"}:
-        raise RuntimeError(f"run status {current.status!r} cannot enter authoring")
-    return store.transition(
-        current,
-        "running",
-        now,
-        current_phase=current.current_phase,
-        last_complete_phase=current.last_complete_phase,
-        reason="runtime command admitted",
-        validation_passed=False,
-    )
-
-
 def _prepare(
     args: argparse.Namespace,
     *,
@@ -315,17 +302,32 @@ def _prepare(
 ) -> int:
     layout = _layout(args, policy)
     with _run_lease(layout, now):
-        _advance_to_running(layout, now)
+        preflight_foundation_progress(
+            layout,
+            RunStatusStore(layout),
+            now=now,
+        )
         prepared = prepare_authoring(layout)
+        foundation = advance_foundation(
+            layout,
+            repo=_validate_repo(args.repo),
+            now=now,
+        )
+        progress = foundation_progress_projection(layout, foundation)
     IndexStore(layout.root).rebuild()
-    _emit_json(
-        stdout,
+    response = _json_safe(progress)
+    assert isinstance(response, dict)
+    response.update(
         {
             "authoring_dir": str(prepared.authoring_dir.resolve()),
             "control_path": str(prepared.control_path.resolve()),
             "run_id": args.run_id,
             "slots": list(prepared.relative_slots),
-        },
+        }
+    )
+    _emit_json(
+        stdout,
+        response,
     )
     return 0
 
@@ -596,48 +598,6 @@ def _materialize(
     entropy: bytes,
 ) -> int:
     layout = _layout(args, policy)
-    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
-
-    def emit_u0_complete() -> int:
-        IndexStore(layout.root).rebuild()
-        _emit_json(
-            stdout,
-            {
-                "completed_phase": "U0",
-                "run_id": args.run_id,
-                "status": "u0-complete",
-            },
-        )
-        return 0
-
-    if run_contract_path.is_file():
-        recovery = importlib.import_module("ultra_runtime.recovery")
-        checkpoint = recovery.select_resume_checkpoint(layout)
-        if checkpoint.get("phase_id") == "U0":
-            restored = recovery.resume_run(layout, now=now)
-            phase_store = _phase_store_from_recovery(restored)
-            if getattr(phase_store, "current_phase", None) != "U0":
-                raise RuntimeError("persisted U0 checkpoint restored a different phase")
-            return emit_u0_complete()
-    else:
-        with _run_lease(layout, now):
-            foundation = advance_u0(layout, repo=repo, now=now)
-        if foundation.outcome == "awaiting-host-action":
-            if foundation.pending_action is None:
-                raise RuntimeError("U0 host action progress has no pending action")
-            IndexStore(layout.root).rebuild()
-            _emit_json(
-                stdout,
-                {
-                    "run_id": args.run_id,
-                    "status": "awaiting-host-action",
-                    "pending_action": foundation.pending_action.document,
-                },
-            )
-            return 0
-        if foundation.outcome != "advanced" or foundation.completed_phase != "U0":
-            raise RuntimeError("U0 foundation did not advance or await host action")
-        return emit_u0_complete()
     materialization = importlib.import_module("ultra_runtime.materialization")
     runner = getattr(materialization, "materialize_complete_run", None)
     if not callable(runner):
