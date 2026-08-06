@@ -301,17 +301,19 @@ def _prepare(
     now: datetime,
 ) -> int:
     layout = _layout(args, policy)
-    with _run_lease(layout, now):
+    with _run_lease(layout, now) as lease:
         preflight_foundation_progress(
             layout,
             RunStatusStore(layout),
             now=now,
+            lease=lease,
         )
         prepared = prepare_authoring(layout)
         foundation = advance_foundation(
             layout,
             repo=_validate_repo(args.repo),
             now=now,
+            lease=lease,
         )
         progress = foundation_progress_projection(layout, foundation)
     IndexStore(layout.root).rebuild()
@@ -391,8 +393,8 @@ def _checkpoint(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        resumed = recovery.resume_run(layout, now=now)
+    with _run_lease(layout, now) as lease:
+        resumed = recovery.resume_run(layout, now=now, lease=lease)
         phase_store = _phase_store_from_recovery(resumed)
         artifact_paths = _matching_artifact_paths(layout, phase_store, args.phase)
         checkpoint = recovery.create_checkpoint(
@@ -403,6 +405,7 @@ def _checkpoint(
             boundary_ordinal=0,
             artifact_paths=artifact_paths,
             now=now,
+            lease=lease,
         )
     _emit_json(stdout, checkpoint)
     return 0
@@ -507,12 +510,13 @@ def _repair_plan(
         layout.validation_current_dir / "ultra-validator-report.json"
     )
     attempts = [path for path in layout.validation_attempts_dir.iterdir() if path.is_dir()]
-    with _run_lease(layout, now):
+    with _run_lease(layout, now) as lease:
         plan = repair.build_repair_plan(
             layout,
             attempt_id=current_report["attempt_id"],
             attempt_number=len(attempts),
             now=now,
+            lease=lease,
         )
     _emit_json(stdout, plan)
     return 0
@@ -527,8 +531,8 @@ def _resume(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        result = recovery.resume_run(layout, now=now)
+    with _run_lease(layout, now) as lease:
+        result = recovery.resume_run(layout, now=now, lease=lease)
     IndexStore(layout.root).rebuild()
     _emit_json(
         stdout,
@@ -577,12 +581,11 @@ def _cancel(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        status = recovery.cancel_run(
-            layout,
-            reason="operator requested cancellation",
-            now=now,
-        )
+    status = recovery.cancel_run(
+        layout,
+        reason="operator requested cancellation",
+        now=now,
+    )
     IndexStore(layout.root).rebuild()
     _emit_json(stdout, _record_to_object(status))
     return 0

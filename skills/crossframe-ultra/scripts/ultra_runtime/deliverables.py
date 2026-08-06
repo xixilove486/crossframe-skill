@@ -564,6 +564,7 @@ def publish_delivery(
     commit_report: Callable[[str, bytes], object],
     mark_needs_attention: Callable[[str], object],
     defer_completion: bool = True,
+    lease: object | None = None,
 ) -> PublicationResult:
     """Publish the fixed final set with durable rollback evidence.
 
@@ -584,6 +585,35 @@ def publish_delivery(
         )
     paths = publication_paths(layout, transaction_id)
     _journal_file_exists(layout, paths.journal_path)
+    from .locks import (
+        acquire_run_lease,
+        release_run_lease,
+        require_run_lease_owner,
+    )
+
+    if lease is None:
+        owned = acquire_run_lease(
+            layout,
+            datetime.now(timezone.utc),
+            timedelta(minutes=30),
+        )
+        try:
+            return publish_delivery(
+                layout,
+                transaction_id=transaction_id,
+                article_bytes=article_bytes,
+                dossier_bytes=dossier_bytes,
+                artifact_index_bytes=artifact_index_bytes,
+                manifest_bytes=manifest_bytes,
+                fresh_check=fresh_check,
+                commit_report=commit_report,
+                mark_needs_attention=mark_needs_attention,
+                defer_completion=defer_completion,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    require_run_lease_owner(layout, lease)
     payloads = _payload_by_target(
         paths,
         article_bytes=article_bytes,
@@ -1008,6 +1038,8 @@ def _roll_forward_u12_transaction(
     layout: RunLayout,
     paths: PublicationPaths,
     journal: Mapping[str, object],
+    *,
+    lease: object | None = None,
 ) -> dict[str, object]:
     reread = load_json_object(paths.journal_path)
     if dict(journal) != reread:
@@ -1052,12 +1084,14 @@ def _roll_forward_u12_transaction(
                 last_complete_phase=current.last_complete_phase,
                 reason="durable U12 transaction roll-forward admitted",
                 validation_passed=False,
+                lease=lease,
             )
             transition_at = transition_at + timedelta(microseconds=1)
         current = status_store.commit_u12_complete(
             current,
             transition_at,
             reason="durable U12 transaction roll-forward",
+            lease=lease,
         )
     if (
         current.current_phase != "U12"
@@ -1100,6 +1134,7 @@ def recover_publish_transaction(
     layout: RunLayout,
     *,
     mark_needs_attention: Callable[[str], object],
+    lease: object | None = None,
 ) -> dict[str, object] | None:
     """Recover an incomplete fixed journal without accepting caller-selected paths."""
 
@@ -1109,6 +1144,27 @@ def recover_publish_transaction(
     journal_path = layout.recovery_dir / JOURNAL_FILENAME
     if not _journal_file_exists(layout, journal_path):
         return None
+    from .locks import (
+        acquire_run_lease,
+        release_run_lease,
+        require_run_lease_owner,
+    )
+
+    if lease is None:
+        owned = acquire_run_lease(
+            layout,
+            datetime.now(timezone.utc),
+            timedelta(minutes=30),
+        )
+        try:
+            return recover_publish_transaction(
+                layout,
+                mark_needs_attention=mark_needs_attention,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    require_run_lease_owner(layout, lease)
     journal = load_json_object(journal_path)
     transaction_id = journal.get("transaction_id")
     if not isinstance(transaction_id, str):
@@ -1122,7 +1178,12 @@ def recover_publish_transaction(
             raise RuntimeError(
                 "durable U12 checkpoint is paired with an illegal journal state"
             )
-        return _roll_forward_u12_transaction(layout, paths, journal)
+        return _roll_forward_u12_transaction(
+            layout,
+            paths,
+            journal,
+            lease=lease,
+        )
     if state in {"u12-durable", "complete"}:
         raise RuntimeError(
             "publish journal declares durable U12 without a valid checkpoint"

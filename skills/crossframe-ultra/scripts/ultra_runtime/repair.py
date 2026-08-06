@@ -476,7 +476,12 @@ def _ordered_actions(failures: Sequence[Mapping[str, object]]) -> list[str]:
     return actions
 
 
-def _mark_needs_attention(layout: RunLayout, *, now: datetime) -> None:
+def _mark_needs_attention(
+    layout: RunLayout,
+    *,
+    now: datetime,
+    lease: object | None,
+) -> None:
     store = RunStatusStore(layout)
     if not store.path.exists():
         return
@@ -489,6 +494,7 @@ def _mark_needs_attention(layout: RunLayout, *, now: datetime) -> None:
         now,
         reason="repeated validator failure requires human attention",
         validation_passed=False,
+        lease=lease,
     )
 
 
@@ -498,6 +504,7 @@ def build_repair_plan(
     attempt_id: str,
     attempt_number: int,
     now: datetime,
+    lease: object | None = None,
 ) -> dict[str, object]:
     """Build one hash-bound repair plan from the current committed attempt."""
 
@@ -555,7 +562,7 @@ def build_repair_plan(
         expected_phase_id="U12",
     )
     if repeated:
-        _mark_needs_attention(layout, now=now)
+        _mark_needs_attention(layout, now=now, lease=lease)
     return validated
 
 

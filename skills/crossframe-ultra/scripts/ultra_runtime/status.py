@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
 
 from .constants import PHASES, RUN_STATUSES, current_version_binding
@@ -321,6 +321,7 @@ class RunStatusStore:
         replacement: RunStatusRecord,
         *,
         completion_authority: object | None = None,
+        lease: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
@@ -380,6 +381,13 @@ class RunStatusStore:
             self._assert_paths_safe()
             with _exclusive_path_lock(self.lifecycle_lock_path):
                 self._assert_paths_safe()
+                from .locks import LeaseOwnershipError, _read_lease, _require_owner
+
+                if lease is None:
+                    raise LeaseOwnershipError(
+                        "status mutation requires the current writer lease"
+                    )
+                _require_owner(_read_lease(self.layout), lease)
                 with _exclusive_path_lock(self.lock_path):
                     self._assert_paths_safe()
                     current = self.read()
@@ -398,8 +406,25 @@ class RunStatusStore:
         self,
         expected: RunStatusRecord,
         replacement: RunStatusRecord,
+        *,
+        lease: object | None = None,
     ) -> RunStatusRecord:
-        return self._replace(expected, replacement)
+        run_id = self.layout.run_dir.name
+        _validate_record(expected, run_id)
+        _validate_record(replacement, run_id)
+        if lease is not None:
+            return self._replace(expected, replacement, lease=lease)
+        from .locks import acquire_run_lease, release_run_lease
+
+        owned = acquire_run_lease(
+            self.layout,
+            _parse_utc(replacement.updated_at, "updated_at"),
+            timedelta(minutes=5),
+        )
+        try:
+            return self._replace(expected, replacement, lease=owned)
+        finally:
+            release_run_lease(self.layout, owned)
 
     def transition(
         self,
@@ -411,6 +436,7 @@ class RunStatusStore:
         last_complete_phase: str | None | object = _UNSET,
         reason: str | None = None,
         validation_passed: bool = False,
+        lease: object | None = None,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         if not isinstance(status, str) or status not in RUN_STATUSES:
@@ -439,7 +465,7 @@ class RunStatusStore:
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
         )
-        return self.replace(expected, replacement)
+        return self.replace(expected, replacement, lease=lease)
 
     def commit_u12_complete(
         self,
@@ -447,6 +473,7 @@ class RunStatusStore:
         now: datetime,
         *,
         reason: str,
+        lease: object | None = None,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         _validate_record(expected, self.layout.run_dir.name)
@@ -469,8 +496,22 @@ class RunStatusStore:
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
         )
-        return self._replace(
-            expected,
-            replacement,
-            completion_authority=_U12_COMPLETE_AUTHORITY,
-        )
+        if lease is not None:
+            return self._replace(
+                expected,
+                replacement,
+                completion_authority=_U12_COMPLETE_AUTHORITY,
+                lease=lease,
+            )
+        from .locks import acquire_run_lease, release_run_lease
+
+        owned = acquire_run_lease(self.layout, now, timedelta(minutes=5))
+        try:
+            return self._replace(
+                expected,
+                replacement,
+                completion_authority=_U12_COMPLETE_AUTHORITY,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(self.layout, owned)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import copy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import os
 from pathlib import Path
@@ -21,6 +21,17 @@ from .jsonio import (
     load_json_object,
     load_json_object_bytes,
     sha256_bytes,
+)
+from .locks import (
+    CancellationIntent,
+    Lease,
+    LeaseConflictError,
+    acquire_cancel_convergence_lease,
+    acquire_run_lease,
+    load_cancel_intent,
+    release_run_lease,
+    request_cancel,
+    require_run_lease_owner,
 )
 from .paths import (
     RunLayout,
@@ -1242,8 +1253,29 @@ def create_checkpoint(
     boundary_ordinal: int,
     artifact_paths: Sequence[Path],
     now: datetime,
+    lease: Lease | None = None,
 ) -> dict[str, object]:
     _validate_layout(layout)
+    if load_cancel_intent(layout) is not None:
+        from .locks import CancelledRunError
+
+        raise CancelledRunError("cancel intent blocks checkpoint commit")
+    if lease is None:
+        owned = acquire_run_lease(layout, now, timedelta(minutes=5))
+        try:
+            return create_checkpoint(
+                layout,
+                phase_store,
+                boundary_kind=boundary_kind,
+                boundary_id=boundary_id,
+                boundary_ordinal=boundary_ordinal,
+                artifact_paths=artifact_paths,
+                now=now,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    require_run_lease_owner(layout, lease)
     timestamp = _iso_utc(now)
     authority = _authority_from_store(layout, phase_store)
     events = phase_store.events
@@ -1387,6 +1419,7 @@ def resume_run(
     *,
     now: datetime,
     source_repository: Path | None = None,
+    lease: Lease | None = None,
 ) -> RecoveryResult:
     _validate_layout(layout)
     _require_utc(now, "now")
@@ -1439,6 +1472,7 @@ def resume_run(
                 current_phase=phase_id,
                 last_complete_phase=last_complete,
                 reason="resumed from immutable checkpoint",
+                lease=lease,
             )
         except Exception as error:
             raise RecoveryStateError("run status cannot resume from the checkpoint") from error
@@ -1498,16 +1532,16 @@ def _terminal_event(
     return event
 
 
-def cancel_run(
+def _converge_cancel_owned(
     layout: RunLayout,
     *,
-    reason: str,
+    lease: Lease,
+    intent: CancellationIntent,
     now: datetime,
 ) -> RunStatusRecord:
     _validate_layout(layout)
     _require_utc(now, "now")
-    if not isinstance(reason, str) or not reason.strip():
-        raise ValueError("cancellation reason must be non-empty")
+    require_run_lease_owner(layout, lease)
     checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
     if compatibility == "reject":
         raise RecoveryCompatibilityError("unsupported run cannot be cancelled")
@@ -1516,6 +1550,21 @@ def cancel_run(
         raise RecoveryStateError("run status authority is unavailable")
     if status.status in {"failed", "complete"}:
         raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
+    transition_at = max(
+        now,
+        _parse_canonical_utc(intent.requested_at, "cancel intent requested_at"),
+        _parse_canonical_utc(status.updated_at, "run status updated_at")
+        + timedelta(microseconds=1),
+    )
+    if events:
+        transition_at = max(
+            transition_at,
+            _parse_canonical_utc(
+                events[-1].get("timestamp"),
+                "phase event timestamp",
+            )
+            + timedelta(microseconds=1),
+        )
     if not checkpoints and not authority and not events:
         if status.current_phase != "U0" or status.last_complete_phase is not None:
             raise RecoveryIntegrityError("status-only cancellation requires pre-U0 authority")
@@ -1525,8 +1574,9 @@ def cancel_run(
             return RunStatusStore(layout).transition(
                 status,
                 "cancelled",
-                now,
-                reason=reason.strip(),
+                transition_at,
+                reason=intent.reason,
+                lease=lease,
             )
         except Exception as error:
             raise RecoveryStateError("run status cancellation transition failed") from error
@@ -1544,16 +1594,22 @@ def cancel_run(
             return RunStatusStore(layout).transition(
                 status,
                 "cancelled",
-                now,
+                transition_at,
                 current_phase=str(event["phase_id"]),
                 last_complete_phase=last_complete_phase,
                 reason=str(event["failure_code"]),
+                lease=lease,
             )
         except Exception as error:
             raise RecoveryStateError("run status cancellation transition failed") from error
     if events[-1].get("status") != "complete":
         raise RecoveryStateError("run already has a terminal phase event")
-    event = _terminal_event(authority, events, reason=reason.strip(), now=now)
+    event = _terminal_event(
+        authority,
+        events,
+        reason=intent.reason,
+        now=transition_at,
+    )
     _, _, _, events_path, lock_path = _paths(layout)
     with _exclusive_path_lock(lock_path):
         _sync_events(events_path, (*events, event))
@@ -1561,13 +1617,71 @@ def cancel_run(
         return RunStatusStore(layout).transition(
             status,
             "cancelled",
-            now,
+            transition_at,
             current_phase=str(event["phase_id"]),
             last_complete_phase=last_complete_phase,
-            reason=reason.strip(),
+            reason=intent.reason,
+            lease=lease,
         )
     except Exception as error:
         raise RecoveryStateError("run status cancellation transition failed") from error
+
+
+def converge_cancel_if_requested(
+    layout: RunLayout,
+    *,
+    lease: Lease,
+    now: datetime,
+) -> RunStatusRecord | None:
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    intent = load_cancel_intent(layout)
+    if intent is None:
+        return None
+    return _converge_cancel_owned(
+        layout,
+        lease=lease,
+        intent=intent,
+        now=now,
+    )
+
+
+def cancel_run(
+    layout: RunLayout,
+    *,
+    reason: str,
+    now: datetime,
+) -> RunStatusRecord:
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("cancellation reason must be non-empty")
+    status = _status_if_present(layout)
+    if status is None:
+        raise RecoveryStateError("run status authority is unavailable")
+    if status.status in {"failed", "complete"}:
+        raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
+    intent = request_cancel(layout, reason=reason, now=now)
+    try:
+        lease = acquire_cancel_convergence_lease(
+            layout,
+            now,
+            timedelta(minutes=5),
+        )
+    except LeaseConflictError:
+        pending = _status_if_present(layout)
+        if pending is None:
+            raise RecoveryStateError("run status authority is unavailable")
+        return pending
+    try:
+        return _converge_cancel_owned(
+            layout,
+            lease=lease,
+            intent=intent,
+            now=now,
+        )
+    finally:
+        release_run_lease(layout, lease)
 
 
 def _copy_verified_ref(

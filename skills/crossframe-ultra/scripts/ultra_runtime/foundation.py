@@ -463,6 +463,7 @@ def complete_u3_evidence(
     candidate_entries: Sequence[Mapping[str, object]],
     verified_subagent_candidates: Sequence[Mapping[str, object]],
     now: datetime,
+    lease: object | None = None,
 ):
     from . import evidence, recovery
     from .state_machine import PhaseStore
@@ -554,6 +555,7 @@ def complete_u3_evidence(
         boundary_ordinal=0,
         artifact_paths=(evidence_path,),
         now=now,
+        lease=lease,
     )
     return seal
 
@@ -834,6 +836,7 @@ def _complete_u0(
     repo: Path,
     attestation: HostCapabilitySeal,
     now: datetime,
+    lease: object | None = None,
 ) -> object:
     from . import recovery, source_integrity
     from .state_machine import PhaseStore
@@ -908,6 +911,7 @@ def _complete_u0(
         boundary_ordinal=0,
         artifact_paths=(run_contract_path,),
         now=now,
+        lease=lease,
     )
     return phase_store
 
@@ -917,6 +921,7 @@ def advance_u0(
     *,
     repo: Path,
     now: datetime,
+    lease: object | None = None,
 ) -> FoundationProgress:
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
         raise ValueError("repo must be an existing pathlib.Path directory")
@@ -953,6 +958,7 @@ def advance_u0(
             repo=repo.resolve(),
             attestation=attestation,
             now=now,
+            lease=lease,
         )
         return FoundationProgress("advanced", phase_store, None, "U0")
     status = RunStatusStore(layout).read()
@@ -1339,6 +1345,7 @@ def _advance_u1(
     repo: Path,
     phase_store: object,
     now: datetime,
+    lease: object | None = None,
 ) -> FoundationProgress:
     from . import recovery, source_integrity
 
@@ -1508,6 +1515,7 @@ def _advance_u1(
         boundary_ordinal=0,
         artifact_paths=(source_lock_path, read_plan_path, coverage_path),
         now=now,
+        lease=lease,
     )
     return FoundationProgress("advanced", phase_store, None, "U1")
 
@@ -1517,6 +1525,7 @@ def advance_foundation(
     *,
     repo: Path,
     now: datetime,
+    lease: object | None = None,
 ) -> FoundationProgress:
     """Advance the runtime-owned U0 through U3 foundation coordinator.
 
@@ -1534,7 +1543,7 @@ def advance_foundation(
 
     checkpoints_dir = layout.recovery_dir / "checkpoints"
     if not checkpoints_dir.is_dir():
-        first = advance_u0(layout, repo=repo, now=now)
+        first = advance_u0(layout, repo=repo, now=now, lease=lease)
         if first.outcome != "advanced":
             return first
         try:
@@ -1542,6 +1551,7 @@ def advance_foundation(
                 layout,
                 now=now,
                 source_repository=repo.resolve(),
+                lease=lease,
             )
         except Exception as error:
             if isinstance(error, FoundationInputError):
@@ -1556,6 +1566,7 @@ def advance_foundation(
                 layout,
                 now=now,
                 source_repository=repo.resolve(),
+                lease=lease,
             )
         except Exception as error:
             if isinstance(error, FoundationInputError):
@@ -1574,6 +1585,7 @@ def advance_foundation(
             repo=repo.resolve(),
             phase_store=phase_store,
             now=now,
+            lease=lease,
         )
         if u1.outcome != "advanced":
             return u1
@@ -1591,6 +1603,7 @@ def advance_foundation(
             material_inventory=profile.material_inventory or None,
             material_universe_sha256=profile.material_universe_sha256,
             now=now,
+            lease=lease,
         )
         if u2.outcome != "advanced":
             return u2
@@ -1604,6 +1617,7 @@ def advance_foundation(
             phase_store=phase_store,
             profile=profile,
             now=now,
+            lease=lease,
         )
     if phase_store.current_phase == "U3":
         return FoundationProgress("advanced", phase_store, None, "U3")
@@ -1896,6 +1910,7 @@ def _complete_u3_from_host_result(
     result: HostResultSeal,
     sources: Mapping[str, Mapping[str, object]],
     now: datetime,
+    lease: object | None = None,
 ):
     try:
         raw = action.result_path.read_bytes()
@@ -1927,6 +1942,7 @@ def _complete_u3_from_host_result(
         candidate_entries=tuple(candidates),
         verified_subagent_candidates=tuple(subagent_candidates),
         now=now,
+        lease=lease,
     )
 
 
@@ -1936,6 +1952,7 @@ def _advance_u3(
     phase_store: object,
     profile: RequestProfile,
     now: datetime,
+    lease: object | None = None,
 ) -> FoundationProgress:
     if getattr(phase_store, "current_phase", None) != "U2":
         raise FoundationInputError("U3 requires a completed U2 boundary")
@@ -2001,6 +2018,7 @@ def _advance_u3(
         result=accepted,
         sources=sources,
         now=now,
+        lease=lease,
     )
     return FoundationProgress("advanced", phase_store, None, "U3")
 
@@ -2015,6 +2033,7 @@ def advance_u2(
     material_inventory: Sequence[Mapping[str, object]] | None = None,
     material_universe_sha256: str | None = None,
     now: datetime,
+    lease: object | None = None,
 ) -> FoundationProgress:
     """Advance only the U2 boundary from a caller-supplied sealed U1 store."""
 
@@ -2124,6 +2143,7 @@ def advance_u2(
             boundary_ordinal=0,
             artifact_paths=(_u2_ledger_path(layout),),
             now=now,
+            lease=lease,
         )
         return FoundationProgress("advanced", phase_store, None, "U2")
     if not isinstance(disposition, Mapping):
@@ -2179,6 +2199,7 @@ def advance_u2(
             boundary_ordinal=0,
             artifact_paths=(_u2_ledger_path(layout),),
             now=now,
+            lease=lease,
         )
         return FoundationProgress("advanced", phase_store, None, "U2")
     if seal.retrieval_status != "required-blocked":

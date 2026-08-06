@@ -11,6 +11,10 @@ import sys
 from threading import Barrier, Event
 
 from tests.pytest_import_guard import pytest
+from tests.ultra_capability_support import (
+    capability_attestation_for_contract,
+    default_capability_requirements,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -188,6 +192,166 @@ def test_wrong_owner_cannot_heartbeat_or_release(runtime_modules, tmp_path: Path
     assert locks._read_lease(layout) == lease
 
 
+def test_non_owner_cannot_transition_status_while_live_writer_holds_lease(
+    runtime_modules,
+    tmp_path: Path,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    lease = locks.acquire_run_lease(layout, now, timedelta(seconds=30))
+    impostor = replace(lease, owner_nonce="not-the-owner")
+    before = store.path.read_bytes()
+
+    with pytest.raises(locks.LeaseOwnershipError, match="owner|nonce|lease"):
+        store.transition(
+            created,
+            "running",
+            now + timedelta(seconds=1),
+            lease=impostor,
+        )
+
+    assert store.path.read_bytes() == before
+    assert locks._read_lease(layout) == lease
+
+
+def test_status_transition_without_supplied_lease_owns_one_during_commit(
+    runtime_modules,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    observed_owner = []
+    real_atomic_write_json = status_module.atomic_write_json
+
+    def observe_status_commit(path: Path, value: object) -> None:
+        if isinstance(value, dict) and value.get("status") == "running":
+            observed_owner.append(locks._read_lease(layout))
+        real_atomic_write_json(path, value)
+
+    monkeypatch.setattr(status_module, "atomic_write_json", observe_status_commit)
+    running = store.transition(
+        created,
+        "running",
+        now + timedelta(seconds=1),
+    )
+
+    assert running.status == "running"
+    assert len(observed_owner) == 1
+    assert observed_owner[0].run_id == layout.run_dir.name
+    assert not locks._lease_path(layout).exists()
+
+
+def test_cancel_intent_is_persisted_without_waiting_for_live_writer(
+    runtime_modules,
+    tmp_path: Path,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    status_module = _runtime_module("status")
+    layout = _layout(paths_module, tmp_path)
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    store = status_module.RunStatusStore(layout)
+    created = store.create(now)
+    store.transition(created, "running", now + timedelta(seconds=1))
+    lease = locks.acquire_run_lease(
+        layout,
+        now + timedelta(seconds=2),
+        timedelta(seconds=30),
+    )
+
+    intent = locks.request_cancel(
+        layout,
+        reason="operator requested cancellation",
+        now=now + timedelta(seconds=3),
+    )
+
+    assert intent.run_id == layout.run_dir.name
+    assert locks.load_cancel_intent(layout) == intent
+    assert locks._read_lease(layout) == lease
+    with pytest.raises(locks.CancelledRunError, match="cancel"):
+        locks.heartbeat_run_lease(
+            layout,
+            lease,
+            now + timedelta(seconds=4),
+        )
+    assert locks._read_lease(layout) == lease
+
+
+def test_phase_commit_rechecks_cancel_intent_before_appending_event(
+    runtime_modules,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths_module, _, locks = runtime_modules
+    constants = _runtime_module("constants")
+    state_machine = _runtime_module("state_machine")
+    layout = _layout(paths_module, tmp_path)
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    now = datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc)
+    request_sha256 = "1" * 64
+    binding = constants.current_version_binding()
+    run_contract = {
+        "trigger": "crossframe-ultra",
+        "request_sha256": request_sha256,
+        "analysis_kind": "open-world",
+        "run_mode": "test",
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": "2026-08-02T03:04:05Z",
+        "capabilities": default_capability_requirements(),
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    attestation = capability_attestation_for_contract(
+        run_id=layout.run_dir.name,
+        version_binding=binding,
+        contract=run_contract,
+        generated_at="2026-08-02T03:04:05Z",
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
+    store = state_machine.PhaseStore(
+        run_id=layout.run_dir.name,
+        version_binding=binding,
+        source_sha256="2" * 64,
+        input_artifact_hashes=(request_sha256,),
+        input_snapshot_sha256=request_sha256,
+        evidence_cutoff="2026-08-02T03:04:05Z",
+        now=now,
+        run_contract=run_contract,
+        capability_attestation=attestation,
+        source_repository=REPO_ROOT,
+        run_layout=layout,
+    )
+    lease = locks.acquire_run_lease(layout, now, timedelta(seconds=30))
+    locks.request_cancel(
+        layout,
+        reason="operator requested cancellation",
+        now=now + timedelta(seconds=1),
+    )
+
+    with pytest.raises(locks.CancelledRunError, match="cancel"):
+        store.complete(
+            "U0",
+            artifact_hashes=(store.run_contract_artifact_sha256,),
+        )
+
+    assert store.events == ()
+    assert locks._read_lease(layout) == lease
+
+
 def test_release_removes_only_the_current_owner_lease(runtime_modules, tmp_path: Path) -> None:
     paths_module, _, locks = runtime_modules
     layout = _layout(paths_module, tmp_path)
@@ -303,6 +467,7 @@ def test_cancel_transition_serializes_with_lease_admission_and_heartbeat(
         running,
         "cancelled",
         now + timedelta(seconds=4),
+        **({"lease": lease} if lease is not None else {}),
     )
     operation_future = None
     try:

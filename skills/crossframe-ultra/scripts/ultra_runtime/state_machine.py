@@ -1054,6 +1054,10 @@ class PhaseStore:
         return PHASE_ORDER[index] if index < len(PHASE_ORDER) else None
 
     def _check_phase(self, phase_id: str) -> None:
+        from .locks import CancelledRunError, load_cancel_intent
+
+        if load_cancel_intent(self._run_layout) is not None:
+            raise CancelledRunError("cancel intent blocks phase commit")
         expected = self._expected_phase()
         if phase_id != expected:
             raise PhaseTransitionError(

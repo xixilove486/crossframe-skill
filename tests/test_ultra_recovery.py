@@ -507,6 +507,39 @@ def test_checkpoint_is_content_addressed_disk_verified_and_selected(tmp_path):
     assert recovery.select_resume_checkpoint(layout) == checkpoint
 
 
+def test_checkpoint_without_supplied_lease_owns_one_for_all_commits(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from ultra_runtime import locks, state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    recovery = _recovery_module()
+    _, layout, store, artifact_path = _fixture_run(tmp_path)
+    observed = []
+    real_write_immutable = recovery._write_immutable
+
+    def observe_immutable_commit(path, value):
+        observed.append(locks._read_lease(layout))
+        return real_write_immutable(path, value)
+
+    monkeypatch.setattr(recovery, "_write_immutable", observe_immutable_commit)
+    checkpoint = recovery.create_checkpoint(
+        layout,
+        store,
+        boundary_kind="phase",
+        boundary_id="U0",
+        boundary_ordinal=0,
+        artifact_paths=(artifact_path,),
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert checkpoint["phase_id"] == "U0"
+    assert observed
+    assert len({item.owner_nonce for item in observed}) == 1
+    assert not locks._lease_path(layout).exists()
+
+
 def test_corrupt_artifact_rejects_checkpoint_instead_of_resuming(tmp_path):
     recovery, _, layout, _, artifact_path, _ = _checkpoint(tmp_path)
     artifact_path.write_bytes(b"tampered\n")
@@ -544,9 +577,29 @@ def test_duplicate_logical_checkpoint_slot_invalidates_the_run(tmp_path):
         recovery.load_checkpoints(layout)
 
 
-def test_resume_uses_last_full_boundary_and_cancel_is_terminal(tmp_path):
+def test_resume_uses_last_full_boundary_and_cancel_is_terminal(tmp_path, monkeypatch):
+    from ultra_runtime import locks, source_integrity, state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    real_measure_u1 = source_integrity.measure_u1_prerequisites
+
+    def measure_u1_for_u0_resume(*args, **kwargs):
+        measurement = real_measure_u1(*args, **kwargs)
+        object.__setattr__(measurement, "ready", True)
+        object.__setattr__(measurement, "missing", ())
+        return measurement
+
+    monkeypatch.setattr(
+        source_integrity,
+        "measure_u1_prerequisites",
+        measure_u1_for_u0_resume,
+    )
+    monkeypatch.setattr(
+        source_integrity,
+        "verify_u1_prerequisites",
+        lambda measurement: measurement,
+    )
     recovery, _, layout, store, _, checkpoint = _checkpoint(tmp_path)
-    import ultra_runtime.state_machine as state_machine
     from ultra_runtime.status import RunStatusStore
 
     statuses = RunStatusStore(layout)
@@ -567,7 +620,10 @@ def test_resume_uses_last_full_boundary_and_cancel_is_terminal(tmp_path):
     )
     assert cancelled.status == "cancelled"
     assert cancelled.tools_allowed is False
-    with pytest.raises(state_machine.PhaseTransitionError, match="terminal|cancelled"):
+    with pytest.raises(
+        (state_machine.PhaseTransitionError, locks.CancelledRunError),
+        match="terminal|cancel",
+    ):
         store.complete("U1", artifact_hashes=(hashlib.sha256(b"late").hexdigest(),))
     with pytest.raises(recovery.RecoveryStateError, match="cancelled|terminal"):
         recovery.resume_run(layout, now=NOW + timedelta(seconds=5))
@@ -577,6 +633,9 @@ def test_partial_cancellation_blocks_new_lease_and_retry_converges(
     tmp_path,
     monkeypatch,
 ):
+    import ultra_runtime.state_machine as state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
     recovery, _, layout, _, _, _ = _checkpoint(tmp_path)
     from ultra_runtime import locks
     from ultra_runtime.status import RunStatusStore
@@ -617,13 +676,12 @@ def test_partial_cancellation_blocks_new_lease_and_retry_converges(
     authority["input_refs"][0] = malformed_ref
     authority["content_sha256"] = compute_artifact_content_sha256(authority)
     jsonio.atomic_write_json(authority_path, authority)
-    with pytest.raises(locks.LeaseNeedsAttentionError) as caught:
+    with pytest.raises(locks.CancelledRunError):
         locks.acquire_run_lease(
             layout,
             NOW + timedelta(seconds=3),
             timedelta(seconds=30),
         )
-    assert isinstance(caught.value.__cause__, recovery.RecoveryIntegrityError)
     jsonio.atomic_write_bytes(authority_path, authority_bytes)
 
     input_path = layout.input_dir / "AGENTS.md"
@@ -725,6 +783,58 @@ def test_cancel_pre_u0_without_recovery_authority_is_status_only_and_idempotent(
     assert not (layout.recovery_dir / "run-authority.json").exists()
     assert not (layout.recovery_dir / "checkpoints").exists()
     assert not (layout.artifacts_dir / "ultra-run-contract.json").exists()
+
+
+def test_cancel_intent_converges_after_live_writer_releases(tmp_path) -> None:
+    recovery = _recovery_module()
+    from ultra_runtime import locks
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
+    from ultra_runtime.status import RunStatusStore
+
+    policy = RootPolicy(tmp_path / "production", tmp_path / "test")
+    layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
+    statuses = RunStatusStore(layout)
+    created = statuses.create(NOW)
+    running = statuses.transition(
+        created,
+        "running",
+        NOW + timedelta(seconds=1),
+    )
+    writer = locks.acquire_run_lease(
+        layout,
+        NOW + timedelta(seconds=2),
+        timedelta(seconds=30),
+    )
+    before = statuses.path.read_bytes()
+
+    pending = recovery.cancel_run(
+        layout,
+        reason="operator requested cancellation",
+        now=NOW + timedelta(seconds=3),
+    )
+
+    assert pending == running
+    assert statuses.path.read_bytes() == before
+    assert locks.load_cancel_intent(layout) is not None
+    assert locks._read_lease(layout) == writer
+
+    locks.release_run_lease(layout, writer)
+    cancelled = recovery.cancel_run(
+        layout,
+        reason="ignored after immutable intent",
+        now=NOW + timedelta(seconds=4),
+    )
+    cancelled_bytes = statuses.path.read_bytes()
+    repeated = recovery.cancel_run(
+        layout,
+        reason="ignored repeated reason",
+        now=NOW + timedelta(seconds=5),
+    )
+
+    assert cancelled.status == repeated.status == "cancelled"
+    assert cancelled.reason == repeated.reason == "operator requested cancellation"
+    assert statuses.path.read_bytes() == cancelled_bytes
+    assert not locks._lease_path(layout).exists()
 
 
 @pytest.mark.parametrize(

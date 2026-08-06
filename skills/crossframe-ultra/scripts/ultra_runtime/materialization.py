@@ -2345,6 +2345,7 @@ def preflight_foundation_progress(
     status_store: object,
     *,
     now: datetime,
+    lease: object | None = None,
 ) -> object:
     """Validate immutable foundation state before any progress side effect."""
 
@@ -2393,6 +2394,7 @@ def preflight_foundation_progress(
             last_complete_phase=current.last_complete_phase,
             reason="runtime progress admitted",
             validation_passed=False,
+            lease=lease,
         )
     return current
 
@@ -2631,6 +2633,7 @@ def _create_phase_checkpoint(
     artifact_paths: Sequence[Path],
     *,
     now: datetime,
+    lease: object,
 ) -> object:
     create_checkpoint = getattr(recovery, "create_checkpoint", None)
     if not callable(create_checkpoint):
@@ -2643,6 +2646,7 @@ def _create_phase_checkpoint(
         boundary_ordinal=0,
         artifact_paths=tuple(artifact_paths),
         now=now,
+        lease=lease,
     )
 
 
@@ -2744,6 +2748,7 @@ def _complete_foundation_u1(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import source_integrity
 
@@ -2862,6 +2867,7 @@ def _complete_foundation_u1(
         "U1",
         (source_lock_path, source_coverage_path),
         now=now,
+        lease=lease,
     )
 
 
@@ -2872,6 +2878,7 @@ def _complete_foundation_u2(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import retrieval
 
@@ -2913,6 +2920,7 @@ def _complete_foundation_u2(
         "U2",
         (retrieval_path,),
         now=now,
+        lease=lease,
     )
 
 
@@ -2923,6 +2931,7 @@ def _complete_foundation_u3(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import evidence
 
@@ -2969,6 +2978,7 @@ def _complete_foundation_u3(
         "U3",
         (evidence_path,),
         now=now,
+        lease=lease,
     )
 
 
@@ -2981,6 +2991,7 @@ def _continue_foundation_u0_u3(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> object:
     current_phase = getattr(phase_store, "current_phase", None)
     if current_phase not in {"U0", "U1", "U2"}:
@@ -3007,6 +3018,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
         current_phase = "U1"
     if current_phase == "U1":
@@ -3017,6 +3029,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
         current_phase = "U2"
     if current_phase == "U2":
@@ -3027,6 +3040,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
     return phase_store
 
@@ -3039,6 +3053,7 @@ def _establish_fresh_u0_u3(
     now: datetime,
     recovery: object,
     status_record: object,
+    lease: object,
 ) -> object:
     from .foundation import advance_u0
 
@@ -3050,7 +3065,7 @@ def _establish_fresh_u0_u3(
         raise FoundationInputError(
             "fresh foundation status boundary must be running/U0 with no completed phase"
         )
-    progress = advance_u0(layout, repo=repo, now=now)
+    progress = advance_u0(layout, repo=repo, now=now, lease=lease)
     if progress.outcome == "awaiting-host-action":
         raise FoundationRecoveryError(
             "fresh U0 is awaiting a capability-attestation host action"
@@ -3082,6 +3097,7 @@ def _establish_fresh_u0_u3(
         context,
         now=now,
         recovery=recovery,
+        lease=lease,
     )
 
 
@@ -3093,13 +3109,19 @@ def _resume_or_establish_u0_u3(
     now: datetime,
     recovery: object,
     status_record: object,
+    lease: object,
 ) -> object:
     resume_run = getattr(recovery, "resume_run", None)
     error_type = getattr(recovery, "RecoveryStateError", None)
     if not callable(resume_run) or not isinstance(error_type, type):
         raise RuntimeError("recovery foundation APIs are unavailable")
     try:
-        resumed = resume_run(layout, now=now)
+        resumed = resume_run(
+            layout,
+            now=now,
+            source_repository=repo.resolve(),
+            lease=lease,
+        )
     except error_type as error:
         if str(error) != "no completed resumable checkpoint is available":
             raise
@@ -3110,6 +3132,7 @@ def _resume_or_establish_u0_u3(
             now=now,
             recovery=recovery,
             status_record=status_record,
+            lease=lease,
         )
     phase_store = _resume_phase_store(resumed)
     current_phase = getattr(phase_store, "current_phase", None)
@@ -3130,6 +3153,7 @@ def _resume_or_establish_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
     if current_phase not in PHASES[3:]:
         raise FoundationRecoveryError("durable foundation phase is invalid")
@@ -3157,6 +3181,7 @@ def _close_u12_transaction(
     status_store: object,
     now: datetime,
     mark_needs_attention: Callable[[str], object],
+    lease: object,
 ) -> tuple[dict[str, object], object, Path]:
     from .deliverables import (
         _mark_u12_durable,
@@ -3196,6 +3221,7 @@ def _close_u12_transaction(
                 paths.artifact_index_path,
             ),
             now=now,
+            lease=lease,
         )
         durable = True
         _mark_u12_durable(
@@ -3210,6 +3236,7 @@ def _close_u12_transaction(
             layout,
             paths,
             journal,
+            lease=lease,
         )
         if completed_journal.get("state") != "complete":
             raise RuntimeError("U12 publish journal did not complete")
@@ -3306,6 +3333,7 @@ def _close_u12_transaction(
                 recover_publish_transaction(
                     layout,
                     mark_needs_attention=mark_needs_attention,
+                    lease=lease,
                 )
             except BaseException as rollback_error:
                 add_note = getattr(error, "add_note", None)
@@ -3359,6 +3387,7 @@ def materialize_complete_run(
         recover_publish_transaction,
     )
     from .locks import (
+        CancelledRunError,
         LeaseNeedsAttentionError,
         acquire_run_lease,
         release_run_lease,
@@ -3389,9 +3418,21 @@ def materialize_complete_run(
             last_complete_phase=current.last_complete_phase,
             reason=reason,
             validation_passed=False,
+            lease=lease,
         )
         attention_marked = True
         return changed
+
+    def stop_if_cancel_requested() -> None:
+        if lease is None:
+            return
+        converge = getattr(recovery, "converge_cancel_if_requested", None)
+        if not callable(converge):
+            raise RuntimeError("cancel convergence API is unavailable")
+        if converge(layout, lease=lease, now=now) is not None:
+            raise CancelledRunError(
+                "cancel intent converged before materialization commit"
+            )
 
     try:
         try:
@@ -3412,16 +3453,20 @@ def materialize_complete_run(
                 raise
             _foundation_input_inventory(layout, status_record=current)
             raise
+        stop_if_cancel_requested()
         current = status_store.read()
         if current.status != "complete":
             current = preflight_foundation_progress(
                 layout,
                 status_store,
                 now=now,
+                lease=lease,
             )
         if current.status == "complete":
             recovered_publication = recover_publish_transaction(
-                layout, mark_needs_attention=mark_needs_attention
+                layout,
+                mark_needs_attention=mark_needs_attention,
+                lease=lease,
             )
             if not isinstance(
                 recovered_publication, Mapping
@@ -3453,7 +3498,12 @@ def materialize_complete_run(
 
         from .foundation import advance_foundation
 
-        foundation = advance_foundation(layout, repo=repo.resolve(), now=now)
+        foundation = advance_foundation(
+            layout,
+            repo=repo.resolve(),
+            now=now,
+            lease=lease,
+        )
         projected = foundation_progress_projection(layout, foundation)
         if projected.outcome in {"awaiting-host-action", "awaiting-authoring", "blocked"}:
             return projected
@@ -3475,7 +3525,9 @@ def materialize_complete_run(
         _foundation_input_inventory(layout, status_record=current)
         prepare_authoring(layout)
         recovered_publication = recover_publish_transaction(
-            layout, mark_needs_attention=mark_needs_attention
+            layout,
+            mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
         if attention_marked:
             raise RuntimeError(
@@ -3514,16 +3566,21 @@ def materialize_complete_run(
             raise RuntimeError(
                 f"resumed run status {current.status!r} cannot materialize"
             )
+
+        def create_owned_checkpoint(*args: Any, **kwargs: Any) -> object:
+            return recovery.create_checkpoint(*args, **kwargs, lease=lease)
+
         bundle = materialize_u4_u11(
             repo,
             layout,
             phase_store,
             now=now,
-            create_checkpoint=recovery.create_checkpoint,
+            create_checkpoint=create_owned_checkpoint,
         )
         u11_event = bundle.phase_events[-1]
         if u11_event.get("phase_id") != "U11":
             raise RuntimeError("materialization did not end at a complete U11 event")
+        stop_if_cancel_requested()
 
         validator_set_sha256 = _validator_set_authority(repo, validation)
         manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"
@@ -3565,7 +3622,9 @@ def materialize_complete_run(
             fresh_check=fresh_check,
             commit_report=commit_report,
             mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
+        stop_if_cancel_requested()
         current_report_path = (
             layout.validation_current_dir / "ultra-validator-report.json"
         )
@@ -3585,6 +3644,7 @@ def materialize_complete_run(
             status_store=status_store,
             now=now,
             mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
         if u12_event.get("phase_id") != "U12":
             raise RuntimeError("PhaseStore did not complete U12")
@@ -3608,7 +3668,19 @@ def materialize_complete_run(
             postcheck_passed=True,
         )
     except BaseException as error:
-        if isinstance(error, FoundationInputError):
+        if isinstance(error, CancelledRunError) and lease is not None:
+            try:
+                converge = getattr(recovery, "converge_cancel_if_requested", None)
+                if callable(converge):
+                    converge(layout, lease=lease, now=now)
+            except BaseException as cancellation_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "failed to converge durable cancellation: "
+                        f"{cancellation_error}"
+                    )
+        elif isinstance(error, FoundationInputError):
             try:
                 rejected = status_store.read()
                 if rejected.status in {"created", "running", "interrupted"}:
@@ -3620,6 +3692,7 @@ def materialize_complete_run(
                         last_complete_phase=rejected.last_complete_phase,
                         reason=f"fresh foundation input rejected: {error}",
                         validation_passed=False,
+                        lease=lease,
                     )
             except BaseException as status_error:
                 add_note = getattr(error, "add_note", None)

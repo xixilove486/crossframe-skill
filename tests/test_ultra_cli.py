@@ -356,9 +356,11 @@ def test_resume_emits_json_projection_without_live_phase_store(
     started_at = datetime(2026, 8, 5, 1, 2, 3, tzinfo=timezone.utc)
     resumed_at = started_at + timedelta(seconds=3)
 
-    from ultra_runtime import recovery, state_machine, status
+    from ultra_runtime import locks, recovery, state_machine, status
     from ultra_runtime.constants import current_version_binding
     from ultra_runtime.paths import RunMode, build_run_layout
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", policy.production_root)
 
     layout = build_run_layout(RunMode.TEST, run_id, policy)
     status_store = status.RunStatusStore(layout)
@@ -434,9 +436,10 @@ def test_resume_emits_json_projection_without_live_phase_store(
         phase_store=phase_store,
     )
 
-    def resume_run(selected_layout, *, now):
+    def resume_run(selected_layout, *, now, lease):
         assert selected_layout == layout
         assert now == resumed_at + timedelta(seconds=1)
+        assert locks._read_lease(layout) == lease
         return recovery_result
 
     monkeypatch.setattr(recovery, "resume_run", resume_run)
@@ -490,6 +493,7 @@ def test_resume_emits_json_projection_without_live_phase_store(
 
 def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     cli = _load_cli()
     policy = _root_policy(tmp_path)
@@ -500,6 +504,8 @@ def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     from ultra_runtime.constants import current_version_binding
     from ultra_runtime.jsonio import canonical_json_bytes
     from ultra_runtime.paths import RunMode, build_run_layout
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", policy.production_root)
 
     layout = build_run_layout(RunMode.TEST, run_id, policy)
     layout.input_dir.mkdir(parents=True)
@@ -611,6 +617,74 @@ def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     assert persisted_bytes == canonical_json_bytes(status._record_to_object(persisted_record))
     assert persisted_bytes.endswith(b"\n")
     assert not persisted_bytes.endswith(b"\n\n")
+
+
+def test_cancel_cli_records_intent_while_live_writer_keeps_status_bytes(
+    tmp_path: Path,
+) -> None:
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    started_at = datetime(2026, 8, 5, 1, 2, 30, tzinfo=timezone.utc)
+    start_stdout = StringIO()
+    assert cli.execute(
+        ["start", *common, "--request-stdin"],
+        stdin=BytesIO(b"cancel-live-writer\n"),
+        stdout=start_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at,
+        entropy=lambda: b"cancel-live-writer",
+    ) == 0
+    run_id = json.loads(start_stdout.getvalue())["run_id"]
+    assert cli.execute(
+        ["prepare", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=StringIO(),
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=1),
+        entropy=lambda: b"unused",
+    ) == 0
+
+    from ultra_runtime import locks
+    from ultra_runtime.paths import RunMode, build_run_layout
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    writer = locks.acquire_run_lease(
+        layout,
+        started_at + timedelta(seconds=2),
+        timedelta(seconds=30),
+    )
+    status_before = (layout.run_dir / "run-status.json").read_bytes()
+    pending_stdout = StringIO()
+
+    assert cli.execute(
+        ["cancel", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=pending_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=3),
+        entropy=lambda: b"unused",
+    ) == 0
+    assert json.loads(pending_stdout.getvalue())["status"] == "running"
+    assert (layout.run_dir / "run-status.json").read_bytes() == status_before
+    assert locks.load_cancel_intent(layout) is not None
+    assert locks._read_lease(layout) == writer
+
+    locks.release_run_lease(layout, writer)
+    cancelled_stdout = StringIO()
+    assert cli.execute(
+        ["cancel", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=cancelled_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=4),
+        entropy=lambda: b"unused",
+    ) == 0
+    assert json.loads(cancelled_stdout.getvalue())["status"] == "cancelled"
 
 
 def test_materialize_plain_request_emits_pending_capability_attestation(
@@ -1087,6 +1161,7 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
         boundary_ordinal,
         artifact_paths,
         now,
+        lease,
     ):
         nonlocal injected
         checkpoint = original_checkpoint(
@@ -1097,6 +1172,7 @@ def test_materialize_resumes_each_durable_partial_foundation_checkpoint(
             boundary_ordinal=boundary_ordinal,
             artifact_paths=artifact_paths,
             now=now,
+            lease=lease,
         )
         if (
             boundary_kind == "phase"
@@ -1285,6 +1361,7 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
         boundary_ordinal,
         artifact_paths,
         now,
+        lease,
     ):
         checkpoint = original_checkpoint(
             layout,
@@ -1294,6 +1371,7 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
             boundary_ordinal=boundary_ordinal,
             artifact_paths=artifact_paths,
             now=now,
+            lease=lease,
         )
         if boundary_kind == "phase" and boundary_id == "U0":
             raise RuntimeError("injected after U0 checkpoint")
@@ -1335,7 +1413,7 @@ def test_partial_foundation_with_uncheckpointed_downstream_state_needs_attention
     assert status["reason"].startswith("foundation recovery requires attention:")
 
 
-def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corruption(
+def test_non_owner_foundation_failure_cannot_change_status_or_live_lease(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -1371,7 +1449,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         entropy=lambda: b"unused",
     ) == 0
 
-    from ultra_runtime import recovery
+    from ultra_runtime import locks, recovery
     from ultra_runtime.paths import RunMode, build_run_layout
 
     layout = build_run_layout(RunMode.TEST, run_id, policy)
@@ -1386,6 +1464,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         boundary_ordinal,
         artifact_paths,
         now,
+        lease,
     ):
         checkpoint = original_checkpoint(
             layout,
@@ -1395,6 +1474,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
             boundary_ordinal=boundary_ordinal,
             artifact_paths=artifact_paths,
             now=now,
+            lease=lease,
         )
         if boundary_kind == "phase" and boundary_id == "U0":
             raise RuntimeError("injected after U0 checkpoint")
@@ -1416,6 +1496,11 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         (layout.recovery_dir / "request-intake-authority.json").read_text("utf-8")
     )
     assert intake["request_sha256"] == hashlib.sha256(request_bytes).hexdigest()
+    live_lease = locks.acquire_run_lease(
+        layout,
+        start_time + timedelta(seconds=2, microseconds=1),
+        timedelta(seconds=30),
+    )
 
     replacement = (
         '{"analysis_kind":"closed-input","claim":"替换命题",'
@@ -1438,7 +1523,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
         ).encode("utf-8")
     )
 
-    from ultra_runtime import jsonio, locks
+    from ultra_runtime import jsonio
     from ultra_runtime.schemas import compute_artifact_content_sha256
 
     authority_path = layout.recovery_dir / "run-authority.json"
@@ -1464,6 +1549,7 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
     status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
     assert status["status"] == "running"
     jsonio.atomic_write_bytes(authority_path, authority_bytes)
+    status_before = (layout.run_dir / "run-status.json").read_bytes()
 
     with pytest.raises(ValueError, match="request intake authority differs"):
         cli.execute(
@@ -1475,11 +1561,8 @@ def test_checkpointed_foundation_intake_mismatch_does_not_mask_authority_corrupt
             now=lambda: start_time + timedelta(minutes=1),
             entropy=lambda: b"checkpointed-intake-retry",
         )
-    status = json.loads((layout.run_dir / "run-status.json").read_text("utf-8"))
-    assert status["status"] == "blocked"
-    assert status["current_phase"] == "U0"
-    assert status["last_complete_phase"] is None
-    assert status["reason"].startswith("fresh foundation input rejected:")
+    assert (layout.run_dir / "run-status.json").read_bytes() == status_before
+    assert locks._read_lease(layout) == live_lease
 
 
 @pytest.mark.parametrize("mutation", ["paired-input", "metadata", "status"])
