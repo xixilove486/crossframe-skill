@@ -79,6 +79,7 @@ CLI_SIGNATURES = (
     "repair-plan    --repo PATH --mode production|test --run-id RUN_ID",
     "resume         --repo PATH --mode production|test --run-id RUN_ID",
     "fork           --repo PATH --mode production|test --run-id RUN_ID --reason TEXT",
+    "evidence-fork  --repo PATH --mode production|test --run-id RUN_ID (--evidence-file PATH | --evidence-stdin)",
     "cancel         --repo PATH --mode production|test --run-id RUN_ID",
     "rebuild-index  --repo PATH --mode production|test",
 )
@@ -282,6 +283,7 @@ def test_protocols_route_the_open_world_persistent_host_loop() -> None:
         "retrieval",
         "evidence-authoring",
         "subagent",
+        "semantic-review",
         "awaiting-host-action",
         "awaiting-authoring",
         "evidence-fork",
@@ -293,6 +295,7 @@ def test_protocols_route_the_open_world_persistent_host_loop() -> None:
     assert "open-world" in runtime
     assert "closed-input" in runtime
     assert "recovery/pending-action.json" in runtime
+    assert "semantic-review" in runtime
     assert "真实" in source and "receipt" in source
     assert "subagent" in retrieval and "candidate" in retrieval
     assert "不是证据" in retrieval
@@ -308,7 +311,7 @@ def test_smoke_matrix_covers_activation_and_all_hard_failure_boundaries() -> Non
         "/crossframe-ultra",
     ):
         assert f"`{form}`" in smoke
-    for scenario in tuple(f"S{index:02d}" for index in range(1, 16)):
+    for scenario in tuple(f"S{index:02d}" for index in range(1, 17)):
         assert f"| {scenario} |" in smoke
     for boundary in (
         "near-miss",
@@ -326,5 +329,6 @@ def test_smoke_matrix_covers_activation_and_all_hard_failure_boundaries() -> Non
         "natural-language-open-world",
         "closed-input-eligibility",
         "normal-wait-control-ownership",
+        "fresh-semantic-review",
     ):
         assert boundary in smoke

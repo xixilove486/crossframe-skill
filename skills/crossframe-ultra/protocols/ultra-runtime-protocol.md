@@ -18,7 +18,7 @@
 ## Dependencies
 
 - Use `scripts/ultra_runtime/paths.py`, `status.py`, `state_machine.py`, `locks.py`, `jsonio.py`, and Task 13's `crossframe_ultra_runtime.py` CLI/materializer once integrated.
-- Use `scripts/ultra_runtime/host_handshake.py` and the fixed `recovery/pending-action.json` loop. `prepare` returns the pending `capability-attestation`, `source-read`, `retrieval`, `subagent`, or `evidence-authoring` action and fixed result slot; the host executes a real permitted tool, writes only that receipt or authoring slot, and `materialize` validates it before advancing.
+- Use `scripts/ultra_runtime/host_handshake.py` and the fixed `recovery/pending-action.json` loop. `prepare` returns the pending `capability-attestation`, `source-read`, `retrieval`, `subagent`, `evidence-authoring`, or U11 `semantic-review` action and fixed result slot; the host executes a real permitted tool, writes only that receipt or authoring slot, and `materialize` validates it before advancing. The host supplies only the action-bound reviewer identity and nine-dimension judgment; the runtime owns the semantic-review envelope and publication disposition, and the review cannot override deterministic or adversarial failure.
 - Move through U0–U12 in order. U0–U3 authority remains runtime-owned; model authoring begins only at a slot returned by `prepare`. Resume from the next phase after a verified checkpoint, and reject uncheckpointed downstream residue instead of overwriting it. Late evidence uses `evidence-fork` rather than mutating U3.
 - Keep production and test roots distinct. Use locks, leases, heartbeats, compare-and-swap phase heads, same-volume staging, flush, atomic replace, and durable transaction recovery.
 

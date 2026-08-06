@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 from tests.pytest_import_guard import pytest
@@ -136,6 +137,55 @@ def test_ultra_mirror_is_generated_from_canonical() -> None:
 def test_integrity_exposes_and_enforces_the_ultra_contract() -> None:
     assert integrity.ULTRA_EXACT_TRIGGER_NAMES == EXACT_ULTRA_FORMS
     integrity.check_crossframe_ultra_skill(ROOT / "skills", "test")
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "removed_marker", "expected_error"),
+    (
+        (
+            "schemas/ultra-semantic-review.schema.json",
+            None,
+            "required files missing.*ultra-semantic-review",
+        ),
+        (
+            "SKILL.md",
+            "ULTRA-ACTIVATION-NOT-PAYLOAD",
+            "missing public marker.*ULTRA-ACTIVATION-NOT-PAYLOAD",
+        ),
+        (
+            "references/host-adapter-contract.md",
+            "semantic-review",
+            "host adapter missing marker.*semantic-review",
+        ),
+        (
+            "references/runtime-routing-map.md",
+            (
+                "evidence-fork  --repo PATH --mode production|test --run-id "
+                "RUN_ID (--evidence-file PATH | --evidence-stdin)"
+            ),
+            "exact CLI block.*evidence-fork",
+        ),
+    ),
+)
+def test_integrity_fails_closed_when_ultra_public_authority_is_missing(
+    tmp_path: Path,
+    relative_path: str,
+    removed_marker: str | None,
+    expected_error: str,
+) -> None:
+    skill_root = tmp_path / "skills"
+    ultra = skill_root / "crossframe-ultra"
+    shutil.copytree(ULTRA, ultra)
+    target = ultra / relative_path
+    if removed_marker is None:
+        target.unlink()
+    else:
+        text = target.read_text(encoding="utf-8")
+        assert removed_marker in text
+        target.write_text(text.replace(removed_marker, "", 1), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match=expected_error):
+        integrity.check_crossframe_ultra_skill(skill_root, "test")
 
 
 def test_no_promax_import_gate_ignores_comparison_prose_but_rejects_python(

@@ -93,7 +93,9 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 
 这里的 envelope 仍只是不可变输入，不是 authority。用户问题不能同时复制成 `claim` 与虚构的完整 `material` 来取得 closed-input 资格；不能独立证明 `closed-input` 或 `pure-logic` 时保持 open-world。不得加入或自填 run ID、版本、散列、敏感级别、能力、读取凭据、检索结论、证据 ID、phase event 或 checkpoint。
 
-`start` 独立封存 request intake authority；`prepare` 幂等返回当前唯一 `recovery/pending-action.json`、固定 result slot 或 model-owned authoring slot。宿主按 action 执行 `capability-attestation`、`source-read`、`retrieval`、`subagent` 或 `evidence-authoring`：必须调用真实宿主工具，把 receipt 或语义工件只写到指定 slot，再调用 `materialize` 让 runtime 验证、接纳、封存并发行下一步。具体翻译规则见 `references/host-adapter-contract.md`。
+`start` 独立封存 request intake authority；`prepare` 幂等返回当前唯一 `recovery/pending-action.json`、固定 result slot 或 model-owned authoring slot。宿主按 action 执行 `capability-attestation`、`source-read`、`retrieval`、`subagent`、`evidence-authoring` 或 U11 的 `semantic-review`：必须调用真实宿主工具，把 receipt 或语义工件只写到指定 slot，再调用 `materialize` 让 runtime 验证、接纳、封存并发行下一步。具体翻译规则见 `references/host-adapter-contract.md`。
+
+`semantic-review` 只提供 action-bound reviewer identity 与九维判断；runtime 负责正式工件 envelope 和 publication disposition，且该判断不能覆盖 deterministic 或 adversarial failure。
 
 联网、读源和 subagent 只能在 pending action 与 U0 权限内真实执行。subagent 输出和其它模型生成内容先是 untrusted `candidate`，不是证据；只有来源验证并经 U3 admission 接纳后才能进入证据账本。不得把候选、模拟、预测或用户问题改标为已观察事实。
 

@@ -595,12 +595,22 @@ def check_crossframe_ultra_skill(root: Path, label: str) -> None:
         "protocols/ultra-source-authority-protocol.md",
         "protocols/ultra-validation-repair-protocol.md",
         "protocols/ultra-world-volume-protocol.md",
+        "references/compatibility-matrix.json",
+        "references/host-adapter-contract.md",
         "references/runtime-routing-map.md",
         "references/retrieval-policy.md",
         "references/release-manifest.json",
         "references/source-manifest.json",
         "references/v8.2-full-source/00-index.md",
         "schemas/ultra-run-contract.schema.json",
+        "schemas/ultra-compatibility-matrix.schema.json",
+        "schemas/ultra-evidence-lineage.schema.json",
+        "schemas/ultra-host-action.schema.json",
+        "schemas/ultra-host-capability-attestation.schema.json",
+        "schemas/ultra-host-result-receipt.schema.json",
+        "schemas/ultra-input-inventory.schema.json",
+        "schemas/ultra-read-plan.schema.json",
+        "schemas/ultra-semantic-review.schema.json",
         "scripts/check_crossframe_ultra_artifacts.py",
         "scripts/check_crossframe_ultra_v82_knowledge.py",
         "scripts/check_crossframe_ultra_v82_source.py",
@@ -615,6 +625,8 @@ def check_crossframe_ultra_skill(root: Path, label: str) -> None:
 
     skill_text = read(skill)
     routing_text = read(ultra / "references/runtime-routing-map.md")
+    runtime_text = read(ultra / "protocols/ultra-runtime-protocol.md")
+    host_adapter_text = read(ultra / "references/host-adapter-contract.md")
     metadata_text = read(ultra / "agents/openai.yaml")
     for marker in (
         "name: crossframe-ultra",
@@ -625,6 +637,74 @@ def check_crossframe_ultra_skill(root: Path, label: str) -> None:
         "ULTRA-NO-THEORY-SELF-AMENDMENT",
     ):
         require(marker in skill_text, f"{label}: crossframe-ultra missing marker: {marker}")
+    for marker in (
+        "ULTRA-ACTIVATION-NOT-PAYLOAD",
+        "普通自然语言",
+        "open-world",
+        "closed-input",
+        "recovery/pending-action.json",
+        "真实宿主工具",
+        "awaiting-host-action",
+        "awaiting-authoring",
+        "正常进度",
+        "不得手工",
+        "candidate",
+        "capability-attestation",
+        "source-read",
+        "retrieval",
+        "subagent",
+        "evidence-authoring",
+        "semantic-review",
+    ):
+        require(
+            marker in skill_text,
+            f"{label}: crossframe-ultra missing public marker: {marker}",
+        )
+    for marker in (
+        "recovery/pending-action.json",
+        "awaiting-host-action",
+        "awaiting-authoring",
+        "capability-attestation",
+        "source-read",
+        "retrieval",
+        "subagent",
+        "evidence-authoring",
+        "semantic-review",
+    ):
+        require(
+            marker in runtime_text,
+            f"{label}: crossframe-ultra runtime protocol missing marker: {marker}",
+        )
+    for marker in (
+        "| `capability-attestation` |",
+        "| `source-read` |",
+        "| `retrieval` |",
+        "| `subagent` |",
+        "| `evidence-authoring` |",
+        "| `semantic-review` |",
+        "candidate",
+        "awaiting-host-action",
+        "awaiting-authoring",
+    ):
+        require(
+            marker in host_adapter_text,
+            f"{label}: crossframe-ultra host adapter missing marker: {marker}",
+        )
+    cli_begin = "<!-- ULTRA-CLI-BEGIN -->"
+    cli_end = "<!-- ULTRA-CLI-END -->"
+    require(
+        routing_text.count(cli_begin) == 1 and routing_text.count(cli_end) == 1,
+        f"{label}: crossframe-ultra exact CLI block is missing or duplicated",
+    )
+    cli_block = routing_text.split(cli_begin, 1)[1].split(cli_end, 1)[0]
+    evidence_fork_signature = (
+        "evidence-fork  --repo PATH --mode production|test --run-id RUN_ID "
+        "(--evidence-file PATH | --evidence-stdin)"
+    )
+    require(
+        evidence_fork_signature in cli_block.splitlines(),
+        f"{label}: crossframe-ultra exact CLI block missing evidence-fork signature",
+    )
     accepted_begin = "<!-- ULTRA-ACCEPTED-FORMS-BEGIN -->"
     accepted_end = "<!-- ULTRA-ACCEPTED-FORMS-END -->"
     require(
@@ -867,6 +947,15 @@ def check_repo_adapters(repo: Path, label: str) -> None:
         "v8.2",
         "暂停确认",
         "不得回退",
+        "普通自然语言",
+        "open-world",
+        "closed-input",
+        "pending-action",
+        "真实宿主工具",
+        "awaiting-host-action",
+        "awaiting-authoring",
+        "candidate",
+        "不得手工",
         *ULTRA_EXACT_TRIGGER_NAMES,
     ):
         require(

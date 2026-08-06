@@ -68,7 +68,14 @@ def test_manifest_is_deterministic_schema_valid_and_exactly_covers_the_canonical
     first = builder.build_release_manifest(ROOT)
     second = builder.build_release_manifest(ROOT)
     assert first == second
-    assert first["version_binding"] == current_version_binding()
+    assert first["release_id"] == "ultra-v8.2-r1-runtime-1.1.0"
+    binding = first["version_binding"]
+    assert binding == current_version_binding()
+    assert binding["runtime_version"] == "1.1.0"
+    assert binding["artifact_schema_version"] == 2
+    assert binding["compiler_version"] == "1.0.0"
+    assert binding["validator_version"] == "1.1.0"
+    assert binding["article_contract_version"] == "1.1.0"
     assert first["generated_at"] == STAMP
     assert first["built_at"] == STAMP
     assert first["validated_at"] == STAMP

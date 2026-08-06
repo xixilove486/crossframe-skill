@@ -158,6 +158,37 @@ function Invoke-CodexSkillInstaller {
   }
 }
 
+function Assert-ValidatorSetAuthority {
+  param(
+    [Parameter(Mandatory = $true)][string]$CanonicalRoot,
+    [Parameter(Mandatory = $true)][string]$InstallationRoot
+  )
+
+  $validatorCheck = @'
+from pathlib import Path
+import sys
+
+canonical_root = Path(sys.argv[1]).resolve(strict=True)
+installation_root = Path(sys.argv[2]).resolve(strict=True)
+canonical_scripts = canonical_root / "skills/crossframe-ultra/scripts"
+sys.path.insert(0, str(canonical_scripts))
+
+from ultra_runtime.validation import validator_set_sha256
+
+canonical_digest = validator_set_sha256(canonical_root)
+live_digest = validator_set_sha256(installation_root)
+if live_digest != canonical_digest:
+    raise SystemExit("validator-set SHA mismatch")
+'@
+  Invoke-PythonProcess -CommandArguments @(
+    "-B",
+    "-c",
+    $validatorCheck,
+    $CanonicalRoot,
+    $InstallationRoot
+  ) -FailureMessage "Post-promotion validator-set verification failed"
+}
+
 function Invoke-InstallationRollback {
   param(
     [Parameter(Mandatory = $true)]$PromotedSkills,
@@ -398,6 +429,34 @@ try {
       Move-Item -LiteralPath $stagedSkill -Destination $livePath
       $promotedSkills.Add($skillName)
     }
+
+    Invoke-PythonProcess -CommandArguments @(
+      $mirrorScript,
+      "--repo",
+      $canonicalRoot,
+      "--mirror",
+      $destinationRootResolved,
+      "--check"
+    ) -FailureMessage "Post-promotion skill tree verification failed"
+
+    if (-not (Test-Path -LiteralPath $liveWrapper -PathType Leaf)) {
+      throw "Post-promotion Ultra root wrapper verification failed"
+    }
+    $liveWrapperHash = (Get-FileHash -LiteralPath $liveWrapper -Algorithm SHA256).Hash
+    if (-not $canonicalWrapperHash.Equals($liveWrapperHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "Post-promotion Ultra root wrapper verification failed"
+    }
+
+    Assert-ValidatorSetAuthority -CanonicalRoot $canonicalRoot -InstallationRoot $installationRoot
+
+    $releaseBuilder = Join-Path $canonicalRoot "skills\crossframe-ultra\scripts\build_crossframe_ultra_release_manifest.py"
+    Invoke-PythonProcess -CommandArguments @(
+      "-B",
+      $releaseBuilder,
+      "--repo",
+      $installationRoot,
+      "--check"
+    ) -FailureMessage "Post-promotion release manifest verification failed"
   }
   catch {
     $rollbackSucceeded = Invoke-InstallationRollback -PromotedSkills $promotedSkills -BackedUpSkills $backedUpSkills -LiveRoot $destinationRootResolved -StageRoot $stagingRoot -BackupRoot $backupRoot -WrapperPromoted $wrapperPromoted -WrapperBackedUp $wrapperBackedUp -InstallationRoot $installationRoot -TransactionRoot $transactionRoot -LiveWrapper $liveWrapper -StagedWrapper $stagedWrapper -BackupWrapper $backupWrapper -ScriptsRootCreated $scriptsRootCreated -ScriptsRoot $scriptsRoot

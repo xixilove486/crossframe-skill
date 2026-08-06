@@ -33,6 +33,7 @@ validate       --repo PATH --mode production|test --run-id RUN_ID [--json]
 repair-plan    --repo PATH --mode production|test --run-id RUN_ID
 resume         --repo PATH --mode production|test --run-id RUN_ID
 fork           --repo PATH --mode production|test --run-id RUN_ID --reason TEXT
+evidence-fork  --repo PATH --mode production|test --run-id RUN_ID (--evidence-file PATH | --evidence-stdin)
 cancel         --repo PATH --mode production|test --run-id RUN_ID
 rebuild-index  --repo PATH --mode production|test
 ```
@@ -75,6 +76,7 @@ The runtime can issue these host action kinds:
 - `retrieval`: run the issued deidentified query with an actual web/search/browser provider and return source-bearing receipts for U2.
 - `subagent`: run the bounded task for discovery, counterexample, affected-position, source-lineage, or calibration work; its output remains an untrusted candidate.
 - `evidence-authoring`: write only the action-bound evidence or semantic result requested by the runtime; it cannot assign evidence identity or control fields.
+- `semantic-review`: at U11, return only the action-bound reviewer identity and nine-dimension judgment; the runtime owns the artifact envelope and publication disposition, and the result cannot override deterministic or adversarial failure.
 
 The host adapter contract is `references/host-adapter-contract.md`. It translates real Codex, Reasonix, Claude, or other host tools into the same action/receipt boundary; the core runtime does not guess a provider API. A subagent or model `candidate` is not evidence until source verification and U3 admission accept it.
 

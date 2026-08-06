@@ -423,7 +423,56 @@ rollback_installation() {
   return "$rollback_failed"
 }
 
+verify_validator_set() {
+  "$python_bin" -B - "$canonical_root" "$installation_root" <<'PY'
+from pathlib import Path
+import sys
+
+canonical_root = Path(sys.argv[1]).resolve(strict=True)
+installation_root = Path(sys.argv[2]).resolve(strict=True)
+canonical_scripts = canonical_root / "skills/crossframe-ultra/scripts"
+sys.path.insert(0, str(canonical_scripts))
+
+from ultra_runtime.validation import validator_set_sha256
+
+canonical_digest = validator_set_sha256(canonical_root)
+live_digest = validator_set_sha256(installation_root)
+if live_digest != canonical_digest:
+    raise SystemExit("validator-set SHA mismatch")
+PY
+}
+
+verify_live_installation() {
+  local release_builder
+  if ! "$python_bin" "$canonical_root/scripts/sync_skill_mirrors.py" --repo "$canonical_root" --mirror "$destination_root" --check; then
+    echo "Post-promotion skill tree verification failed" >&2
+    return 1
+  fi
+  if [[ ! -f "$live_wrapper" ]] || ! cmp -s "$canonical_wrapper" "$live_wrapper"; then
+    echo "Post-promotion Ultra root wrapper verification failed" >&2
+    return 1
+  fi
+  if ! verify_validator_set; then
+    echo "Post-promotion validator-set verification failed" >&2
+    return 1
+  fi
+  release_builder="$canonical_root/skills/crossframe-ultra/scripts/build_crossframe_ultra_release_manifest.py"
+  if ! "$python_bin" -B "$release_builder" --repo "$installation_root" --check; then
+    echo "Post-promotion release manifest verification failed" >&2
+    return 1
+  fi
+  return 0
+}
+
 if ! commit_installation; then
+  if ! rollback_installation; then
+    cleanup_transaction=0
+    echo "Rollback was incomplete; retained transaction data at $transaction_root" >&2
+  fi
+  exit 1
+fi
+
+if ! verify_live_installation; then
   if ! rollback_installation; then
     cleanup_transaction=0
     echo "Rollback was incomplete; retained transaction data at $transaction_root" >&2

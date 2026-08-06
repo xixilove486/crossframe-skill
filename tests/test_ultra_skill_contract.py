@@ -145,6 +145,7 @@ def test_skill_host_loop_treats_waiting_as_progress_and_control_as_runtime_owned
         "recovery/pending-action.json",
         "awaiting-host-action",
         "awaiting-authoring",
+        "semantic-review",
         "candidate",
         "checkpoint",
         "lease",
