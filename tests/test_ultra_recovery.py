@@ -598,6 +598,35 @@ def test_phase_store_replays_repair_invalidation_into_a_new_generation(
     assert replacement["parent_event_sha256"] == invalidation["event_sha256"]
 
 
+def test_cancel_after_repair_targets_next_phase_of_active_generation(
+    tmp_path,
+    monkeypatch,
+):
+    import ultra_runtime.state_machine as state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    recovery, _, layout, store, _, _ = _checkpoint(tmp_path)
+    invalidation = _u0_repair_invalidation(store)
+    store.replay_event(invalidation)
+    replacement = store.complete(
+        "U0",
+        artifact_hashes=(store.run_contract_artifact_sha256,),
+    )
+    authority, compatibility = recovery._validate_authority(layout)
+
+    terminal = recovery._terminal_event(
+        authority,
+        store.events,
+        reason="operator cancellation",
+        now=NOW + timedelta(seconds=3),
+    )
+
+    assert compatibility == "resume"
+    assert terminal["phase_id"] == "U1"
+    assert terminal["parent_event_sha256"] == replacement["event_sha256"]
+    assert terminal["generation"] == 1
+
+
 def test_checkpoint_identity_allows_the_same_phase_in_a_new_generation(
     tmp_path,
     monkeypatch,

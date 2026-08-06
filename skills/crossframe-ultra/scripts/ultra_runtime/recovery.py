@@ -1821,7 +1821,8 @@ def _terminal_event(
     reason: str,
     now: datetime,
 ) -> dict[str, object]:
-    completed = sum(event.get("status") == "complete" for event in events)
+    active_generation, active = _active_completed_events(events)
+    completed = len(active)
     if completed >= len(PHASES):
         raise RecoveryStateError("completed U12 run cannot be cancelled")
     timestamp = _iso_utc(now)
@@ -1852,6 +1853,8 @@ def _terminal_event(
         "invalidated_phases": [],
         "event_sha256": "0" * 64,
     }
+    if active_generation:
+        event["generation"] = active_generation
     event["content_sha256"] = _compute_event_content_sha256(event)
     event["event_sha256"] = compute_event_sha256(event)
     try:
