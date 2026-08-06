@@ -43,9 +43,7 @@ PHASE_ORDER = PHASES
 PHASE_EVENT_SCHEMA_ID = "crossframe.ultra.v82.phase-event"
 RUN_CONTRACT_SCHEMA_ID = "crossframe.ultra.v82.run-contract"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
-_CAPABILITY_STATES = frozenset(
-    {"available", "required", "unavailable", "not-applicable"}
-)
+_CAPABILITY_REQUIREMENT_STATES = frozenset({"required", "not-applicable"})
 _CAPABILITY_NAMES = frozenset(
     {
         "filesystem",
@@ -61,6 +59,8 @@ _RUN_CONTRACT_FIELDS = frozenset(
     {
         "trigger",
         "request_sha256",
+        "analysis_kind",
+        "capability_attestation_sha256",
         "run_mode",
         "sensitivity",
         "retention",
@@ -188,6 +188,7 @@ class RetrievalBoundary:
 class _U0AuthoritySeal:
     run_id: str
     run_contract_sha256: str
+    capability_attestation_sha256: str
     capability_availability: dict[str, str]
     expected_eligibility_basis_sha256: str | None
     _issuer_token: str
@@ -267,6 +268,7 @@ def _u0_authority_fields(seal: _U0AuthoritySeal) -> dict[str, object]:
     return {
         "run_id": seal.run_id,
         "run_contract_sha256": seal.run_contract_sha256,
+        "capability_attestation_sha256": seal.capability_attestation_sha256,
         "capability_availability": copy.deepcopy(seal.capability_availability),
         "expected_eligibility_basis_sha256": seal.expected_eligibility_basis_sha256,
     }
@@ -276,12 +278,18 @@ def _make_u0_authority(
     *,
     run_id: str,
     run_contract_sha256: str,
+    capability_attestation_sha256: str,
     availability: Mapping[str, str],
     expected_eligibility_basis_sha256: str | None,
 ) -> _U0AuthoritySeal:
     seal = object.__new__(_U0AuthoritySeal)
     object.__setattr__(seal, "run_id", run_id)
     object.__setattr__(seal, "run_contract_sha256", run_contract_sha256)
+    object.__setattr__(
+        seal,
+        "capability_attestation_sha256",
+        capability_attestation_sha256,
+    )
     object.__setattr__(seal, "capability_availability", copy.deepcopy(dict(availability)))
     object.__setattr__(
         seal,
@@ -430,25 +438,7 @@ def _make_run_contract_artifact(
     return artifact
 
 
-def _validated_capability_availability(
-    value: Mapping[str, str] | None,
-) -> dict[str, str]:
-    if value is not None and not isinstance(value, Mapping):
-        raise RunContractError("capability availability must be an object")
-    availability = copy.deepcopy(dict(value or {}))
-    if any(name not in _CAPABILITY_NAMES for name in availability):
-        raise RunContractError("capability availability contains an unknown capability")
-    for name, state in availability.items():
-        if state not in _CAPABILITY_STATES:
-            raise RunContractError(f"invalid availability for {name}: {state!r}")
-    return availability
-
-
-def validate_run_contract(
-    value: Mapping[str, object],
-    *,
-    capability_availability: Mapping[str, str] | None = None,
-) -> dict[str, object]:
+def validate_run_contract(value: Mapping[str, object]) -> dict[str, object]:
     contract = _plain_mapping(value, name="run contract")
     _require_exact_fields(contract, _RUN_CONTRACT_FIELDS, name="run contract")
     enums = {
@@ -459,6 +449,7 @@ def validate_run_contract(
             "/crossframe-ultra",
         },
         "run_mode": {"production", "test"},
+        "analysis_kind": {"open-world", "closed-input"},
         "sensitivity": {"public", "internal", "private", "restricted"},
         "retention": {"retain", "delivery-only", "user-directed"},
         "outbound_permission": {"allowed", "deidentified-only", "denied"},
@@ -468,13 +459,19 @@ def validate_run_contract(
             raise RunContractError(f"invalid {field}: {contract[field]!r}")
     if not _is_sha256(contract["request_sha256"]):
         raise RunContractError("request_sha256 must be a lowercase SHA-256")
+    if not _is_sha256(contract["capability_attestation_sha256"]):
+        raise RunContractError(
+            "capability_attestation_sha256 must be a lowercase SHA-256"
+        )
     _parse_timestamp(contract["evidence_cutoff"], error_type=RunContractError)
 
     capabilities = _plain_mapping(contract["capabilities"], name="capabilities")
     _require_exact_fields(capabilities, _CAPABILITY_NAMES, name="capabilities")
     for name, state in capabilities.items():
-        if state not in _CAPABILITY_STATES:
-            raise RunContractError(f"invalid capability state for {name}: {state!r}")
+        if state not in _CAPABILITY_REQUIREMENT_STATES:
+            raise RunContractError(
+                f"invalid capability requirement for {name}: {state!r}"
+            )
     contract["capabilities"] = capabilities
 
     limits = _plain_mapping(contract["resource_limits"], name="resource limits")
@@ -492,10 +489,6 @@ def validate_run_contract(
         raise RunContractError("maximum_repair_attempts must be between zero and three")
     contract["resource_limits"] = limits
 
-    availability = _validated_capability_availability(capability_availability)
-    for name, state in capabilities.items():
-        if state == "required" and availability.get(name) != "available":
-            raise RunBlockedError(f"required capability is unavailable: {name}")
     return contract
 
 
@@ -523,7 +516,14 @@ def _validate_run_layout_authority(
         policy = (
             RootPolicy(run_layout.root, run_layout.root.parent / "test-control")
             if mode is RunMode.PRODUCTION
-            else RootPolicy(PRODUCTION_ROOT, run_layout.root)
+            else RootPolicy(
+                (
+                    PRODUCTION_ROOT
+                    if PRODUCTION_ROOT.is_absolute()
+                    else run_layout.root.parent / "production-control"
+                ),
+                run_layout.root,
+            )
         )
         expected = build_run_layout(mode, run_id, policy)
         assert_safe_descendant(
@@ -603,7 +603,7 @@ class PhaseStore:
         evidence_cutoff: str,
         now: datetime,
         run_contract: Mapping[str, object],
-        capability_availability: Mapping[str, str] | None = None,
+        capability_attestation: object,
         source_repository: Path | None = None,
         u1_prerequisite_measurement: object | None = None,
         run_layout: RunLayout,
@@ -616,11 +616,44 @@ class PhaseStore:
         _parse_timestamp(evidence_cutoff, error_type=PhaseIntegrityError)
         timestamp = _format_timestamp(now)
         binding = _validate_version_binding(version_binding)
-        availability = _validated_capability_availability(capability_availability)
-        contract = validate_run_contract(
-            run_contract,
-            capability_availability=availability,
+        contract = validate_run_contract(run_contract)
+        from .foundation import (
+            FoundationInputError,
+            verify_host_capability_seal,
         )
+
+        try:
+            verified_attestation = verify_host_capability_seal(
+                capability_attestation
+            )
+        except FoundationInputError as error:
+            raise RunContractError("capability attestation seal is invalid") from error
+        attestation_document = verified_attestation.document
+        availability = verified_attestation.measured_availability
+        attestation_bindings = {
+            "run_id": run_id,
+            "version_binding": binding,
+            "request_sha256": contract["request_sha256"],
+            "analysis_kind": contract["analysis_kind"],
+            "run_mode": contract["run_mode"],
+            "requirements": contract["capabilities"],
+            "sensitivity": contract["sensitivity"],
+            "retention": contract["retention"],
+            "outbound_permission": contract["outbound_permission"],
+            "evidence_cutoff": contract["evidence_cutoff"],
+            "resource_limits": contract["resource_limits"],
+        }
+        if (
+            verified_attestation.artifact_sha256
+            != contract["capability_attestation_sha256"]
+            or any(
+                attestation_document.get(field) != expected
+                for field, expected in attestation_bindings.items()
+            )
+        ):
+            raise RunContractError(
+                "capability attestation differs from the run contract"
+            )
         if contract["evidence_cutoff"] != evidence_cutoff:
             raise RunContractError("run contract evidence cutoff differs from the run")
         accepted_layout = _validate_run_layout_authority(
@@ -694,12 +727,14 @@ class PhaseStore:
         self._u0_authority = _make_u0_authority(
             run_id=run_id,
             run_contract_sha256=self._run_contract_sha256,
+            capability_attestation_sha256=verified_attestation.artifact_sha256,
             availability=availability,
             expected_eligibility_basis_sha256=(
                 expected_eligibility_basis_sha256
             ),
         )
         self._capability_availability = _freeze(availability)
+        self._capability_attestation = verified_attestation
         self._source_repository = authority_repository
         self._run_layout = accepted_layout
         self._run_input_root = accepted_layout.input_dir.resolve(strict=False)
@@ -732,6 +767,16 @@ class PhaseStore:
     @property
     def run_contract_artifact_sha256(self) -> str:
         return self._run_contract_sha256
+
+    @property
+    def capability_availability(self) -> Mapping[str, str]:
+        value = _thaw(self._capability_availability)
+        assert isinstance(value, dict)
+        return value
+
+    @property
+    def capability_attestation(self) -> object:
+        return self._capability_attestation
 
     @property
     def run_input_root(self) -> Path:
@@ -1215,6 +1260,8 @@ class PhaseStore:
                 outputs != (self._run_contract_sha256,)
                 or u0.run_id != self.run_id
                 or u0.run_contract_sha256 != self._run_contract_sha256
+                or u0.capability_attestation_sha256
+                != self.run_contract["capability_attestation_sha256"]
             ):
                 raise PhaseIntegrityError("U0 must bind the sealed run contract authority")
         if phase_id == "U1":

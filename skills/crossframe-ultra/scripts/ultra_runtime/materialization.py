@@ -9,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from .constants import PHASES, current_version_binding
+from .foundation import (
+    FoundationInputError,
+    load_input_inventory,
+    load_request_profile,
+)
 from .jsonio import (
     atomic_write_bytes,
     atomic_write_json,
@@ -69,10 +74,6 @@ _REQUEST_INTAKE_AUTHORITY_FIELDS = frozenset(
         "content_sha256",
     }
 )
-
-
-class FoundationInputError(ValueError):
-    """The immutable request cannot authorize a fresh U0-U3 foundation."""
 
 
 class FoundationRecoveryError(RuntimeError):
@@ -2302,13 +2303,19 @@ def _foundation_input_inventory(
         raise FoundationInputError(
             "request intake authority differs from the current input bytes"
         )
+    load_input_inventory(layout)
 
-    files = tuple(
-        sorted(
-            (request_path, metadata_path),
-            key=lambda path: path.relative_to(layout.input_dir).as_posix(),
+    try:
+        files = tuple(
+            sorted(
+                (path for path in layout.input_dir.rglob("*") if path.is_file()),
+                key=lambda path: path.relative_to(layout.input_dir).as_posix(),
+            )
         )
-    )
+    except OSError as error:
+        raise FoundationInputError(
+            "fresh foundation input inventory is unreadable"
+        ) from error
     inputs = tuple(
         {
             "path": path.relative_to(layout.input_dir).as_posix(),
@@ -2316,6 +2323,10 @@ def _foundation_input_inventory(
             "media_type": (
                 "application/json"
                 if path.suffix.casefold() == ".json"
+                else "text/markdown"
+                if path.suffix.casefold() in {".md", ".markdown"}
+                else "text/plain"
+                if path.suffix.casefold() == ".txt"
                 else "application/octet-stream"
             ),
         }
@@ -2323,64 +2334,6 @@ def _foundation_input_inventory(
     )
     input_snapshot_sha256 = sha256_bytes(canonical_json_bytes(inputs))
     return request_bytes, metadata, inputs, input_snapshot_sha256
-
-
-def _closed_input_request(request_bytes: bytes) -> tuple[str, str]:
-    try:
-        request = load_json_object_bytes(
-            request_bytes,
-            source="input/request.bin",
-        )
-    except (TypeError, ValueError) as error:
-        raise FoundationInputError(
-            "fresh U0-U3 materialization requires a canonical closed-input JSON request"
-        ) from error
-    if request_bytes != canonical_json_bytes(request):
-        raise FoundationInputError("closed-input request bytes must be canonical JSON")
-    if set(request) != {"analysis_kind", "claim", "material"}:
-        raise FoundationInputError(
-            "closed-input request must contain exactly analysis_kind, claim, and material"
-        )
-    claim = request.get("claim")
-    material = request.get("material")
-    if (
-        request.get("analysis_kind") != "closed-input"
-        or not isinstance(claim, str)
-        or not claim.strip()
-        or not isinstance(material, str)
-        or not material.strip()
-    ):
-        raise FoundationInputError(
-            "fresh U0-U3 materialization supports only explicit closed-input requests"
-        )
-    return claim, material
-
-
-def _assert_fresh_foundation(layout: RunLayout) -> None:
-    fixed_paths = (
-        layout.artifacts_dir / "ultra-run-contract.json",
-        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl",
-        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json",
-        layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json",
-        layout.authoring_dir / "U01-read-events.jsonl",
-        layout.authoring_dir / "U02-retrieval-ledger.json",
-        layout.authoring_dir / "U03-evidence-ledger.json",
-    )
-    residuals = [path for path in fixed_paths if path.exists()]
-    if layout.recovery_dir.exists():
-        intake_path = _request_intake_authority_path(layout)
-        residuals.extend(
-            path
-            for path in layout.recovery_dir.rglob("*")
-            if path.is_file() and path != intake_path
-        )
-    if residuals:
-        relative = sorted(
-            path.relative_to(layout.run_dir).as_posix() for path in residuals
-        )
-        raise FoundationInputError(
-            "fresh foundation contains residual durable state: " + ", ".join(relative)
-        )
 
 
 def _assert_no_uncheckpointed_foundation_residuals(
@@ -2425,48 +2378,6 @@ def _assert_no_uncheckpointed_foundation_residuals(
             "partial foundation contains uncheckpointed downstream state: "
             + ", ".join(relative)
         )
-
-
-def _foundation_run_contract(
-    *,
-    mode: RunMode,
-    request_sha256: str,
-    evidence_cutoff: str,
-) -> tuple[dict[str, object], dict[str, str]]:
-    contract: dict[str, object] = {
-        "trigger": "crossframe-ultra",
-        "request_sha256": request_sha256,
-        "run_mode": mode.value,
-        "sensitivity": "private",
-        "retention": "retain",
-        "outbound_permission": "deidentified-only",
-        "evidence_cutoff": evidence_cutoff,
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "not-applicable",
-            "network": "not-applicable",
-            "retrieval": "not-applicable",
-            "validators": "available",
-            "subagents": "not-applicable",
-            "model_context": "available",
-        },
-        "resource_limits": {
-            "maximum_branches": 64,
-            "maximum_retrieval_rounds_without_material_novelty": 2,
-            "maximum_tool_retries": 3,
-            "maximum_repair_attempts": 3,
-        },
-    }
-    availability = {
-        "filesystem": "available",
-        "docx_parser": "unavailable",
-        "network": "unavailable",
-        "retrieval": "unavailable",
-        "validators": "available",
-        "subagents": "unavailable",
-        "model_context": "available",
-    }
-    return contract, availability
 
 
 def _u1_coverage_artifact(
@@ -2518,8 +2429,11 @@ def _create_phase_checkpoint(
 
 @dataclass(frozen=True, slots=True)
 class _FoundationContext:
+    analysis_kind: str
     claim: str
     material: str
+    material_inventory: tuple[dict[str, str], ...]
+    material_universe_sha256: str | None
     request_sha256: str
     evidence_cutoff: str
     inputs: tuple[dict[str, str], ...]
@@ -2541,10 +2455,23 @@ def _load_foundation_context(
 ) -> _FoundationContext:
     from . import source_integrity
 
-    request_bytes, metadata, inputs, input_snapshot_sha256 = (
+    _request_bytes, metadata, inputs, input_snapshot_sha256 = (
         _foundation_input_inventory(layout, status_record=status_record)
     )
-    claim, material = _closed_input_request(request_bytes)
+    profile = load_request_profile(layout)
+    material_texts: list[str] = []
+    for item in profile.material_inventory:
+        if item["media_type"] not in {"text/plain", "text/markdown"}:
+            continue
+        try:
+            material_texts.append(
+                (layout.input_dir / item["path"]).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError) as error:
+            raise FoundationInputError(
+                "text material inventory entry is unreadable"
+            ) from error
+    material = "\n\n".join(material_texts)
     evidence_cutoff = getattr(status_record, "created_at", None)
     if not isinstance(evidence_cutoff, str) or not evidence_cutoff:
         raise FoundationInputError(
@@ -2574,8 +2501,11 @@ def _load_foundation_context(
                 + ", ".join(measurement.missing)
             )
     return _FoundationContext(
-        claim=claim,
+        analysis_kind=profile.analysis_kind,
+        claim=profile.claim,
         material=material,
+        material_inventory=profile.material_inventory,
+        material_universe_sha256=profile.material_universe_sha256,
         request_sha256=str(metadata["request_sha256"]),
         evidence_cutoff=evidence_cutoff,
         inputs=inputs,
@@ -2729,8 +2659,8 @@ def _complete_foundation_u2(
     decision = retrieval.assess_retrieval_eligibility(
         context.claim,
         phase_store=phase_store,
-        material_inventory=context.inputs,
-        material_universe_sha256=context.input_snapshot_sha256,
+        material_inventory=context.material_inventory,
+        material_universe_sha256=context.material_universe_sha256,
     )
     retrieval_ledger = retrieval.build_retrieval_ledger(
         decision,
@@ -2891,7 +2821,7 @@ def _establish_fresh_u0_u3(
     recovery: object,
     status_record: object,
 ) -> object:
-    from .state_machine import PhaseStore
+    from .foundation import advance_u0
 
     if (
         getattr(status_record, "status", None) != "running"
@@ -2901,7 +2831,18 @@ def _establish_fresh_u0_u3(
         raise FoundationInputError(
             "fresh foundation status boundary must be running/U0 with no completed phase"
         )
-    _assert_fresh_foundation(layout)
+    progress = advance_u0(layout, repo=repo, now=now)
+    if progress.outcome == "awaiting-host-action":
+        raise FoundationRecoveryError(
+            "fresh U0 is awaiting a capability-attestation host action"
+        )
+    phase_store = progress.phase_store
+    if (
+        progress.outcome != "advanced"
+        or progress.completed_phase != "U0"
+        or phase_store is None
+    ):
+        raise FoundationRecoveryError("fresh U0 did not produce a PhaseStore")
     context = _load_foundation_context(
         repo,
         layout,
@@ -2914,39 +2855,6 @@ def _establish_fresh_u0_u3(
     measurement = context.measurement
     if manifest is None or measurement is None:
         raise RuntimeError("fresh foundation U1 prerequisites are unavailable")
-    run_contract, capability_availability = _foundation_run_contract(
-        mode=mode,
-        request_sha256=context.request_sha256,
-        evidence_cutoff=context.evidence_cutoff,
-    )
-    phase_store = PhaseStore(
-        run_id=layout.run_dir.name,
-        version_binding=context.binding,
-        source_sha256=manifest.sha256,
-        input_artifact_hashes=tuple(item["sha256"] for item in context.inputs),
-        input_snapshot_sha256=context.input_snapshot_sha256,
-        evidence_cutoff=context.evidence_cutoff,
-        now=now,
-        run_contract=run_contract,
-        capability_availability=capability_availability,
-        source_repository=repo,
-        u1_prerequisite_measurement=measurement,
-        run_layout=layout,
-    )
-    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
-    atomic_write_json(run_contract_path, dict(phase_store.run_contract))
-    phase_store.complete(
-        "U0",
-        artifact_hashes=(phase_store.run_contract_artifact_sha256,),
-    )
-    _create_phase_checkpoint(
-        recovery,
-        layout,
-        phase_store,
-        "U0",
-        (run_contract_path,),
-        now=now,
-    )
     return _continue_foundation_u0_u3(
         repo,
         layout,

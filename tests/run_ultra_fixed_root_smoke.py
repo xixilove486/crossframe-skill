@@ -23,6 +23,10 @@ from tests.ultra_closed_fixture_support import (  # noqa: E402
     write_closed_u4_u10_authoring,
     write_closed_u11_authoring,
 )
+from tests.ultra_capability_support import (  # noqa: E402
+    capability_attestation_for_contract,
+    default_capability_requirements,
+)
 from ultra_runtime import artifacts  # noqa: E402
 from ultra_runtime import constants  # noqa: E402
 from ultra_runtime import deliverables  # noqa: E402
@@ -101,20 +105,13 @@ def _run_contract(request_sha256: str, evidence_cutoff: str) -> dict[str, object
     return {
         "trigger": "crossframe-ultra",
         "request_sha256": request_sha256,
+        "analysis_kind": "open-world",
         "run_mode": "test",
         "sensitivity": "private",
         "retention": "retain",
         "outbound_permission": "deidentified-only",
         "evidence_cutoff": evidence_cutoff,
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "available",
-            "network": "required",
-            "retrieval": "required",
-            "validators": "available",
-            "subagents": "available",
-            "model_context": "available",
-        },
+        "capabilities": default_capability_requirements(),
         "resource_limits": {
             "maximum_branches": 64,
             "maximum_retrieval_rounds_without_material_novelty": 2,
@@ -239,6 +236,16 @@ def _establish_u0_u3(
         request_size=len(request_bytes),
         created_at=created.created_at,
     )
+    run_contract = _run_contract(request_sha256, evidence_cutoff)
+    capability_attestation = capability_attestation_for_contract(
+        run_id=layout.run_dir.name,
+        version_binding=binding,
+        contract=run_contract,
+        generated_at=evidence_cutoff,
+    )
+    run_contract["capability_attestation_sha256"] = (
+        capability_attestation.artifact_sha256
+    )
     store = state_machine.PhaseStore(
         run_id=layout.run_dir.name,
         version_binding=binding,
@@ -247,11 +254,8 @@ def _establish_u0_u3(
         input_snapshot_sha256=input_snapshot_sha256,
         evidence_cutoff=evidence_cutoff,
         now=started_at,
-        run_contract=_run_contract(request_sha256, evidence_cutoff),
-        capability_availability={
-            "retrieval": "available",
-            "network": "available",
-        },
+        run_contract=run_contract,
+        capability_attestation=capability_attestation,
         source_repository=repo_root,
         u1_prerequisite_measurement=measurement,
         run_layout=layout,
@@ -262,6 +266,14 @@ def _establish_u0_u3(
         artifact_hashes=(store.run_contract_artifact_sha256,),
     )
     run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+    capability_attestation_path = (
+        layout.artifacts_dir
+        / "U00-U03-evidence/U00-host-capability-attestation.json"
+    )
+    jsonio.atomic_write_bytes(
+        capability_attestation_path,
+        capability_attestation.artifact_bytes,
+    )
     jsonio.atomic_write_json(run_contract_path, dict(store.run_contract))
     _write_checkpoint(
         layout,

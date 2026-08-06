@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-host-capability-attestation.schema.json",
+  "title": "CrossFrame Ultra validated U0 host capability attestation",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "request_sha256",
+        "action_sha256",
+        "receipt_sha256",
+        "analysis_kind",
+        "run_mode",
+        "requirements",
+        "measured_availability",
+        "providers",
+        "tools",
+        "sensitivity",
+        "retention",
+        "outbound_permission",
+        "evidence_cutoff",
+        "resource_limits",
+        "measured_at",
+        "proof_grade"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.host-capability-attestation"},
+        "phase_id": {"const": "U0"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "action_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "receipt_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "analysis_kind": {"enum": ["open-world", "closed-input"]},
+        "run_mode": {"enum": ["production", "test"]},
+        "requirements": {"$ref": "#/$defs/requirements"},
+        "measured_availability": {"$ref": "#/$defs/measuredAvailability"},
+        "providers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/providerIdentity"}
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/toolIdentity"}
+        },
+        "sensitivity": {"enum": ["public", "internal", "private", "restricted"]},
+        "retention": {"enum": ["retain", "delivery-only", "user-directed"]},
+        "outbound_permission": {"enum": ["allowed", "deidentified-only", "denied"]},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "resource_limits": {"$ref": "#/$defs/resourceLimits"},
+        "measured_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "proof_grade": {"enum": ["self-reported", "host-measured", "externally-verified"]}
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "docx_parser", "network", "retrieval", "validators", "subagents", "model_context"],
+      "properties": {
+        "filesystem": {"$ref": "#/$defs/requirementState"},
+        "docx_parser": {"$ref": "#/$defs/requirementState"},
+        "network": {"$ref": "#/$defs/requirementState"},
+        "retrieval": {"$ref": "#/$defs/requirementState"},
+        "validators": {"$ref": "#/$defs/requirementState"},
+        "subagents": {"$ref": "#/$defs/requirementState"},
+        "model_context": {"$ref": "#/$defs/requirementState"}
+      }
+    },
+    "requirementState": {"enum": ["required", "not-applicable"]},
+    "measuredAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filesystem", "docx_parser", "network", "retrieval", "validators", "subagents", "model_context"],
+      "properties": {
+        "filesystem": {"$ref": "#/$defs/availabilityState"},
+        "docx_parser": {"$ref": "#/$defs/availabilityState"},
+        "network": {"$ref": "#/$defs/availabilityState"},
+        "retrieval": {"$ref": "#/$defs/availabilityState"},
+        "validators": {"$ref": "#/$defs/availabilityState"},
+        "subagents": {"$ref": "#/$defs/availabilityState"},
+        "model_context": {"$ref": "#/$defs/availabilityState"}
+      }
+    },
+    "availabilityState": {"enum": ["available", "unavailable", "not-applicable"]},
+    "providerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "provider_kind", "version"],
+      "properties": {
+        "provider_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "provider_kind": {"enum": ["runtime", "model", "service", "local"]},
+        "version": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "toolIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool_id", "provider_id", "version"],
+      "properties": {
+        "tool_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "provider_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "version": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+      }
+    },
+    "resourceLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximum_branches", "maximum_retrieval_rounds_without_material_novelty", "maximum_tool_retries", "maximum_repair_attempts"],
+      "properties": {
+        "maximum_branches": {"type": "integer", "minimum": 1, "maximum": 64},
+        "maximum_retrieval_rounds_without_material_novelty": {"type": "integer", "minimum": 0, "maximum": 2},
+        "maximum_tool_retries": {"type": "integer", "minimum": 1, "maximum": 3},
+        "maximum_repair_attempts": {"type": "integer", "minimum": 0, "maximum": 3}
+      }
+    }
+  }
+}

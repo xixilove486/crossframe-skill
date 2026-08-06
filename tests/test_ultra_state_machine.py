@@ -90,23 +90,31 @@ def _run_contract(
     *,
     run_mode: str = "test",
     request_sha256: str = REQUEST_SHA256,
+    capability_attestation=None,
 ) -> dict[str, object]:
+    attestation = capability_attestation or _capability_attestation(
+        run_id=RUN_ID,
+        run_mode=run_mode,
+        request_sha256=request_sha256,
+    )
     return {
         "trigger": "crossframe-ultra",
         "request_sha256": request_sha256,
+        "analysis_kind": "open-world",
+        "capability_attestation_sha256": attestation.artifact_sha256,
         "run_mode": run_mode,
         "sensitivity": "private",
         "retention": "retain",
         "outbound_permission": "deidentified-only",
         "evidence_cutoff": STAMP,
         "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "available",
+            "filesystem": "required",
+            "docx_parser": "not-applicable",
             "network": "required",
             "retrieval": "required",
-            "validators": "available",
-            "subagents": "available",
-            "model_context": "available",
+            "validators": "required",
+            "subagents": "not-applicable",
+            "model_context": "required",
         },
         "resource_limits": {
             "maximum_branches": 64,
@@ -115,6 +123,81 @@ def _run_contract(
             "maximum_repair_attempts": 3,
         },
     }
+
+
+def _capability_attestation(
+    *,
+    run_id: str = RUN_ID,
+    run_mode: str = "test",
+    request_sha256: str = REQUEST_SHA256,
+    availability: dict[str, str] | None = None,
+):
+    from ultra_runtime.foundation import validate_host_capability_attestation
+    from ultra_runtime.schemas import compute_artifact_content_sha256
+
+    document = {
+        "schema_id": "crossframe.ultra.v82.host-capability-attestation",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": _binding(),
+        "generated_at": STAMP,
+        "phase_id": "U0",
+        "request_sha256": request_sha256,
+        "action_sha256": "a" * 64,
+        "receipt_sha256": "b" * 64,
+        "analysis_kind": "open-world",
+        "run_mode": run_mode,
+        "requirements": {
+            "filesystem": "required",
+            "docx_parser": "not-applicable",
+            "network": "required",
+            "retrieval": "required",
+            "validators": "required",
+            "subagents": "not-applicable",
+            "model_context": "required",
+        },
+        "measured_availability": copy.deepcopy(
+            availability
+            or {
+                "filesystem": "available",
+                "docx_parser": "unavailable",
+                "network": "available",
+                "retrieval": "available",
+                "validators": "available",
+                "subagents": "unavailable",
+                "model_context": "available",
+            }
+        ),
+        "providers": [
+            {
+                "provider_id": "phase-host",
+                "provider_kind": "runtime",
+                "version": "1.0.0",
+            }
+        ],
+        "tools": [
+            {
+                "tool_id": "local-filesystem",
+                "provider_id": "phase-host",
+                "version": "1.0.0",
+            }
+        ],
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": STAMP,
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+        "measured_at": STAMP,
+        "proof_grade": "host-measured",
+        "content_sha256": "0" * 64,
+    }
+    document["content_sha256"] = compute_artifact_content_sha256(document)
+    return validate_host_capability_attestation(document)
 
 
 _AUTHORITY_REPO = ROOT
@@ -130,12 +213,23 @@ def _store(
     source_repository: Path | None = None,
     request_sha256: str = REQUEST_SHA256,
 ):
-    from ultra_runtime.paths import RunMode, build_run_layout, default_root_policy
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
 
-    selected_layout = (
-        build_run_layout(RunMode.PRODUCTION, run_id, default_root_policy())
-        if run_mode == "production"
-        else _AUTHORITY_LAYOUT
+    if run_mode == "production":
+        assert _AUTHORITY_LAYOUT is not None
+        production_root = _AUTHORITY_LAYOUT.root.parent / "production-control"
+        module.PRODUCTION_ROOT = production_root
+        selected_layout = build_run_layout(
+            RunMode.PRODUCTION,
+            run_id,
+            RootPolicy(production_root, _AUTHORITY_LAYOUT.root),
+        )
+    else:
+        selected_layout = _AUTHORITY_LAYOUT
+    attestation = _capability_attestation(
+        run_id=run_id,
+        run_mode=run_mode,
+        request_sha256=request_sha256,
     )
     return module.PhaseStore(
         run_id=run_id,
@@ -148,8 +242,9 @@ def _store(
         run_contract=_run_contract(
             run_mode=run_mode,
             request_sha256=request_sha256,
+            capability_attestation=attestation,
         ),
-        capability_availability={"retrieval": "available", "network": "available"},
+        capability_attestation=attestation,
         source_repository=source_repository or _AUTHORITY_REPO,
         u1_prerequisite_measurement=(
             _AUTHORITY_MEASUREMENT if run_mode == "test" else None
@@ -232,6 +327,7 @@ def u1_prerequisite_context(tmp_path_factory):
 
     global _AUTHORITY_LAYOUT, _AUTHORITY_MEASUREMENT, _AUTHORITY_REPO
     fixture_root = tmp_path_factory.mktemp("phase-host-authority")
+    source_integrity.PRODUCTION_ROOT = fixture_root / "production-control"
     authority_repo = fixture_root / "repo"
     skill_root = authority_repo / "skills/crossframe-ultra"
     skill_root.parent.mkdir(parents=True)
@@ -246,6 +342,7 @@ def u1_prerequisite_context(tmp_path_factory):
     jsonio = skill_root / "scripts/ultra_runtime/jsonio.py"
     jsonio.write_bytes(jsonio.read_bytes().replace(b"\r\n", b"\n"))
     release_path = skill_root / "references/release-manifest.json"
+    _write_release_manifest(authority_repo, release_path)
     manifest = source_integrity.load_source_manifest(
         skill_root / "references/source-manifest.json",
         expected_sha256=SOURCE_MANIFEST_SHA256,
@@ -497,6 +594,7 @@ def test_phase_store_accepts_only_the_canonical_control_plane_run_layout(tmp_pat
     layout.input_dir.mkdir(parents=True, exist_ok=True)
     (layout.input_dir / "request.bin").write_bytes(REQUEST_BYTES)
     (layout.input_dir / "request-metadata.json").write_bytes(REQUEST_METADATA_BYTES)
+    attestation = _capability_attestation()
     arguments = {
         "run_id": RUN_ID,
         "version_binding": _binding(),
@@ -505,11 +603,8 @@ def test_phase_store_accepts_only_the_canonical_control_plane_run_layout(tmp_pat
         "input_snapshot_sha256": INPUT_SNAPSHOT_SHA256,
         "evidence_cutoff": STAMP,
         "now": datetime(2026, 8, 2, tzinfo=timezone.utc),
-        "run_contract": _run_contract(),
-        "capability_availability": {
-            "retrieval": "available",
-            "network": "available",
-        },
+        "run_contract": _run_contract(capability_attestation=attestation),
+        "capability_attestation": attestation,
         "source_repository": ROOT,
     }
     store = module.PhaseStore(**arguments, run_layout=layout)
@@ -562,10 +657,7 @@ def test_u0_resource_limits_reject_oversized_caller_sealed_values(field, value):
     contract = _run_contract()
     contract["resource_limits"][field] = value
     with pytest.raises(module.RunContractError, match="maximum|limit|between"):
-        module.validate_run_contract(
-            contract,
-            capability_availability={"network": "available", "retrieval": "available"},
-        )
+        module.validate_run_contract(contract)
 
 
 @pytest.mark.parametrize("phase", ("U1", "U2", "U3"))
@@ -796,7 +888,16 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
 ):
     import ultra_runtime.state_machine as module
 
-    availability = {"retrieval": "available", "network": "available"}
+    availability = {
+        "filesystem": "available",
+        "docx_parser": "unavailable",
+        "network": "available",
+        "retrieval": "available",
+        "validators": "available",
+        "subagents": "unavailable",
+        "model_context": "available",
+    }
+    attestation = _capability_attestation(availability=availability)
     store = module.PhaseStore(
         run_id=RUN_ID,
         version_binding=_binding(),
@@ -805,8 +906,8 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-        run_contract=_run_contract(),
-        capability_availability=availability,
+        run_contract=_run_contract(capability_attestation=attestation),
+        capability_attestation=attestation,
         source_repository=_AUTHORITY_REPO,
         u1_prerequisite_measurement=_AUTHORITY_MEASUREMENT,
         run_layout=_AUTHORITY_LAYOUT,
@@ -816,6 +917,7 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
     boundary = store.retrieval_boundary
     assert boundary.network_available is True
     with pytest.raises(TypeError):
+        rejected_attestation = _capability_attestation()
         module.PhaseStore(
             run_id=RUN_ID,
             version_binding=_binding(),
@@ -824,8 +926,10 @@ def test_u0_sealed_capability_availability_propagates_required_network_to_u2(
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-            run_contract=_run_contract(),
-            capability_availability={"retrieval": "available", "network": "available"},
+            run_contract=_run_contract(
+                capability_attestation=rejected_attestation
+            ),
+            capability_attestation=rejected_attestation,
             source_repository=_AUTHORITY_REPO,
             u1_prerequisite_measurement=_AUTHORITY_MEASUREMENT,
             run_layout=_AUTHORITY_LAYOUT,
@@ -1049,6 +1153,7 @@ def test_fork_is_rejected_before_successfully_frozen_u3(u1_authority):
 def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
     import ultra_runtime.state_machine as module
 
+    attestation = _capability_attestation()
     with pytest.raises(module.PhaseIntegrityError):
         module.PhaseStore(
             run_id=RUN_ID,
@@ -1058,8 +1163,8 @@ def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2),
-            run_contract=_run_contract(),
-            capability_availability={"retrieval": "available"},
+            run_contract=_run_contract(capability_attestation=attestation),
+            capability_attestation=attestation,
             run_layout=_AUTHORITY_LAYOUT,
         )
     with pytest.raises(module.PhaseIntegrityError, match="current|authority"):
@@ -1071,8 +1176,8 @@ def test_naive_event_clock_and_noncurrent_version_binding_are_rejected():
             input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
             evidence_cutoff=STAMP,
             now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-            run_contract=_run_contract(),
-            capability_availability={"retrieval": "available"},
+            run_contract=_run_contract(capability_attestation=attestation),
+            capability_attestation=attestation,
             run_layout=_AUTHORITY_LAYOUT,
         )
 

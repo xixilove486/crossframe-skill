@@ -20,6 +20,11 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from ultra_runtime.indexes import IndexStore
+from ultra_runtime.foundation import (
+    advance_u0,
+    parse_request_profile,
+    seal_input_inventory,
+)
 from ultra_runtime.jsonio import (
     atomic_write_bytes,
     atomic_write_json,
@@ -85,6 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
     request = start.add_mutually_exclusive_group(required=True)
     request.add_argument("--request-file", metavar="PATH")
     request.add_argument("--request-stdin", action="store_true")
+    start.add_argument(
+        "--material-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+    )
 
     prepare = subparsers.add_parser(
         "prepare", help="prepare model-owned authoring slots", add_help=False
@@ -234,6 +245,11 @@ def _start(
         if not request_path.is_file():
             raise ValueError(f"--request-file is not a file: {request_path}")
         request_bytes = request_path.read_bytes()
+    material_files = tuple(Path(value).resolve() for value in args.material_file)
+    for material_path in material_files:
+        if not material_path.is_file():
+            raise ValueError(f"--material-file is not a file: {material_path}")
+    parse_request_profile(request_bytes)
     run_id = create_run_id(now, entropy)
     layout = build_run_layout(_mode(args.mode), run_id, policy)
     if layout.run_dir.exists():
@@ -244,6 +260,13 @@ def _start(
     atomic_write_json(
         layout.input_dir / "request-metadata.json",
         {"request_sha256": request_sha256, "request_size": len(request_bytes)},
+    )
+    seal_input_inventory(
+        layout,
+        request_sha256=request_sha256,
+        material_files=material_files,
+        now=now,
+        request_bytes=request_bytes,
     )
     created = RunStatusStore(layout).create(now)
     seal_request_intake_authority(
@@ -572,6 +595,49 @@ def _materialize(
     now: datetime,
     entropy: bytes,
 ) -> int:
+    layout = _layout(args, policy)
+    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
+
+    def emit_u0_complete() -> int:
+        IndexStore(layout.root).rebuild()
+        _emit_json(
+            stdout,
+            {
+                "completed_phase": "U0",
+                "run_id": args.run_id,
+                "status": "u0-complete",
+            },
+        )
+        return 0
+
+    if run_contract_path.is_file():
+        recovery = importlib.import_module("ultra_runtime.recovery")
+        checkpoint = recovery.select_resume_checkpoint(layout)
+        if checkpoint.get("phase_id") == "U0":
+            restored = recovery.resume_run(layout, now=now)
+            phase_store = _phase_store_from_recovery(restored)
+            if getattr(phase_store, "current_phase", None) != "U0":
+                raise RuntimeError("persisted U0 checkpoint restored a different phase")
+            return emit_u0_complete()
+    else:
+        with _run_lease(layout, now):
+            foundation = advance_u0(layout, repo=repo, now=now)
+        if foundation.outcome == "awaiting-host-action":
+            if foundation.pending_action is None:
+                raise RuntimeError("U0 host action progress has no pending action")
+            IndexStore(layout.root).rebuild()
+            _emit_json(
+                stdout,
+                {
+                    "run_id": args.run_id,
+                    "status": "awaiting-host-action",
+                    "pending_action": foundation.pending_action.document,
+                },
+            )
+            return 0
+        if foundation.outcome != "advanced" or foundation.completed_phase != "U0":
+            raise RuntimeError("U0 foundation did not advance or await host action")
+        return emit_u0_complete()
     materialization = importlib.import_module("ultra_runtime.materialization")
     runner = getattr(materialization, "materialize_complete_run", None)
     if not callable(runner):

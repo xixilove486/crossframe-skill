@@ -11,6 +11,11 @@ import sys
 from types import MappingProxyType
 
 from tests.pytest_import_guard import pytest
+from tests.ultra_capability_support import (
+    accept_pending_capability_result,
+    capability_attestation_for_contract,
+    default_capability_requirements,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +78,13 @@ def test_parser_exposes_only_the_frozen_commands_and_options() -> None:
     assert not any(option in help_text for option in FORBIDDEN_CLI_OPTIONS)
 
     expected_options = {
-        "start": {"--repo", "--mode", "--request-file", "--request-stdin"},
+        "start": {
+            "--repo",
+            "--mode",
+            "--request-file",
+            "--request-stdin",
+            "--material-file",
+        },
         "prepare": {"--repo", "--mode", "--run-id"},
         "checkpoint": {"--repo", "--mode", "--run-id", "--phase"},
         "materialize": {"--repo", "--mode", "--run-id"},
@@ -221,39 +232,41 @@ def test_resume_emits_json_projection_without_live_phase_store(
         reason="resumed from immutable checkpoint",
     )
     request_sha256 = hashlib.sha256(b"resume-cli-request").hexdigest()
+    binding = current_version_binding()
+    run_contract = {
+        "trigger": "crossframe-ultra",
+        "request_sha256": request_sha256,
+        "analysis_kind": "open-world",
+        "run_mode": "test",
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": "2026-08-05T01:02:03Z",
+        "capabilities": default_capability_requirements(),
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    attestation = capability_attestation_for_contract(
+        run_id=run_id,
+        version_binding=binding,
+        contract=run_contract,
+        generated_at="2026-08-05T01:02:03Z",
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
     phase_store = state_machine.PhaseStore(
         run_id=run_id,
-        version_binding=current_version_binding(),
+        version_binding=binding,
         source_sha256=hashlib.sha256(b"resume-cli-source").hexdigest(),
         input_artifact_hashes=(request_sha256,),
         input_snapshot_sha256=request_sha256,
         evidence_cutoff="2026-08-05T01:02:03Z",
         now=started_at,
-        run_contract={
-            "trigger": "crossframe-ultra",
-            "request_sha256": request_sha256,
-            "run_mode": "test",
-            "sensitivity": "private",
-            "retention": "retain",
-            "outbound_permission": "deidentified-only",
-            "evidence_cutoff": "2026-08-05T01:02:03Z",
-            "capabilities": {
-                "filesystem": "available",
-                "docx_parser": "available",
-                "network": "available",
-                "retrieval": "available",
-                "validators": "available",
-                "subagents": "available",
-                "model_context": "available",
-            },
-            "resource_limits": {
-                "maximum_branches": 64,
-                "maximum_retrieval_rounds_without_material_novelty": 2,
-                "maximum_tool_retries": 3,
-                "maximum_repair_attempts": 3,
-            },
-        },
-        capability_availability={"network": "available", "retrieval": "available"},
+        run_contract=run_contract,
+        capability_attestation=attestation,
         source_repository=REPO_ROOT,
         run_layout=layout,
     )
@@ -346,39 +359,41 @@ def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     source_sha256 = hashlib.sha256(
         (REPO_ROOT / "skills/crossframe-ultra/references/source-manifest.json").read_bytes()
     ).hexdigest()
+    binding = current_version_binding()
+    run_contract = {
+        "trigger": "crossframe-ultra",
+        "request_sha256": request_sha256,
+        "analysis_kind": "open-world",
+        "run_mode": "test",
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": "2026-08-05T01:02:03Z",
+        "capabilities": default_capability_requirements(),
+        "resource_limits": {
+            "maximum_branches": 64,
+            "maximum_retrieval_rounds_without_material_novelty": 2,
+            "maximum_tool_retries": 3,
+            "maximum_repair_attempts": 3,
+        },
+    }
+    attestation = capability_attestation_for_contract(
+        run_id=run_id,
+        version_binding=binding,
+        contract=run_contract,
+        generated_at="2026-08-05T01:02:03Z",
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
     phase_store = state_machine.PhaseStore(
         run_id=run_id,
-        version_binding=current_version_binding(),
+        version_binding=binding,
         source_sha256=source_sha256,
         input_artifact_hashes=(request_sha256,),
         input_snapshot_sha256=request_sha256,
         evidence_cutoff="2026-08-05T01:02:03Z",
         now=started_at,
-        run_contract={
-            "trigger": "crossframe-ultra",
-            "request_sha256": request_sha256,
-            "run_mode": "test",
-            "sensitivity": "private",
-            "retention": "retain",
-            "outbound_permission": "deidentified-only",
-            "evidence_cutoff": "2026-08-05T01:02:03Z",
-            "capabilities": {
-                "filesystem": "available",
-                "docx_parser": "available",
-                "network": "available",
-                "retrieval": "available",
-                "validators": "available",
-                "subagents": "available",
-                "model_context": "available",
-            },
-            "resource_limits": {
-                "maximum_branches": 64,
-                "maximum_retrieval_rounds_without_material_novelty": 2,
-                "maximum_tool_retries": 3,
-                "maximum_repair_attempts": 3,
-            },
-        },
-        capability_availability={"network": "available", "retrieval": "available"},
+        run_contract=run_contract,
+        capability_attestation=attestation,
         source_repository=REPO_ROOT,
         run_layout=layout,
     )
@@ -388,6 +403,12 @@ def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     )
     contract_path = layout.artifacts_dir / "ultra-run-contract.json"
     contract_path.parent.mkdir(parents=True)
+    attestation_path = (
+        layout.artifacts_dir
+        / "U00-U03-evidence/U00-host-capability-attestation.json"
+    )
+    attestation_path.parent.mkdir(parents=True, exist_ok=True)
+    attestation_path.write_bytes(attestation.artifact_bytes)
     contract_path.write_bytes(canonical_json_bytes(dict(phase_store.run_contract)))
     recovery.create_checkpoint(
         layout,
@@ -439,6 +460,119 @@ def test_cancel_emits_persisted_canonical_status_from_real_mappingproxy_record(
     assert persisted_bytes == canonical_json_bytes(status._record_to_object(persisted_record))
     assert persisted_bytes.endswith(b"\n")
     assert not persisted_bytes.endswith(b"\n\n")
+
+
+def test_materialize_plain_request_emits_pending_capability_attestation(
+    tmp_path: Path,
+) -> None:
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    start_stdout = StringIO()
+    started_at = datetime(2026, 8, 5, 1, 3, 30, tzinfo=timezone.utc)
+    cli.execute(
+        ["start", *common, "--request-stdin"],
+        stdin=BytesIO("AI 会怎样改变就业？\n".encode("utf-8")),
+        stdout=start_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at,
+        entropy=lambda: b"task-2-cli-natural-language",
+    )
+    run_id = json.loads(start_stdout.getvalue())["run_id"]
+    stdout = StringIO()
+
+    result = cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=1),
+        entropy=lambda: b"unused-before-host-result",
+    )
+
+    response = json.loads(stdout.getvalue())
+    assert result == 0
+    assert response["status"] == "awaiting-host-action"
+    assert response["pending_action"]["action_kind"] == "capability-attestation"
+    from ultra_runtime.paths import RunMode, build_run_layout
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    assert (layout.recovery_dir / "pending-action.json").is_file()
+    assert not (layout.artifacts_dir / "ultra-run-contract.json").exists()
+
+
+def test_materialize_accepts_host_attestation_and_stops_after_u0(
+    tmp_path: Path,
+) -> None:
+    cli = _load_cli()
+    policy = _root_policy(tmp_path)
+    common = ["--repo", str(REPO_ROOT), "--mode", "test"]
+    start_stdout = StringIO()
+    started_at = datetime(2026, 8, 5, 1, 3, 40, tzinfo=timezone.utc)
+    cli.execute(
+        ["start", *common, "--request-stdin"],
+        stdin=BytesIO("AI 会怎样改变就业？\n".encode("utf-8")),
+        stdout=start_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at,
+        entropy=lambda: b"task-2-cli-u0-complete",
+    )
+    run_id = json.loads(start_stdout.getvalue())["run_id"]
+    first_stdout = StringIO()
+    cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=first_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=1),
+        entropy=lambda: b"unused-before-u0",
+    )
+    from ultra_runtime.paths import RunMode, build_run_layout
+
+    layout = build_run_layout(RunMode.TEST, run_id, policy)
+    accept_pending_capability_result(
+        layout,
+        completed_at="2026-08-05T01:03:42Z",
+    )
+    stdout = StringIO()
+
+    result = cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=3),
+        entropy=lambda: b"unused-after-u0",
+    )
+
+    response = json.loads(stdout.getvalue())
+    assert result == 0
+    assert response == {
+        "completed_phase": "U0",
+        "run_id": run_id,
+        "status": "u0-complete",
+    }
+    assert (layout.artifacts_dir / "ultra-run-contract.json").is_file()
+    assert not (layout.recovery_dir / "u1-authority/source-lock.json").exists()
+    assert not (
+        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
+    ).exists()
+    repeated_stdout = StringIO()
+    assert cli.execute(
+        ["materialize", *common, "--run-id", run_id],
+        stdin=BytesIO(),
+        stdout=repeated_stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: started_at + timedelta(seconds=4),
+        entropy=lambda: b"unused-repeat-u0",
+    ) == 0
+    assert json.loads(repeated_stdout.getvalue()) == response
 
 
 def test_materialize_bootstraps_real_u0_u3_chain_for_fresh_prepared_run(

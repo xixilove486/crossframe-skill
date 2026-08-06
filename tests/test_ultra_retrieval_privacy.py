@@ -10,6 +10,11 @@ import shutil
 import sys
 
 from tests.pytest_import_guard import pytest
+from tests.ultra_capability_support import (
+    capability_attestation_for_contract,
+    default_capability_requirements,
+    default_measured_availability,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,24 +83,22 @@ def _run_contract(
     outbound_permission: str = "deidentified-only",
     sensitivity: str = "private",
     run_mode: str = "test",
+    run_id: str = RUN_ID,
 ) -> dict[str, object]:
-    return {
+    requirements = default_capability_requirements()
+    requirements["network"] = (
+        "not-applicable" if network == "not-applicable" else "required"
+    )
+    contract = {
         "trigger": "crossframe-ultra",
         "request_sha256": REQUEST_SHA256,
+        "analysis_kind": "open-world",
         "run_mode": run_mode,
         "sensitivity": sensitivity,
         "retention": "retain",
         "outbound_permission": outbound_permission,
         "evidence_cutoff": STAMP,
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "available",
-            "network": network,
-            "retrieval": "required",
-            "validators": "available",
-            "subagents": "available",
-            "model_context": "available",
-        },
+        "capabilities": requirements,
         "resource_limits": {
             "maximum_branches": 64,
             "maximum_retrieval_rounds_without_material_novelty": 2,
@@ -103,6 +106,14 @@ def _run_contract(
             "maximum_repair_attempts": 3,
         },
     }
+    attestation = capability_attestation_for_contract(
+        run_id=run_id,
+        version_binding=_binding(),
+        contract=contract,
+        generated_at=STAMP,
+    )
+    contract["capability_attestation_sha256"] = attestation.artifact_sha256
+    return contract
 
 
 def _locked_inputs() -> list[dict[str, str]]:
@@ -181,6 +192,7 @@ def retrieval_authority_context(tmp_path_factory):
     from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
 
     fixture_root = tmp_path_factory.mktemp("retrieval-host-authority")
+    source_integrity.PRODUCTION_ROOT = fixture_root / "production-control"
     authority_repo = fixture_root / "repo"
     skill_root = authority_repo / "skills/crossframe-ultra"
     skill_root.parent.mkdir(parents=True)
@@ -232,6 +244,23 @@ def _phase_store(
     manifest = _AUTHORITY_CONTEXT["manifest"]
     measurement = _AUTHORITY_CONTEXT["measurement"]
     run_layout = _AUTHORITY_CONTEXT["run_layout"]
+    run_contract = _run_contract(
+        network=network,
+        outbound_permission=outbound_permission,
+        sensitivity=sensitivity,
+    )
+    availability = default_measured_availability()
+    availability["network"] = (
+        "unavailable" if network == "unavailable" else "available"
+    )
+    attestation = capability_attestation_for_contract(
+        run_id=RUN_ID,
+        version_binding=_binding(),
+        contract=run_contract,
+        generated_at=STAMP,
+        measured_availability=availability,
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
     store = PhaseStore(
         run_id=RUN_ID,
         version_binding=_binding(),
@@ -240,15 +269,8 @@ def _phase_store(
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-        run_contract=_run_contract(
-            network=network,
-            outbound_permission=outbound_permission,
-            sensitivity=sensitivity,
-        ),
-        capability_availability={
-            "retrieval": "available",
-            "network": "unavailable" if network == "unavailable" else "available",
-        },
+        run_contract=run_contract,
+        capability_attestation=attestation,
         source_repository=authority_repo,
         u1_prerequisite_measurement=measurement,
         run_layout=run_layout,
@@ -338,6 +360,23 @@ def _fresh_phase_store(
         control_plane_authority["expected_eligibility_basis_sha256"] = (
             expected_eligibility_basis_sha256
         )
+    run_contract = _run_contract(
+        network=network,
+        outbound_permission=outbound_permission,
+        sensitivity=sensitivity,
+    )
+    availability = default_measured_availability()
+    availability["network"] = (
+        "unavailable" if network == "unavailable" else "available"
+    )
+    attestation = capability_attestation_for_contract(
+        run_id=RUN_ID,
+        version_binding=_binding(),
+        contract=run_contract,
+        generated_at=STAMP,
+        measured_availability=availability,
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
     store = PhaseStore(
         run_id=RUN_ID,
         version_binding=_binding(),
@@ -346,15 +385,8 @@ def _fresh_phase_store(
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-        run_contract=_run_contract(
-            network=network,
-            outbound_permission=outbound_permission,
-            sensitivity=sensitivity,
-        ),
-        capability_availability={
-            "retrieval": "available",
-            "network": "unavailable" if network == "unavailable" else "available",
-        },
+        run_contract=run_contract,
+        capability_attestation=attestation,
         source_repository=_AUTHORITY_CONTEXT["repo"],
         u1_prerequisite_measurement=_AUTHORITY_CONTEXT["measurement"],
         run_layout=_AUTHORITY_CONTEXT["run_layout"],
@@ -556,20 +588,32 @@ def test_production_raw_pure_logic_override_cannot_bypass_missing_external_autho
     from ultra_runtime.paths import RunMode, build_run_layout, default_root_policy
     from ultra_runtime.state_machine import PhaseStore
 
+    production_run_id = "20260802T000004Z-8da1c064e255"
+    run_contract = _run_contract(
+        run_mode="production",
+        run_id=production_run_id,
+    )
+    attestation = capability_attestation_for_contract(
+        run_id=production_run_id,
+        version_binding=_binding(),
+        contract=run_contract,
+        generated_at=STAMP,
+    )
+    run_contract["capability_attestation_sha256"] = attestation.artifact_sha256
     production = PhaseStore(
-        run_id="20260802T000004Z-8da1c064e255",
+        run_id=production_run_id,
         version_binding=_binding(),
         source_sha256=SOURCE_MANIFEST_SHA256,
         input_artifact_hashes=(REQUEST_SHA256,),
         input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
         evidence_cutoff=STAMP,
         now=datetime(2026, 8, 2, tzinfo=timezone.utc),
-        run_contract=_run_contract(run_mode="production"),
-        capability_availability={"retrieval": "available", "network": "available"},
+        run_contract=run_contract,
+        capability_attestation=attestation,
         source_repository=ROOT,
         run_layout=build_run_layout(
             RunMode.PRODUCTION,
-            "20260802T000004Z-8da1c064e255",
+            production_run_id,
             default_root_policy(),
         ),
     )

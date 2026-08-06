@@ -48,7 +48,9 @@ def _recovery_module():
 def _fixture_run(tmp_path: Path):
     import ultra_runtime.state_machine as state_machine
     from ultra_runtime.constants import current_version_binding
+    from ultra_runtime.foundation import validate_host_capability_attestation
     from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
+    from ultra_runtime.schemas import compute_artifact_content_sha256
 
     policy = RootPolicy(tmp_path / "production", tmp_path / "test")
     layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
@@ -56,29 +58,88 @@ def _fixture_run(tmp_path: Path):
     input_path = layout.input_dir / "AGENTS.md"
     shutil.copy2(ROOT / "AGENTS.md", input_path)
     input_sha256 = hashlib.sha256(input_path.read_bytes()).hexdigest()
+    requirements = {
+        "filesystem": "required",
+        "docx_parser": "not-applicable",
+        "network": "required",
+        "retrieval": "required",
+        "validators": "required",
+        "subagents": "not-applicable",
+        "model_context": "required",
+    }
+    resource_limits = {
+        "maximum_branches": 64,
+        "maximum_retrieval_rounds_without_material_novelty": 2,
+        "maximum_tool_retries": 3,
+        "maximum_repair_attempts": 3,
+    }
+    attestation_document = {
+        "schema_id": "crossframe.ultra.v82.host-capability-attestation",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "version_binding": current_version_binding(),
+        "generated_at": "2026-08-04T00:00:00Z",
+        "phase_id": "U0",
+        "request_sha256": input_sha256,
+        "action_sha256": "a" * 64,
+        "receipt_sha256": "b" * 64,
+        "analysis_kind": "open-world",
+        "run_mode": "test",
+        "requirements": requirements,
+        "measured_availability": {
+            "filesystem": "available",
+            "docx_parser": "unavailable",
+            "network": "unavailable",
+            "retrieval": "unavailable",
+            "validators": "available",
+            "subagents": "unavailable",
+            "model_context": "available",
+        },
+        "providers": [
+            {
+                "provider_id": "recovery-host",
+                "provider_kind": "runtime",
+                "version": "1.0.0",
+            }
+        ],
+        "tools": [
+            {
+                "tool_id": "local-filesystem",
+                "provider_id": "recovery-host",
+                "version": "1.0.0",
+            }
+        ],
+        "sensitivity": "private",
+        "retention": "retain",
+        "outbound_permission": "deidentified-only",
+        "evidence_cutoff": "2026-08-04T00:00:00Z",
+        "resource_limits": resource_limits,
+        "measured_at": "2026-08-04T00:00:00Z",
+        "proof_grade": "host-measured",
+        "content_sha256": "0" * 64,
+    }
+    attestation_document["content_sha256"] = compute_artifact_content_sha256(
+        attestation_document
+    )
+    attestation = validate_host_capability_attestation(attestation_document)
+    attestation_path = (
+        layout.artifacts_dir
+        / "U00-U03-evidence/U00-host-capability-attestation.json"
+    )
+    attestation_path.parent.mkdir(parents=True, exist_ok=True)
+    attestation_path.write_bytes(_canonical(attestation_document))
     contract = {
         "trigger": "crossframe-ultra",
         "request_sha256": input_sha256,
+        "analysis_kind": "open-world",
+        "capability_attestation_sha256": attestation.artifact_sha256,
         "run_mode": "test",
         "sensitivity": "private",
         "retention": "retain",
         "outbound_permission": "deidentified-only",
         "evidence_cutoff": "2026-08-04T00:00:00Z",
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "available",
-            "network": "available",
-            "retrieval": "available",
-            "validators": "available",
-            "subagents": "available",
-            "model_context": "available",
-        },
-        "resource_limits": {
-            "maximum_branches": 64,
-            "maximum_retrieval_rounds_without_material_novelty": 2,
-            "maximum_tool_retries": 3,
-            "maximum_repair_attempts": 3,
-        },
+        "capabilities": requirements,
+        "resource_limits": resource_limits,
     }
     store = state_machine.PhaseStore(
         run_id=RUN_ID,
@@ -89,18 +150,31 @@ def _fixture_run(tmp_path: Path):
         evidence_cutoff="2026-08-04T00:00:00Z",
         now=NOW,
         run_contract=contract,
-        capability_availability={"network": "available", "retrieval": "available"},
+        capability_attestation=attestation,
         source_repository=ROOT,
         run_layout=layout,
     )
     store.complete("U0", artifact_hashes=(store.run_contract_artifact_sha256,))
     artifact_path = layout.artifacts_dir / "ultra-run-contract.json"
-    artifact_path.parent.mkdir(parents=True)
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
     artifact_path.write_bytes(_canonical(dict(store.run_contract)))
     assert hashlib.sha256(artifact_path.read_bytes()).hexdigest() == (
         store.run_contract_artifact_sha256
     )
     return policy, layout, store, artifact_path
+
+
+def test_resume_uses_persisted_measured_availability_not_required_state(
+    tmp_path: Path,
+) -> None:
+    recovery, _, layout, _, _, _ = _checkpoint(tmp_path)
+    _interrupt(layout)
+
+    restored = recovery.resume_run(layout, now=NOW + timedelta(seconds=3))
+
+    assert restored.phase_store is not None
+    assert restored.phase_store.capability_availability["network"] == "unavailable"
+    assert restored.phase_store.run_contract["capabilities"]["network"] == "required"
 
 
 def _checkpoint(tmp_path: Path):
@@ -342,6 +416,11 @@ def u1_recovery_run(tmp_path_factory):
     jsonio.atomic_write_json(
         layout.artifacts_dir / "ultra-run-contract.json",
         dict(store.run_contract),
+    )
+    jsonio.atomic_write_bytes(
+        layout.artifacts_dir
+        / "U00-U03-evidence/U00-host-capability-attestation.json",
+        store.capability_attestation.artifact_bytes,
     )
     jsonio.atomic_write_json(layout.run_dir / U1_SOURCE_LOCK, issued["source_lock"])
     jsonio.atomic_write_json(

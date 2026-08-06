@@ -1020,6 +1020,8 @@ def _restore_phase_store(
     contract_fields = (
         "trigger",
         "request_sha256",
+        "analysis_kind",
+        "capability_attestation_sha256",
         "run_mode",
         "sensitivity",
         "retention",
@@ -1029,64 +1031,29 @@ def _restore_phase_store(
         "resource_limits",
     )
     contract = {field: copy.deepcopy(artifact[field]) for field in contract_fields}
-    capabilities = contract.get("capabilities")
-    availability = {
-        str(name): "available"
-        for name, state in (
-            capabilities.items() if isinstance(capabilities, Mapping) else ()
-        )
-        if state in {"available", "required"}
-    }
-    source_repository = Path(__file__).resolve().parents[4]
-    u1_event = next(
-        (
-            event
-            for event in events
-            if event.get("phase_id") == "U1" and event.get("status") == "complete"
-        ),
-        None,
+    from .foundation import (
+        FoundationInputError,
+        load_host_capability_attestation,
     )
-    u1_prerequisite_measurement = None
-    if u1_event is None:
-        from . import source_integrity
 
-        try:
-            manifest = source_integrity.load_source_manifest(
-                source_repository
-                / "skills"
-                / "crossframe-ultra"
-                / "references"
-                / "source-manifest.json",
-                expected_sha256=str(authority["source_sha256"]),
-            )
-            measurement_arguments: dict[str, object] = {
-                "manifest": manifest,
-                "run_mode": str(contract["run_mode"]),
-            }
-            if contract["run_mode"] == "test":
-                measurement_arguments["release_manifest_path"] = (
-                    source_repository
-                    / "skills"
-                    / "crossframe-ultra"
-                    / "references"
-                    / "release-manifest.json"
-                )
-            u1_prerequisite_measurement = (
-                source_integrity.measure_u1_prerequisites(
-                    source_repository,
-                    **measurement_arguments,
-                )
-            )
-            if not u1_prerequisite_measurement.ready:
-                raise RecoveryIntegrityError(
-                    "restored U0 has no current U1 prerequisite authority"
-                )
-        except RecoveryIntegrityError:
-            raise
-        except Exception as error:
-            raise RecoveryIntegrityError(
-                "restored U0 cannot remeasure U1 prerequisites"
-            ) from error
+    try:
+        capability_attestation = load_host_capability_attestation(
+            layout,
+            expected_request_sha256=str(contract["request_sha256"]),
+            expected_version_binding=authority["version_binding"],
+        )
+    except FoundationInputError as error:
+        raise RecoveryIntegrityError(
+            "persisted host capability attestation is invalid"
+        ) from error
+    if (
+        capability_attestation.artifact_sha256
+        != contract["capability_attestation_sha256"]
+    ):
+        raise RecoveryIntegrityError(
+            "persisted host capability attestation hash differs from contract"
+        )
+    source_repository = Path(__file__).resolve().parents[4]
     try:
         store = PhaseStore(
             run_id=str(authority["run_id"]),
@@ -1097,9 +1064,8 @@ def _restore_phase_store(
             evidence_cutoff=str(authority["evidence_cutoff"]),
             now=generated_at,
             run_contract=contract,
-            capability_availability=availability,
+            capability_attestation=capability_attestation,
             source_repository=source_repository,
-            u1_prerequisite_measurement=u1_prerequisite_measurement,
             run_layout=layout,
         )
         if store.run_contract_artifact_sha256 != authority["run_contract_sha256"]:
