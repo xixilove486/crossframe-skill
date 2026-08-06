@@ -50,6 +50,7 @@ _SCHEMAS_BY_ID = {
     ),
     "crossframe.ultra.v82.retrieval-ledger": "ultra-retrieval-ledger.schema.json",
     "crossframe.ultra.v82.evidence-ledger": "ultra-evidence-ledger.schema.json",
+    "crossframe.ultra.v82.evidence-lineage": "ultra-evidence-lineage.schema.json",
     "crossframe.ultra.v82.world-volume": "ultra-world-volume.schema.json",
     "crossframe.ultra.v82.transformation-ledger": "ultra-transformation-ledger.schema.json",
     "crossframe.ultra.v82.concept-disposition": "ultra-concept-disposition.schema.json",
@@ -90,6 +91,10 @@ _RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
 _HOST_CAPABILITY_ATTESTATION_PATH = (
     "artifacts/U00-U03-evidence/U00-host-capability-attestation.json"
 )
+_EVIDENCE_LINEAGE_PATH = (
+    "artifacts/U00-U03-evidence/U00-evidence-lineage.json"
+)
+_EVIDENCE_LINEAGE_REQUEST_PATH = "recovery/evidence-lineage-request.json"
 _COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
 _COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
 _VALIDATION_LAYER_IDS = (
@@ -314,6 +319,17 @@ def _load_verified_disk_authority(
         _RUN_CONTRACT_PATH,
         _HOST_CAPABILITY_ATTESTATION_PATH,
     }
+    lineage_request_path = _artifact_path(layout, _EVIDENCE_LINEAGE_REQUEST_PATH)
+    if lineage_request_path.exists() and (
+        lineage_request_path.is_symlink() or not lineage_request_path.is_file()
+    ):
+        raise _AuthorityDAGError(
+            "evidence lineage request is not a regular immutable file",
+            phase_id="U0",
+        )
+    has_evidence_lineage_request = lineage_request_path.is_file()
+    if has_evidence_lineage_request:
+        expected_u0_manifest_paths.add(_EVIDENCE_LINEAGE_PATH)
     if set(u0_manifest_refs) != expected_u0_manifest_paths:
         raise _AuthorityDAGError(
             "U0 manifest does not contain the fixed authority files",
@@ -342,6 +358,40 @@ def _load_verified_disk_authority(
             "U0 capability attestation differs from the run contract",
             phase_id="U0",
         )
+    evidence_lineage: dict[str, object] | None = None
+    if has_evidence_lineage_request:
+        from .foundation import (
+            FoundationInputError,
+            validate_evidence_lineage_admission,
+        )
+
+        u0_event = next(
+            event for event in active_events if event.get("phase_id") == "U0"
+        )
+        try:
+            evidence_lineage = validate_evidence_lineage_admission(
+                layout,
+                request_sha256=str(run_contract["request_sha256"]),
+                capability_attestation_sha256=str(
+                    run_contract["capability_attestation_sha256"]
+                ),
+                run_contract_sha256=u0_checkpoint_refs[_RUN_CONTRACT_PATH],
+                u0_event=u0_event,
+            )
+            lineage_path = _artifact_path(layout, _EVIDENCE_LINEAGE_PATH)
+            if (
+                evidence_lineage is None
+                or sha256_bytes(lineage_path.read_bytes())
+                != u0_manifest_refs[_EVIDENCE_LINEAGE_PATH]
+            ):
+                raise FoundationInputError(
+                    "finalized evidence lineage differs from the manifest"
+                )
+        except (FoundationInputError, KeyError, OSError) as error:
+            raise _AuthorityDAGError(
+                f"finalized evidence lineage authority is invalid: {error}",
+                phase_id="U0",
+            ) from error
     for phase_id in tuple(f"U{number}" for number in range(2, 12)):
         if refs_by_phase.get(phase_id) != manifest_refs.get(phase_id):
             raise _AuthorityDAGError(
@@ -381,6 +431,7 @@ def _load_verified_disk_authority(
         "events": tuple(copy.deepcopy(event) for event in active_events),
         "refs_by_phase": copy.deepcopy(refs_by_phase),
         "active_generation": int(u11_event.get("generation", 0)),
+        "evidence_lineage": copy.deepcopy(evidence_lineage),
     }
 
 

@@ -1,11 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://crossframe.local/schemas/ultra-evidence-lineage.schema.json",
-  "title": "CrossFrame Ultra pending same-version evidence lineage",
+  "title": "CrossFrame Ultra same-version evidence lineage",
   "type": "object",
   "allOf": [
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
+      "oneOf": [
+        {"$ref": "#/$defs/pendingLineageRequest"},
+        {"$ref": "#/$defs/finalizedLineage"}
+      ]
+    }
+  ],
+  "$defs": {
+    "pendingLineageRequest": {
       "type": "object",
       "required": ["parent_run_id", "parent_u3_event_sha256", "parent_evidence_sha256", "parent_evidence_cutoff", "evidence_cutoff", "inherited_input_refs", "new_evidence_ref", "status"],
       "properties": {
@@ -20,7 +28,28 @@
         "new_evidence_ref": {"$ref": "ultra-common.schema.json#/$defs/artifactHash"},
         "status": {"const": "pending-u0-attestation"}
       }
+    },
+    "finalizedLineage": {
+      "type": "object",
+      "required": ["parent_run_id", "parent_u3_event_sha256", "parent_evidence_sha256", "parent_evidence_cutoff", "evidence_cutoff", "inherited_input_refs", "new_evidence_ref", "lineage_request_sha256", "request_sha256", "capability_attestation_sha256", "run_contract_sha256", "u0_phase_event_sha256", "status"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.evidence-lineage"},
+        "phase_id": {"const": "U0"},
+        "parent_run_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "parent_u3_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "parent_evidence_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "parent_evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "inherited_input_refs": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"},
+        "new_evidence_ref": {"$ref": "ultra-common.schema.json#/$defs/artifactHash"},
+        "lineage_request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "capability_attestation_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "run_contract_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "u0_phase_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "status": {"const": "finalized-u0-admission"}
+      }
     }
-  ],
+  },
   "unevaluatedProperties": false
 }

@@ -34,6 +34,10 @@ HOST_CAPABILITY_ATTESTATION_PATH = (
 HOST_CAPABILITY_ATTESTATION_SCHEMA_ID = (
     "crossframe.ultra.v82.host-capability-attestation"
 )
+EVIDENCE_LINEAGE_PATH = (
+    "artifacts/U00-U03-evidence/U00-evidence-lineage.json"
+)
+EVIDENCE_LINEAGE_SCHEMA_ID = "crossframe.ultra.v82.evidence-lineage"
 EXTRA_U0_PATH = "artifacts/U00-U03-evidence/unexpected-u0-artifact.json"
 CAPABILITY_ATTESTATION_SHA256 = "c" * 64
 UNIT_KINDS = (
@@ -543,8 +547,19 @@ def stubbed_disk_authority(
         test_root=(tmp_path / "test").resolve(),
     )
     layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
+    request_bytes = b"evidence-child request\n"
+    new_evidence_bytes = b"new evidence candidate\n"
+    request_path = layout.input_dir / "request.bin"
+    new_evidence_path = layout.input_dir / "new-evidence.bin"
+    request_path.parent.mkdir(parents=True, exist_ok=True)
+    request_path.write_bytes(request_bytes)
+    new_evidence_path.write_bytes(new_evidence_bytes)
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    new_evidence_sha256 = hashlib.sha256(new_evidence_bytes).hexdigest()
     run_contract = {
         "capability_attestation_sha256": contract_capability_sha256,
+        "request_sha256": request_sha256,
+        "evidence_cutoff": STAMP,
     }
     write_json(layout.run_dir / RUN_CONTRACT_PATH, run_contract)
     run_contract_sha256 = hashlib.sha256(
@@ -577,9 +592,15 @@ def stubbed_disk_authority(
 
     events = tuple(
         {
+            "run_id": RUN_ID,
             "phase_id": f"U{number}",
             "status": "complete",
             "event_sha256": f"{number + 32:064x}",
+            "evidence_cutoff": STAMP,
+            "input_artifact_hashes": [request_sha256, new_evidence_sha256],
+            "output_artifact_hashes": (
+                [run_contract_sha256] if number == 0 else []
+            ),
         }
         for number in range(12)
     )
@@ -591,6 +612,8 @@ def stubbed_disk_authority(
             "phase_id": phase_id,
             "boundary_kind": "phase",
             "boundary_ordinal": 0,
+            "generation": 0,
+            "phase_event_sha256": event["event_sha256"],
             "artifact_hashes": [
                 {"path": path, "sha256": digest}
                 for path, digest in refs_by_phase[phase_id].items()
@@ -649,6 +672,95 @@ def stubbed_disk_authority(
         "phase_chain_head_sha256": events[-1]["event_sha256"],
     }
     return modules, layout, manifest
+
+
+def add_finalized_evidence_lineage(
+    modules: SimpleNamespace,
+    layout: object,
+    manifest: dict[str, object],
+) -> dict[str, object]:
+    request_bytes = (layout.input_dir / "request.bin").read_bytes()
+    new_evidence_bytes = (layout.input_dir / "new-evidence.bin").read_bytes()
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    new_evidence_sha256 = hashlib.sha256(new_evidence_bytes).hexdigest()
+    pending = {
+        "schema_id": EVIDENCE_LINEAGE_SCHEMA_ID,
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "version_binding": modules.constants.current_version_binding(),
+        "generated_at": STAMP,
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "parent_run_id": "20260803T000000Z-abcdef123456",
+        "parent_u3_event_sha256": "7" * 64,
+        "parent_evidence_sha256": "8" * 64,
+        "parent_evidence_cutoff": "2026-08-03T00:00:00Z",
+        "evidence_cutoff": STAMP,
+        "inherited_input_refs": [
+            {
+                "path": "input/request.bin",
+                "sha256": request_sha256,
+                "media_type": "application/octet-stream",
+            }
+        ],
+        "new_evidence_ref": {
+            "path": "input/new-evidence.bin",
+            "sha256": new_evidence_sha256,
+            "media_type": "application/octet-stream",
+        },
+        "status": "pending-u0-attestation",
+    }
+    pending["content_sha256"] = modules.schemas.compute_artifact_content_sha256(
+        pending
+    )
+    pending_path = layout.recovery_dir / "evidence-lineage-request.json"
+    write_json(pending_path, pending)
+    run_contract_path = layout.run_dir / RUN_CONTRACT_PATH
+    finalized = {
+        **{
+            field: copy.deepcopy(pending[field])
+            for field in (
+                "schema_id",
+                "schema_version",
+                "run_id",
+                "version_binding",
+                "phase_id",
+                "parent_run_id",
+                "parent_u3_event_sha256",
+                "parent_evidence_sha256",
+                "parent_evidence_cutoff",
+                "evidence_cutoff",
+                "inherited_input_refs",
+                "new_evidence_ref",
+            )
+        },
+        "generated_at": "2026-08-04T00:00:01Z",
+        "content_sha256": "0" * 64,
+        "lineage_request_sha256": hashlib.sha256(
+            pending_path.read_bytes()
+        ).hexdigest(),
+        "request_sha256": request_sha256,
+        "capability_attestation_sha256": CAPABILITY_ATTESTATION_SHA256,
+        "run_contract_sha256": hashlib.sha256(
+            run_contract_path.read_bytes()
+        ).hexdigest(),
+        "u0_phase_event_sha256": f"{32:064x}",
+        "status": "finalized-u0-admission",
+    }
+    finalized["content_sha256"] = modules.schemas.compute_artifact_content_sha256(
+        finalized
+    )
+    finalized_path = layout.run_dir / EVIDENCE_LINEAGE_PATH
+    write_json(finalized_path, finalized)
+    manifest["artifacts"].append(
+        {
+            "schema_id": EVIDENCE_LINEAGE_SCHEMA_ID,
+            "phase_id": "U0",
+            "path": EVIDENCE_LINEAGE_PATH,
+            "sha256": hashlib.sha256(finalized_path.read_bytes()).hexdigest(),
+        }
+    )
+    return finalized
 
 
 def test_host_capability_attestation_is_a_known_structured_artifact(
@@ -722,6 +834,108 @@ def test_disk_authority_accepts_fixed_u0_manifest_only_attestation(
             (layout.run_dir / RUN_CONTRACT_PATH).read_bytes()
         ).hexdigest()
     }
+
+
+def test_disk_authority_accepts_finalized_evidence_child_u0_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+    )
+    finalized = add_finalized_evidence_lineage(modules, layout, manifest)
+
+    authority = modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert authority["evidence_lineage"] == finalized
+    assert set(
+        record["path"]
+        for record in manifest["artifacts"]
+        if record["phase_id"] == "U0"
+    ) == {
+        RUN_CONTRACT_PATH,
+        HOST_CAPABILITY_ATTESTATION_PATH,
+        EVIDENCE_LINEAGE_PATH,
+    }
+
+
+def test_finalized_evidence_lineage_is_a_known_structured_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+    )
+    finalized = add_finalized_evidence_lineage(modules, layout, manifest)
+    lineage_record = next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"] == EVIDENCE_LINEAGE_PATH
+    )
+    issues: dict[str, list[tuple[str, str]]] = {"artifact-integrity": []}
+
+    loaded = modules.validation._load_structured_artifacts(
+        layout,
+        {"artifacts": [lineage_record]},
+        issues,
+    )
+
+    assert issues == {"artifact-integrity": []}
+    assert loaded == {EVIDENCE_LINEAGE_SCHEMA_ID: [finalized]}
+
+
+def test_disk_authority_rejects_rehashed_lineage_with_wrong_u0_event_binding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+    )
+    finalized = add_finalized_evidence_lineage(modules, layout, manifest)
+    finalized["u0_phase_event_sha256"] = "f" * 64
+    finalized["content_sha256"] = modules.schemas.compute_artifact_content_sha256(
+        finalized
+    )
+    finalized_path = layout.run_dir / EVIDENCE_LINEAGE_PATH
+    write_json(finalized_path, finalized)
+    lineage_record = next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"] == EVIDENCE_LINEAGE_PATH
+    )
+    lineage_record["sha256"] = hashlib.sha256(
+        finalized_path.read_bytes()
+    ).hexdigest()
+
+    with pytest.raises(modules.validation._AuthorityDAGError) as captured:
+        modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert captured.value.phase_id == "U0"
+
+
+def test_disk_authority_rejects_pending_only_evidence_child_before_u1(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules, layout, manifest = stubbed_disk_authority(
+        tmp_path,
+        monkeypatch,
+    )
+    add_finalized_evidence_lineage(modules, layout, manifest)
+    (layout.run_dir / EVIDENCE_LINEAGE_PATH).unlink()
+    manifest["artifacts"] = [
+        record
+        for record in manifest["artifacts"]
+        if record["path"] != EVIDENCE_LINEAGE_PATH
+    ]
+
+    with pytest.raises(modules.validation._AuthorityDAGError) as captured:
+        modules.validation._load_verified_disk_authority(layout, manifest)
+
+    assert captured.value.phase_id == "U0"
 
 
 @pytest.mark.parametrize(

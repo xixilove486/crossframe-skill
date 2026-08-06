@@ -1458,6 +1458,164 @@ def test_evidence_fork_preserves_parent_and_reopens_child_at_u0(tmp_path) -> Non
     recovery.validate_instance("ultra-evidence-lineage.schema.json", lineage)
 
 
+def test_evidence_fork_finalizes_lineage_only_after_child_u0_admission(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from tests.test_ultra_foundation import (
+        _accept_capability_result,
+        _capability_result,
+    )
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from tests.test_ultra_source_read_coverage import _write_release_manifest
+    from ultra_runtime import artifacts, foundation, jsonio, recovery, source_integrity
+    from ultra_runtime.paths import RootPolicy, RunMode
+
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    parent_events = _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    policy = RootPolicy(tmp_path / "children-production", tmp_path / "children-test")
+    forked_at = NOW + timedelta(days=1)
+    child = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=RunMode.TEST,
+        policy=policy,
+        evidence_bytes=b"new admitted evidence candidate\n",
+        now=forked_at,
+        entropy=b"evidence-child-finalized",
+    )
+    request_sha256 = hashlib.sha256(
+        (child.layout.input_dir / "request.bin").read_bytes()
+    ).hexdigest()
+    jsonio.atomic_write_json(
+        child.layout.input_dir / "request-metadata.json",
+        {
+            "request_sha256": request_sha256,
+            "request_size": (child.layout.input_dir / "request.bin").stat().st_size,
+        },
+    )
+    foundation.seal_input_inventory(
+        child.layout,
+        request_sha256=request_sha256,
+        material_files=(),
+        now=forked_at,
+    )
+    request_path = child.layout.recovery_dir / "evidence-lineage-request.json"
+    pending_bytes = request_path.read_bytes()
+    finalized_path = (
+        child.layout.artifacts_dir
+        / "U00-U03-evidence/U00-evidence-lineage.json"
+    )
+
+    authority_repo = tmp_path / "authority-repo"
+    skill_root = authority_repo / "skills/crossframe-ultra"
+    skill_root.parent.mkdir(parents=True)
+    shutil.copytree(ROOT / "skills/crossframe-ultra", skill_root)
+    _write_release_manifest(
+        authority_repo,
+        skill_root / "references/release-manifest.json",
+    )
+    monkeypatch.setattr(
+        source_integrity,
+        "PRODUCTION_ROOT",
+        tmp_path / "unselected-production-root",
+    )
+
+    first = foundation.advance_u0(
+        child.layout,
+        repo=authority_repo,
+        now=forked_at + timedelta(seconds=1),
+    )
+
+    assert first.outcome == "awaiting-host-action"
+    assert first.pending_action is not None
+    assert first.pending_action.document["run_id"] == child.run_id
+    assert first.pending_action.document["action_kind"] == "capability-attestation"
+    assert not finalized_path.exists()
+    _accept_capability_result(
+        child.layout,
+        first.pending_action,
+        _capability_result(network="available"),
+        completed_at="2026-08-05T00:00:02Z",
+    )
+
+    completed = foundation.advance_u0(
+        child.layout,
+        repo=authority_repo,
+        now=forked_at + timedelta(seconds=3),
+    )
+
+    assert completed.outcome == "advanced"
+    assert completed.completed_phase == "U0"
+    assert request_path.read_bytes() == pending_bytes
+    finalized = jsonio.load_json_object(finalized_path)
+    pending = jsonio.load_json_object(request_path)
+    run_contract_path = child.layout.artifacts_dir / "ultra-run-contract.json"
+    attestation_path = (
+        child.layout.artifacts_dir
+        / "U00-U03-evidence/U00-host-capability-attestation.json"
+    )
+    assert finalized["status"] == "finalized-u0-admission"
+    assert finalized["lineage_request_sha256"] == hashlib.sha256(
+        pending_bytes
+    ).hexdigest()
+    assert finalized["run_id"] == child.run_id
+    assert finalized["parent_run_id"] == parent_layout.run_dir.name
+    assert finalized["parent_u3_event_sha256"] == parent_events[-1]["event_sha256"]
+    assert finalized["parent_evidence_sha256"] == evidence_sha256
+    assert finalized["inherited_input_refs"] == pending["inherited_input_refs"]
+    assert finalized["new_evidence_ref"] == pending["new_evidence_ref"]
+    assert finalized["evidence_cutoff"] > finalized["parent_evidence_cutoff"]
+    assert finalized["capability_attestation_sha256"] == hashlib.sha256(
+        attestation_path.read_bytes()
+    ).hexdigest()
+    assert finalized["run_contract_sha256"] == hashlib.sha256(
+        run_contract_path.read_bytes()
+    ).hexdigest()
+    assert finalized["u0_phase_event_sha256"] == completed.phase_store.events[-1][
+        "event_sha256"
+    ]
+    assert finalized["request_sha256"] == completed.phase_store.run_contract[
+        "request_sha256"
+    ]
+    recovery.validate_instance("ultra-evidence-lineage.schema.json", finalized)
+    manifest = artifacts.build_artifact_manifest(
+        child.layout,
+        phase_chain_head_sha256=completed.phase_store.events[-1]["event_sha256"],
+        validator_set_sha256="a" * 64,
+        generated_at=forked_at + timedelta(seconds=3),
+    )
+    assert next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"]
+        == "artifacts/U00-U03-evidence/U00-evidence-lineage.json"
+    )["phase_id"] == "U0"
+    assert not any(
+        f"U{phase:02d}" in str(value)
+        for phase in range(4, 13)
+        for value in finalized.values()
+    )
+    finalized_path.unlink()
+
+    with pytest.raises(
+        foundation.FoundationInputError,
+        match="finalized evidence lineage",
+    ):
+        foundation.advance_foundation(
+            child.layout,
+            repo=authority_repo,
+            now=forked_at + timedelta(seconds=4),
+        )
+
+    assert not (child.layout.recovery_dir / "u1-authority").exists()
+
+
 def test_evidence_fork_does_not_overwrite_inherited_prior_evidence(tmp_path) -> None:
     from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
     from ultra_runtime import jsonio, recovery, schemas

@@ -34,6 +34,10 @@ CAPABILITY_ACTION_FILENAME = "u0-capability-action.json"
 CAPABILITY_ATTESTATION_RELATIVE_PATH = Path(
     "U00-U03-evidence/U00-host-capability-attestation.json"
 )
+EVIDENCE_LINEAGE_RELATIVE_PATH = Path(
+    "U00-U03-evidence/U00-evidence-lineage.json"
+)
+EVIDENCE_LINEAGE_REQUEST_RELATIVE_PATH = Path("evidence-lineage-request.json")
 U2_RETRIEVAL_LEDGER_RELATIVE_PATH = Path(
     "U00-U03-evidence/U02-retrieval-ledger.json"
 )
@@ -830,6 +834,288 @@ def _snapshot_all_inputs(
     return inputs, sha256_bytes(canonical_json_bytes(inputs))
 
 
+_EVIDENCE_LINEAGE_INHERITED_FIELDS = (
+    "parent_run_id",
+    "parent_u3_event_sha256",
+    "parent_evidence_sha256",
+    "parent_evidence_cutoff",
+    "evidence_cutoff",
+    "inherited_input_refs",
+    "new_evidence_ref",
+)
+
+
+def _lineage_path(layout: RunLayout, relative: Path) -> Path:
+    return assert_safe_descendant(layout.root, layout.run_dir / relative)
+
+
+def _load_canonical_lineage(
+    path: Path,
+    *,
+    label: str,
+    expected_status: str,
+) -> tuple[dict[str, object], bytes]:
+    try:
+        raw = path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(f"{label} is unavailable") from error
+    try:
+        validate_instance("ultra-evidence-lineage.schema.json", document)
+    except Exception as error:
+        raise FoundationInputError(f"{label} violates the public schema") from error
+    if (
+        raw != canonical_json_bytes(document)
+        or document.get("content_sha256")
+        != compute_artifact_content_sha256(document)
+        or document.get("status") != expected_status
+    ):
+        raise FoundationInputError(f"{label} authority differs")
+    return document, raw
+
+
+def _parse_lineage_cutoff(value: object, *, label: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise FoundationInputError(f"{label} is not canonical UTC")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise FoundationInputError(f"{label} is not canonical UTC") from error
+    if (
+        parsed.tzinfo is None
+        or parsed.utcoffset() != timezone.utc.utcoffset(parsed)
+        or _canonical_utc(parsed) != value
+    ):
+        raise FoundationInputError(f"{label} is not canonical UTC")
+    return parsed
+
+
+def _load_evidence_lineage_request(
+    layout: RunLayout,
+) -> tuple[dict[str, object], bytes] | None:
+    request_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / EVIDENCE_LINEAGE_REQUEST_RELATIVE_PATH,
+    )
+    if not request_path.exists():
+        return None
+    request, raw = _load_canonical_lineage(
+        request_path,
+        label="evidence lineage request",
+        expected_status="pending-u0-attestation",
+    )
+    if (
+        request.get("run_id") != layout.run_dir.name
+        or request.get("version_binding") != current_version_binding()
+        or request.get("phase_id") != "U0"
+        or request.get("parent_run_id") == layout.run_dir.name
+    ):
+        raise FoundationInputError("evidence lineage request binding differs")
+    parent_cutoff = _parse_lineage_cutoff(
+        request.get("parent_evidence_cutoff"),
+        label="parent evidence cutoff",
+    )
+    child_cutoff = _parse_lineage_cutoff(
+        request.get("evidence_cutoff"),
+        label="child evidence cutoff",
+    )
+    if child_cutoff <= parent_cutoff:
+        raise FoundationInputError(
+            "evidence lineage child cutoff must be strictly later"
+        )
+    inherited = request.get("inherited_input_refs")
+    new_ref = request.get("new_evidence_ref")
+    if not isinstance(inherited, list) or not inherited or not isinstance(new_ref, Mapping):
+        raise FoundationInputError("evidence lineage input refs are invalid")
+    refs = [*inherited, new_ref]
+    paths: set[str] = set()
+    for ref in refs:
+        if not isinstance(ref, Mapping):
+            raise FoundationInputError("evidence lineage input ref is invalid")
+        relative = ref.get("path")
+        if not isinstance(relative, str):
+            raise FoundationInputError("evidence lineage input path is invalid")
+        candidate = _lineage_path(layout, Path(relative))
+        try:
+            candidate.relative_to(layout.input_dir)
+            measured = sha256_bytes(candidate.read_bytes())
+        except (OSError, ValueError) as error:
+            raise FoundationInputError(
+                "evidence lineage input ref is unavailable"
+            ) from error
+        if relative in paths or measured != ref.get("sha256"):
+            raise FoundationInputError("evidence lineage input ref binding differs")
+        paths.add(relative)
+    return request, raw
+
+
+def _validate_lineage_u0_bindings(
+    request: Mapping[str, object],
+    *,
+    request_sha256: str,
+    capability_attestation_sha256: str,
+    run_contract_sha256: str,
+    u0_event: Mapping[str, object],
+) -> None:
+    input_hashes = u0_event.get("input_artifact_hashes")
+    if not isinstance(input_hashes, list):
+        raise FoundationInputError("U0 event input authority is invalid")
+    inherited = request.get("inherited_input_refs")
+    new_ref = request.get("new_evidence_ref")
+    if not isinstance(inherited, list) or not isinstance(new_ref, Mapping):
+        raise FoundationInputError("evidence lineage input authority is invalid")
+    lineage_hashes = {
+        str(ref["sha256"])
+        for ref in (*inherited, new_ref)
+        if isinstance(ref, Mapping)
+    }
+    if (
+        u0_event.get("run_id") != request.get("run_id")
+        or u0_event.get("phase_id") != "U0"
+        or u0_event.get("status") != "complete"
+        or u0_event.get("evidence_cutoff") != request.get("evidence_cutoff")
+        or u0_event.get("output_artifact_hashes") != [run_contract_sha256]
+        or not lineage_hashes.issubset(set(input_hashes))
+        or not request_sha256
+        or not capability_attestation_sha256
+    ):
+        raise FoundationInputError("evidence lineage U0 admission binding differs")
+
+
+def validate_evidence_lineage_admission(
+    layout: RunLayout,
+    *,
+    request_sha256: str,
+    capability_attestation_sha256: str,
+    run_contract_sha256: str,
+    u0_event: Mapping[str, object],
+) -> dict[str, object] | None:
+    request_record = _load_evidence_lineage_request(layout)
+    finalized_path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / EVIDENCE_LINEAGE_RELATIVE_PATH,
+    )
+    if request_record is None:
+        if finalized_path.exists():
+            raise FoundationInputError(
+                "finalized evidence lineage has no immutable request"
+            )
+        return None
+    request, request_bytes = request_record
+    _validate_lineage_u0_bindings(
+        request,
+        request_sha256=request_sha256,
+        capability_attestation_sha256=capability_attestation_sha256,
+        run_contract_sha256=run_contract_sha256,
+        u0_event=u0_event,
+    )
+    finalized, _ = _load_canonical_lineage(
+        finalized_path,
+        label="finalized evidence lineage",
+        expected_status="finalized-u0-admission",
+    )
+    expected = {
+        field: copy.deepcopy(request[field])
+        for field in _EVIDENCE_LINEAGE_INHERITED_FIELDS
+    }
+    expected.update(
+        {
+            "schema_id": "crossframe.ultra.v82.evidence-lineage",
+            "schema_version": 1,
+            "run_id": layout.run_dir.name,
+            "version_binding": current_version_binding(),
+            "phase_id": "U0",
+            "lineage_request_sha256": sha256_bytes(request_bytes),
+            "request_sha256": request_sha256,
+            "capability_attestation_sha256": capability_attestation_sha256,
+            "run_contract_sha256": run_contract_sha256,
+            "u0_phase_event_sha256": u0_event.get("event_sha256"),
+            "status": "finalized-u0-admission",
+        }
+    )
+    if any(finalized.get(field) != value for field, value in expected.items()):
+        raise FoundationInputError("finalized evidence lineage binding differs")
+    return copy.deepcopy(finalized)
+
+
+def _finalize_evidence_lineage(
+    layout: RunLayout,
+    *,
+    request_sha256: str,
+    capability_attestation_sha256: str,
+    phase_store: object,
+    now: datetime,
+) -> dict[str, object] | None:
+    request_record = _load_evidence_lineage_request(layout)
+    finalized_path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / EVIDENCE_LINEAGE_RELATIVE_PATH,
+    )
+    if request_record is None:
+        if finalized_path.exists():
+            raise FoundationInputError(
+                "finalized evidence lineage has no immutable request"
+            )
+        return None
+    request, request_bytes = request_record
+    events = getattr(phase_store, "events", ())
+    if not events or not isinstance(events[-1], Mapping):
+        raise FoundationInputError("evidence lineage U0 event is unavailable")
+    u0_event = events[-1]
+    run_contract_sha256 = str(
+        getattr(phase_store, "run_contract_artifact_sha256", "")
+    )
+    _validate_lineage_u0_bindings(
+        request,
+        request_sha256=request_sha256,
+        capability_attestation_sha256=capability_attestation_sha256,
+        run_contract_sha256=run_contract_sha256,
+        u0_event=u0_event,
+    )
+    if finalized_path.exists():
+        return validate_evidence_lineage_admission(
+            layout,
+            request_sha256=request_sha256,
+            capability_attestation_sha256=capability_attestation_sha256,
+            run_contract_sha256=run_contract_sha256,
+            u0_event=u0_event,
+        )
+    document: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.evidence-lineage",
+        "schema_version": 1,
+        "run_id": layout.run_dir.name,
+        "version_binding": current_version_binding(),
+        "generated_at": _canonical_utc(now),
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        **{
+            field: copy.deepcopy(request[field])
+            for field in _EVIDENCE_LINEAGE_INHERITED_FIELDS
+        },
+        "lineage_request_sha256": sha256_bytes(request_bytes),
+        "request_sha256": request_sha256,
+        "capability_attestation_sha256": capability_attestation_sha256,
+        "run_contract_sha256": run_contract_sha256,
+        "u0_phase_event_sha256": u0_event["event_sha256"],
+        "status": "finalized-u0-admission",
+    }
+    document["content_sha256"] = compute_artifact_content_sha256(document)
+    try:
+        validate_instance("ultra-evidence-lineage.schema.json", document)
+    except Exception as error:
+        raise FoundationInputError(
+            "finalized evidence lineage violates the public schema"
+        ) from error
+    atomic_write_bytes(finalized_path, canonical_json_bytes(document))
+    return validate_evidence_lineage_admission(
+        layout,
+        request_sha256=request_sha256,
+        capability_attestation_sha256=capability_attestation_sha256,
+        run_contract_sha256=run_contract_sha256,
+        u0_event=u0_event,
+    )
+
+
 def _complete_u0(
     layout: RunLayout,
     *,
@@ -912,6 +1198,13 @@ def _complete_u0(
         artifact_paths=(run_contract_path,),
         now=now,
         lease=lease,
+    )
+    _finalize_evidence_lineage(
+        layout,
+        request_sha256=request_sha256,
+        capability_attestation_sha256=attestation.artifact_sha256,
+        phase_store=phase_store,
+        now=now,
     )
     return phase_store
 
@@ -1580,6 +1873,18 @@ def advance_foundation(
     trigger_kinds = ("real-world",) if profile.analysis_kind == "open-world" else ()
 
     if phase_store.current_phase == "U0":
+        events = phase_store.events
+        if not events or not isinstance(events[-1], Mapping):
+            raise FoundationInputError("U0 phase event authority is unavailable")
+        validate_evidence_lineage_admission(
+            layout,
+            request_sha256=str(phase_store.run_contract["request_sha256"]),
+            capability_attestation_sha256=str(
+                phase_store.run_contract["capability_attestation_sha256"]
+            ),
+            run_contract_sha256=phase_store.run_contract_artifact_sha256,
+            u0_event=events[-1],
+        )
         u1 = _advance_u1(
             layout,
             repo=repo.resolve(),
@@ -2208,6 +2513,8 @@ def advance_u2(
 
 
 __all__ = (
+    "EVIDENCE_LINEAGE_RELATIVE_PATH",
+    "EVIDENCE_LINEAGE_REQUEST_RELATIVE_PATH",
     "FoundationInputError",
     "FoundationProgress",
     "HostCapabilitySeal",
@@ -2226,5 +2533,6 @@ __all__ = (
     "seal_input_inventory",
     "validate_host_capability_attestation",
     "validate_closed_input_profile",
+    "validate_evidence_lineage_admission",
     "verify_host_capability_seal",
 )

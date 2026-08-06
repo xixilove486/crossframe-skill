@@ -2127,6 +2127,35 @@ def test_every_ultra_schema_is_closed_and_valid() -> None:
         ) is False
 
 
+def test_evidence_lineage_schema_has_disjoint_pending_and_finalized_branches() -> None:
+    runtime = load_runtime()
+    pending = minimal_instances()["ultra-evidence-lineage.schema.json"]
+    runtime.validate_instance("ultra-evidence-lineage.schema.json", pending)
+
+    finalized = copy.deepcopy(pending)
+    finalized.update(
+        {
+            "status": "finalized-u0-admission",
+            "lineage_request_sha256": HASH_D,
+            "request_sha256": HASH_E,
+            "capability_attestation_sha256": HASH_F,
+            "run_contract_sha256": HASH_1,
+            "u0_phase_event_sha256": HASH_2,
+        }
+    )
+    runtime.validate_instance("ultra-evidence-lineage.schema.json", finalized)
+
+    smuggled = copy.deepcopy(pending)
+    smuggled["run_contract_sha256"] = HASH_1
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-evidence-lineage.schema.json", smuggled)
+
+    incomplete = copy.deepcopy(finalized)
+    incomplete.pop("u0_phase_event_sha256")
+    with pytest.raises(ValidationError):
+        runtime.validate_instance("ultra-evidence-lineage.schema.json", incomplete)
+
+
 def test_common_schema_current_binding_matches_runtime_constants() -> None:
     runtime = load_runtime()
     constants = importlib.import_module("ultra_runtime.constants")
