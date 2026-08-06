@@ -1,0 +1,30 @@
+{
+  "policy_comparison": {
+    "dimension_id": "action-comparison",
+    "semantic_ids": [
+      "UNIT-POLICY-TRAINING",
+      "UNIT-POLICY-INSURANCE",
+      "UNIT-POLICY-TRANSITION"
+    ]
+  },
+  "conditional_system_branches": {
+    "dimension_id": "recursive-expansion",
+    "companion_dimension_id": "reversal-conditions",
+    "semantic_ids": [
+      "UNIT-BRANCH-COORDINATED",
+      "UNIT-BRANCH-FRAGMENTED",
+      "UNIT-ORDER-2",
+      "UNIT-ORDER-3",
+      "UNIT-REVERSAL"
+    ]
+  },
+  "theory_comparison": {
+    "dimension_id": "mechanism-competition",
+    "semantic_ids": [
+      "UNIT-THEORY-TASK",
+      "UNIT-THEORY-SKILL",
+      "UNIT-THEORY-INSTITUTION",
+      "UNIT-THEORY-RIVAL"
+    ]
+  }
+}

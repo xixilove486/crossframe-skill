@@ -1,0 +1,56 @@
+{
+  "measured_availability": {
+    "filesystem": "available",
+    "docx_parser": "unavailable",
+    "network": "available",
+    "retrieval": "available",
+    "validators": "available",
+    "subagents": "unavailable",
+    "model_context": "available"
+  },
+  "providers": [
+    {
+      "provider_id": "fixture-local-provider",
+      "provider_kind": "local",
+      "version": "1.0.0"
+    },
+    {
+      "provider_id": "fixture-author-provider",
+      "provider_kind": "model",
+      "version": "1.0.0"
+    },
+    {
+      "provider_id": "fixture-review-provider",
+      "provider_kind": "model",
+      "version": "1.0.0"
+    }
+  ],
+  "tools": [
+    {
+      "tool_id": "fixture-filesystem",
+      "provider_id": "fixture-local-provider",
+      "version": "1.0.0"
+    },
+    {
+      "tool_id": "fixture-source-reader",
+      "provider_id": "fixture-local-provider",
+      "version": "1.0.0"
+    },
+    {
+      "tool_id": "fixture-offline-retrieval",
+      "provider_id": "fixture-local-provider",
+      "version": "1.0.0"
+    },
+    {
+      "tool_id": "fixture-model-author",
+      "provider_id": "fixture-author-provider",
+      "version": "1.0.0"
+    },
+    {
+      "tool_id": "fixture-fresh-semantic-review",
+      "provider_id": "fixture-review-provider",
+      "version": "1.0.0"
+    }
+  ],
+  "proof_grade": "host-measured"
+}

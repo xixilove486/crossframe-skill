@@ -17,12 +17,17 @@ from tests.ultra_closed_fixture_support import (
     write_closed_u4_u10_authoring,
     write_closed_u11_authoring,
 )
+from tests.ultra_fake_host import run_open_world_ai_employment_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "skills/crossframe-ultra/scripts"
 RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 TEMPLATE_DIR = REPO_ROOT / "skills/crossframe-ultra/templates"
+OPEN_WORLD_FIXTURE_DIR = (
+    REPO_ROOT
+    / "tests/fixtures/ultra-runtime/open-world-ai-employment"
+)
 RUN_ID = "20260802T000000Z-0123456789ab"
 
 TEMPLATE_MARKERS = {
@@ -177,6 +182,34 @@ def test_closed_fixture_contract_has_the_required_structural_stressors() -> None
         "responsibility",
         "authorization",
     ]
+
+
+@pytest.fixture(scope="module")
+def open_world_ai_employment_result(tmp_path_factory) -> dict[str, object]:
+    return run_open_world_ai_employment_fixture(
+        REPO_ROOT,
+        OPEN_WORLD_FIXTURE_DIR,
+        tmp_path_factory.mktemp("ultra-open-world-ai-employment"),
+    )
+
+
+def test_open_world_ai_employment_run_reaches_u12_with_evidence_and_full_answer(
+    open_world_ai_employment_result,
+) -> None:
+    result = open_world_ai_employment_result
+    assert result["status"] == "complete"
+    assert result["u2"]["retrieval_status"] == "required-complete"
+    assert result["u2"]["query_count"] > 0
+    assert any(
+        entry["identity"] == "reported"
+        for entry in result["u3"]["entries"]
+    )
+    assert result["quality"] == {
+        "policy_comparison": "pass",
+        "conditional_system_branches": "pass",
+        "theory_comparison": "pass",
+    }
+    assert result["validation"]["overall_status"] == "pass"
 
 
 @pytest.fixture(scope="module")

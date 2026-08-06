@@ -1,0 +1,65 @@
+{
+  "reviewer": {
+    "reviewer_id": "FIXTURE-FRESH-REVIEWER",
+    "host_id": "fixture-offline-host",
+    "provider_id": "fixture-review-provider",
+    "model": "fixture-independent-review-model",
+    "proof_grade": "host-attested"
+  },
+  "dimension_reviews": [
+    {
+      "dimension_id": "direct-answer",
+      "rationale": "正文开头直接回答人工智能改变就业的作用单位、方向和条件。",
+      "article_spans": ["reader-01:main-judgment"],
+      "authority_refs": ["UNIT-MAIN-VERDICT"]
+    },
+    {
+      "dimension_id": "evidence-boundary",
+      "rationale": "正文区分支持、反例和校准来源，并逐项写出不能证明什么。",
+      "article_spans": ["reader-03:evidence-boundary"],
+      "authority_refs": ["UNIT-DECISIVE-EVIDENCE", "UNIT-UNKNOWN"]
+    },
+    {
+      "dimension_id": "current-judgment",
+      "rationale": "当前判断具有置信度、时间窗和撤回条件，没有被写成终局。",
+      "article_spans": ["reader-01:confidence", "reader-10:reversal"],
+      "authority_refs": ["UNIT-CONFIDENCE", "UNIT-REVERSAL"]
+    },
+    {
+      "dimension_id": "mechanism-competition",
+      "rationale": "任务互补、技能偏向、制度配置和宏观需求竞争解释拥有独立段落。",
+      "article_spans": ["reader-05:theories", "reader-06:rival"],
+      "authority_refs": ["UNIT-THEORY-TASK", "UNIT-THEORY-SKILL", "UNIT-THEORY-INSTITUTION", "UNIT-THEORY-RIVAL"]
+    },
+    {
+      "dimension_id": "recursive-expansion",
+      "rationale": "一阶任务变化、二阶政策反转和三阶制度写回按顺序展开。",
+      "article_spans": ["reader-07:orders", "reader-12:branches"],
+      "authority_refs": ["UNIT-ORDER-1", "UNIT-ORDER-2", "UNIT-ORDER-3"]
+    },
+    {
+      "dimension_id": "residuals",
+      "rationale": "宏观周期、行业结构和选择效应被保留为未解释残差。",
+      "article_spans": ["reader-08:residual"],
+      "authority_refs": ["UNIT-RESIDUAL"]
+    },
+    {
+      "dimension_id": "reversal-conditions",
+      "rationale": "制度协同与制度碎片化分支均给出可观察的反转条件。",
+      "article_spans": ["reader-07:reversal", "reader-12:institutional-branches"],
+      "authority_refs": ["UNIT-BRANCH-COORDINATED", "UNIT-BRANCH-FRAGMENTED", "UNIT-REVERSAL"]
+    },
+    {
+      "dimension_id": "action-comparison",
+      "rationale": "培训、工资保险与可携带福利、转岗支持三种政策以不同机制和指标比较。",
+      "article_spans": ["reader-10:policy-options"],
+      "authority_refs": ["UNIT-POLICY-TRAINING", "UNIT-POLICY-INSURANCE", "UNIT-POLICY-TRANSITION"]
+    },
+    {
+      "dimension_id": "concept-fidelity",
+      "rationale": "正文把尺度、圈层、传播、表征和时间变化翻译为现实信号，并保留未知项。",
+      "article_spans": ["reader-14:concepts"],
+      "authority_refs": ["SEMANTIC-UNIT-V82-M01", "SEMANTIC-UNIT-V82-M08"]
+    }
+  ]
+}

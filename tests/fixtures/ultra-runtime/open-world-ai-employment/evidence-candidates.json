@@ -1,0 +1,19 @@
+{
+  "candidates": [
+    {
+      "evidence_id": "EVIDENCE-AI-TASKS-SUPPORT",
+      "source_id": "SOURCE-AI-TASKS-SUPPORT",
+      "confidence": "medium"
+    },
+    {
+      "evidence_id": "EVIDENCE-AI-TRANSITION-COUNTER",
+      "source_id": "SOURCE-AI-TRANSITION-COUNTER",
+      "confidence": "medium"
+    },
+    {
+      "evidence_id": "EVIDENCE-AI-INSTITUTION-CALIBRATION",
+      "source_id": "SOURCE-AI-INSTITUTION-CALIBRATION",
+      "confidence": "medium"
+    }
+  ]
+}

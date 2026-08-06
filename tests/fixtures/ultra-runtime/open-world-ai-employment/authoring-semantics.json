@@ -1,0 +1,86 @@
+{
+  "evidence_id_map": {
+    "EVIDENCE-ROSTER-ATLAS": "EVIDENCE-AI-TASKS-SUPPORT",
+    "EVIDENCE-ASSOCIATION-CHARTER": "EVIDENCE-AI-TRANSITION-COUNTER",
+    "EVIDENCE-INTERVIEW-ONE": "EVIDENCE-AI-INSTITUTION-CALIBRATION"
+  },
+  "source_id_map": {
+    "SOURCE-ROSTER-ATLAS": "SOURCE-AI-TASKS-SUPPORT",
+    "SOURCE-ASSOCIATION-CHARTER": "SOURCE-AI-TRANSITION-COUNTER",
+    "SOURCE-INTERVIEW-ONE": "SOURCE-AI-INSTITUTION-CALIBRATION"
+  },
+  "record_text": {
+    "ACTOR-ONE": {"label": "受人工智能影响的劳动者"},
+    "CIRCLE-FAMILY": {"label": "家庭与收入保障圈"},
+    "CIRCLE-TEAM": {"label": "企业与培训圈"},
+    "CIRCLE-ASSOCIATION": {"label": "行业与公共制度圈"},
+    "DIST-POWER-TEAM": {"description": "岗位设计权集中在采用人工智能的企业与管理位置。"},
+    "DIST-CONSTRAINT-TEAM": {"description": "培训名额与招聘标准约束劳动者进入互补岗位。"},
+    "DIST-CONSTRAINT-DELEGATION": {"description": "跨机构资格与福利衔接约束转岗通道。"},
+    "DIST-EXIT-FAMILY": {"description": "收入中断与照护责任共同抬高退出和转岗成本。"},
+    "DIST-BURDEN-TEAM": {"description": "人工智能采用的学习与验证负担首先落到具体岗位。"},
+    "DIST-SPILLOVER-ASSOCIATION": {"description": "企业岗位标准会外溢为行业招聘信号与公共资格规则。"},
+    "UNKNOWN-ADAPTATION": {"description": "长期总就业和生产率收益分配仍然未知。"},
+    "RESIDUAL-PEER-EFFECT": {"description": "宏观需求、行业构成与企业自选择仍是残差。"},
+    "CLAIM-CHANNEL-CONSTRAINT": {"statement": "人工智能先改变岗位内部任务组合,再通过招聘与培训通道改变就业机会。"},
+    "CLAIM-WORKLOAD-RIVAL": {"statement": "观察到的就业变化也可能主要来自宏观需求和行业周期。"},
+    "CLAIM-MIXED-EXPLANATION": {"statement": "任务重组与制度承接能力可能共同决定转岗和收入结果。"},
+    "CLAIM-PEER-RESIDUAL": {"statement": "企业自选择与地区产业结构在当前证据中仍未完全识别。"},
+    "MECHANISM-REVIEW-CHANNEL": {"description": "任务互补通过岗位设计与招聘标准把技术能力转换为新的工作组合。"},
+    "MECHANISM-WORKLOAD-ALLOCATION": {"description": "技能偏向通过培训门槛和工具组合能力扩大劳动者之间的回报差异。"},
+    "MECHANISM-COMBINED-PRESSURE": {"description": "制度配置通过收入缓冲、岗位匹配和议价规则改变同一技术冲击的分配结果。"},
+    "MECHANISM-PEER-RESIDUAL": {"description": "宏观需求和产业周期保留为尚未排除的竞争机制。"},
+    "INSIGHT-CHANNEL-LOCALITY": {"reason": "分阶段政策试点提供可逆比较,且不把离线来源升级为更强证据。"},
+    "BASELINE-ORDER-1": {"description": "简单基线只投影岗位内部任务变化,不加入制度适应。"},
+    "BASELINE-ORDER-2": {"description": "简单基线保持初始招聘标准,不加入培训供给不足造成的反转。"},
+    "BASELINE-ORDER-3": {"description": "简单基线不把二阶分化写入福利、资格和议价规则。"},
+    "ATTACK-SIMULATION-IDENTITY": {"challenge": "二阶和三阶分支是模拟结果,不能改写成已经观察到的就业事实。"},
+    "ATTACK-RESIDUAL-CHANNEL": {"challenge": "宏观需求与企业自选择可能改变当前机制排序。"},
+    "UNRESOLVED-PEER-CHANNEL": {"description": "当前离线证据无法完全识别宏观需求与企业自选择通道。"}
+  },
+  "concept_rationales": {
+    "V82-M01": "保留尺度画像,因为劳动者任务、企业岗位设计和公共保障规则被分开记录。",
+    "V82-M02": "描述性嵌套已经出现,但尚无边界变化证据授权跨层因果转换。",
+    "V82-M03": "招聘和技能信号构成候选传播路径,但时序与损失仍未被独立识别。",
+    "V82-M04": "本次没有足够长的累计窗口,因此时间累积不进入当前适用范围。",
+    "V82-M05": "单向技术升级不能解释培训与收入保障的反馈,因此被测试后拒绝。",
+    "V82-M06": "多位置状态允许分析技术采用而不把劳动者、企业和制度压成同一主体。",
+    "V82-M07": "没有单一代表性劳动者可以扩张为全部议价位置,因此代表性扩张被拒绝。",
+    "V82-M08": "任务到岗位和岗位到制度的转换保留谱系、损失与局部效应。",
+    "V82-M09": "缺少独立目标域映射,因此横向类比迁移不进入当前判断。"
+  },
+  "verdict_text": {
+    "proposition": "人工智能首先重组岗位任务;培训、收入缓冲、岗位匹配和议价制度决定这种重组更可能成为升级还是失业。",
+    "scope": "当前离线来源覆盖的高暴露岗位、企业采用与制度比较,截止本次证据冻结时间。",
+    "rival_rejection_reason": "宏观需求能解释总量波动,但不能单独解释相近技术采用下制度差异对应的转岗结果。",
+    "reversal_condition": "如果控制行业和周期后制度差异不再对应转岗结果,则反转当前机制排序。",
+    "action_implication": "先进行可逆的培训、收入缓冲与岗位匹配组合试点,并保留需求冲击残差。",
+    "assumption": "离线来源中的制度差异在十二个月观察窗内保持可比较。"
+  },
+  "action_descriptions": {
+    "active": "同步试点工资保险与可携带福利,缓冲人工智能转岗中的收入和保障中断。",
+    "delay": "先部署岗位匹配与过渡支持,待任务暴露测量稳定后再扩大补贴。",
+    "probe": "对高暴露岗位提供职业培训补贴并预注册转岗率和收入恢复指标。",
+    "exit-or-transfer": "允许劳动者退出失败培训并转入其他岗位或保障通道。",
+    "maintain-status-quo": "维持现有培训和保障安排,只观察人工智能采用后的自然调整。",
+    "no-action": "不增加过渡政策,由企业和劳动者自行承担转换成本。"
+  },
+  "gap_text": {
+    "description": "当前框架尚无可跨行业校准的人工智能任务暴露到长期净就业转换先验。",
+    "future_revision_proposal": "未来版本可考虑加入跨行业任务暴露与制度承接的校准合同。"
+  },
+  "forecast_text": {
+    "FORECAST-REVIEW-INCREASE": {
+      "time_window": "证据冻结后的十二个月。",
+      "indicator": "高暴露岗位中完成培训后六个月恢复原收入比例。",
+      "resolution_rule": "当观察比例高于冻结目标值时解析为方向正确。",
+      "reference_class": "具有带薪培训与收入缓冲的可逆转岗试点",
+      "calibration_basis": "固定离线制度比较校准集"
+    },
+    "FORECAST-BRANCH-SELECTION": {
+      "time_window": "证据冻结后的十二个月。",
+      "indicator": "观察结果更接近制度协同分支还是制度碎片化分支。",
+      "resolution_rule": "只有观察分支与预注册主分支一致时才解析为方向正确。"
+    }
+  }
+}

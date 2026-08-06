@@ -1,0 +1,115 @@
+{
+  "overrides": {
+    "UNIT-MAIN-VERDICT": "当前证据更支持这样的判断:人工智能首先重组岗位内部任务,是否转化为净失业取决于培训、收入缓冲、岗位匹配和议价制度能否承接转换成本。",
+    "UNIT-CONFIDENCE": "当前置信度为中低;三类离线来源方向一致但不能排除行业结构、宏观周期和采用选择造成的混杂。",
+    "UNIT-STEELMAN": "把担忧重建到最强形式,问题不是技术必然摧毁全部工作,而是高暴露劳动者可能先承担收入中断、技能折旧和议价下降。",
+    "UNIT-DECISIVE-EVIDENCE": "支持记录显示任务变化快于职业消失,反例记录显示缺少过渡制度时失业期延长,校准记录显示相近技术冲击在不同制度下产生不同分配结果。",
+    "UNIT-UNKNOWN": "仍不知道长期总就业、生产率收益的分配比例以及地区产业结构分别贡献了多少变化。",
+    "UNIT-CIRCLE-RELATION": "劳动者圈层承受即时任务和收入变化,企业与培训圈层决定学习机会,行业和公共制度圈层配置保障;招聘、培训、议价和福利转移把三者连接起来。",
+    "UNIT-MECHANISM": "主机制不是机器一次性替代职业,而是任务被拆分后通过招聘标准、培训门槛和收入缓冲逐层改变劳动者的可行动空间。",
+    "UNIT-RIVAL": "最强竞争解释是宏观需求和产业周期本身造成岗位变化;它能解释总量波动,但不能单独解释相近技术采用下制度差异对应的转岗结果。",
+    "UNIT-ORDER-1": "一阶变化是部分写作、检索和分析任务被自动化或增强,同一岗位的任务组合先改变。",
+    "UNIT-ORDER-2": "二阶变化是企业据此重写招聘和晋升标准;若培训名额不足,原本的生产率收益会反转为进入门槛和工资分化。",
+    "UNIT-ORDER-3": "三阶变化是新标准被写入资格、福利和议价制度,劳动者与企业围绕这些规则重新投资,使初始差异形成持续锁定。",
+    "UNIT-RESIDUAL": "当前推演仍保留宏观需求、行业构成和企业自选择三个残差,证据不足以把任何一个压成零。",
+    "UNIT-FIVE-VERDICTS": "事实裁决是任务暴露与职业消失不同步;预测裁决是制度薄弱处调整成本更集中;价值裁决是收益与风险不应单边分配;责任裁决是采用方和制度设计者先承担过渡义务;授权裁决只支持可逆试点。",
+    "UNIT-ACTION": "首选行动是把职业培训、收入缓冲和岗位匹配组合成分阶段试点,按转岗率、收入恢复和培训完成率比较后再扩大。",
+    "UNIT-REVERSAL": "如果控制行业与周期后制度差异不再对应转岗结果,或培训参与没有改善收入恢复,就撤回当前排序并重新比较需求冲击解释。",
+    "UNIT-APPENDIX-MAPPING": "微观层记录任务与收入,中观层记录企业采用、培训和招聘,宏观层记录保障与议价规则;短期用月度转换,中期用年度制度写回。",
+    "UNIT-APPENDIX-BRANCHES": "保留制度协同、制度碎片化和宏观需求主导三条分支;只有同一时间窗与同类岗位的共同证据才允许合并。",
+    "UNIT-APPENDIX-FORECAST": "未来十二个月跟踪高暴露岗位的任务份额、培训进入率、六个月收入恢复率和非自愿失业时长,按预先冻结的方向解析。",
+    "UNIT-APPENDIX-SOURCES": "证据账本把支持、反例和校准来源分开,同时公开利益关系、上游谱系、支持范围和不能证明的内容。",
+    "UNIT-APPENDIX-GAPS": "长期净就业和生产率收益分配仍是未知项;若持续无法区分技术采用与企业自选择,就登记为可识别性缺口候选。",
+    "SEMANTIC-UNIT-V82-M01": "尺度画像用于区分劳动者任务、企业岗位设计和公共保障规则三个作用范围。",
+    "SEMANTIC-UNIT-V82-M02": "圈层嵌套的因果方向仍待边界变化证据确认,因此保持未知待补。",
+    "SEMANTIC-UNIT-V82-M03": "网络传播需要跨企业招聘与技能信号的时序记录,当前只保留候选通道。",
+    "SEMANTIC-UNIT-V82-M05": "单向技术升级解释无法覆盖工资保险和培训反馈,因此被测试后拒绝。",
+    "SEMANTIC-UNIT-V82-M06": "圈层关系用于说明劳动者、企业与制度如何通过培训、招聘和保障通道相互约束。",
+    "SEMANTIC-UNIT-V82-M07": "单一代表性劳动者不能替代不同议价位置,因此代表性扩张被拒绝。",
+    "SEMANTIC-UNIT-V82-M08": "表征转换保留来源谱系并标记任务到职业映射的损失,用于限制过度外推。",
+    "SEMANTIC-UNIT-V82-M09": "静态尺度解释无法覆盖采用、转岗和规则写回的时间变化,因此被拒绝。"
+  },
+  "extra_units": [
+    {
+      "unit_id": "UNIT-POLICY-TRAINING",
+      "unit_kind": "action",
+      "section_id": "reader-10",
+      "authority_relative_path": "U09-action-ranking.json",
+      "authority_locator": "OPTION-PROBE",
+      "source_refs": ["OPTION-PROBE"],
+      "normalized_excerpt": "政策方案一是职业培训补贴,它直接降低学习成本,但只有课程连接真实岗位且低收入者能获得带薪时间时才有效。"
+    },
+    {
+      "unit_id": "UNIT-POLICY-INSURANCE",
+      "unit_kind": "action",
+      "section_id": "reader-10",
+      "authority_relative_path": "U09-action-ranking.json",
+      "authority_locator": "OPTION-ACTIVE",
+      "source_refs": ["OPTION-ACTIVE"],
+      "normalized_excerpt": "政策方案二是工资保险与可携带福利,它缓冲降薪和转岗风险,但若雇主借补贴压低工资就必须停止。"
+    },
+    {
+      "unit_id": "UNIT-POLICY-TRANSITION",
+      "unit_kind": "action",
+      "section_id": "reader-10",
+      "authority_relative_path": "U09-action-ranking.json",
+      "authority_locator": "OPTION-DELAY",
+      "source_refs": ["OPTION-DELAY"],
+      "normalized_excerpt": "政策方案三是转岗过渡支持,它把技能评估、岗位匹配和短期收入支持连成一条通道,但需要跨机构数据与责任对接。"
+    },
+    {
+      "unit_id": "UNIT-BRANCH-COORDINATED",
+      "unit_kind": "branch",
+      "section_id": "reader-12",
+      "authority_relative_path": "U07-recursive-lineage.json",
+      "authority_locator": "BRANCH-MAIN",
+      "source_refs": ["BRANCH-MAIN"],
+      "normalized_excerpt": "制度协同分支中,培训、收入缓冲和岗位匹配同时到位,任务重组更可能变成岗位升级而不是长期退出。"
+    },
+    {
+      "unit_id": "UNIT-BRANCH-FRAGMENTED",
+      "unit_kind": "branch",
+      "section_id": "reader-12",
+      "authority_relative_path": "U07-recursive-lineage.json",
+      "authority_locator": "BRANCH-RIVAL",
+      "source_refs": ["BRANCH-RIVAL"],
+      "normalized_excerpt": "制度碎片化分支中,培训与保障彼此脱节,相同任务冲击更可能累积为收入中断、技能折旧和议价下降。"
+    },
+    {
+      "unit_id": "UNIT-THEORY-TASK",
+      "unit_kind": "mechanism",
+      "section_id": "reader-05",
+      "authority_relative_path": "U06-claim-mechanism-graph.json",
+      "authority_locator": "MECHANISM-REVIEW-CHANNEL",
+      "source_refs": ["MECHANISM-REVIEW-CHANNEL"],
+      "normalized_excerpt": "任务互补理论把变化单位放在岗位内部,预测自动化旧任务的同时会扩大判断、沟通和整合任务。"
+    },
+    {
+      "unit_id": "UNIT-THEORY-SKILL",
+      "unit_kind": "mechanism",
+      "section_id": "reader-05",
+      "authority_relative_path": "U06-claim-mechanism-graph.json",
+      "authority_locator": "MECHANISM-WORKLOAD-ALLOCATION",
+      "source_refs": ["MECHANISM-WORKLOAD-ALLOCATION"],
+      "normalized_excerpt": "技能偏向技术变迁理论预测收益先流向能组合新工具的技能与岗位,并扩大未获培训者的工资差距。"
+    },
+    {
+      "unit_id": "UNIT-THEORY-INSTITUTION",
+      "unit_kind": "mechanism",
+      "section_id": "reader-05",
+      "authority_relative_path": "U06-claim-mechanism-graph.json",
+      "authority_locator": "MECHANISM-COMBINED-PRESSURE",
+      "source_refs": ["MECHANISM-COMBINED-PRESSURE"],
+      "normalized_excerpt": "制度配置理论预测相近技术冲击会因培训可及、收入保险、岗位匹配和议价规则不同而走向不同结果。"
+    },
+    {
+      "unit_id": "UNIT-THEORY-RIVAL",
+      "unit_kind": "mechanism",
+      "section_id": "reader-06",
+      "authority_relative_path": "U06-claim-mechanism-graph.json",
+      "authority_locator": "EXPLANATION-RIVAL",
+      "source_refs": ["EXPLANATION-RIVAL"],
+      "normalized_excerpt": "最强竞争理论是宏观需求主导,它预测即使没有人工智能,利率、消费和产业周期也会制造相似的招聘与裁员波动。"
+    }
+  ]
+}

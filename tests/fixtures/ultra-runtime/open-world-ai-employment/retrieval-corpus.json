@@ -1,0 +1,40 @@
+{
+  "sources": [
+    {
+      "source_id": "SOURCE-AI-TASKS-SUPPORT",
+      "direction": "support",
+      "url": "https://evidence.example.test/ai-tasks?lang=zh-CN&page=1",
+      "content": "2025年的跨行业任务记录显示，生成式人工智能首先重组职业内部的写作、检索和分析任务；采用速度高的岗位同时出现新任务，短期净就业变化小于任务暴露变化。",
+      "event_date": "2025-09-30",
+      "publication_date": "2025-11-15",
+      "interest": "该来源由跨行业研究联合体发布，并披露模型采用方可能受益于更准确的任务测量。",
+      "upstream_lineage": ["LINEAGE-TASK-PANEL-2025"],
+      "supported_claim": "人工智能的近期主要作用单位是岗位内部任务，而不是整类职业同步消失。",
+      "cannot_prove": "该记录不能证明长期总就业一定增加，也不能外推到未覆盖行业。"
+    },
+    {
+      "source_id": "SOURCE-AI-TRANSITION-COUNTER",
+      "direction": "counterexample",
+      "url": "https://evidence.example.test/worker-transition?format=json&version=1",
+      "content": "2024至2025年的劳动者转岗记录显示，在缺少带薪培训、收入缓冲和岗位匹配服务的地区，高暴露岗位的离职更常转化为失业期延长，而不是顺利进入互补岗位。",
+      "event_date": "2025-12-31",
+      "publication_date": "2026-01-20",
+      "interest": "该来源由劳动者保障机构维护，其政策职责可能使其更关注转岗损失。",
+      "upstream_lineage": ["LINEAGE-TRANSITION-ADMIN-2025"],
+      "supported_claim": "没有过渡制度时，任务重组可能通过收入中断和匹配失败转化为就业损失。",
+      "cannot_prove": "该记录不能单独识别人工智能相对于宏观周期和行业需求变化的净因果效应。"
+    },
+    {
+      "source_id": "SOURCE-AI-INSTITUTION-CALIBRATION",
+      "direction": "calibration",
+      "url": "https://evidence.example.test/institution-branches?locale=zh-CN&sort=date",
+      "content": "2025年的地区比较记录显示，采用相近人工智能工具的地区仍出现不同结果：培训可及、集体协商和可携带保障较强的地区，工资与岗位转换更平滑；制度碎片化地区的调整成本更集中于低议价劳动者。",
+      "event_date": "2025-10-31",
+      "publication_date": "2026-02-05",
+      "interest": "该来源由多方治理项目发布，参与方同时包括雇主、工会和公共部门。",
+      "upstream_lineage": ["LINEAGE-INSTITUTION-COMPARISON-2025"],
+      "supported_claim": "制度配置会改变相似技术冲击的分配结果和调整速度。",
+      "cannot_prove": "该比较不能排除地区产业结构和初始生产率差异造成的剩余混杂。"
+    }
+  ]
+}
