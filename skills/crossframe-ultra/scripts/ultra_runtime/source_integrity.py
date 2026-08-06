@@ -30,6 +30,7 @@ from .constants import (
     ARTICLE_CONTRACT_VERSION,
     ARTIFACT_SCHEMA_VERSION,
     COMPILER_VERSION,
+    CURRENT_RELEASE_ID,
     FRAMEWORK_RAW_SHA256,
     FRAMEWORK_REVISION,
     FRAMEWORK_SEMANTIC_SHA256,
@@ -3350,6 +3351,9 @@ def _validate_release_document(
     skill_root: Path,
     verify_disk_tree: bool = True,
 ) -> tuple[str, str]:
+    release_id = document.get("release_id")
+    if release_id != CURRENT_RELEASE_ID:
+        raise SourceLockError("release manifest release ID is not current")
     try:
         validate_instance("ultra-release-manifest.schema.json", document)
     except ValidationError as error:
@@ -3381,10 +3385,7 @@ def _validate_release_document(
     }
     if source_counts != expected_counts:
         raise SourceLockError("release manifest source counts differ from the source authority")
-    release_id = document.get("release_id")
-    if not isinstance(release_id, str) or not release_id:
-        raise SourceLockError("release manifest release ID is invalid")
-    return release_id, _release_tree_sha256(
+    return CURRENT_RELEASE_ID, _release_tree_sha256(
         document,
         skill_root=skill_root,
         verify_disk_tree=verify_disk_tree,

@@ -129,7 +129,7 @@ def _write_release_manifest(repo: Path, path: Path) -> dict[str, object]:
         "run_id": "release-authority-test",
         "version_binding": _binding(),
         "generated_at": STAMP,
-        "release_id": "ultra-v8.2-r1",
+        "release_id": "ultra-v8.2-r1-runtime-1.1.0",
         "release_state": "stable",
         "stable_pointer": "references/source-manifest.json",
         "framework_source": {

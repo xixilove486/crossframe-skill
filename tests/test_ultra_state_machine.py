@@ -291,7 +291,7 @@ def _write_release_manifest(repo: Path, path: Path) -> None:
         "run_id": "phase-authority-fixture",
         "version_binding": _binding(),
         "generated_at": STAMP,
-        "release_id": "ultra-v8.2-r1",
+        "release_id": "ultra-v8.2-r1-runtime-1.1.0",
         "release_state": "stable",
         "stable_pointer": "references/source-manifest.json",
         "framework_source": {
@@ -1165,7 +1165,7 @@ def test_u1_authority_preserves_every_measured_role_and_test_mode_cannot_enter_p
     import ultra_runtime.state_machine as module
 
     assert u1_authority.run_mode == "test"
-    assert u1_authority.source_release_id == "ultra-v8.2-r1"
+    assert u1_authority.source_release_id == "ultra-v8.2-r1-runtime-1.1.0"
     assert u1_authority.free_space_reserve_bytes == 1 << 30
     assert u1_authority.free_space_status == "available"
     for name in (

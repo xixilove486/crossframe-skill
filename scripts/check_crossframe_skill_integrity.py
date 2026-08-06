@@ -602,6 +602,8 @@ def check_crossframe_ultra_skill(root: Path, label: str) -> None:
         "references/release-manifest.json",
         "references/source-manifest.json",
         "references/v8.2-full-source/00-index.md",
+        "schemas/ultra-common.schema.json",
+        "schemas/ultra-release-manifest.schema.json",
         "schemas/ultra-run-contract.schema.json",
         "schemas/ultra-compatibility-matrix.schema.json",
         "schemas/ultra-evidence-lineage.schema.json",
@@ -760,6 +762,37 @@ def check_crossframe_ultra_skill(root: Path, label: str) -> None:
     require(
         isinstance(divisions, list) and len(divisions) == ULTRA_EXPECTED_DIVISIONS,
         f"{label}: Ultra source manifest division count changed",
+    )
+
+    release_manifest = json.loads(read(ultra / "references/release-manifest.json"))
+    release_schema = json.loads(read(ultra / "schemas/ultra-release-manifest.schema.json"))
+    common_schema = json.loads(read(ultra / "schemas/ultra-common.schema.json"))
+    try:
+        expected_release_id = release_schema["allOf"][1]["properties"]["release_id"][
+            "const"
+        ]
+        binding_properties = common_schema["$defs"]["currentVersionBinding"]["allOf"][
+            1
+        ]["properties"]
+        expected_binding = {
+            field: definition["const"]
+            for field, definition in binding_properties.items()
+        }
+    except (KeyError, IndexError, TypeError) as error:
+        raise SystemExit(
+            f"{label}: crossframe-ultra release identity schema is malformed"
+        ) from error
+    require(
+        isinstance(expected_release_id, str) and expected_release_id,
+        f"{label}: crossframe-ultra release schema has no exact release ID",
+    )
+    require(
+        release_manifest.get("release_id") == expected_release_id,
+        f"{label}: crossframe-ultra release ID is not current",
+    )
+    require(
+        release_manifest.get("version_binding") == expected_binding,
+        f"{label}: crossframe-ultra release binding is not current",
     )
 
     for relative in (

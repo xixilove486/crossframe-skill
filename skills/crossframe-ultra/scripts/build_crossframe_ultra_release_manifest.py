@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from ultra_runtime.constants import current_version_binding
+from ultra_runtime.constants import CURRENT_RELEASE_ID, current_version_binding
 from ultra_runtime.jsonio import atomic_write_json, canonical_json_bytes
 from ultra_runtime.schemas import (
     compute_artifact_content_sha256,
@@ -85,7 +85,7 @@ def build_release_manifest(repo: Path) -> dict[str, object]:
         "run_id": "ultra-release-v8.2-r1",
         "version_binding": current_version_binding(),
         "generated_at": RELEASE_STAMP,
-        "release_id": "ultra-v8.2-r1-runtime-1.1.0",
+        "release_id": CURRENT_RELEASE_ID,
         "release_state": "stable",
         "stable_pointer": SOURCE_MANIFEST_RELATIVE.as_posix(),
         "framework_source": {

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from tests.pytest_import_guard import pytest
@@ -185,6 +188,55 @@ def test_integrity_fails_closed_when_ultra_public_authority_is_missing(
         target.write_text(text.replace(removed_marker, "", 1), encoding="utf-8")
 
     with pytest.raises(SystemExit, match=expected_error):
+        integrity.check_crossframe_ultra_skill(skill_root, "test")
+
+
+def test_integrity_fails_closed_for_resealed_legacy_current_release_id(
+    tmp_path: Path,
+) -> None:
+    skill_root = tmp_path / "skills"
+    ultra = skill_root / "crossframe-ultra"
+    shutil.copytree(ULTRA, ultra)
+    builder = ultra / "scripts/build_crossframe_ultra_release_manifest.py"
+    built = subprocess.run(
+        [sys.executable, "-B", str(builder), "--repo", str(tmp_path), "--write"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert built.returncode == 0, built.stderr
+    integrity.check_crossframe_ultra_skill(skill_root, "test")
+
+    manifest_path = ultra / "references/release-manifest.json"
+    document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    document["release_id"] = "ultra-v8.2-r1"
+    document.pop("content_sha256")
+    document["content_sha256"] = hashlib.sha256(
+        (
+            json.dumps(
+                document,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+    manifest_path.write_text(
+        json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="release ID"):
         integrity.check_crossframe_ultra_skill(skill_root, "test")
 
 

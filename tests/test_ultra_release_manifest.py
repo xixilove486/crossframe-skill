@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -89,6 +90,29 @@ def test_manifest_is_deterministic_schema_valid_and_exactly_covers_the_canonical
     assert list(_declared_hashes(first)) == sorted(expected)
     assert "references/release-manifest.json" not in expected
     assert all(item["media_type"] == "application/octet-stream" for item in first["release_artifacts"])
+
+
+def test_current_release_document_rejects_resealed_legacy_release_id() -> None:
+    builder = _load_builder()
+    from ultra_runtime.schemas import compute_artifact_content_sha256
+    from ultra_runtime import source_integrity
+
+    source_path = ULTRA / "references/source-manifest.json"
+    source_snapshot = source_integrity.load_source_manifest(
+        source_path,
+        expected_sha256=hashlib.sha256(source_path.read_bytes()).hexdigest(),
+    )
+    document = builder.build_release_manifest(ROOT)
+    document["release_id"] = "ultra-v8.2-r1"
+    document["content_sha256"] = compute_artifact_content_sha256(document)
+
+    with pytest.raises(source_integrity.SourceLockError, match="release ID"):
+        source_integrity._validate_release_document(
+            document,
+            manifest=source_snapshot,
+            skill_root=ULTRA,
+            verify_disk_tree=True,
+        )
 
 
 def test_builder_write_is_atomic_repeatable_and_root_wrapper_detects_staleness(

@@ -616,7 +616,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
     fixtures: dict[str, dict[str, Any]] = {
         "ultra-release-manifest.schema.json": artifact(
             "ultra-release-manifest.schema.json",
-            release_id="ultra-v8.2-r1",
+            release_id="ultra-v8.2-r1-runtime-1.1.0",
             release_state="stable",
             stable_pointer="releases/stable.json",
             framework_source={

@@ -33,6 +33,7 @@ LEGACY_V1_SCHEMA_NAMES = (
     "ultra-phase-event.schema.json",
     "ultra-read-event.schema.json",
     "ultra-recovery-checkpoint.schema.json",
+    "ultra-release-manifest.schema.json",
     "ultra-run-contract.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-validator-report.schema.json",
@@ -344,6 +345,28 @@ def test_v1_read_only_validation_uses_legacy_registry_without_writing(
     assert report["compatibility"] == "read-only"
     assert report["validated_artifact_count"] == 3
     assert tree_hash(run_dir) == before
+
+
+def test_v1_release_manifest_remains_valid_under_the_legacy_registry() -> None:
+    runtime = load_runtime()
+    legacy_release = json.loads(
+        subprocess.run(
+            [
+                "git",
+                "show",
+                f"{BASE_COMMIT}:skills/crossframe-ultra/references/release-manifest.json",
+            ],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
+
+    runtime.validate_legacy_v1_instance(
+        "ultra-release-manifest.schema.json",
+        legacy_release,
+    )
 
 
 def test_compatibility_matrix_is_schema_valid_and_mechanically_loaded() -> None:

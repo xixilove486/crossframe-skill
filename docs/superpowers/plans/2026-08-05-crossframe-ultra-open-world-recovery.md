@@ -1184,17 +1184,19 @@ State explicitly: exact naming applies to activation; plain question bytes are v
 Use runtime-qualified release ID `ultra-v8.2-r1-runtime-1.1.0`; do not reuse an immutable v1 release ID for new artifact bytes. Installers must verify the promoted live skill tree, root checker wrapper, validator-set SHA and release manifest before deleting their backup. Run mirror generation, not manual duplicate editing:
 
 ```bash
+python -B scripts/build_crossframe_ultra_release_manifest.py --repo . --write
 python -B scripts/sync_skill_mirrors.py --repo .
-python -B scripts/build_crossframe_ultra_release_manifest.py --repo .
+python -B scripts/build_crossframe_ultra_release_manifest.py --repo . --check
+python -B scripts/sync_skill_mirrors.py --repo . --check
 ```
 
 - [ ] **Step 4: Verify installers, mirrors and manifest**
 
 Run: `python -B -m pytest -q tests/test_ultra_skill_contract.py tests/test_ultra_protocol_assets.py tests/test_ultra_repository_invariants.py tests/test_ultra_installers.py tests/test_ultra_release_manifest.py`
 
-Run: `python -B scripts/sync_skill_mirrors.py --repo . --check`
-
 Run: `python -B scripts/build_crossframe_ultra_release_manifest.py --repo . --check`
+
+Run: `python -B scripts/sync_skill_mirrors.py --repo . --check`
 
 Expected: all PASS.
 
@@ -1261,9 +1263,9 @@ Run: `python -B -m pytest -q tests/test_ultra_*.py --basetemp=/tmp/cfu-pt`
 
 Run: `python -B scripts/check_crossframe_skill_integrity.py`
 
-Run: `python -B scripts/sync_skill_mirrors.py --repo . --check`
-
 Run: `python -B scripts/build_crossframe_ultra_release_manifest.py --repo . --check`
+
+Run: `python -B scripts/sync_skill_mirrors.py --repo . --check`
 
 Run: `git diff --check`
 

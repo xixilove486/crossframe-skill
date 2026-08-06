@@ -141,6 +141,7 @@ LEGACY_V1_SNAPSHOT_NAMES = (
     "ultra-phase-event.schema.json",
     "ultra-read-event.schema.json",
     "ultra-recovery-checkpoint.schema.json",
+    "ultra-release-manifest.schema.json",
     "ultra-run-contract.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-validator-report.schema.json",
@@ -223,6 +224,21 @@ def _validate_common_current_binding(document: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_current_release_identity(document: Mapping[str, Any]) -> None:
+    try:
+        schema_release_id = document["allOf"][1]["properties"]["release_id"][
+            "const"
+        ]
+    except (KeyError, IndexError, TypeError) as error:
+        raise UltraSchemaError(
+            "Ultra release schema does not expose an exact current release ID"
+        ) from error
+    if schema_release_id != runtime_constants.CURRENT_RELEASE_ID:
+        raise UltraSchemaError(
+            "Ultra release schema current release ID drifts from constants"
+        )
+
+
 def _validate_schema_document(
     schema_name: str,
     document: dict[str, Any],
@@ -237,6 +253,8 @@ def _validate_schema_document(
         raise UltraSchemaError(f"invalid Ultra schema {schema_name!r}: {error}") from error
     if schema_name == "ultra-common.schema.json":
         _validate_common_current_binding(document)
+    elif schema_name == "ultra-release-manifest.schema.json":
+        _validate_current_release_identity(document)
     return document
 
 
