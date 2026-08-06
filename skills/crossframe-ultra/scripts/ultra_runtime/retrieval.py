@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 import hashlib
 import os
 from pathlib import Path
@@ -13,7 +14,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from jsonschema import ValidationError
 
-from .jsonio import canonical_json_bytes
+from .jsonio import (
+    atomic_write_json,
+    canonical_json_bytes,
+    load_json_object_bytes,
+    sha256_bytes,
+)
 from .schemas import validate_instance
 
 
@@ -189,6 +195,18 @@ _TRIGGER_KINDS = frozenset(
         "current-fact",
     }
 )
+_SUBAGENT_CANDIDATE_ROLES = frozenset(
+    {
+        "source-discovery",
+        "counterexample",
+        "affected-position",
+        "source-lineage",
+        "calibration",
+    }
+)
+_RETRIEVAL_ACTION_RELATIVE_PATH = "u2-authority/retrieval-action.json"
+_RETRIEVAL_RESULT_RELATIVE_PATH = "work/host/U02-retrieval-result.json"
+_ADMITTED_HOST_RESULT_RELATIVE_PATH = "u2-authority/admitted-host-result.json"
 
 
 def _hash_without(value: Mapping[str, object], field: str) -> str:
@@ -1972,6 +1990,814 @@ def inspect_acl(path: Path) -> str:
     return measure_current_user_acl(path)
 
 
+def _canonical_host_timestamp(value: object, *, field: str) -> tuple[str, datetime]:
+    text = _nonempty(value, field=field)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise RetrievalPolicyError(f"{field} must be an ISO UTC timestamp") from error
+    if parsed.tzinfo is None or parsed.utcoffset() != timezone.utc.utcoffset(parsed):
+        raise RetrievalPolicyError(f"{field} must be an ISO UTC timestamp")
+    timespec = "microseconds" if parsed.microsecond else "seconds"
+    canonical = parsed.astimezone(timezone.utc).isoformat(timespec=timespec).replace(
+        "+00:00", "Z"
+    )
+    if canonical != text:
+        raise RetrievalPolicyError(f"{field} must be a canonical ISO UTC timestamp")
+    return canonical, parsed
+
+
+def _phase_store_layout(
+    phase_store: object,
+    *,
+    boundary: Mapping[str, object],
+):
+    from .paths import RunLayout, assert_safe_descendant
+
+    layout = getattr(phase_store, "_run_layout", None)
+    if not isinstance(layout, RunLayout):
+        raise RetrievalPolicyError("retrieval requires a runtime-owned run layout")
+    try:
+        assert_safe_descendant(layout.root, layout.run_dir)
+        assert_safe_descendant(layout.root, layout.recovery_dir)
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("retrieval run layout authority is invalid") from error
+    if layout.run_dir.name != boundary["run_id"]:
+        raise RetrievalPolicyError("retrieval run layout differs from sealed U1")
+    return layout
+
+
+def _retrieval_action_path(layout) -> Path:
+    from .paths import assert_safe_descendant
+
+    return assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / _RETRIEVAL_ACTION_RELATIVE_PATH,
+    )
+
+
+def _admitted_host_result_path(layout) -> Path:
+    from .paths import assert_safe_descendant
+
+    return assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / _ADMITTED_HOST_RESULT_RELATIVE_PATH,
+    )
+
+
+def _retrieval_decision_action_document(
+    decision: RetrievalDecision,
+) -> dict[str, object]:
+    document = decision.document
+    basis = document.get("eligibility_basis")
+    if not isinstance(basis, Mapping):
+        raise RetrievalPolicyError("retrieval decision basis is invalid")
+    trigger_kinds = basis.get("trigger_kinds")
+    if not isinstance(trigger_kinds, list) or not trigger_kinds:
+        raise RetrievalPolicyError("required retrieval has no trigger authority")
+    return {
+        "status": decision.status,
+        "reason": decision.reason,
+        "decision_sha256": decision.decision_sha256,
+        "claim_sha256": document["claim_sha256"],
+        "basis_sha256": document["basis_sha256"],
+        "trigger_kinds": copy.deepcopy(trigger_kinds),
+    }
+
+
+def _retrieval_authorization_action_document(
+    authorization: RetrievalAuthorization,
+) -> dict[str, object]:
+    return {
+        "status": authorization.status,
+        "reason": authorization.reason,
+        "decision_sha256": authorization.decision_sha256,
+        "authorization_sha256": authorization.authorization_sha256,
+        "network_available": authorization.network_available,
+        "outbound_authorized": authorization.outbound_authorized,
+        "block_result": copy.deepcopy(authorization.block_result),
+    }
+
+
+def _retrieval_action_payload(
+    *,
+    phase_store: object,
+    decision: RetrievalDecision,
+    authorization: RetrievalAuthorization,
+    queries: Sequence[PreparedQuery],
+    boundary: Mapping[str, object],
+) -> dict[str, object]:
+    if not queries:
+        raise RetrievalPolicyError("retrieval action requires at least one query")
+    attestation = getattr(phase_store, "capability_attestation", None)
+    document = getattr(attestation, "document", None)
+    if not isinstance(document, Mapping):
+        raise RetrievalPolicyError("retrieval requires sealed host capabilities")
+    providers = document.get("providers")
+    tools = document.get("tools")
+    if not isinstance(providers, list) or not providers:
+        raise RetrievalPolicyError("retrieval has no measured host provider identity")
+    if not isinstance(tools, list) or not tools:
+        raise RetrievalPolicyError("retrieval has no measured host tool identity")
+    provider_ids = {
+        provider.get("provider_id")
+        for provider in providers
+        if isinstance(provider, Mapping)
+    }
+    if any(
+        not isinstance(tool, Mapping) or tool.get("provider_id") not in provider_ids
+        for tool in tools
+    ):
+        raise RetrievalPolicyError("retrieval tool identity has no measured provider")
+    return {
+        "decision": _retrieval_decision_action_document(decision),
+        "authorization": _retrieval_authorization_action_document(authorization),
+        "queries": [query.document for query in queries],
+        "allowed_providers": copy.deepcopy(providers),
+        "allowed_tools": copy.deepcopy(tools),
+        "maximum_tool_retries": int(boundary["maximum_tool_retries"]),
+        "requested_result_fields": [
+            "entries",
+            "provider",
+            "queries",
+            "sources",
+            "tool",
+        ],
+    }
+
+
+def _validate_persisted_retrieval_action(
+    document: Mapping[str, object],
+    *,
+    layout,
+    boundary: Mapping[str, object],
+    expected_payload: Mapping[str, object],
+):
+    from .host_handshake import HostActionSeal
+    from .paths import assert_safe_descendant
+
+    snapshot = copy.deepcopy(dict(document))
+    try:
+        validate_instance("ultra-host-action.schema.json", snapshot)
+    except Exception as error:
+        raise RetrievalPolicyError("persisted retrieval action is invalid") from error
+    supplied = snapshot.get("action_sha256")
+    if supplied != _hash_without(snapshot, "action_sha256"):
+        raise RetrievalPolicyError("persisted retrieval action hash differs")
+    expected = {
+        "run_id": boundary["run_id"],
+        "version_binding": boundary["version_binding"],
+        "phase_id": "U2",
+        "action_kind": "retrieval",
+        "parent_event_sha256": boundary["u1_parent_event_sha256"],
+        "request_sha256": boundary["request_sha256"],
+        "result_relative_path": _RETRIEVAL_RESULT_RELATIVE_PATH,
+        "payload": copy.deepcopy(dict(expected_payload)),
+    }
+    if any(snapshot.get(field) != value for field, value in expected.items()):
+        raise RetrievalPolicyError("persisted retrieval action authority differs")
+    _canonical_host_timestamp(snapshot.get("issued_at"), field="issued_at")
+    result_path = assert_safe_descendant(
+        layout.root,
+        layout.run_dir / _RETRIEVAL_RESULT_RELATIVE_PATH,
+    )
+    return HostActionSeal(snapshot, str(supplied), result_path)
+
+
+def _persist_retrieval_action(layout, action) -> None:
+    path = _retrieval_action_path(layout)
+    if path.exists():
+        try:
+            raw = path.read_bytes()
+            current = load_json_object_bytes(raw, source=str(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise RetrievalPolicyError("persisted retrieval action is unreadable") from error
+        if raw != canonical_json_bytes(current) or current != action.document:
+            raise RetrievalPolicyError("persisted retrieval action changed")
+        return
+    atomic_write_json(path, action.document)
+
+
+def issue_retrieval_action(
+    phase_store: object,
+    *,
+    claim: str,
+    trigger_kinds: Sequence[str],
+    generated_at: str,
+):
+    """Issue a redacted, persistent U2 action or a zero-dispatch blocked ledger."""
+
+    from .host_handshake import issue_host_action, load_pending_action
+
+    boundary = _boundary_document(phase_store)
+    _, issued_at = _canonical_host_timestamp(generated_at, field="generated_at")
+    decision = assess_retrieval_eligibility(
+        claim,
+        phase_store=phase_store,
+        trigger_kinds=trigger_kinds,
+    )
+    authorization = gate_retrieval(decision, phase_store=phase_store)
+    if not isinstance(authorization, RetrievalAuthorization):
+        return build_retrieval_ledger(
+            decision,
+            generated_at=generated_at,
+            phase_store=phase_store,
+        )
+    if authorization.status == "blocked":
+        return build_retrieval_ledger(
+            decision,
+            generated_at=generated_at,
+            phase_store=phase_store,
+            authorization=authorization,
+        )
+    if authorization.status != "authorized":
+        raise RetrievalPolicyError("retrieval authorization state is invalid")
+    prepared = (
+        prepare_query(
+            authorization,
+            claim,
+            phase_store=phase_store,
+        ),
+    )
+    payload = _retrieval_action_payload(
+        phase_store=phase_store,
+        decision=decision,
+        authorization=authorization,
+        queries=prepared,
+        boundary=boundary,
+    )
+    layout = _phase_store_layout(phase_store, boundary=boundary)
+    persisted_path = _retrieval_action_path(layout)
+    if persisted_path.exists():
+        try:
+            raw = persisted_path.read_bytes()
+            persisted = load_json_object_bytes(raw, source=str(persisted_path))
+        except (OSError, TypeError, ValueError) as error:
+            raise RetrievalPolicyError("persisted retrieval action is unreadable") from error
+        if raw != canonical_json_bytes(persisted):
+            raise RetrievalPolicyError("persisted retrieval action is not canonical")
+        action = _validate_persisted_retrieval_action(
+            persisted,
+            layout=layout,
+            boundary=boundary,
+            expected_payload=payload,
+        )
+        pending = load_pending_action(layout)
+        accepted = (
+            layout.recovery_dir
+            / "host-results"
+            / action.action_sha256
+            / "accepted.json"
+        )
+        if pending == action or accepted.is_file():
+            return action
+        raise RetrievalPolicyError(
+            "persisted retrieval action has neither pending nor accepted authority"
+        )
+    action = issue_host_action(
+        layout,
+        action_kind="retrieval",
+        phase_id="U2",
+        parent_event_sha256=str(boundary["u1_parent_event_sha256"]),
+        request_sha256=str(boundary["request_sha256"]),
+        payload=payload,
+        result_relative_path=_RETRIEVAL_RESULT_RELATIVE_PATH,
+        now=issued_at,
+    )
+    _persist_retrieval_action(layout, action)
+    return action
+
+
+def _accepted_retrieval_result_document(
+    receipt: object,
+    *,
+    phase_store: object,
+    boundary: Mapping[str, object],
+    action,
+) -> dict[str, object]:
+    from .host_handshake import HostResultSeal
+    from .paths import assert_safe_descendant
+
+    if not isinstance(receipt, HostResultSeal):
+        raise RetrievalPolicyError("host retrieval result requires an accepted receipt seal")
+    receipt_document = copy.deepcopy(receipt.document)
+    try:
+        validate_instance("ultra-host-result-receipt.schema.json", receipt_document)
+    except Exception as error:
+        raise RetrievalPolicyError("host retrieval receipt is invalid") from error
+    if (
+        receipt.receipt_sha256 != receipt_document.get("receipt_sha256")
+        or receipt.action_sha256 != action.action_sha256
+    ):
+        raise RetrievalPolicyError("host retrieval receipt seal hash differs")
+    if receipt_document.get("receipt_sha256") != _hash_without(
+        receipt_document, "receipt_sha256"
+    ):
+        raise RetrievalPolicyError("host retrieval receipt hash differs")
+    expected = {
+        "run_id": boundary["run_id"],
+        "version_binding": boundary["version_binding"],
+        "phase_id": "U2",
+        "action_kind": "retrieval",
+        "parent_event_sha256": boundary["u1_parent_event_sha256"],
+        "request_sha256": boundary["request_sha256"],
+        "action_sha256": action.action_sha256,
+        "result_relative_path": _RETRIEVAL_RESULT_RELATIVE_PATH,
+    }
+    if any(receipt_document.get(field) != value for field, value in expected.items()):
+        raise RetrievalPolicyError("host retrieval receipt authority differs")
+    _, issued_at = _canonical_host_timestamp(
+        action.document.get("issued_at"),
+        field="issued_at",
+    )
+    _, completed_at = _canonical_host_timestamp(
+        receipt_document.get("completed_at"),
+        field="completed_at",
+    )
+    if completed_at < issued_at:
+        raise RetrievalPolicyError("host retrieval completed before its action was issued")
+    layout = _phase_store_layout(phase_store, boundary=boundary)
+    accepted_path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json",
+    )
+    try:
+        accepted_raw = accepted_path.read_bytes()
+        accepted = load_json_object_bytes(accepted_raw, source=str(accepted_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("accepted host retrieval receipt is unavailable") from error
+    if (
+        accepted_raw != canonical_json_bytes(accepted)
+        or accepted != receipt_document
+    ):
+        raise RetrievalPolicyError("accepted host retrieval receipt differs")
+    try:
+        result_raw = action.result_path.read_bytes()
+        result = load_json_object_bytes(result_raw, source=str(action.result_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("host retrieval result is unavailable") from error
+    if result_raw != canonical_json_bytes(result):
+        raise RetrievalPolicyError("host retrieval result is not canonical")
+    if receipt_document.get("result_sha256") != sha256_bytes(result_raw):
+        raise RetrievalPolicyError("host retrieval result hash differs")
+    return result
+
+
+def _validate_host_execution_receipt(
+    document: Mapping[str, object],
+    *,
+    maximum_attempts: int,
+) -> tuple[dict[str, object], ...]:
+    if document.get("execution_status") != "complete":
+        raise RetrievalPolicyError("required host retrieval did not complete")
+    attempts = document.get("attempts")
+    if not isinstance(attempts, list) or not 1 <= len(attempts) <= maximum_attempts:
+        raise RetrievalPolicyError("host retrieval attempts are outside the bounded limit")
+    normalized: list[dict[str, object]] = []
+    for index, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, Mapping) or attempt.get("attempt") != index:
+            raise RetrievalPolicyError("host retrieval attempt sequence is invalid")
+        status = attempt.get("status")
+        if status not in {"success", "rate-limit", "timeout", "error"}:
+            raise RetrievalPolicyError("host retrieval attempt status is invalid")
+        if status == "success" and attempt.get("error") is not None:
+            raise RetrievalPolicyError("successful host retrieval cannot carry an error")
+        if status == "success" and index != len(attempts):
+            raise RetrievalPolicyError("host retrieval continued after success")
+        normalized.append(
+            {
+                "attempt": index,
+                "reason": status,
+                "message": copy.deepcopy(attempt.get("error")),
+            }
+        )
+    if attempts[-1].get("status") != "success":
+        raise RetrievalPolicyError("required host retrieval has no successful attempt")
+    return tuple(normalized)
+
+
+def _validate_host_identities(
+    receipt: Mapping[str, object],
+    result: Mapping[str, object],
+    *,
+    action_payload: Mapping[str, object],
+) -> None:
+    provider = receipt.get("provider")
+    tool = receipt.get("tool")
+    if (
+        not isinstance(provider, Mapping)
+        or not isinstance(tool, Mapping)
+        or result.get("provider") != provider
+        or result.get("tool") != tool
+        or result.get("execution_id") != receipt.get("execution_id")
+    ):
+        raise RetrievalPolicyError("host retrieval provider, tool, or execution differs")
+    allowed_providers = action_payload.get("allowed_providers")
+    allowed_tools = action_payload.get("allowed_tools")
+    if (
+        not isinstance(allowed_providers, list)
+        or dict(provider) not in allowed_providers
+        or not isinstance(allowed_tools, list)
+        or dict(tool) not in allowed_tools
+        or tool.get("provider_id") != provider.get("provider_id")
+    ):
+        raise RetrievalPolicyError("host retrieval used an unmeasured provider or tool")
+
+
+def _persist_admitted_host_result(
+    layout,
+    *,
+    action_sha256: str,
+    receipt_sha256: str,
+    provider: Mapping[str, object],
+    tool: Mapping[str, object],
+    sources: Sequence[Mapping[str, object]],
+) -> None:
+    document: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.admitted-host-retrieval-result",
+        "schema_version": 1,
+        "action_sha256": action_sha256,
+        "receipt_sha256": receipt_sha256,
+        "provider": copy.deepcopy(dict(provider)),
+        "tool": copy.deepcopy(dict(tool)),
+        "sources": [copy.deepcopy(dict(source)) for source in sources],
+    }
+    document["content_sha256"] = _hash_without(document, "content_sha256")
+    path = _admitted_host_result_path(layout)
+    if path.exists():
+        try:
+            raw = path.read_bytes()
+            current = load_json_object_bytes(raw, source=str(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise RetrievalPolicyError("admitted host retrieval result is unreadable") from error
+        if raw != canonical_json_bytes(current) or current != document:
+            raise RetrievalPolicyError("admitted host retrieval result changed")
+        return
+    atomic_write_json(path, document)
+
+
+def admit_host_retrieval_result(
+    receipt: object,
+    *,
+    phase_store: object,
+    decision: RetrievalDecision,
+    authorization: RetrievalAuthorization,
+) -> dict[str, object]:
+    """Validate an accepted host result and build a schema-valid U2 ledger."""
+
+    boundary = _boundary_document(phase_store)
+    if not _valid_decision(decision) or decision._boundary != boundary:
+        raise RetrievalPolicyError("host retrieval decision authority is invalid")
+    if (
+        not _valid_authorization(authorization)
+        or authorization.status != "authorized"
+        or authorization._boundary != boundary
+        or authorization.decision_sha256 != decision.decision_sha256
+    ):
+        raise RetrievalPolicyError("host retrieval authorization authority is invalid")
+    decision_document = decision.document
+    basis = decision_document.get("eligibility_basis")
+    if not isinstance(basis, Mapping):
+        raise RetrievalPolicyError("host retrieval decision basis is invalid")
+    claim = _nonempty(basis.get("claim"), field="claim")
+    prepared = (
+        prepare_query(
+            authorization,
+            claim,
+            phase_store=phase_store,
+        ),
+    )
+    expected_payload = _retrieval_action_payload(
+        phase_store=phase_store,
+        decision=decision,
+        authorization=authorization,
+        queries=prepared,
+        boundary=boundary,
+    )
+    layout = _phase_store_layout(phase_store, boundary=boundary)
+    action_path = _retrieval_action_path(layout)
+    try:
+        action_raw = action_path.read_bytes()
+        action_document = load_json_object_bytes(action_raw, source=str(action_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("persisted retrieval action is unavailable") from error
+    if action_raw != canonical_json_bytes(action_document):
+        raise RetrievalPolicyError("persisted retrieval action is not canonical")
+    action = _validate_persisted_retrieval_action(
+        action_document,
+        layout=layout,
+        boundary=boundary,
+        expected_payload=expected_payload,
+    )
+    result = _accepted_retrieval_result_document(
+        receipt,
+        phase_store=phase_store,
+        boundary=boundary,
+        action=action,
+    )
+    receipt_document = receipt.document
+    action_payload = action.document.get("payload")
+    if not isinstance(action_payload, Mapping):
+        raise RetrievalPolicyError("persisted retrieval action payload is invalid")
+    attempts = _validate_host_execution_receipt(
+        receipt_document,
+        maximum_attempts=int(action_payload["maximum_tool_retries"]),
+    )
+    expected_result_fields = {
+        "schema_id",
+        "schema_version",
+        "action_sha256",
+        "provider",
+        "tool",
+        "execution_id",
+        "queries",
+        "sources",
+        "entries",
+    }
+    if (
+        set(result) != expected_result_fields
+        or result.get("schema_id")
+        != "crossframe.ultra.v82.host-retrieval-result"
+        or result.get("schema_version") != 1
+        or result.get("action_sha256") != action.action_sha256
+    ):
+        raise RetrievalPolicyError("host retrieval result fields are not closed")
+    _validate_host_identities(
+        receipt_document,
+        result,
+        action_payload=action_payload,
+    )
+    result_queries = result.get("queries")
+    if not isinstance(result_queries, list) or not result_queries:
+        raise RetrievalPolicyError("required retrieval returned no query results")
+    prepared_by_hash = {query.query_sha256: query for query in prepared}
+    returned_query_hashes: set[str] = set()
+    for query_result in result_queries:
+        if (
+            not isinstance(query_result, Mapping)
+            or set(query_result) != {"query_sha256", "status"}
+            or query_result.get("status") != "complete"
+            or query_result.get("query_sha256") not in prepared_by_hash
+        ):
+            raise RetrievalPolicyError("host retrieval query result is invalid")
+        query_sha256 = str(query_result["query_sha256"])
+        if query_sha256 in returned_query_hashes:
+            raise RetrievalPolicyError("host retrieval repeats a query result")
+        returned_query_hashes.add(query_sha256)
+    if returned_query_hashes != set(prepared_by_hash):
+        raise RetrievalPolicyError("host retrieval omitted an authorized query")
+    source_results = result.get("sources")
+    if not isinstance(source_results, list) or not source_results:
+        raise RetrievalPolicyError("required retrieval returned no sources")
+    source_inventory: list[dict[str, object]] = []
+    admitted_external: list[dict[str, object]] = []
+    source_ids: set[str] = set()
+    source_fields = {
+        "source_id",
+        "query_sha256",
+        "url",
+        "content",
+        "content_sha256",
+        "event_date",
+        "publication_date",
+        "interest",
+        "upstream_lineage",
+        "supported_claim",
+        "cannot_prove",
+    }
+    for source in source_results:
+        if not isinstance(source, Mapping) or set(source) != source_fields:
+            raise RetrievalPolicyError("host retrieval source fields are not closed")
+        query_sha256 = source.get("query_sha256")
+        query = prepared_by_hash.get(str(query_sha256))
+        if query is None or query_sha256 not in returned_query_hashes:
+            raise RetrievalPolicyError("host retrieval source has no completed query")
+        content = _nonempty(source.get("content"), field="content")
+        external = store_external_content(content)
+        if source.get("content_sha256") != external["content_sha256"]:
+            raise RetrievalPolicyError("host retrieval source content hash differs")
+        record = make_source_record(
+            source_id=_nonempty(source.get("source_id"), field="source_id"),
+            url=_nonempty(source.get("url"), field="url"),
+            event_date=source.get("event_date"),
+            publication_date=source.get("publication_date"),
+            interest=_nonempty(source.get("interest"), field="interest"),
+            upstream_lineage=source.get("upstream_lineage"),
+            supported_claim=_nonempty(
+                source.get("supported_claim"), field="supported_claim"
+            ),
+            cannot_prove=_nonempty(
+                source.get("cannot_prove"), field="cannot_prove"
+            ),
+        )
+        source_id = str(record["source_id"])
+        if source_id in source_ids:
+            raise RetrievalPolicyError("host retrieval repeats a source identifier")
+        source_ids.add(source_id)
+        source_inventory.append(
+            make_source_inventory_item(
+                record,
+                query=query,
+                authorization=authorization,
+            )
+        )
+        admitted_external.append(
+            {
+                "source_id": source_id,
+                "query_sha256": str(query_sha256),
+                "external_content": external,
+            }
+        )
+    raw_entries = result.get("entries")
+    if not isinstance(raw_entries, list) or not raw_entries:
+        raise RetrievalPolicyError("required retrieval returned no source-linked entries")
+    entries: list[dict[str, object]] = []
+    entry_fields = {
+        "query_id",
+        "query_sha256",
+        "direction",
+        "result_summary",
+        "source_refs",
+        "stop_reason",
+    }
+    for entry in raw_entries:
+        if not isinstance(entry, Mapping) or set(entry) != entry_fields:
+            raise RetrievalPolicyError("host retrieval entry fields are not closed")
+        query = prepared_by_hash.get(str(entry.get("query_sha256")))
+        refs = entry.get("source_refs")
+        if query is None or not isinstance(refs, list) or not refs:
+            raise RetrievalPolicyError("host retrieval entry has no query or source")
+        entries.append(
+            make_retrieval_entry(
+                query_id=_nonempty(entry.get("query_id"), field="query_id"),
+                query=query,
+                direction=_nonempty(entry.get("direction"), field="direction"),
+                result_summary=_nonempty(
+                    entry.get("result_summary"), field="result_summary"
+                ),
+                source_refs=refs,
+                stop_reason=_nonempty(entry.get("stop_reason"), field="stop_reason"),
+            )
+        )
+    result_sha256 = str(receipt_document["result_sha256"])
+    try:
+        round_state = phase_store.record_retrieval_round(result_sha256)
+    except Exception as error:
+        raise RetrievalPolicyError(
+            "host retrieval result cannot enter the sealed session"
+        ) from error
+    retrieval_result = _issue_retrieval_result(
+        status="needs_attention" if round_state["needs_attention"] else "complete",
+        attempts=attempts,
+        value={
+            "action_sha256": action.action_sha256,
+            "receipt_sha256": receipt.receipt_sha256,
+            "result_sha256": result_sha256,
+            "source_ids": sorted(source_ids),
+        },
+        boundary=boundary,
+        authorization=authorization,
+        query=prepared[0],
+        round_state=round_state,
+    )
+    resources = resource_status(
+        phase_store=phase_store,
+        authorization=authorization,
+        prepared_query=prepared[0],
+        checkpoint={
+            "phase": "U2",
+            "action_sha256": action.action_sha256,
+            "receipt_sha256": receipt.receipt_sha256,
+        },
+    )
+    generated_at = _nonempty(receipt_document.get("completed_at"), field="completed_at")
+    _canonical_host_timestamp(generated_at, field="completed_at")
+    ledger = build_retrieval_ledger(
+        decision,
+        generated_at=generated_at,
+        phase_store=phase_store,
+        authorization=authorization,
+        queries=prepared,
+        sources=source_inventory,
+        entries=entries,
+        retrieval_result=retrieval_result,
+        resource_status=resources,
+    )
+    validate_retrieval_ledger(
+        ledger,
+        phase_store=phase_store,
+        expected_run_id=str(boundary["run_id"]),
+        expected_version_binding=boundary["version_binding"],
+        expected_phase_id="U2",
+        expected_u1_parent_event_sha256=str(boundary["u1_parent_event_sha256"]),
+        expected_request_sha256=str(boundary["request_sha256"]),
+        expected_decision_sha256=decision.decision_sha256,
+        expected_authorization_sha256=authorization.authorization_sha256,
+    )
+    _persist_admitted_host_result(
+        layout,
+        action_sha256=action.action_sha256,
+        receipt_sha256=receipt.receipt_sha256,
+        provider=receipt_document["provider"],
+        tool=receipt_document["tool"],
+        sources=admitted_external,
+    )
+    return ledger
+
+
+def admit_subagent_candidates(
+    receipt: object,
+    *,
+    admitted_source_ids: Collection[str],
+) -> tuple[dict[str, object], ...]:
+    """Return only role-limited candidates whose every source is already admitted."""
+
+    from .host_handshake import HostResultSeal
+
+    if not isinstance(receipt, HostResultSeal):
+        raise RetrievalPolicyError("subagent candidates require a host result seal")
+    document = copy.deepcopy(receipt.document)
+    try:
+        validate_instance("ultra-host-result-receipt.schema.json", document)
+    except Exception as error:
+        raise RetrievalPolicyError("subagent result receipt is invalid") from error
+    if (
+        document.get("action_kind") != "subagent"
+        or document.get("phase_id") != "U2"
+        or receipt.action_sha256 != document.get("action_sha256")
+        or receipt.receipt_sha256 != document.get("receipt_sha256")
+        or document.get("receipt_sha256")
+        != _hash_without(document, "receipt_sha256")
+    ):
+        raise RetrievalPolicyError("subagent result receipt authority differs")
+    _validate_host_execution_receipt(document, maximum_attempts=3)
+    if isinstance(admitted_source_ids, (str, bytes)) or not isinstance(
+        admitted_source_ids, Collection
+    ):
+        raise TypeError("admitted_source_ids must be a collection of source IDs")
+    admitted = {
+        _nonempty(source_id, field="admitted_source_ids")
+        for source_id in admitted_source_ids
+    }
+    result = document.get("result")
+    if (
+        not isinstance(result, Mapping)
+        or result.get("content_sha256") != _hash_without(result, "content_sha256")
+    ):
+        raise RetrievalPolicyError("subagent result content hash differs")
+    _nonempty(result.get("cannot_prove"), field="cannot_prove")
+    resource_limits = result.get("resource_limits")
+    if not isinstance(resource_limits, Mapping):
+        raise RetrievalPolicyError("subagent result resource limits are invalid")
+    maximum_candidates = resource_limits.get("maximum_candidates")
+    maximum_refs = resource_limits.get("maximum_source_refs_per_candidate")
+    if type(maximum_candidates) is not int or type(maximum_refs) is not int:
+        raise RetrievalPolicyError("subagent result resource limits are invalid")
+    candidates = result.get("candidates") if isinstance(result, Mapping) else None
+    if (
+        not isinstance(candidates, list)
+        or not candidates
+        or len(candidates) > maximum_candidates
+    ):
+        raise RetrievalPolicyError("subagent result has no candidate list")
+    accepted: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    expected_fields = {
+        "candidate_id",
+        "role",
+        "claim",
+        "source_refs",
+        "cannot_prove",
+    }
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping) or set(candidate) != expected_fields:
+            raise RetrievalPolicyError("subagent candidate fields are not closed")
+        candidate_id = _nonempty(candidate.get("candidate_id"), field="candidate_id")
+        if candidate_id in seen_ids:
+            raise RetrievalPolicyError("subagent candidate identifier is duplicated")
+        seen_ids.add(candidate_id)
+        role = _nonempty(candidate.get("role"), field="role")
+        if role not in _SUBAGENT_CANDIDATE_ROLES:
+            raise RetrievalPolicyError("subagent candidate role is not allowed")
+        _nonempty(candidate.get("claim"), field="claim")
+        _nonempty(candidate.get("cannot_prove"), field="cannot_prove")
+        refs = candidate.get("source_refs")
+        if (
+            not isinstance(refs, list)
+            or not refs
+            or len(refs) > maximum_refs
+            or len(refs) != len(set(refs))
+            or any(not isinstance(ref, str) or not ref.strip() for ref in refs)
+        ):
+            raise RetrievalPolicyError("subagent candidate source references are invalid")
+        if set(refs).issubset(admitted):
+            accepted.append(copy.deepcopy(dict(candidate)))
+    return tuple(accepted)
+
+
 __all__ = (
     "PreparedQuery",
     "PureLogicEligibilityAuthority",
@@ -1984,12 +2810,15 @@ __all__ = (
     "RetrievalResult",
     "RetrievalTimeoutError",
     "apply_external_content_policy",
+    "admit_host_retrieval_result",
+    "admit_subagent_candidates",
     "assess_retrieval_eligibility",
     "bounded_retrieve",
     "build_retrieval_ledger",
     "gate_retrieval",
     "hostile_instruction_detected",
     "inspect_acl",
+    "issue_retrieval_action",
     "make_retrieval_entry",
     "make_source_record",
     "make_source_inventory_item",

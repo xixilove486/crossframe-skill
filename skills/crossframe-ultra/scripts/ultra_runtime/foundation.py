@@ -34,6 +34,9 @@ CAPABILITY_ACTION_FILENAME = "u0-capability-action.json"
 CAPABILITY_ATTESTATION_RELATIVE_PATH = Path(
     "U00-U03-evidence/U00-host-capability-attestation.json"
 )
+U2_RETRIEVAL_LEDGER_RELATIVE_PATH = Path(
+    "U00-U03-evidence/U02-retrieval-ledger.json"
+)
 _SAFE_EXTENSION_RE = re.compile(r"[a-z0-9]{1,10}")
 
 
@@ -1371,8 +1374,157 @@ def advance_foundation(
     if phase_store.current_phase == "U1":
         return FoundationProgress("advanced", phase_store, None, "U1")
     raise FoundationInputError("foundation recovery is outside the U0-U1 Task 3 boundary")
+def _persist_u2_ledger(
+    layout: RunLayout,
+    ledger: Mapping[str, object],
+) -> None:
+    path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / U2_RETRIEVAL_LEDGER_RELATIVE_PATH,
+    )
+    document = copy.deepcopy(dict(ledger))
+    if path.exists():
+        try:
+            raw = path.read_bytes()
+            existing = load_json_object_bytes(raw, source=str(path))
+        except (OSError, TypeError, ValueError) as error:
+            raise FoundationInputError("persisted U2 ledger is unreadable") from error
+        if raw != canonical_json_bytes(existing) or existing != document:
+            raise FoundationInputError("persisted U2 ledger changed")
+        return
+    atomic_write_json(path, document)
 
 
+def advance_u2(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    claim: str,
+    trigger_kinds: Sequence[str],
+    now: datetime,
+) -> FoundationProgress:
+    """Advance only the U2 boundary from a caller-supplied sealed U1 store."""
+
+    from . import retrieval
+
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    _require_utc(now, "now")
+    if getattr(phase_store, "_run_layout", None) != layout:
+        raise FoundationInputError("sealed U1 run layout differs from U2 layout")
+    disposition = retrieval.issue_retrieval_action(
+        phase_store,
+        claim=claim,
+        trigger_kinds=trigger_kinds,
+        generated_at=_canonical_utc(now),
+    )
+    if isinstance(disposition, HostActionSeal):
+        pending = load_pending_action(layout)
+        if pending is not None:
+            if pending != disposition:
+                raise FoundationInputError(
+                    "pending host action differs from U2 retrieval authority"
+                )
+            return FoundationProgress(
+                "awaiting-host-action",
+                phase_store,
+                disposition,
+                None,
+            )
+        accepted_path = assert_safe_descendant(
+            layout.root,
+            layout.recovery_dir
+            / "host-results"
+            / disposition.action_sha256
+            / "accepted.json",
+        )
+        try:
+            accepted_raw = accepted_path.read_bytes()
+            accepted = load_json_object_bytes(
+                accepted_raw,
+                source=str(accepted_path),
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise FoundationInputError(
+                "persisted U2 action has no accepted host result"
+            ) from error
+        if accepted_raw != canonical_json_bytes(accepted):
+            raise FoundationInputError("accepted U2 host result is not canonical")
+        receipt_sha256 = accepted.get("receipt_sha256")
+        if not isinstance(receipt_sha256, str):
+            raise FoundationInputError("accepted U2 host result has no receipt hash")
+        receipt = HostResultSeal(
+            accepted,
+            receipt_sha256,
+            disposition.action_sha256,
+        )
+        decision = retrieval.assess_retrieval_eligibility(
+            claim,
+            phase_store=phase_store,
+            trigger_kinds=trigger_kinds,
+        )
+        authorization = retrieval.gate_retrieval(
+            decision,
+            phase_store=phase_store,
+        )
+        if not isinstance(authorization, retrieval.RetrievalAuthorization):
+            raise FoundationInputError(
+                "accepted U2 result has no required retrieval authorization"
+            )
+        ledger = retrieval.admit_host_retrieval_result(
+            receipt,
+            phase_store=phase_store,
+            decision=decision,
+            authorization=authorization,
+        )
+        _persist_u2_ledger(layout, ledger)
+        boundary = phase_store.retrieval_boundary
+        seal = retrieval.validate_retrieval_ledger(
+            ledger,
+            phase_store=phase_store,
+            expected_run_id=phase_store.run_id,
+            expected_version_binding=boundary.version_binding,
+            expected_phase_id="U2",
+            expected_u1_parent_event_sha256=boundary.u1_parent_event_sha256,
+            expected_request_sha256=boundary.request_sha256,
+            expected_decision_sha256=decision.decision_sha256,
+            expected_authorization_sha256=authorization.authorization_sha256,
+        )
+        phase_store.complete(
+            "U2",
+            artifact_hashes=(seal.artifact_sha256,),
+            retrieval_authority=seal,
+        )
+        return FoundationProgress("advanced", phase_store, None, "U2")
+    if not isinstance(disposition, Mapping):
+        raise FoundationInputError("U2 retrieval disposition is invalid")
+    decision = retrieval.assess_retrieval_eligibility(
+        claim,
+        phase_store=phase_store,
+        trigger_kinds=trigger_kinds,
+    )
+    authorization = retrieval.gate_retrieval(
+        decision,
+        phase_store=phase_store,
+    )
+    if not isinstance(authorization, retrieval.RetrievalAuthorization):
+        raise FoundationInputError("blocked U2 disposition has no authorization")
+    boundary = phase_store.retrieval_boundary
+    seal = retrieval.validate_retrieval_ledger(
+        disposition,
+        phase_store=phase_store,
+        expected_run_id=phase_store.run_id,
+        expected_version_binding=boundary.version_binding,
+        expected_phase_id="U2",
+        expected_u1_parent_event_sha256=boundary.u1_parent_event_sha256,
+        expected_request_sha256=boundary.request_sha256,
+        expected_decision_sha256=decision.decision_sha256,
+        expected_authorization_sha256=authorization.authorization_sha256,
+    )
+    if seal.completion_authorized or seal.retrieval_status != "required-blocked":
+        raise FoundationInputError("blocked U2 disposition authorizes completion")
+    _persist_u2_ledger(layout, disposition)
+    return FoundationProgress("blocked", phase_store, None, None)
 __all__ = (
     "FoundationInputError",
     "FoundationProgress",
@@ -1380,6 +1532,7 @@ __all__ = (
     "RequestProfile",
     "advance_foundation",
     "advance_u0",
+    "advance_u2",
     "load_input_inventory",
     "load_host_capability_attestation",
     "load_request_profile",
