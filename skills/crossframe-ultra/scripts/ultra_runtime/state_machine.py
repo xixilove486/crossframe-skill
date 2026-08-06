@@ -99,7 +99,7 @@ _LATE_PHASE_OUTPUT_COUNTS = {
     "U8": 2,
     "U9": 3,
     "U10": 2,
-    "U11": 5,
+    "U11": 6,
     "U12": 5,
 }
 _FINAL_DELIVERY_FILENAMES = (

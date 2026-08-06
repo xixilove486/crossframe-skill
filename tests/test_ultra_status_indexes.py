@@ -1455,7 +1455,7 @@ def _seed_durable_complete_index(runtime_modules, tmp_path: Path):
     ]
 
     output_counts = {
-        "U1": 1,
+        "U1": 3,
         "U2": 1,
         "U3": 1,
         "U4": 1,
@@ -1465,7 +1465,7 @@ def _seed_durable_complete_index(runtime_modules, tmp_path: Path):
         "U8": 2,
         "U9": 3,
         "U10": 2,
-        "U11": 5,
+        "U11": 6,
     }
     events = []
     parent_sha256 = "0" * 64

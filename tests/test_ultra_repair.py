@@ -214,7 +214,7 @@ def _phase_output_hashes(
         "U8": 2,
         "U9": 3,
         "U10": 2,
-        "U11": 5,
+        "U11": 6,
         "U12": 5,
     }
     count = counts.get(phase_id, 1)

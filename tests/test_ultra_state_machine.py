@@ -1362,6 +1362,7 @@ _LATE_PHASE_OUTPUTS = {
     "U11": (
         "semantic-coverage",
         "article-review",
+        "semantic-review",
         "article-partial",
         "dossier",
         "artifact-index",
@@ -1443,6 +1444,50 @@ def test_late_phase_output_cardinality_is_rejected_atomically(u1_authority):
             artifact_hashes=(_late_phase_hash("transformation-ledger"),),
         )
     assert store.events == before
+
+
+def test_u11_requires_all_six_frozen_outputs_atomically(u1_authority):
+    import ultra_runtime.state_machine as module
+
+    store = _store(module)
+    _complete_u0_u1(store, u1_authority)
+    _complete_u2(store)
+    _complete_u3(store)
+    for phase_id, labels in tuple(_LATE_PHASE_OUTPUTS.items())[:-1]:
+        store.complete(
+            phase_id,
+            artifact_hashes=tuple(_late_phase_hash(label) for label in labels),
+            parent_event_sha256=store.events[-1]["event_sha256"],
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
+            version_binding=_binding(),
+            source_sha256=SOURCE_MANIFEST_SHA256,
+            evidence_cutoff=STAMP,
+        )
+
+    outputs = tuple(_late_phase_hash(label) for label in _LATE_PHASE_OUTPUTS["U11"])
+    before = store.events
+    with pytest.raises(module.PhaseIntegrityError, match="U11|output"):
+        store.complete(
+            "U11",
+            artifact_hashes=outputs[:-1],
+            parent_event_sha256=store.events[-1]["event_sha256"],
+            input_artifact_hashes=INPUT_ARTIFACT_HASHES,
+            version_binding=_binding(),
+            source_sha256=SOURCE_MANIFEST_SHA256,
+            evidence_cutoff=STAMP,
+        )
+    assert store.events == before
+
+    event = store.complete(
+        "U11",
+        artifact_hashes=outputs,
+        parent_event_sha256=store.events[-1]["event_sha256"],
+        input_artifact_hashes=INPUT_ARTIFACT_HASHES,
+        version_binding=_binding(),
+        source_sha256=SOURCE_MANIFEST_SHA256,
+        evidence_cutoff=STAMP,
+    )
+    assert tuple(event["output_artifact_hashes"]) == outputs
 
 
 def test_u12_requires_hash_verified_post_publish_authority_before_status_commit(
