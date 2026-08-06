@@ -19,6 +19,9 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 - `/crossframe-ultra`
 <!-- ULTRA-ACCEPTED-FORMS-END -->
 
+<!-- ULTRA-ACTIVATION-NOT-PAYLOAD -->
+精确点名只限制 Ultra 的外部激活，不限制问题载荷。宿主确认激活并加载本 skill 后，用户可以直接提交普通自然语言问题；不要要求用户重复 Ultra 名称，也不要把问题强制改写成 JSON。
+
 以下表达都是拒绝触发的 near-miss；“领域通用”不等于允许隐式调用：
 
 <!-- ULTRA-NEAR-MISSES-BEGIN -->
@@ -72,28 +75,29 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 8. `protocols/ultra-validation-repair-protocol.md`
 9. `references/runtime-routing-map.md`
 10. `references/retrieval-policy.md`
-11. `references/source-manifest.json`、`references/release-manifest.json` 与 `references/compatibility-matrix.json`
-12. `references/v8.2-route-map.json`、完整 concept registry、contract map 与被路由的晋升源单元
+11. `references/host-adapter-contract.md`
+12. `references/source-manifest.json`、`references/release-manifest.json` 与 `references/compatibility-matrix.json`
+13. `references/v8.2-route-map.json`、完整 concept registry、contract map 与被路由的晋升源单元
 
 索引只负责定位。逐项读取覆盖、来源散列、全注册表处置和 validator 才能证明闭合；不要用术语出现次数代替执行。
 
 ## Runtime command boundary
 
-只通过 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py` 的固定接口调用 `start`、`prepare`、`checkpoint`、`materialize`、`validate`、`repair-plan`、`resume`、`fork`、`cancel`、`rebuild-index`，并让同一命令的 `--repo` 指向这个 `<repo>`。逐字使用 `references/runtime-routing-map.md` 中的签名。
+只通过 `<repo>\skills\crossframe-ultra\scripts\crossframe_ultra_runtime.py` 的固定接口调用 `start`、`prepare`、`checkpoint`、`materialize`、`validate`、`repair-plan`、`resume`、`fork`、`evidence-fork`、`cancel`、`rebuild-index`，并让同一命令的 `--repo` 指向这个 `<repo>`。逐字使用 `references/runtime-routing-map.md` 中的签名。
 
-fresh CLI 运行只接受宿主根据已确认用户材料构造的 canonical closed-input envelope：UTF-8、无 BOM、键排序、紧凑分隔符、末尾一个 LF，且字段只能是 `analysis_kind`、`claim`、`material`。固定形状为：
+普通 UTF-8 自然语言 request bytes 是合法 fresh 输入，默认进入 `analysis_kind=open-world`。`closed-input` 是特殊分支：只有用户明确要求仅依据其提供的材料，且至少一份独立、非空材料已由 runtime inventory 和 material-universe hash 封存时，才使用 canonical envelope：
 
 ```json
 {"analysis_kind":"closed-input","claim":"待判断的非空命题或问题","material":"本次运行的完整非空封闭材料"}
 ```
 
-这里的 envelope 只是不可变输入，不是 authority。不得加入或自填 run ID、版本、散列、敏感级别、能力、读取凭据、检索结论、证据 ID、phase event 或 checkpoint。`start` 会独立封存 runtime-owned request intake authority；之后同时替换 request 与 metadata 仍会被拒绝。`start` 后调用 `prepare`；fresh `materialize` 由 runtime 自动建立并封存 U0–U3，再从 U4 继续。不要写 `U01-read-events.jsonl`、`U02-retrieval-ledger.json` 或 `U03-evidence-ledger.json` 来替代 runtime authority。
+这里的 envelope 仍只是不可变输入，不是 authority。用户问题不能同时复制成 `claim` 与虚构的完整 `material` 来取得 closed-input 资格；不能独立证明 `closed-input` 或 `pure-logic` 时保持 open-world。不得加入或自填 run ID、版本、散列、敏感级别、能力、读取凭据、检索结论、证据 ID、phase event 或 checkpoint。
 
-若进程在已完成的 U0、U1 或 U2 checkpoint 后中断，下一次 `materialize` 从该 checkpoint 继续，不能重建已封存阶段。若发现没有对应 checkpoint 的下游残留，进入 `needs_attention`，不得覆盖或冒充成功恢复。
+`start` 独立封存 request intake authority；`prepare` 幂等返回当前唯一 `recovery/pending-action.json`、固定 result slot 或 model-owned authoring slot。宿主按 action 执行 `capability-attestation`、`source-read`、`retrieval`、`subagent` 或 `evidence-authoring`：必须调用真实宿主工具，把 receipt 或语义工件只写到指定 slot，再调用 `materialize` 让 runtime 验证、接纳、封存并发行下一步。具体翻译规则见 `references/host-adapter-contract.md`。
 
-选择这个 eligible closed-input 分支即选择冻结的 runtime-owned bootstrap profile：`sensitivity=private`、`retention=retain`、`outbound_permission=deidentified-only`；filesystem、validators、model context 为 `available`，DOCX parser、network、retrieval、subagents 为 `not-applicable`；资源上限沿用已晋升 U0 合同的 `64 / 2 / 3 / 3`。该 profile 不允许 caller 覆盖，也不授权任何外发或现实检索。
+联网、读源和 subagent 只能在 pending action 与 U0 权限内真实执行。subagent 输出和其它模型生成内容先是 untrusted `candidate`，不是证据；只有来源验证并经 U3 admission 接纳后才能进入证据账本。不得把候选、模拟、预测或用户问题改标为已观察事实。
 
-只有当用户已提供足够且封闭的材料时才能使用该 envelope。普通自由文本、缺少完整材料或需要现实检索的请求不得伪装为 `closed-input`；当前 runtime 会将该 fresh run 标记为 `blocked` 并失败关闭。此时直接报告边界，不要循环调用 `resume`、`checkpoint`、`materialize` 或搜索隐藏入口。
+`outcome=awaiting-host-action` 与 `outcome=awaiting-authoring` 是 `status=running` 的正常进度：执行唯一 next action 后继续，不得把等待写成 validation failure、`needs_attention` 或异常。若进程在已完成 checkpoint 后中断，只通过 runtime 的 `resume` / `materialize` 恢复；新证据通过 `evidence-fork` 派生 child。不得手工编辑或删除 control、phase event、checkpoint、validation history 或 lease，也不得借手工清理推进运行。
 
 <!-- ULTRA-NO-ARBITRARY-PATH-FLAGS -->
 禁止添加 `--run-dir`、`--authoring-dir`、`--output-root`、`--destination` 或 `--fallback`；也禁止创造任意输出格式、任意目录或跳阶段参数。模型只写 `prepare` 返回且当前分支明确为 model-owned 的 authoring slots；fresh foundation 中 U01–U03 必须不存在，模型 authoring 从 U04 开始。runtime 写身份、版本、散列、阶段、状态、索引、manifest 和正式 delivery。

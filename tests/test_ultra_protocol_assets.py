@@ -9,6 +9,7 @@ ULTRA = ROOT / "skills/crossframe-ultra"
 PROTOCOL_ROOT = ULTRA / "protocols"
 ROUTING_PATH = ULTRA / "references/runtime-routing-map.md"
 RETRIEVAL_PATH = ULTRA / "references/retrieval-policy.md"
+HOST_ADAPTER_PATH = ULTRA / "references/host-adapter-contract.md"
 SMOKE_PATH = ULTRA / "evals/crossframe-ultra-smoke-tests.md"
 
 PROTOCOL_NAMES = (
@@ -69,7 +70,7 @@ EXPECTED_VALIDATOR_MARKERS = {
     ),
 }
 CLI_SIGNATURES = (
-    "start          --repo PATH --mode production|test (--request-file PATH | --request-stdin)",
+    "start          --repo PATH --mode production|test (--request-file PATH | --request-stdin) [--material-file PATH ...]",
     "prepare        --repo PATH --mode production|test --run-id RUN_ID",
     "checkpoint     --repo PATH --mode production|test --run-id RUN_ID --phase U0..U11",
     "materialize    --repo PATH --mode production|test --run-id RUN_ID",
@@ -264,6 +265,39 @@ def test_retrieval_policy_matches_the_existing_u2_status_privacy_and_provenance_
         assert marker in policy
 
 
+def test_protocols_route_the_open_world_persistent_host_loop() -> None:
+    runtime = _required_text(PROTOCOL_ROOT / "ultra-runtime-protocol.md")
+    source = _required_text(PROTOCOL_ROOT / "ultra-source-authority-protocol.md")
+    validation = _required_text(
+        PROTOCOL_ROOT / "ultra-validation-repair-protocol.md"
+    )
+    routing = _required_text(ROUTING_PATH)
+    retrieval = _required_text(RETRIEVAL_PATH)
+    adapter = _required_text(HOST_ADAPTER_PATH)
+
+    for marker in (
+        "capability-attestation",
+        "source-read",
+        "retrieval",
+        "evidence-authoring",
+        "subagent",
+        "awaiting-host-action",
+        "awaiting-authoring",
+        "evidence-fork",
+    ):
+        assert marker in routing
+        assert marker in adapter
+
+    assert "普通自然语言" in runtime
+    assert "open-world" in runtime
+    assert "closed-input" in runtime
+    assert "recovery/pending-action.json" in runtime
+    assert "真实" in source and "receipt" in source
+    assert "subagent" in retrieval and "candidate" in retrieval
+    assert "不是证据" in retrieval
+    assert "不得手工" in validation
+
+
 def test_smoke_matrix_covers_activation_and_all_hard_failure_boundaries() -> None:
     smoke = _required_text(SMOKE_PATH)
     for form in (
@@ -273,7 +307,7 @@ def test_smoke_matrix_covers_activation_and_all_hard_failure_boundaries() -> Non
         "/crossframe-ultra",
     ):
         assert f"`{form}`" in smoke
-    for scenario in tuple(f"S{index:02d}" for index in range(1, 13)):
+    for scenario in tuple(f"S{index:02d}" for index in range(1, 16)):
         assert f"| {scenario} |" in smoke
     for boundary in (
         "near-miss",
@@ -288,5 +322,8 @@ def test_smoke_matrix_covers_activation_and_all_hard_failure_boundaries() -> Non
         "fixed-root",
         "framework-gap-next-run",
         "fresh-validation-before-final",
+        "natural-language-open-world",
+        "closed-input-eligibility",
+        "normal-wait-control-ownership",
     ):
         assert boundary in smoke

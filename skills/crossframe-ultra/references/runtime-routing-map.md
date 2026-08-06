@@ -25,7 +25,7 @@ Prefix every signature below with `python -B <repo>\skills\crossframe-ultra\scri
 
 <!-- ULTRA-CLI-BEGIN -->
 ```text
-start          --repo PATH --mode production|test (--request-file PATH | --request-stdin)
+start          --repo PATH --mode production|test (--request-file PATH | --request-stdin) [--material-file PATH ...]
 prepare        --repo PATH --mode production|test --run-id RUN_ID
 checkpoint     --repo PATH --mode production|test --run-id RUN_ID --phase U0..U11
 materialize    --repo PATH --mode production|test --run-id RUN_ID
@@ -50,29 +50,45 @@ The production CLI contains none of:
 
 Use `--request-stdin` when request text should not enter process arguments. `start` copies the exact request bytes into the run input directory, records their hash, and independently seals `recovery/request-intake-authority.json`; it never embeds request text in a run ID, path, or index. Replacing both request bytes and metadata after `start` does not replace that authority and is rejected.
 
-### Fresh U0–U3 foundation
+### Request branches
 
-For a fresh CLI run, stdin or the request file must contain exactly one canonical closed-input envelope:
+Exact Ultra naming applies to activation only. `start` accepts ordinary UTF-8 natural-language request bytes and freezes them unchanged; such a fresh request defaults to `analysis_kind=open-world`. Attachments or long materials enter only through repeated `--material-file` inputs and a runtime-owned immutable inventory.
 
-```json
-{"analysis_kind":"closed-input","claim":"non-empty claim or question","material":"complete non-empty closed material"}
-```
+Use `closed-input` only when the user explicitly requests a materials-only boundary and independently supplied, non-empty materials close the full evidence universe. The runtime must bind the inventory and material-universe hash. The question cannot serve as both claim and invented material. `pure-logic` remains a separately proven eligibility basis. If neither special branch is independently established, keep open-world.
 
-Encode it as UTF-8 without BOM, sort keys, use compact JSON separators, and terminate it with exactly one LF. The three keys above are the complete allowlist. Do not include caller-authored IDs, hashes, version bindings, policy fields, capability assertions, read receipts, retrieval dispositions, evidence envelopes, phase events, or checkpoints.
+Do not include caller-authored IDs, hashes, version bindings, policy fields, capability assertions, read receipts, retrieval dispositions, evidence envelopes, phase events, checkpoints, or leases in request payloads or materials.
 
-The supported order is `start` → `prepare` → write the U4–U11 semantic authoring slots → `materialize`. When no resumable checkpoint exists and the run is otherwise fresh, `materialize` establishes issuer-owned U0, performs the real U1 source read and seals all 4,753 read events, records closed-input U2 as `not-applicable`, freezes the request-bound U3 evidence, writes the four phase checkpoints, and then continues at U4. A retry resumes an existing U0, U1, U2, or U3 checkpoint and must not recreate sealed phases. Uncheckpointed downstream residue is never overwritten; it moves the run to `needs_attention`.
+### Persistent host loop
 
-Selecting this eligible closed-input branch selects the frozen runtime-owned bootstrap profile: `sensitivity=private`, `retention=retain`, and `outbound_permission=deidentified-only`; filesystem, validators, and model context are `available`; the DOCX parser, network, retrieval, and subagents are `not-applicable`; resource limits are the promoted U0 values `64 / 2 / 3 / 3`. The caller cannot override this profile, and it grants no outbound or real-world retrieval authority.
+The provider-neutral loop is:
 
-If the request is ordinary free text, lacks a complete closed material universe, or requires real-world retrieval, do not relabel it as `closed-input`. Fresh materialization marks the run `blocked` and fails closed. Report that boundary once; do not loop through `resume`, `checkpoint`, `materialize`, or searches for an undocumented initializer.
+1. `start` freezes request bytes and input inventory.
+2. `prepare` idempotently returns the current `recovery/pending-action.json`, its fixed `work/host/...` result slot, or the next model-owned authoring slot.
+3. The host executes the pending action with a real authorized tool and writes only the requested receipt or semantic file to that slot.
+4. `materialize` validates and admits the result, seals any completed phase, releases the writer lease, and either returns the next action or advances.
+5. Repeat through U12; use `validate`, `repair-plan`, and `resume` only at their declared boundaries.
+
+The runtime can issue these host action kinds:
+
+- `capability-attestation`: measure actual provider/tool availability, privacy permission, ACL, proof grade, and resource limits for U0.
+- `source-read`: execute the fixed U1 read plan and return source-unit-bound read receipts; runtime verification cannot stand in for a real reader.
+- `retrieval`: run the issued deidentified query with an actual web/search/browser provider and return source-bearing receipts for U2.
+- `subagent`: run the bounded task for discovery, counterexample, affected-position, source-lineage, or calibration work; its output remains an untrusted candidate.
+- `evidence-authoring`: write only the action-bound evidence or semantic result requested by the runtime; it cannot assign evidence identity or control fields.
+
+The host adapter contract is `references/host-adapter-contract.md`. It translates real Codex, Reasonix, Claude, or other host tools into the same action/receipt boundary; the core runtime does not guess a provider API. A subagent or model `candidate` is not evidence until source verification and U3 admission accept it.
+
+`outcome=awaiting-host-action` and `outcome=awaiting-authoring` are successful normal progress with `status=running`, a released writer lease, and one next action. They are not exceptions, validation failures, or `needs_attention`. Invalid, expired, unauthorized, replayed, or parent-mismatched receipts fail closed.
+
+Never hand-edit or delete control state, pending action authority, phase events, checkpoints, validation history, manifests, or lease files. Resume only through runtime commands. New evidence after U3 uses `evidence-fork`, which creates a child that begins with its own U0 attestation; it does not reopen or rewrite the parent. Ultra failure never selects a fallback runtime.
 
 ## Phase routing
 
 | Phase | Required responsibility | Primary protocol |
 | --- | --- | --- |
-| U0 | Explicit trigger, problem contract, sensitivity, outbound permission, capabilities, resource bounds | `protocols/ultra-runtime-protocol.md` |
-| U1 | Framework, runtime, schema, tool, input, root, release tree, and source-read lock | `protocols/ultra-source-authority-protocol.md` |
-| U2 | Retrieval qualification and execution, or sealed not-applicable disposition | `references/retrieval-policy.md` |
+| U0 | Explicit trigger, request profile, host capability attestation, sensitivity, outbound permission, ACL, and resource bounds | `protocols/ultra-runtime-protocol.md` |
+| U1 | Framework, runtime, schema, tool, input, root, release tree, read plan, and accepted source-read receipts | `protocols/ultra-source-authority-protocol.md` |
+| U2 | Retrieval qualification, issued real-host retrieval/subagent actions, admission, or sealed not-applicable disposition | `references/retrieval-policy.md` |
 | U3 | Evidence freeze, provenance, identity, and cutoff | `protocols/ultra-runtime-protocol.md` |
 | U4 | Complete initial Ω world volume | `protocols/ultra-world-volume-protocol.md` |
 | U5 | Scale, circle, translation, closure, loss, residual, and registry-disposition audit | `protocols/ultra-world-volume-protocol.md` |
@@ -115,7 +131,7 @@ Do not advance a phase until its upstream artifacts and phase event validate. Ne
 
 The runtime owns IDs, version bindings, hashes, phase events, status, manifests, indexes, validation reports, and delivery paths. It overwrites runtime-owned fields from sealed control state and never trusts a model-authored control value.
 
-For the fresh foundation path, the listed U01–U03 authoring names are reserved compatibility slots and must remain absent. Caller-authored U01 read events, U02 retrieval ledgers, and U03 evidence envelopes cannot authorize those phases; `materialize` generates their canonical artifacts from frozen input and issuer measurements. Fresh authoring therefore begins at U04.
+For the fresh foundation path, the listed U01–U03 authoring names are reserved compatibility slots and are not model-owned. Caller-authored U01 read events, U02 retrieval ledgers, and U03 evidence envelopes cannot authorize those phases; runtime artifacts are derived from accepted host receipts and frozen input. A model writes only the slot returned by `prepare`; ordinary semantic authoring begins at U04.
 
 ## Template authority
 
@@ -151,7 +167,7 @@ These are references to Task 11/Task 13-owned files, not permission for Task 14 
 
 ## Materialization and delivery order
 
-On an eligible fresh canonical closed-input run, `materialize` first establishes U0–U3 as described above. It then validates and freezes recursive states before lineage, order evaluation before red team, verdict before action/forecast, and output plan before packets/coverage/review. It validates every semantic artifact, assembles only a partial article, writes staging control state, and starts the fresh checker from disk.
+On a fresh open-world, eligible closed-input, or independently proven pure-logic run, repeated `prepare` / host execution / `materialize` cycles establish U0–U3 as described above. Materialization then validates and freezes recursive states before lineage, order evaluation before red team, verdict before action/forecast, and output plan before packets/coverage/review. It validates every semantic artifact, assembles only a partial article, writes staging control state, and starts the fresh checker from disk.
 
 Only a passing U12 transaction may atomically promote:
 

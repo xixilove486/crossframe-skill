@@ -12,6 +12,7 @@ from scripts.sync_skill_mirrors import CROSSFRAME_SKILLS
 
 ROOT = Path(__file__).resolve().parents[1]
 ULTRA = ROOT / "skills/crossframe-ultra"
+CLAUDE_COMMAND = ROOT / ".claude/commands/crossframe-ultra.md"
 
 FROZEN_BASE_COMMIT = "e1b422cddefc302255453d372954a1fddbe13669"
 FROZEN_MANIFEST_CANONICAL_SHA256 = (
@@ -77,6 +78,14 @@ PROTECTED_PATHSPECS = (
 )
 FROZEN_WORKFLOW_JOBS = frozenset(
     {"max-contracts-and-artifacts", "promax-contracts-and-artifacts"}
+)
+TASK12A_BASE_COMMIT = "7e5029a582ffa48ffef56739306e94a20e7e1bf5"
+FROZEN_ULTRA_THEORY_PATHS = (
+    "skills/crossframe-ultra/references/v8.2-full-source",
+    "skills/crossframe-ultra/references/v8.2-route-map.json",
+    "skills/crossframe-ultra/references/concept-registry",
+    "skills/crossframe-ultra/references/concept-contracts",
+    "skills/crossframe-ultra/references/source-manifest.json",
 )
 
 
@@ -414,3 +423,26 @@ def test_ultra_is_separate_and_existing_runtimes_are_unchanged():
 def test_ultra_has_an_explicit_generated_surface():
     assert "crossframe-ultra" in CROSSFRAME_SKILLS
     assert (ROOT / ".claude/commands/crossframe-ultra.md").is_file()
+
+
+def test_claude_command_is_a_thin_open_world_host_adapter():
+    text = CLAUDE_COMMAND.read_text(encoding="utf-8")
+    assert len(text.encode("utf-8")) < 4_000
+    assert "skills/crossframe-ultra/SKILL.md" in text
+    assert "$ARGUMENTS" in text
+    assert "精确点名" in text
+    assert "普通自然语言" in text
+    assert "open-world" in text
+    assert "pending-action" in text
+    assert "真实宿主工具" in text
+    assert "不得回退" in text
+
+
+def test_task12a_does_not_change_framework_source_registry_or_contracts():
+    run_git(
+        "diff",
+        "--exit-code",
+        TASK12A_BASE_COMMIT,
+        "--",
+        *FROZEN_ULTRA_THEORY_PATHS,
+    )

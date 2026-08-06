@@ -129,6 +129,32 @@ def test_activation_contract_rejects_near_misses_and_adjacent_runtime_routes() -
     assert "暂停确认" in skill
 
 
+def test_skill_accepts_natural_language_and_keeps_closed_input_special() -> None:
+    skill = _required_text(SKILL_PATH)
+    assert "ULTRA-ACTIVATION-NOT-PAYLOAD" in skill
+    assert "普通自然语言" in skill
+    assert "open-world" in skill
+    assert "closed-input" in skill
+    assert "fresh CLI 运行只接受" not in skill
+    assert "普通自由文本、缺少完整材料或需要现实检索" not in skill
+
+
+def test_skill_host_loop_treats_waiting_as_progress_and_control_as_runtime_owned() -> None:
+    skill = _required_text(SKILL_PATH)
+    for marker in (
+        "recovery/pending-action.json",
+        "awaiting-host-action",
+        "awaiting-authoring",
+        "candidate",
+        "checkpoint",
+        "lease",
+    ):
+        assert marker in skill
+    assert "真实宿主工具" in skill
+    assert "正常进度" in skill
+    assert "不得手工" in skill
+
+
 def test_multi_runtime_routing_separates_comparison_from_choice_confirmation() -> None:
     skill = _required_text(SKILL_PATH)
     marker = "<!-- ULTRA-MULTI-RUNTIME-CONFIRM -->"
