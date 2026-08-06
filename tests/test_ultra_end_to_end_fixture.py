@@ -17,7 +17,14 @@ from tests.ultra_closed_fixture_support import (
     write_closed_u4_u10_authoring,
     write_closed_u11_authoring,
 )
-from tests.ultra_fake_host import run_open_world_ai_employment_fixture
+from tests.ultra_fake_host import (
+    _assert_raw_phase_journal,
+    _assert_retrieval_evidence_attribution_contract,
+    _assert_restart_contract,
+    _assert_u0_u3_foundation_contract,
+    _load_open_world_request_contract,
+    run_open_world_ai_employment_fixture,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -182,6 +189,300 @@ def test_closed_fixture_contract_has_the_required_structural_stressors() -> None
         "responsibility",
         "authorization",
     ]
+
+
+def test_open_world_fixture_preserves_v82_m09_lateral_transfer_semantics() -> None:
+    frozen = "缺少独立目标域映射,因此横向类比迁移不进入当前判断。"
+    registry = json.loads(
+        (
+            REPO_ROOT
+            / "skills/crossframe-ultra/references/concept-registry"
+            / "v8.2-concept-registry.json"
+        ).read_text("utf-8")
+    )
+    semantics = json.loads(
+        (OPEN_WORLD_FIXTURE_DIR / "authoring-semantics.json").read_text("utf-8")
+    )
+    mappings = json.loads(
+        (OPEN_WORLD_FIXTURE_DIR / "semantic-mappings.json").read_text("utf-8")
+    )
+    article = (OPEN_WORLD_FIXTURE_DIR / "article.md").read_text("utf-8")
+    m09 = next(
+        concept
+        for concept in registry["concepts"]
+        if concept["concept_id"] == "V82-M09"
+    )
+
+    assert m09["canonical_zh"] == "横向迁移"
+    assert m09["definition"] == "横向迁移的签名是“跨领域类比迁移”。"
+    assert semantics["concept_rationales"]["V82-M09"] == frozen
+    assert mappings["overrides"]["SEMANTIC-UNIT-V82-M09"] == frozen
+    assert article.count(frozen) == 1
+
+
+def test_fake_host_restart_contract_requires_exact_seams_and_action_kinds() -> None:
+    restart_checks = {
+        "U0": True,
+        "U1-first": True,
+        "U4": True,
+        "semantic-review": True,
+        "terminal": True,
+    }
+    submissions = [
+        {"action_kind": kind}
+        for kind in (
+            "capability-attestation",
+            "source-read",
+            "retrieval",
+            "evidence-authoring",
+            "semantic-review",
+        )
+    ]
+
+    _assert_restart_contract(restart_checks, submissions)
+    with pytest.raises(AssertionError, match="restart keys"):
+        _assert_restart_contract(
+            {key: value for key, value in restart_checks.items() if key != "U1-first"},
+            submissions,
+        )
+    with pytest.raises(AssertionError, match="action kinds"):
+        _assert_restart_contract(restart_checks, submissions[:-1])
+
+
+def test_fake_host_raw_phase_journal_rejects_invalidation_and_duplicates(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "phase-events.jsonl"
+    complete = [
+        {"phase_id": f"U{ordinal}", "status": "complete"}
+        for ordinal in range(13)
+    ]
+
+    path.write_text(
+        "".join(json.dumps(event) + "\n" for event in complete),
+        encoding="utf-8",
+    )
+    assert [event["phase_id"] for event in _assert_raw_phase_journal(path)] == [
+        f"U{ordinal}" for ordinal in range(13)
+    ]
+
+    invalidated = complete + [
+        {"phase_id": "U4", "status": "invalidated", "reset_from_phase": "U4"}
+    ]
+    path.write_text(
+        "".join(json.dumps(event) + "\n" for event in invalidated),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="invalidation"):
+        _assert_raw_phase_journal(path)
+
+    duplicated = complete + [{"phase_id": "U4", "status": "complete"}]
+    path.write_text(
+        "".join(json.dumps(event) + "\n" for event in duplicated),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="exactly once"):
+        _assert_raw_phase_journal(path)
+
+
+def test_fake_host_foundation_contract_binds_checkpoints_and_source_units() -> None:
+    phase_events = [
+        {
+            "phase_id": f"U{ordinal}",
+            "status": "complete",
+            "event_sha256": str(ordinal) * 64,
+            "output_artifact_hashes": [str(ordinal + 4) * 64],
+        }
+        for ordinal in range(4)
+    ]
+    checkpoints = [
+        {
+            "phase_id": event["phase_id"],
+            "boundary_kind": "phase",
+            "boundary_id": event["phase_id"],
+            "boundary_ordinal": 0,
+            "phase_event_sha256": event["event_sha256"],
+            "artifact_hashes": [
+                {"path": f"artifacts/{event['phase_id']}.json", "sha256": digest}
+                for digest in event["output_artifact_hashes"]
+            ],
+            "completed_boundary": True,
+            "resumable": True,
+        }
+        for event in phase_events
+    ]
+    read_plan = {
+        "source_unit_count": 2,
+        "source_unit_ids": ["SOURCE-1", "SOURCE-2"],
+        "source_units": [
+            {"unit_id": "SOURCE-1", "sha256": "a" * 64},
+            {"unit_id": "SOURCE-2", "sha256": "b" * 64},
+        ],
+    }
+    read_events = [
+        {
+            "source_unit_id": "SOURCE-1",
+            "content_sha256": "a" * 64,
+            "read_event_sha256": "c" * 64,
+            "receipt_sha256": "e" * 64,
+        },
+        {
+            "source_unit_id": "SOURCE-2",
+            "content_sha256": "b" * 64,
+            "read_event_sha256": "d" * 64,
+            "receipt_sha256": "f" * 64,
+        },
+    ]
+    coverage = {
+        "read_event_sha256s": ["c" * 64, "d" * 64],
+        "receipt_sha256s": ["e" * 64, "f" * 64],
+    }
+
+    _assert_u0_u3_foundation_contract(
+        checkpoints=checkpoints,
+        phase_events=phase_events,
+        read_plan=read_plan,
+        coverage=coverage,
+        read_events=read_events,
+    )
+    with pytest.raises(AssertionError, match="U0-U3 checkpoints"):
+        _assert_u0_u3_foundation_contract(
+            checkpoints=checkpoints[:-1],
+            phase_events=phase_events,
+            read_plan=read_plan,
+            coverage=coverage,
+            read_events=read_events,
+        )
+    duplicated = copy.deepcopy(read_events)
+    duplicated[1]["source_unit_id"] = "SOURCE-1"
+    with pytest.raises(AssertionError, match="source-unit"):
+        _assert_u0_u3_foundation_contract(
+            checkpoints=checkpoints,
+            phase_events=phase_events,
+            read_plan=read_plan,
+            coverage=coverage,
+            read_events=duplicated,
+        )
+
+
+def test_fake_host_retrieval_receipt_closes_u2_u3_source_attribution() -> None:
+    provider = {
+        "provider_id": "fixture-local-provider",
+        "provider_kind": "local",
+        "version": "1.0.0",
+    }
+    tool = {
+        "tool_id": "fixture-offline-retrieval",
+        "provider_id": "fixture-local-provider",
+        "version": "1.0.0",
+    }
+    sources = [
+        {
+            "source_id": "SOURCE-1",
+            "content": "source one",
+            "content_sha256": hashlib.sha256(b"source one").hexdigest(),
+        },
+        {
+            "source_id": "SOURCE-2",
+            "content": "source two",
+            "content_sha256": hashlib.sha256(b"source two").hexdigest(),
+        },
+    ]
+    result = {
+        "provider": provider,
+        "tool": tool,
+        "execution_id": "fixture-retrieval-003",
+        "sources": sources,
+    }
+    result_bytes = (
+        json.dumps(
+            result,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    receipt = {
+        "phase_id": "U2",
+        "action_kind": "retrieval",
+        "result_sha256": hashlib.sha256(result_bytes).hexdigest(),
+        "provider": provider,
+        "tool": tool,
+        "execution_id": "fixture-retrieval-003",
+        "execution_status": "complete",
+        "attempts": [{"attempt": 1, "status": "success", "error": None}],
+    }
+    u2 = {
+        "sources": [
+            {"record": {"source_id": source["source_id"]}}
+            for source in sources
+        ]
+    }
+    u3 = {
+        "entries": [
+            {
+                "statement": source["content"],
+                "source_refs": [source["source_id"]],
+                "attribution": {
+                    "origin_kind": "source",
+                    "origin_ref": source["source_id"],
+                    "content_sha256": source["content_sha256"],
+                },
+            }
+            for source in sources
+        ]
+    }
+
+    assert _assert_retrieval_evidence_attribution_contract(
+        accepted_receipt=receipt,
+        result_bytes=result_bytes,
+        u2=u2,
+        u3=u3,
+        expected_provider=provider,
+        expected_tool=tool,
+        expected_execution_id="fixture-retrieval-003",
+    ) == ("SOURCE-1", "SOURCE-2")
+
+    broken = copy.deepcopy(u3)
+    broken["entries"][1]["attribution"]["content_sha256"] = "0" * 64
+    with pytest.raises(AssertionError, match="source attribution"):
+        _assert_retrieval_evidence_attribution_contract(
+            accepted_receipt=receipt,
+            result_bytes=result_bytes,
+            u2=u2,
+            u3=broken,
+            expected_provider=provider,
+            expected_tool=tool,
+            expected_execution_id="fixture-retrieval-003",
+        )
+
+
+def test_fake_host_loads_open_world_profile_from_persisted_ordinary_chinese(
+    tmp_path: Path,
+) -> None:
+    paths = _module("paths")
+    foundation = _module("foundation")
+    layout = _layout(paths, tmp_path)
+    layout.input_dir.mkdir(parents=True, exist_ok=True)
+    request_bytes = (OPEN_WORLD_FIXTURE_DIR / "request.txt").read_bytes()
+    (layout.input_dir / "request.bin").write_bytes(request_bytes)
+    foundation.seal_input_inventory(
+        layout,
+        request_sha256=hashlib.sha256(request_bytes).hexdigest(),
+        material_files=(),
+        request_bytes=request_bytes,
+        now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+
+    profile, inventory = _load_open_world_request_contract(
+        REPO_ROOT,
+        layout,
+        expected_request_bytes=request_bytes,
+    )
+
+    assert profile == "open-world"
+    assert inventory["materials"] == []
 
 
 @pytest.fixture(scope="module")

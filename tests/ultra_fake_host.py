@@ -46,6 +46,18 @@ _ACTION_KINDS = (
     "maintain-status-quo",
     "no-action",
 )
+_RESTART_CHECK_KEYS = frozenset(
+    {"U0", "U1-first", "U4", "semantic-review", "terminal"}
+)
+_EXPECTED_HOST_ACTION_KINDS = frozenset(
+    {
+        "capability-attestation",
+        "source-read",
+        "retrieval",
+        "evidence-authoring",
+        "semantic-review",
+    }
+)
 
 
 def _runtime_module(repo_root: Path, name: str):
@@ -1417,16 +1429,308 @@ def _public_call(
     return value
 
 
-def _active_complete_events(path: Path) -> list[dict[str, object]]:
-    active: list[dict[str, object]] = []
-    for line in path.read_text("utf-8").splitlines():
+def _assert_raw_phase_journal(path: Path) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for ordinal, line in enumerate(path.read_text("utf-8").splitlines(), start=1):
         event = json.loads(line)
-        if event["status"] == "complete":
-            active.append(event)
-        elif event["status"] == "invalidated":
-            phase = str(event["reset_from_phase"])
-            active = active[: int(phase[1:])]
-    return active
+        if not isinstance(event, dict):
+            raise TypeError(f"phase journal row {ordinal} is not an object")
+        events.append(event)
+    invalidations = [
+        event for event in events if event.get("status") == "invalidated"
+    ]
+    if invalidations:
+        raise AssertionError("deterministic phase journal contains an invalidation")
+    expected = [f"U{ordinal}" for ordinal in range(13)]
+    complete = [event for event in events if event.get("status") == "complete"]
+    counts = {
+        phase_id: sum(event.get("phase_id") == phase_id for event in complete)
+        for phase_id in expected
+    }
+    if (
+        counts != {phase_id: 1 for phase_id in expected}
+        or len(complete) != len(expected)
+        or len(events) != len(expected)
+    ):
+        raise AssertionError(
+            f"U0-U12 must each complete exactly once in the raw journal: {counts}"
+        )
+    if [event.get("phase_id") for event in complete] != expected:
+        raise AssertionError("raw phase completion order is not U0-U12")
+    return complete
+
+
+def _assert_restart_contract(
+    restart_checks: Mapping[str, object],
+    submissions: Sequence[Mapping[str, object]],
+) -> None:
+    keys = frozenset(restart_checks)
+    if keys != _RESTART_CHECK_KEYS:
+        raise AssertionError(
+            "restart keys differ: "
+            f"expected={sorted(_RESTART_CHECK_KEYS)}, actual={sorted(keys)}"
+        )
+    failed = sorted(key for key, value in restart_checks.items() if value is not True)
+    if failed:
+        raise AssertionError(f"restart/idempotence checks failed: {failed}")
+    if any(
+        not isinstance(submission, Mapping)
+        or not isinstance(submission.get("action_kind"), str)
+        for submission in submissions
+    ):
+        raise AssertionError("host action kinds contain an invalid submission")
+    action_kinds = frozenset(
+        str(submission.get("action_kind"))
+        for submission in submissions
+    )
+    if action_kinds != _EXPECTED_HOST_ACTION_KINDS:
+        raise AssertionError(
+            "host action kinds differ: "
+            f"expected={sorted(_EXPECTED_HOST_ACTION_KINDS)}, "
+            f"actual={sorted(action_kinds)}"
+        )
+
+
+def _assert_u0_u3_foundation_contract(
+    *,
+    checkpoints: Sequence[Mapping[str, object]],
+    phase_events: Sequence[Mapping[str, object]],
+    read_plan: Mapping[str, object],
+    coverage: Mapping[str, object],
+    read_events: Sequence[Mapping[str, object]],
+) -> None:
+    expected_phases = [f"U{ordinal}" for ordinal in range(4)]
+    foundation_events = [
+        event
+        for event in phase_events
+        if event.get("phase_id") in expected_phases
+        and event.get("status") == "complete"
+    ]
+    if [event.get("phase_id") for event in foundation_events] != expected_phases:
+        raise AssertionError("U0-U3 complete phase events are not exact")
+    event_by_phase = {
+        str(event["phase_id"]): event for event in foundation_events
+    }
+    foundation_checkpoints = [
+        checkpoint
+        for checkpoint in checkpoints
+        if checkpoint.get("boundary_kind") == "phase"
+        and checkpoint.get("phase_id") in expected_phases
+    ]
+    if [checkpoint.get("phase_id") for checkpoint in foundation_checkpoints] != (
+        expected_phases
+    ):
+        raise AssertionError("U0-U3 checkpoints are not exact")
+    for checkpoint in foundation_checkpoints:
+        phase_id = str(checkpoint["phase_id"])
+        event = event_by_phase[phase_id]
+        refs = checkpoint.get("artifact_hashes")
+        if not isinstance(refs, list) or any(
+            not isinstance(item, Mapping) for item in refs
+        ):
+            raise AssertionError(f"{phase_id} checkpoint artifact refs are invalid")
+        if (
+            checkpoint.get("boundary_id") != phase_id
+            or checkpoint.get("boundary_ordinal") != 0
+            or checkpoint.get("completed_boundary") is not True
+            or checkpoint.get("resumable") is not True
+            or checkpoint.get("phase_event_sha256") != event.get("event_sha256")
+            or [item.get("sha256") for item in refs]
+            != event.get("output_artifact_hashes")
+        ):
+            raise AssertionError(f"{phase_id} checkpoint differs from its phase event")
+
+    raw_plan_units = read_plan.get("source_units")
+    raw_plan_ids = read_plan.get("source_unit_ids")
+    if not isinstance(raw_plan_units, list) or not isinstance(raw_plan_ids, list):
+        raise AssertionError("U1 read-plan source-unit authority is invalid")
+    if any(not isinstance(unit, Mapping) for unit in raw_plan_units):
+        raise AssertionError("U1 read-plan source-unit row is invalid")
+    plan_pairs = [
+        (str(unit.get("unit_id")), str(unit.get("sha256")))
+        for unit in raw_plan_units
+    ]
+    plan_ids = [unit_id for unit_id, _ in plan_pairs]
+    if (
+        raw_plan_ids != plan_ids
+        or read_plan.get("source_unit_count") != len(plan_pairs)
+        or len(plan_ids) != len(set(plan_ids))
+        or len(plan_pairs) != len(set(plan_pairs))
+    ):
+        raise AssertionError("U1 read-plan source-unit IDs or hashes are duplicated")
+
+    if any(not isinstance(event, Mapping) for event in read_events):
+        raise AssertionError("U1 read-events contain a non-object row")
+    event_pairs = [
+        (str(event.get("source_unit_id")), str(event.get("content_sha256")))
+        for event in read_events
+    ]
+    event_ids = [unit_id for unit_id, _ in event_pairs]
+    event_hashes = [str(event.get("read_event_sha256")) for event in read_events]
+    receipt_hashes = [str(event.get("receipt_sha256")) for event in read_events]
+    if (
+        len(event_ids) != len(set(event_ids))
+        or len(event_pairs) != len(set(event_pairs))
+        or len(event_hashes) != len(set(event_hashes))
+        or len(receipt_hashes) != len(set(receipt_hashes))
+    ):
+        raise AssertionError("U1 read-events source-unit authority is duplicated")
+
+    coverage_event_hashes = coverage.get("read_event_sha256s")
+    coverage_receipt_hashes = coverage.get("receipt_sha256s")
+    if (
+        not isinstance(coverage_event_hashes, list)
+        or not isinstance(coverage_receipt_hashes, list)
+        or coverage_event_hashes != event_hashes
+        or coverage_receipt_hashes != receipt_hashes
+        or len(coverage_event_hashes) != len(set(coverage_event_hashes))
+        or len(coverage_receipt_hashes) != len(set(coverage_receipt_hashes))
+    ):
+        raise AssertionError("U1 coverage does not uniquely bind every read-event")
+    event_by_hash = dict(zip(event_hashes, read_events, strict=True))
+    coverage_pairs = [
+        (
+            str(event_by_hash[event_hash].get("source_unit_id")),
+            str(event_by_hash[event_hash].get("content_sha256")),
+        )
+        for event_hash in coverage_event_hashes
+    ]
+    if not (
+        len(plan_pairs) == len(coverage_pairs) == len(event_pairs)
+        and set(plan_pairs) == set(coverage_pairs) == set(event_pairs)
+    ):
+        raise AssertionError(
+            "U1 read-plan/coverage/read-events source-unit ID/hash sets differ"
+        )
+
+
+def _assert_retrieval_evidence_attribution_contract(
+    *,
+    accepted_receipt: Mapping[str, object],
+    result_bytes: bytes,
+    u2: Mapping[str, object],
+    u3: Mapping[str, object],
+    expected_provider: Mapping[str, object],
+    expected_tool: Mapping[str, object],
+    expected_execution_id: str,
+) -> tuple[str, ...]:
+    attempts = [{"attempt": 1, "status": "success", "error": None}]
+    if (
+        accepted_receipt.get("phase_id") != "U2"
+        or accepted_receipt.get("action_kind") != "retrieval"
+        or accepted_receipt.get("provider") != dict(expected_provider)
+        or accepted_receipt.get("tool") != dict(expected_tool)
+        or accepted_receipt.get("execution_id") != expected_execution_id
+        or accepted_receipt.get("execution_status") != "complete"
+        or accepted_receipt.get("attempts") != attempts
+        or accepted_receipt.get("result_sha256") != _sha256_bytes(result_bytes)
+    ):
+        raise AssertionError(
+            "accepted retrieval provider/tool/execution/attempt authority differs"
+        )
+    result = json.loads(result_bytes)
+    if not isinstance(result, dict):
+        raise TypeError("accepted retrieval result must be an object")
+    if (
+        result.get("provider") != accepted_receipt["provider"]
+        or result.get("tool") != accepted_receipt["tool"]
+        or result.get("execution_id") != accepted_receipt["execution_id"]
+    ):
+        raise AssertionError(
+            "accepted retrieval result provider/tool/execution differs from receipt"
+        )
+    raw_sources = result.get("sources")
+    if not isinstance(raw_sources, list) or not raw_sources:
+        raise AssertionError("accepted retrieval result has no sources")
+    source_by_id: dict[str, Mapping[str, object]] = {}
+    for source in raw_sources:
+        if not isinstance(source, Mapping):
+            raise AssertionError("accepted retrieval source is not an object")
+        source_id = str(source.get("source_id"))
+        content = source.get("content")
+        if (
+            not source_id
+            or source_id == "None"
+            or source_id in source_by_id
+            or not isinstance(content, str)
+            or source.get("content_sha256")
+            != _sha256_bytes(content.encode("utf-8"))
+        ):
+            raise AssertionError(
+                "accepted retrieval source_id/content_sha256 authority differs"
+            )
+        source_by_id[source_id] = source
+
+    raw_u2_sources = u2.get("sources")
+    if not isinstance(raw_u2_sources, list):
+        raise AssertionError("U2 retrieval ledger source inventory is invalid")
+    u2_source_ids: list[str] = []
+    for item in raw_u2_sources:
+        record = item.get("record") if isinstance(item, Mapping) else None
+        if not isinstance(record, Mapping):
+            raise AssertionError("U2 retrieval ledger source record is invalid")
+        u2_source_ids.append(str(record.get("source_id")))
+    if (
+        len(u2_source_ids) != len(set(u2_source_ids))
+        or set(u2_source_ids) != set(source_by_id)
+    ):
+        raise AssertionError("U2 source IDs differ from the accepted retrieval result")
+
+    raw_entries = u3.get("entries")
+    if not isinstance(raw_entries, list):
+        raise AssertionError("U3 evidence ledger entries are invalid")
+    u3_source_ids: list[str] = []
+    for entry in raw_entries:
+        attribution = entry.get("attribution") if isinstance(entry, Mapping) else None
+        if not isinstance(entry, Mapping) or not isinstance(attribution, Mapping):
+            raise AssertionError("U3 source attribution is invalid")
+        source_id = str(attribution.get("origin_ref"))
+        source = source_by_id.get(source_id)
+        if (
+            source is None
+            or attribution.get("origin_kind") != "source"
+            or attribution.get("content_sha256") != source.get("content_sha256")
+            or entry.get("source_refs") != [source_id]
+            or entry.get("statement") != source.get("content")
+        ):
+            raise AssertionError("U3 source attribution does not close to U2")
+        u3_source_ids.append(source_id)
+    if (
+        len(u3_source_ids) != len(set(u3_source_ids))
+        or set(u3_source_ids) != set(u2_source_ids)
+    ):
+        raise AssertionError("U3 source attribution IDs do not close to U2")
+    return tuple(source_by_id)
+
+
+def _load_open_world_request_contract(
+    repo_root: Path,
+    layout: object,
+    *,
+    expected_request_bytes: bytes,
+) -> tuple[str, dict[str, object]]:
+    foundation = _runtime_module(repo_root, "foundation")
+    request_path = layout.input_dir / "request.bin"
+    persisted_request = request_path.read_bytes()
+    if persisted_request != expected_request_bytes:
+        raise AssertionError("persisted ordinary-language request bytes differ")
+    request_text = persisted_request.decode("utf-8").strip()
+    if not request_text or not any("\u4e00" <= char <= "\u9fff" for char in request_text):
+        raise AssertionError("fixture request is not ordinary Chinese text")
+    profile = foundation.load_request_profile(layout)
+    inventory = foundation.load_input_inventory(layout)
+    if (
+        profile.analysis_kind != "open-world"
+        or profile.claim != request_text
+        or profile.material_inventory != ()
+        or profile.material_universe_sha256 is not None
+        or inventory.get("materials") != []
+        or inventory.get("material_universe_sha256") is not None
+    ):
+        raise AssertionError(
+            "persisted ordinary Chinese request is not an empty-material open-world profile"
+        )
+    return profile.analysis_kind, inventory
 
 
 def _quality_projection(
@@ -1649,8 +1953,7 @@ def run_open_world_ai_employment_fixture(
 
     if network_calls:
         raise AssertionError(f"offline fixture attempted network calls: {network_calls}")
-    if not all(restart_checks.values()):
-        raise AssertionError(f"restart/idempotence checks failed: {restart_checks}")
+    _assert_restart_contract(restart_checks, fake_host.submissions)
     if (layout.recovery_dir / "pending-action.json").exists():
         raise AssertionError("completed open-world run retains a pending host action")
     for submission in fake_host.submissions:
@@ -1666,13 +1969,9 @@ def run_open_world_ai_employment_fixture(
         ):
             raise AssertionError("accepted host action did not survive disk reread")
 
-    phase_events = _active_complete_events(
+    phase_events = _assert_raw_phase_journal(
         layout.recovery_dir / "phase-events.jsonl"
     )
-    if [event["phase_id"] for event in phase_events] != [
-        f"U{ordinal}" for ordinal in range(13)
-    ]:
-        raise AssertionError("open-world phase chain is incomplete or duplicated")
     for previous, current in zip(phase_events, phase_events[1:]):
         if current["parent_event_sha256"] != previous["event_sha256"]:
             raise AssertionError("open-world phase parent chain is discontinuous")
@@ -1681,17 +1980,48 @@ def run_open_world_ai_employment_fixture(
     u1_coverage = _load_object(
         layout.recovery_dir / "u1-authority/source-coverage.json"
     )
-    read_events = (
+    read_events: list[dict[str, object]] = []
+    for line in (
         layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl"
-    ).read_text("utf-8").splitlines()
-    if len(read_events) != int(u1_read_plan["source_unit_count"]):
-        raise AssertionError("U1 source-read coverage is incomplete")
+    ).read_text("utf-8").splitlines():
+        event = json.loads(line)
+        if not isinstance(event, dict):
+            raise TypeError("U1 read-event journal row must be an object")
+        read_events.append(event)
+    _assert_u0_u3_foundation_contract(
+        checkpoints=checkpoints,
+        phase_events=phase_events,
+        read_plan=u1_read_plan,
+        coverage=u1_coverage,
+        read_events=read_events,
+    )
     u2 = _load_object(
         layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json"
     )
     u2["query_count"] = len(u2["queries"])
     u3 = _load_object(
         layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    retrieval_submissions = [
+        submission
+        for submission in fake_host.submissions
+        if submission.get("action_kind") == "retrieval"
+    ]
+    if len(retrieval_submissions) != 1:
+        raise AssertionError("deterministic run must have exactly one retrieval receipt")
+    retrieval_submission = retrieval_submissions[0]
+    accepted_receipt = _load_object(retrieval_submission["accepted_path"])
+    result_path = layout.run_dir / str(accepted_receipt["result_relative_path"])
+    if result_path != retrieval_submission["result_path"]:
+        raise AssertionError("accepted retrieval result path differs from submission")
+    retrieval_source_ids = _assert_retrieval_evidence_attribution_contract(
+        accepted_receipt=accepted_receipt,
+        result_bytes=result_path.read_bytes(),
+        u2=u2,
+        u3=u3,
+        expected_provider=fake_host._provider("fixture-local-provider"),
+        expected_tool=fake_host._tool("fixture-offline-retrieval"),
+        expected_execution_id=str(retrieval_submission["execution_id"]),
     )
     semantic_review = _load_object(
         layout.artifacts_dir / "U09-U10-verdict/U11-semantic-review.json"
@@ -1717,6 +2047,11 @@ def run_open_world_ai_employment_fixture(
     final_status = _load_object(layout.run_dir / "run-status.json")
     final_chat = _load_object(layout.run_dir / "final-chat.json")
     manifest = _load_object(layout.artifacts_dir / "ultra-artifact-manifest.json")
+    request_profile, input_inventory = _load_open_world_request_contract(
+        repo_root,
+        layout,
+        expected_request_bytes=request_bytes,
+    )
     if final_chat.get("article_path") != str(article_path.resolve()):
         raise AssertionError("final chat does not point to the official article")
     if not str(final_chat.get("center_judgment_summary", "")).strip():
@@ -1733,7 +2068,8 @@ def run_open_world_ai_employment_fixture(
     return {
         "status": final_status["status"],
         "outcome": response["outcome"],
-        "request_profile": "open-world",
+        "request_profile": request_profile,
+        "input_inventory": input_inventory,
         "layout": layout,
         "authority_repo": authority_repo,
         "phase_events": phase_events,
@@ -1745,6 +2081,8 @@ def run_open_world_ai_employment_fixture(
         },
         "u2": u2,
         "u3": u3,
+        "retrieval_receipt": accepted_receipt,
+        "retrieval_source_ids": retrieval_source_ids,
         "semantic_review": semantic_review,
         "validation": validation_report,
         "manifest": manifest,
