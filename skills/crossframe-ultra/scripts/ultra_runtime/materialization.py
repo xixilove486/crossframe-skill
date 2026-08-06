@@ -78,6 +78,12 @@ class FoundationRecoveryError(RuntimeError):
     """A partial foundation cannot continue from its durable checkpoint."""
 
 
+class _AuthoringWaitSignal(RuntimeError):
+    def __init__(self, action: Mapping[str, object]) -> None:
+        super().__init__("materialization is awaiting the next model-owned slot")
+        self.action = copy.deepcopy(dict(action))
+
+
 @dataclass(frozen=True, slots=True)
 class MaterializationProgress:
     outcome: str
@@ -342,12 +348,52 @@ _AUTHORING_PHASE_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _authoring_slot_exists(layout: RunLayout, relative_path: str) -> bool:
+def _authoring_slot_paths(
+    layout: RunLayout,
+    relative_path: str,
+) -> tuple[Path, ...]:
     if relative_path == "U07-recursive-states/<node-id>.json":
-        return any((layout.authoring_dir / "U07-recursive-states").glob("*.json"))
+        return tuple(
+            sorted(
+                (layout.authoring_dir / "U07-recursive-states").glob("*.json"),
+                key=lambda path: path.name,
+            )
+        )
     if relative_path == "article/packets/<packet-id>.md":
-        return any((layout.authoring_dir / "article/packets").glob("*.md"))
-    return (layout.authoring_dir / relative_path).is_file()
+        return tuple(
+            sorted(
+                (layout.authoring_dir / "article/packets").glob("*.md"),
+                key=lambda path: path.name,
+            )
+        )
+    path = layout.authoring_dir / relative_path
+    return (path,) if path.is_file() else ()
+
+
+def _authoring_slot_exists(layout: RunLayout, relative_path: str) -> bool:
+    return bool(_authoring_slot_paths(layout, relative_path))
+
+
+def _validate_present_authoring_slots(
+    layout: RunLayout,
+    relative_paths: Sequence[str],
+) -> None:
+    for relative_path in relative_paths:
+        for path in _authoring_slot_paths(layout, relative_path):
+            try:
+                if path.suffix.casefold() == ".json":
+                    load_json_object(path)
+                    continue
+                raw = path.read_bytes()
+                text = raw.decode("utf-8")
+            except (OSError, TypeError, UnicodeDecodeError, ValueError) as error:
+                raise ValueError(
+                    f"model-authored slot is unreadable: {relative_path}"
+                ) from error
+            if not text.strip() or "\x00" in text or text.startswith("\ufeff"):
+                raise ValueError(
+                    f"model-authored slot is unreadable: {relative_path}"
+                )
 
 
 def next_authoring_action(
@@ -365,29 +411,21 @@ def next_authoring_action(
     except (ValueError, IndexError):
         return None
     next_phase = f"U{phase_number + 1}"
-    if next_phase == "U11":
-        # U11's packet set is the model-owned input that materialize_u4_u11
-        # consumes before deriving coverage and review.
-        packet_dir = layout.authoring_dir / "article" / "packets"
-        if not any(packet_dir.glob("*.md")):
-            return {
-                "action_kind": "authoring",
-                "owner": "model",
-                "phase_id": "U11",
-                "relative_path": "article/packets/<packet-id>.md",
-            }
-        # The dossier is also a required model-owned semantic input.
-        if not (layout.authoring_dir / "完整推演档案.md").is_file():
-            return {
-                "action_kind": "authoring",
-                "owner": "model",
-                "phase_id": "U11",
-                "relative_path": "完整推演档案.md",
-            }
-        return None
     group = _AUTHORING_PHASE_GROUPS.get(next_phase)
     if group is None:
         return None
+    if next_phase == "U11":
+        packet_slot = "article/packets/<packet-id>.md"
+        _validate_present_authoring_slots(layout, (*group, packet_slot))
+        if not _authoring_slot_exists(layout, packet_slot):
+            return {
+                "action_kind": "authoring",
+                "owner": "model",
+                "phase_id": "U11",
+                "relative_path": packet_slot,
+            }
+    else:
+        _validate_present_authoring_slots(layout, group)
     missing = tuple(path for path in group if not _authoring_slot_exists(layout, path))
     if not missing:
         return None
@@ -3782,15 +3820,40 @@ def materialize_complete_run(
             )
 
         def create_owned_checkpoint(*args: Any, **kwargs: Any) -> object:
-            return recovery.create_checkpoint(*args, **kwargs, lease=lease)
+            checkpoint = recovery.create_checkpoint(*args, **kwargs, lease=lease)
+            if (
+                kwargs.get("boundary_kind") == "phase"
+                and kwargs.get("boundary_id") in PHASES[4:11]
+            ):
+                action = next_authoring_action(layout, phase_store)
+                if action is not None:
+                    raise _AuthoringWaitSignal(action)
+            return checkpoint
 
-        bundle = materialize_u4_u11(
-            repo,
-            layout,
-            phase_store,
-            now=now,
-            create_checkpoint=create_owned_checkpoint,
-        )
+        try:
+            bundle = materialize_u4_u11(
+                repo,
+                layout,
+                phase_store,
+                now=now,
+                create_checkpoint=create_owned_checkpoint,
+            )
+        except _AuthoringWaitSignal as wait:
+            stop_if_cancel_requested()
+            last_complete = getattr(phase_store, "current_phase", None)
+            if not isinstance(last_complete, str):
+                raise RuntimeError(
+                    "authoring wait has no completed phase authority"
+                ) from wait
+            return MaterializationProgress(
+                outcome="awaiting-authoring",
+                run_id=run_id,
+                status="running",
+                current_phase=str(wait.action["phase_id"]),
+                last_complete_phase=last_complete,
+                next_action=copy.deepcopy(wait.action),
+                final_chat=None,
+            )
         if isinstance(bundle, HostActionSeal):
             stop_if_cancel_requested()
             if (

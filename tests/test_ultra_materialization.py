@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 from tests.pytest_import_guard import pytest
 
@@ -68,6 +69,9 @@ def _layout(paths, tmp_path: Path):
 class _RecordingPhaseStore:
     def __init__(self) -> None:
         self.events: tuple[dict[str, object], ...] = ()
+        self.current_phase = "U3"
+        self.active_generation = 0
+        self.run_contract: dict[str, object] = {}
 
     def complete(self, phase_id: str, *, artifact_hashes, **kwargs):
         digests = tuple(artifact_hashes)
@@ -80,13 +84,12 @@ class _RecordingPhaseStore:
             "output_artifact_hashes": list(digests),
         }
         self.events = (*self.events, event)
+        self.current_phase = phase_id
         return event
 
 
-def _prepare_u10_authority_case(runtime, tmp_path: Path):
+def _write_evidence_authority(runtime, layout):
     materialization, paths, jsonio = runtime
-    layout = _layout(paths, tmp_path)
-    prepared = materialization.prepare_authoring(layout)
     evidence = json.loads(
         (REPO_ROOT / "tests/fixtures/ultra-runtime/evidence-ledger-valid.json").read_text(
             "utf-8"
@@ -126,8 +129,107 @@ def _prepare_u10_authority_case(runtime, tmp_path: Path):
         layout.authoring_dir / "U03-evidence-ledger.json",
     )
     jsonio.atomic_write_json(evidence_path, evidence)
+    return evidence_path, evidence
+
+
+def _prepare_u10_authority_case(runtime, tmp_path: Path):
+    materialization, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    prepared = materialization.prepare_authoring(layout)
+    _write_evidence_authority(runtime, layout)
     authority = write_closed_u4_u10_authoring(REPO_ROOT, layout)
     return materialization, jsonio, layout, prepared, authority, _RecordingPhaseStore()
+
+
+def _freeze_public_foundation_progress(
+    runtime,
+    layout,
+    store: _RecordingPhaseStore,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    created_at: datetime,
+):
+    materialization, paths, jsonio = runtime
+    foundation = _module("foundation")
+    recovery = _module("recovery")
+    status = _module("status")
+    request_bytes = (
+        '{"analysis_kind":"closed-input","claim":"若 A 则 B。",'
+        '"material":"本请求是完整且封闭的材料全集。"}\n'
+    ).encode("utf-8")
+    request_sha256 = hashlib.sha256(request_bytes).hexdigest()
+    jsonio.atomic_write_bytes(layout.input_dir / "request.bin", request_bytes)
+    jsonio.atomic_write_json(
+        layout.input_dir / "request-metadata.json",
+        {
+            "request_sha256": request_sha256,
+            "request_size": len(request_bytes),
+        },
+    )
+    status_store = status.RunStatusStore(layout)
+    created = status_store.create(created_at)
+    materialization.seal_request_intake_authority(
+        layout,
+        request_sha256=request_sha256,
+        request_size=len(request_bytes),
+        created_at=created.created_at,
+    )
+    foundation.seal_input_inventory(
+        layout,
+        request_sha256=request_sha256,
+        material_files=(),
+        now=created_at,
+        request_bytes=request_bytes,
+    )
+    store.run_contract = {"request_sha256": request_sha256}
+    progress = SimpleNamespace(
+        outcome="advanced",
+        pending_action=None,
+        phase_store=store,
+        completed_phase="U3",
+    )
+    monkeypatch.setattr(foundation, "advance_foundation", lambda *args, **kwargs: progress)
+    checkpoints: list[dict[str, object]] = []
+
+    def record_checkpoint(*args, **kwargs):
+        checkpoint = {
+            "boundary_kind": kwargs["boundary_kind"],
+            "phase_id": kwargs["boundary_id"],
+            "boundary_ordinal": kwargs["boundary_ordinal"],
+            "artifact_paths": tuple(kwargs["artifact_paths"]),
+        }
+        checkpoints.append(checkpoint)
+        return checkpoint
+
+    monkeypatch.setattr(recovery, "create_checkpoint", record_checkpoint)
+    policy = paths.RootPolicy(layout.root.parent / "production", layout.root)
+    return policy, status_store, checkpoints
+
+
+def _public_materialize(
+    runtime,
+    layout,
+    policy,
+    *,
+    now: datetime,
+    forbidden_calls: list[tuple[object, ...]],
+):
+    materialization, paths, _ = runtime
+
+    def forbidden(*args):
+        forbidden_calls.append(args)
+        pytest.fail("validation or publication ran before authoring completed")
+
+    return materialization.materialize_complete_run(
+        REPO_ROOT,
+        paths.RunMode.TEST,
+        layout.run_dir.name,
+        policy=policy,
+        now=now,
+        entropy=f"task-13-b1-{now.second}".encode("ascii"),
+        fresh_check=forbidden,
+        commit_report=forbidden,
+    )
 
 
 def _write_mutated_plan(jsonio, layout, plan: dict[str, object]) -> None:
@@ -222,6 +324,304 @@ def test_prepare_returns_only_the_frozen_model_owned_slots(runtime, tmp_path: Pa
     assert not (layout.authoring_dir / "article.partial.md").exists()
     assert not (layout.authoring_dir / "U09-forecast-resolution.json").exists()
     assert list(layout.delivery_dir.glob("*")) == []
+
+
+def test_public_materialize_after_only_u4_returns_u5_wait(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materialization, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    materialization.prepare_authoring(layout)
+    _write_evidence_authority(runtime, layout)
+    store = _RecordingPhaseStore()
+    policy, status_store, checkpoints = _freeze_public_foundation_progress(
+        runtime,
+        layout,
+        store,
+        monkeypatch,
+        created_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    forbidden_calls: list[tuple[object, ...]] = []
+
+    first = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert first.status == "running"
+    assert first.outcome == "awaiting-authoring"
+    assert first.current_phase == "U4"
+    assert first.last_complete_phase == "U3"
+    assert first.next_action is not None
+    assert first.next_action["relative_path"] == "U04-world-volume.json"
+
+    world = json.loads(
+        (
+            REPO_ROOT / "tests/fixtures/ultra-runtime/world-volume-valid.json"
+        ).read_text("utf-8")
+    )
+    jsonio.atomic_write_json(
+        layout.authoring_dir / str(first.next_action["relative_path"]),
+        world,
+    )
+    second = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 7, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+
+    assert second.status == "running"
+    assert second.outcome == "awaiting-authoring"
+    assert second.current_phase == "U5"
+    assert second.last_complete_phase == "U4"
+    assert second.next_action is not None
+    assert second.next_action["relative_path"] == "U05-transformation-ledger.json"
+    assert second.next_action["relative_paths"] == [
+        "U05-transformation-ledger.json",
+        "U05-concept-disposition.json",
+    ]
+    assert [event["phase_id"] for event in store.events] == ["U4"]
+    assert [checkpoint["phase_id"] for checkpoint in checkpoints] == ["U4"]
+    assert not (
+        layout.artifacts_dir
+        / "U04-U05-world-volume/U05-transformation-ledger.json"
+    ).exists()
+    assert not (
+        layout.artifacts_dir / "U04-U05-world-volume/U05-concept-disposition.json"
+    ).exists()
+    assert status_store.read().status == "running"
+    assert forbidden_calls == []
+    assert not (layout.recovery_dir / "publish-transaction.json").exists()
+    assert not (layout.artifacts_dir / "ultra-artifact-manifest.json").exists()
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+def test_public_authoring_wait_does_not_hide_malformed_present_sibling(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materialization, paths, jsonio = runtime
+    layout = _layout(paths, tmp_path)
+    materialization.prepare_authoring(layout)
+    _write_evidence_authority(runtime, layout)
+    store = _RecordingPhaseStore()
+    policy, status_store, checkpoints = _freeze_public_foundation_progress(
+        runtime,
+        layout,
+        store,
+        monkeypatch,
+        created_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    forbidden_calls: list[tuple[object, ...]] = []
+    first = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    world = json.loads(
+        (
+            REPO_ROOT / "tests/fixtures/ultra-runtime/world-volume-valid.json"
+        ).read_text("utf-8")
+    )
+    jsonio.atomic_write_json(
+        layout.authoring_dir / str(first.next_action["relative_path"]),
+        world,
+    )
+    malformed_path = layout.authoring_dir / "U05-transformation-ledger.json"
+    malformed_bytes = b'{"malformed":\n'
+    malformed_path.write_bytes(malformed_bytes)
+
+    with pytest.raises(ValueError, match="U05-transformation-ledger|unreadable|JSON"):
+        _public_materialize(
+            runtime,
+            layout,
+            policy,
+            now=datetime(2026, 8, 2, 3, 4, 7, tzinfo=timezone.utc),
+            forbidden_calls=forbidden_calls,
+        )
+
+    assert malformed_path.read_bytes() == malformed_bytes
+    assert [event["phase_id"] for event in store.events] == ["U4"]
+    assert [checkpoint["phase_id"] for checkpoint in checkpoints] == ["U4"]
+    assert status_store.read().status == "running"
+    assert forbidden_calls == []
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+def test_public_u11_waits_for_each_declared_semantic_input_before_review(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    materialization, jsonio, layout, _, output_authority, store = (
+        _prepare_u10_authority_case(runtime, tmp_path)
+    )
+    with pytest.raises(ValueError, match="packet count"):
+        materialization.materialize_u4_u11(
+            REPO_ROOT,
+            layout,
+            store,
+            now=datetime(2026, 8, 2, 3, 4, 10, tzinfo=timezone.utc),
+            create_checkpoint=lambda *args, **kwargs: kwargs,
+        )
+    assert store.current_phase == "U10"
+    policy, status_store, checkpoints = _freeze_public_foundation_progress(
+        runtime,
+        layout,
+        store,
+        monkeypatch,
+        created_at=datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+    )
+    sealed_plan = jsonio.load_json_object(
+        layout.artifacts_dir / "U09-U10-verdict/U10-output-plan.json"
+    )
+    write_closed_u11_authoring(
+        REPO_ROOT,
+        layout,
+        sealed_plan,
+        output_authority,
+        generated_at="2026-08-02T03:04:15Z",
+    )
+    authored_paths = (
+        *sorted(
+            (layout.authoring_dir / "article/packets").glob("*.md"),
+            key=lambda path: path.name,
+        ),
+        layout.authoring_dir / "U11-semantic-coverage.json",
+        layout.authoring_dir / "U11-article-review.json",
+        layout.authoring_dir / "完整推演档案.md",
+    )
+    authored = {
+        path.relative_to(layout.authoring_dir).as_posix(): path.read_bytes()
+        for path in authored_paths
+    }
+    for path in authored_paths:
+        path.unlink()
+    (layout.authoring_dir / "article.partial.md").unlink()
+    semantic_review = _module("semantic_review")
+    semantic_action_path = semantic_review.semantic_review_action_path(layout, 0)
+    forbidden_calls: list[tuple[object, ...]] = []
+
+    packet_wait = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 11, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert packet_wait.status == "running"
+    assert packet_wait.outcome == "awaiting-authoring"
+    assert packet_wait.current_phase == "U11"
+    assert packet_wait.last_complete_phase == "U10"
+    assert packet_wait.next_action is not None
+    assert packet_wait.next_action["relative_path"] == (
+        "article/packets/<packet-id>.md"
+    )
+    assert "relative_paths" not in packet_wait.next_action
+    assert not semantic_action_path.exists()
+
+    packet_relatives = sorted(
+        relative
+        for relative in authored
+        if relative.startswith("article/packets/")
+    )
+    assert packet_relatives
+    for relative in packet_relatives:
+        target = layout.authoring_dir / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(authored[relative])
+
+    coverage_wait = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 12, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert coverage_wait.outcome == "awaiting-authoring"
+    assert coverage_wait.next_action is not None
+    assert coverage_wait.next_action["relative_path"] == (
+        "U11-semantic-coverage.json"
+    )
+    assert coverage_wait.next_action["relative_paths"] == [
+        "U11-semantic-coverage.json",
+        "U11-article-review.json",
+        "完整推演档案.md",
+    ]
+    assert not semantic_action_path.exists()
+
+    (layout.authoring_dir / "U11-semantic-coverage.json").write_bytes(
+        authored["U11-semantic-coverage.json"]
+    )
+    review_wait = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 13, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert review_wait.outcome == "awaiting-authoring"
+    assert review_wait.next_action is not None
+    assert review_wait.next_action["relative_path"] == "U11-article-review.json"
+    assert review_wait.next_action["relative_paths"] == [
+        "U11-article-review.json",
+        "完整推演档案.md",
+    ]
+    assert not semantic_action_path.exists()
+
+    (layout.authoring_dir / "U11-article-review.json").write_bytes(
+        authored["U11-article-review.json"]
+    )
+    dossier_wait = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 14, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert dossier_wait.outcome == "awaiting-authoring"
+    assert dossier_wait.next_action is not None
+    assert dossier_wait.next_action["relative_path"] == "完整推演档案.md"
+    assert "relative_paths" not in dossier_wait.next_action
+    assert not semantic_action_path.exists()
+
+    (layout.authoring_dir / "完整推演档案.md").write_bytes(
+        authored["完整推演档案.md"]
+    )
+    semantic_wait = _public_materialize(
+        runtime,
+        layout,
+        policy,
+        now=datetime(2026, 8, 2, 3, 4, 15, tzinfo=timezone.utc),
+        forbidden_calls=forbidden_calls,
+    )
+    assert semantic_wait.status == "running"
+    assert semantic_wait.outcome == "awaiting-host-action"
+    assert semantic_wait.current_phase == "U11"
+    assert semantic_wait.last_complete_phase == "U10"
+    assert semantic_wait.next_action is not None
+    assert semantic_wait.next_action["action_kind"] == "semantic-review"
+    assert semantic_action_path.is_file()
+    assert all(event["phase_id"] != "U11" for event in store.events)
+    assert all(
+        checkpoint["phase_id"] != "U11"
+        for checkpoint in checkpoints
+        if checkpoint["boundary_kind"] == "phase"
+    )
+    assert status_store.read().status == "running"
+    assert forbidden_calls == []
+    assert not (layout.recovery_dir / "publish-transaction.json").exists()
+    assert not (layout.artifacts_dir / "ultra-artifact-manifest.json").exists()
+    assert not (layout.run_dir / ".writer-lease.json").exists()
 
 
 def test_discovery_freezes_recursive_and_cross_phase_dependency_order(
