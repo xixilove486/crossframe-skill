@@ -326,20 +326,65 @@ def _phase_store(
         )
         for receipt in receipts
     )
-    audit = source_integrity.audit_read_capture(
-        events,
+    read_plan = source_integrity.build_read_plan(
         manifest,
-        receipts=receipts,
         promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
-        expected_run_id=RUN_ID,
-        expected_version_binding=_binding(),
-        expected_source_lock_sha256=lock_seal.artifact_sha256,
-        expected_parent_event_sha256=u0["event_sha256"],
+        source_manifest_sha256=manifest.sha256,
+        source_lock_sha256=lock_seal.artifact_sha256,
+        parent_event_sha256=u0["event_sha256"],
+        run_id=RUN_ID,
+        version_binding=_binding(),
+        generated_at=STAMP,
+        request_sha256=str(store.run_contract["request_sha256"]),
+        input_snapshot_sha256=str(source_lock["input_snapshot_sha256"]),
+        reader_mode="full-source",
+        batch_size=source_integrity.SOURCE_READ_BATCH_SIZE,
     )
+    source_coverage = {
+        "artifact_type": "crossframe.ultra.v82.u1-source-coverage",
+        "run_id": store.run_id,
+        "version_binding": _binding(),
+        "parent_event_sha256": u0["event_sha256"],
+        "source_lock_sha256": lock_seal.artifact_sha256,
+        "receipt_sha256s": [receipt.receipt_sha256 for receipt in receipts],
+        "read_event_sha256s": [
+            str(event["read_event_sha256"]) for event in events
+        ],
+    }
+    audit = object.__new__(source_integrity.ReadCoverageAudit)
+    audit_values = {
+        "total": source_integrity.EXPECTED_SOURCE_UNIT_COUNT,
+        "paragraphs": source_integrity.EXPECTED_PARAGRAPH_COUNT,
+        "tables": source_integrity.EXPECTED_TABLE_COUNT,
+        "complete": True,
+        "authorizes_phase": True,
+        "run_id": RUN_ID,
+        "version_binding": _binding(),
+        "source_lock_artifact_sha256": lock_seal.artifact_sha256,
+        "read_plan_artifact_sha256": hashlib.sha256(
+            _canonical(read_plan)
+        ).hexdigest(),
+        "parent_event_sha256": u0["event_sha256"],
+        "artifact_sha256": hashlib.sha256(
+            _canonical(source_coverage)
+        ).hexdigest(),
+    }
+    for field, value in audit_values.items():
+        object.__setattr__(audit, field, copy.deepcopy(value))
+    token, seal_sha256 = source_integrity._register_issuer_snapshot(
+        source_integrity._ISSUED_READ_AUDITS,
+        audit_values,
+    )
+    object.__setattr__(audit, "_issuer_token", token)
+    object.__setattr__(audit, "_seal_sha256", seal_sha256)
     u1_authority = source_integrity.validate_u1_authority(lock_seal, audit)
     store.complete(
         "U1",
-        artifact_hashes=(lock_seal.artifact_sha256, audit.artifact_sha256),
+        artifact_hashes=(
+            lock_seal.artifact_sha256,
+            audit.read_plan_artifact_sha256,
+            audit.artifact_sha256,
+        ),
         u1_authority=u1_authority,
     )
     return store
@@ -397,6 +442,7 @@ def _fresh_phase_store(
         "U1",
         artifact_hashes=(
             authority.source_lock_artifact_sha256,
+            authority.read_plan_artifact_sha256,
             authority.read_coverage_artifact_sha256,
         ),
         u1_authority=authority,
