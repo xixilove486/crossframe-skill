@@ -54,7 +54,14 @@ _ENTRY_FIELDS = frozenset(
         "upstream_lineage",
         "supported_claim",
         "cannot_prove",
+        "attribution",
     }
+)
+_ATTRIBUTION_FIELDS = frozenset(
+    {"origin_kind", "origin_ref", "content_sha256", "span", "proof_grade"}
+)
+_ATTRIBUTION_ORIGIN_KINDS = frozenset(
+    {"request", "material", "source", "model", "subagent"}
 )
 _UNKNOWN_FIELDS = frozenset(
     {"unknown_id", "location_ref", "description", "resolution_condition"}
@@ -79,6 +86,48 @@ class EvidenceValidationError(ValueError):
 
 class EvidenceFrozenError(RuntimeError):
     """Raised when a frozen U3 evidence ledger would be changed."""
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceAdmissionAuthority:
+    run_id: str
+    request_bytes: bytes
+    input_inventory: tuple[dict[str, object], ...]
+    admitted_sources: Mapping[str, Mapping[str, object]]
+    evidence_cutoff: str
+
+    def __post_init__(self) -> None:
+        _nonempty_string(self.run_id, field="run_id")
+        if not isinstance(self.request_bytes, bytes):
+            raise TypeError("request_bytes must be bytes")
+        _timestamp(self.evidence_cutoff, field="evidence_cutoff")
+        if isinstance(self.input_inventory, (str, bytes)):
+            raise TypeError("input_inventory must contain material inventory objects")
+        inventory: list[dict[str, object]] = []
+        for item in tuple(self.input_inventory):
+            if not isinstance(item, Mapping):
+                raise TypeError("input_inventory entries must be objects")
+            inventory.append(copy.deepcopy(dict(item)))
+        if not isinstance(self.admitted_sources, Mapping):
+            raise TypeError("admitted_sources must be a mapping")
+        sources: dict[str, dict[str, object]] = {}
+        for source_id, source in self.admitted_sources.items():
+            key = _nonempty_string(source_id, field="admitted source id")
+            if not isinstance(source, Mapping):
+                raise TypeError("admitted source entries must be objects")
+            snapshot = copy.deepcopy(dict(source))
+            declared_id = snapshot.get("source_id")
+            record = snapshot.get("record")
+            if declared_id is None and isinstance(record, Mapping):
+                declared_id = record.get("source_id")
+            if declared_id is not None and declared_id != key:
+                raise EvidenceValidationError(
+                    "admitted source id differs from its inventory key"
+                )
+            sources[key] = snapshot
+        object.__setattr__(self, "request_bytes", bytes(self.request_bytes))
+        object.__setattr__(self, "input_inventory", tuple(inventory))
+        object.__setattr__(self, "admitted_sources", sources)
 
 
 @dataclass(frozen=True, init=False)
@@ -132,6 +181,10 @@ def _date_value(value: object, *, field: str) -> date:
     return parsed
 
 
+def _nullable_date_value(value: object, *, field: str) -> date | None:
+    return None if value is None else _date_value(value, field=field)
+
+
 def _timestamp(value: object, *, field: str) -> datetime:
     text = _nonempty_string(value, field=field)
     candidate = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
@@ -153,6 +206,258 @@ def _version_binding(value: Mapping[str, object]) -> dict[str, object]:
     return snapshot
 
 
+def _sha256(value: object, *, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise EvidenceValidationError(f"{field} must be a lowercase SHA-256")
+    return value
+
+
+def _normalize_attribution(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise EvidenceValidationError("evidence attribution must be an object")
+    snapshot = copy.deepcopy(dict(value))
+    if frozenset(snapshot) != _ATTRIBUTION_FIELDS:
+        raise EvidenceValidationError("evidence attribution fields are not closed")
+    origin_kind = snapshot["origin_kind"]
+    if (
+        not isinstance(origin_kind, str)
+        or origin_kind not in _ATTRIBUTION_ORIGIN_KINDS
+    ):
+        raise EvidenceValidationError(f"invalid attribution origin_kind: {origin_kind!r}")
+    _nonempty_string(snapshot["origin_ref"], field="attribution origin_ref")
+    _sha256(snapshot["content_sha256"], field="attribution content_sha256")
+    _nonempty_string(snapshot["proof_grade"], field="attribution proof_grade")
+    span = snapshot["span"]
+    if span is not None:
+        if (
+            not isinstance(span, (list, tuple))
+            or len(span) != 2
+            or any(type(offset) is not int for offset in span)
+        ):
+            raise EvidenceValidationError(
+                "attribution span must be null or a two-integer byte range"
+            )
+        start, end = span
+        if start < 0 or end <= start:
+            raise EvidenceValidationError(
+                "attribution byte span must be non-empty and ordered"
+            )
+        snapshot["span"] = [start, end]
+    return snapshot
+
+
+def _material_bytes(
+    authority: EvidenceAdmissionAuthority,
+    origin_ref: str,
+) -> bytes:
+    matches = [
+        item
+        for item in authority.input_inventory
+        if item.get("path") == origin_ref
+    ]
+    if len(matches) != 1:
+        raise EvidenceValidationError(
+            "user-claim material origin is not in the input inventory"
+        )
+    item = matches[0]
+    content = item.get("content_bytes")
+    if not isinstance(content, bytes):
+        raise EvidenceValidationError(
+            "user-claim material bytes are unavailable for exact span validation"
+        )
+    measured = hashlib.sha256(content).hexdigest()
+    if item.get("sha256") != measured:
+        raise EvidenceValidationError("material bytes differ from the input inventory")
+    return content
+
+
+def _source_content_hashes(source: Mapping[str, object]) -> frozenset[str]:
+    candidates: set[str] = set()
+    for field in ("content_sha256", "source_record_sha256"):
+        value = source.get(field)
+        if isinstance(value, str):
+            candidates.add(_sha256(value, field=f"admitted source {field}"))
+    record = source.get("record")
+    if isinstance(record, Mapping):
+        value = record.get("content_sha256")
+        if isinstance(value, str):
+            candidates.add(
+                _sha256(value, field="admitted source record content_sha256")
+            )
+    return frozenset(candidates)
+
+
+def validate_evidence_attribution(
+    attribution: Mapping[str, object],
+    *,
+    authority: EvidenceAdmissionAuthority,
+) -> dict[str, object]:
+    if not isinstance(authority, EvidenceAdmissionAuthority):
+        raise TypeError("authority must be an EvidenceAdmissionAuthority")
+    snapshot = _normalize_attribution(attribution)
+    origin_kind = str(snapshot["origin_kind"])
+    origin_ref = str(snapshot["origin_ref"])
+    content_sha256 = str(snapshot["content_sha256"])
+    if origin_kind == "request":
+        if origin_ref != "request.bin":
+            raise EvidenceValidationError(
+                "request attribution must reference request.bin"
+            )
+        if content_sha256 != hashlib.sha256(authority.request_bytes).hexdigest():
+            raise EvidenceValidationError(
+                "request attribution content hash differs from immutable request bytes"
+            )
+    elif origin_kind == "material":
+        content = _material_bytes(authority, origin_ref)
+        if content_sha256 != hashlib.sha256(content).hexdigest():
+            raise EvidenceValidationError(
+                "material attribution content hash differs from immutable material bytes"
+            )
+    elif origin_kind == "source":
+        source = authority.admitted_sources.get(origin_ref)
+        if source is None:
+            raise EvidenceValidationError(
+                "evidence attribution does not reference an admitted source"
+            )
+        if content_sha256 not in _source_content_hashes(source):
+            raise EvidenceValidationError(
+                "evidence attribution content hash differs from admitted source authority"
+            )
+    elif snapshot["span"] is not None:
+        raise EvidenceValidationError(
+            "model and subagent attribution span must be null"
+        )
+    return snapshot
+
+
+def _require_exact_user_span(
+    statement: str,
+    attribution: Mapping[str, object],
+    authority: EvidenceAdmissionAuthority,
+) -> None:
+    origin_kind = str(attribution["origin_kind"])
+    if origin_kind not in {"request", "material"} or attribution["span"] is None:
+        raise EvidenceValidationError(
+            "user-claim requires an exact request or material byte span"
+        )
+    origin = (
+        authority.request_bytes
+        if origin_kind == "request"
+        else _material_bytes(authority, str(attribution["origin_ref"]))
+    )
+    start, end = attribution["span"]
+    assert isinstance(start, int) and isinstance(end, int)
+    if end > len(origin):
+        raise EvidenceValidationError(
+            f"user-claim {origin_kind} byte span exceeds its immutable origin"
+        )
+    try:
+        attributed_statement = origin[start:end].decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise EvidenceValidationError(
+            f"user-claim {origin_kind} byte span is not exact UTF-8 text"
+        ) from error
+    if attributed_statement != statement:
+        raise EvidenceValidationError(
+            f"user-claim statement does not match the attributed {origin_kind} byte span"
+        )
+
+
+def _require_admitted_sources(
+    entry: Mapping[str, object],
+    attribution: Mapping[str, object],
+    authority: EvidenceAdmissionAuthority,
+) -> None:
+    source_refs = entry["source_refs"]
+    assert isinstance(source_refs, list)
+    if attribution["origin_kind"] != "source":
+        raise EvidenceValidationError(
+            "observed or reported evidence requires an admitted source origin"
+        )
+    origin_ref = str(attribution["origin_ref"])
+    if origin_ref not in source_refs or any(
+        source_ref not in authority.admitted_sources for source_ref in source_refs
+    ):
+        raise EvidenceValidationError(
+            "observed or reported evidence must cite only admitted source refs"
+        )
+    source = authority.admitted_sources[origin_ref]
+    record = source.get("record")
+    source_record = record if isinstance(record, Mapping) else source
+    if any(
+        entry[field] != source_record.get(field)
+        for field in ("event_date", "publication_date")
+    ):
+        raise EvidenceValidationError(
+            "evidence source date differs from the admitted source record"
+        )
+
+
+def _require_model_origin(
+    statement: str,
+    source_refs: Sequence[str],
+    attribution: Mapping[str, object],
+    authority: EvidenceAdmissionAuthority,
+) -> None:
+    origin_kind = attribution["origin_kind"]
+    if origin_kind not in {"model", "subagent"}:
+        raise EvidenceValidationError(
+            "model-candidate and simulated evidence require a model origin"
+        )
+    if attribution["content_sha256"] != hashlib.sha256(
+        statement.encode("utf-8")
+    ).hexdigest():
+        raise EvidenceValidationError(
+            "model evidence content hash differs from its statement"
+        )
+    if origin_kind == "subagent" and any(
+        source_ref not in authority.admitted_sources for source_ref in source_refs
+    ):
+        raise EvidenceValidationError(
+            "subagent evidence requires admitted source refs"
+        )
+
+
+def admit_evidence_candidate(
+    entry: Mapping[str, object],
+    *,
+    authority: EvidenceAdmissionAuthority,
+) -> dict[str, object]:
+    if not isinstance(entry, Mapping):
+        raise EvidenceValidationError("evidence candidate must be an object")
+    snapshot = copy.deepcopy(dict(entry))
+    attribution = validate_evidence_attribution(
+        snapshot.get("attribution"),
+        authority=authority,
+    )
+    snapshot["attribution"] = attribution
+    normalized = validate_evidence_entry(
+        snapshot,
+        evidence_cutoff=authority.evidence_cutoff,
+    )
+    identity = str(normalized["identity"])
+    statement = str(normalized["statement"])
+    source_refs = normalized["source_refs"]
+    assert isinstance(source_refs, list)
+    if identity == "user-claim":
+        _require_exact_user_span(statement, attribution, authority)
+    elif identity in _FACTUAL_IDENTITIES:
+        _require_admitted_sources(normalized, attribution, authority)
+    elif identity in {"model-candidate", "simulated"}:
+        _require_model_origin(statement, source_refs, attribution, authority)
+    elif attribution["origin_kind"] == "subagent" and any(
+        source_ref not in authority.admitted_sources for source_ref in source_refs
+    ):
+        raise EvidenceValidationError(
+            "subagent evidence requires admitted source refs"
+        )
+    return normalized
+
+
 def validate_evidence_entry(
     entry: Mapping[str, object],
     *,
@@ -170,11 +475,14 @@ def validate_evidence_entry(
         raise EvidenceValidationError(f"invalid evidence identity: {identity!r}")
     _nonempty_string(snapshot["statement"], field="statement")
     snapshot["source_refs"] = _string_list(snapshot["source_refs"], field="source_refs")
+    snapshot["attribution"] = _normalize_attribution(snapshot["attribution"])
     confidence = snapshot["confidence"]
     if confidence not in _CONFIDENCE_VALUES:
         raise EvidenceValidationError(f"invalid evidence confidence: {confidence!r}")
-    event_date = _date_value(snapshot["event_date"], field="event_date")
-    publication_date = _date_value(snapshot["publication_date"], field="publication_date")
+    event_date = _nullable_date_value(snapshot["event_date"], field="event_date")
+    publication_date = _nullable_date_value(
+        snapshot["publication_date"], field="publication_date"
+    )
     _nonempty_string(snapshot["interest"], field="interest")
     snapshot["upstream_lineage"] = _string_list(
         snapshot["upstream_lineage"], field="upstream_lineage"
@@ -191,7 +499,12 @@ def validate_evidence_entry(
         snapshot["confidence"] = "unknown"
     if evidence_cutoff is not None:
         cutoff = _timestamp(evidence_cutoff, field="evidence_cutoff")
-        if event_date > cutoff.date() or publication_date > cutoff.date():
+        if (
+            event_date is not None and event_date > cutoff.date()
+        ) or (
+            publication_date is not None
+            and publication_date > cutoff.date()
+        ):
             raise EvidenceValidationError("evidence source date is after the cutoff")
         if parsed_observed is not None and parsed_observed > cutoff:
             raise EvidenceValidationError("observed evidence is after the cutoff")
@@ -455,10 +768,13 @@ class EvidenceLedger:
 
 __all__ = (
     "EVIDENCE_IDENTITIES",
+    "EvidenceAdmissionAuthority",
     "EvidenceArtifactSeal",
     "EvidenceFrozenError",
     "EvidenceLedger",
     "EvidenceValidationError",
+    "admit_evidence_candidate",
     "validate_evidence_artifact",
+    "validate_evidence_attribution",
     "validate_evidence_entry",
 )

@@ -557,10 +557,11 @@ def _complete_u2(store, *, include_artifact=False):
 
 
 def _evidence_entry() -> dict[str, object]:
+    statement = "A bounded statement."
     return {
         "evidence_id": "EV-STATE-1",
         "identity": "reported",
-        "statement": "A bounded statement.",
+        "statement": statement,
         "source_refs": ["report-1"],
         "observed_at": None,
         "confidence": "medium",
@@ -570,6 +571,13 @@ def _evidence_entry() -> dict[str, object]:
         "upstream_lineage": ["report-1"],
         "supported_claim": "claim-1",
         "cannot_prove": "universal validity",
+        "attribution": {
+            "origin_kind": "source",
+            "origin_ref": "report-1",
+            "content_sha256": hashlib.sha256(statement.encode("utf-8")).hexdigest(),
+            "span": None,
+            "proof_grade": "fixture-bound",
+        },
     }
 
 
@@ -589,6 +597,138 @@ def _complete_u3(store):
         artifact_hashes=(seal.artifact_sha256,),
         evidence_authority=seal,
     )
+
+
+def test_foundation_u3_seam_admits_fixture_u2_sources_and_checkpoints(
+    u1_authority,
+):
+    import ultra_runtime.evidence as evidence
+    import ultra_runtime.foundation as foundation
+    import ultra_runtime.recovery as recovery
+    import ultra_runtime.state_machine as state_machine
+
+    assert _AUTHORITY_LAYOUT is not None
+    store = _store(state_machine)
+    _complete_u0_u1(store, u1_authority)
+    _complete_u2(store)
+    source_id = "SRC-U2-U3-FIXTURE"
+    source_sha256 = hashlib.sha256(b"admitted Task 4 source fixture").hexdigest()
+    statement = "The admitted source reports a bounded labor-market observation."
+    authority = evidence.EvidenceAdmissionAuthority(
+        run_id=RUN_ID,
+        request_bytes=REQUEST_BYTES,
+        input_inventory=(),
+        admitted_sources={
+            source_id: {
+                "source_id": source_id,
+                "content_sha256": source_sha256,
+            }
+        },
+        evidence_cutoff=STAMP,
+    )
+    candidate = {
+        "evidence_id": "EV-U3-SEAM-1",
+        "identity": "reported",
+        "statement": statement,
+        "source_refs": [source_id],
+        "observed_at": None,
+        "confidence": "medium",
+        "event_date": None,
+        "publication_date": None,
+        "interest": "none declared",
+        "upstream_lineage": [source_id],
+        "supported_claim": "claim-1",
+        "cannot_prove": "universal validity",
+        "attribution": {
+            "origin_kind": "source",
+            "origin_ref": source_id,
+            "content_sha256": source_sha256,
+            "span": None,
+            "proof_grade": "host-attested",
+        },
+    }
+
+    seal = foundation.complete_u3_evidence(
+        _AUTHORITY_LAYOUT,
+        phase_store=store,
+        authority=authority,
+        candidate_entries=(candidate,),
+        verified_subagent_candidates=(),
+        now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+
+    artifact_path = (
+        _AUTHORITY_LAYOUT.artifacts_dir
+        / "U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    checkpoints = recovery.load_checkpoints(_AUTHORITY_LAYOUT)
+    assert seal.artifact_sha256 == hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    assert store.current_phase == "U3"
+    assert store.evidence_frozen
+    assert checkpoints[-1]["phase_id"] == "U3"
+    assert checkpoints[-1]["evidence_cutoff"] == STAMP
+    with pytest.raises(state_machine.EvidenceFrozenError):
+        store.append_evidence(candidate)
+
+
+def test_foundation_u3_seam_rejects_preexisting_unadmitted_entries(
+    u1_authority,
+):
+    import ultra_runtime.evidence as evidence
+    import ultra_runtime.foundation as foundation
+    import ultra_runtime.state_machine as state_machine
+
+    assert _AUTHORITY_LAYOUT is not None
+    store = _store(state_machine)
+    _complete_u0_u1(store, u1_authority)
+    _complete_u2(store)
+    preexisting = _evidence_entry()
+    store.append_evidence(preexisting)
+    source_id = "SRC-U2-U3-PREEXISTING"
+    source_sha256 = hashlib.sha256(b"admitted source after bypass").hexdigest()
+    authority = evidence.EvidenceAdmissionAuthority(
+        run_id=RUN_ID,
+        request_bytes=REQUEST_BYTES,
+        input_inventory=(),
+        admitted_sources={
+            source_id: {
+                "source_id": source_id,
+                "content_sha256": source_sha256,
+            }
+        },
+        evidence_cutoff=STAMP,
+    )
+    candidate = copy.deepcopy(preexisting)
+    candidate.update(
+        {
+            "evidence_id": "EV-U3-AFTER-BYPASS",
+            "source_refs": [source_id],
+            "upstream_lineage": [source_id],
+            "event_date": None,
+            "publication_date": None,
+            "attribution": {
+                "origin_kind": "source",
+                "origin_ref": source_id,
+                "content_sha256": source_sha256,
+                "span": None,
+                "proof_grade": "host-attested",
+            },
+        }
+    )
+
+    with pytest.raises(foundation.FoundationInputError, match="pre-existing"):
+        foundation.complete_u3_evidence(
+            _AUTHORITY_LAYOUT,
+            phase_store=store,
+            authority=authority,
+            candidate_entries=(candidate,),
+            verified_subagent_candidates=(),
+            now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+        )
+
+    assert store.current_phase == "U2"
+    assert not store.evidence_frozen
+    assert store.evidence_artifact["entries"] == [preexisting]
 
 
 def test_u0_phase_event_is_schema_valid_with_two_special_hash_roles():

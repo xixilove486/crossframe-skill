@@ -652,3 +652,61 @@ def test_task3_u1_final_seal_rechecks_unrelated_source_tree_bytes_after_restart(
             now=task3_fresh_u0.now + timedelta(seconds=batch_ordinal),
         )
     pytest.fail("U1 did not reach its final source-tree recheck")
+
+
+def test_u3_admission_authority_loads_sealed_request_and_material_bytes(
+    tmp_path: Path,
+) -> None:
+    cli = _load_cli()
+    foundation = _module("foundation")
+    policy = _root_policy(tmp_path)
+    source = tmp_path / "u3-source.txt"
+    source.write_bytes("用户材料中的精确事实片段".encode("utf-8"))
+    stdout = StringIO()
+
+    cli.execute(
+        [
+            "start",
+            "--repo",
+            str(ROOT),
+            "--mode",
+            "test",
+            "--request-stdin",
+            "--material-file",
+            str(source),
+        ],
+        stdin=BytesIO("用户问题".encode("utf-8")),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: NOW,
+        entropy=lambda: b"task-5-u3-authority",
+    )
+    run_id = json.loads(stdout.getvalue())["run_id"]
+    paths = _module("paths")
+    layout = paths.build_run_layout(paths.RunMode.TEST, run_id, policy)
+    source_id = "SRC-U2-FIXTURE"
+    source_sha256 = hashlib.sha256(b"admitted U2 source").hexdigest()
+
+    authority = foundation.build_evidence_admission_authority(
+        layout,
+        admitted_sources={
+            source_id: {
+                "source_id": source_id,
+                "content_sha256": source_sha256,
+            }
+        },
+        evidence_cutoff="2026-08-05T18:00:00Z",
+    )
+
+    assert authority.run_id == run_id
+    assert authority.request_bytes == "用户问题".encode("utf-8")
+    assert authority.input_inventory == (
+        {
+            "path": "materials/MAT-0001.txt",
+            "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            "media_type": "text/plain",
+            "content_bytes": source.read_bytes(),
+        },
+    )
+    assert authority.admitted_sources[source_id]["content_sha256"] == source_sha256

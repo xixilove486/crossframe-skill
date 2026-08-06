@@ -230,6 +230,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-output-plan.schema.json",
     "ultra-phase-event.schema.json",
     "ultra-read-event.schema.json",
+    "ultra-read-plan.schema.json",
     "ultra-recovery-checkpoint.schema.json",
     "ultra-recursive-lineage.schema.json",
     "ultra-recursive-state.schema.json",
@@ -256,6 +257,7 @@ AUTHORITY_SCHEMAS = frozenset(
         "ultra-contract-map.schema.json",
         "ultra-host-action.schema.json",
         "ultra-host-result-receipt.schema.json",
+        "ultra-read-plan.schema.json",
         "ultra-route-map.schema.json",
         "ultra-source-manifest.schema.json",
     }
@@ -820,6 +822,13 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "upstream_lineage": ["UPSTREAM-1"],
                     "supported_claim": "The supplied record contains one dated event.",
                     "cannot_prove": "The record cannot prove the downstream response.",
+                    "attribution": {
+                        "origin_kind": "source",
+                        "origin_ref": "SOURCE-1",
+                        "content_sha256": "1" * 64,
+                        "span": None,
+                        "proof_grade": "fixture-bound",
+                    },
                 }
             ],
             unknowns=[

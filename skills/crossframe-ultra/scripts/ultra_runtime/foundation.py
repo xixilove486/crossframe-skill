@@ -37,6 +37,9 @@ CAPABILITY_ATTESTATION_RELATIVE_PATH = Path(
 U2_RETRIEVAL_LEDGER_RELATIVE_PATH = Path(
     "U00-U03-evidence/U02-retrieval-ledger.json"
 )
+U3_EVIDENCE_RELATIVE_PATH = Path(
+    "U00-U03-evidence/U03-evidence-ledger.json"
+)
 _SAFE_EXTENSION_RE = re.compile(r"[a-z0-9]{1,10}")
 
 
@@ -393,6 +396,164 @@ def load_request_profile(layout: RunLayout) -> RequestProfile:
             str(inventory["material_universe_sha256"]),
         )
     return profile
+
+
+def build_evidence_admission_authority(
+    layout: RunLayout,
+    *,
+    admitted_sources: Mapping[str, Mapping[str, object]],
+    evidence_cutoff: str,
+):
+    from .evidence import EvidenceAdmissionAuthority
+
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    request_path = assert_safe_descendant(
+        layout.root,
+        layout.input_dir / "request.bin",
+    )
+    try:
+        request_bytes = request_path.read_bytes()
+    except OSError as error:
+        raise FoundationInputError("immutable request is unavailable for U3") from error
+    if sha256_bytes(request_bytes) != _request_sha256(layout):
+        raise FoundationInputError("U3 request bytes differ from request authority")
+    inventory = load_input_inventory(layout)
+    materials = inventory.get("materials")
+    if not isinstance(materials, list):
+        raise FoundationInputError("U3 material inventory is invalid")
+    admitted_materials: list[dict[str, object]] = []
+    for item in materials:
+        if not isinstance(item, Mapping):
+            raise FoundationInputError("U3 material inventory entry is invalid")
+        snapshot = copy.deepcopy(dict(item))
+        relative = snapshot.get("path")
+        if not isinstance(relative, str):
+            raise FoundationInputError("U3 material inventory path is invalid")
+        material_path = assert_safe_descendant(
+            layout.root,
+            layout.input_dir / relative,
+        )
+        try:
+            content_bytes = material_path.read_bytes()
+        except OSError as error:
+            raise FoundationInputError(
+                "U3 material bytes are unavailable for attribution"
+            ) from error
+        if sha256_bytes(content_bytes) != snapshot.get("sha256"):
+            raise FoundationInputError("U3 material bytes differ from input inventory")
+        snapshot["content_bytes"] = content_bytes
+        admitted_materials.append(snapshot)
+    return EvidenceAdmissionAuthority(
+        run_id=layout.run_dir.name,
+        request_bytes=request_bytes,
+        input_inventory=tuple(admitted_materials),
+        admitted_sources=admitted_sources,
+        evidence_cutoff=evidence_cutoff,
+    )
+
+
+def complete_u3_evidence(
+    layout: RunLayout,
+    *,
+    phase_store: object,
+    authority: object,
+    candidate_entries: Sequence[Mapping[str, object]],
+    verified_subagent_candidates: Sequence[Mapping[str, object]],
+    now: datetime,
+):
+    from . import evidence, recovery
+    from .state_machine import PhaseStore
+
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    if not isinstance(phase_store, PhaseStore):
+        raise TypeError("phase_store must be a PhaseStore")
+    if not isinstance(authority, evidence.EvidenceAdmissionAuthority):
+        raise TypeError("authority must be an EvidenceAdmissionAuthority")
+    if isinstance(candidate_entries, (str, bytes)) or isinstance(
+        verified_subagent_candidates, (str, bytes)
+    ):
+        raise TypeError("U3 candidates must be sequences of evidence objects")
+    _require_utc(now, "now")
+    if (
+        layout.run_dir.name != phase_store.run_id
+        or authority.run_id != phase_store.run_id
+        or authority.evidence_cutoff != phase_store.evidence_cutoff
+        or phase_store.current_phase != "U2"
+        or phase_store.evidence_frozen
+        or sha256_bytes(authority.request_bytes)
+        != phase_store.run_contract["request_sha256"]
+    ):
+        raise FoundationInputError("U3 authority differs from the completed U2 boundary")
+    existing_entries = phase_store.evidence_artifact.get("entries")
+    if not isinstance(existing_entries, list) or existing_entries:
+        raise FoundationInputError(
+            "U3 seam rejects pre-existing evidence outside the admission batch"
+        )
+    candidates = tuple(candidate_entries)
+    subagent_candidates = tuple(verified_subagent_candidates)
+    if not candidates and not subagent_candidates:
+        raise FoundationInputError("U3 requires at least one evidence candidate")
+    for candidate in candidates:
+        if not isinstance(candidate, Mapping):
+            raise TypeError("U3 evidence candidates must be objects")
+        attribution = candidate.get("attribution")
+        if isinstance(attribution, Mapping) and attribution.get("origin_kind") == "subagent":
+            raise FoundationInputError(
+                "subagent candidates must enter through the verified U2 candidate seam"
+            )
+    for candidate in subagent_candidates:
+        if not isinstance(candidate, Mapping):
+            raise TypeError("verified subagent candidates must be objects")
+        attribution = candidate.get("attribution")
+        if not isinstance(attribution, Mapping) or attribution.get("origin_kind") != "subagent":
+            raise FoundationInputError(
+                "verified subagent candidate lacks subagent attribution"
+            )
+    admitted = tuple(
+        evidence.admit_evidence_candidate(candidate, authority=authority)
+        for candidate in (*candidates, *subagent_candidates)
+    )
+    evidence_ids = tuple(str(entry["evidence_id"]) for entry in admitted)
+    if len(evidence_ids) != len(set(evidence_ids)):
+        raise evidence.EvidenceValidationError(
+            "duplicate evidence_id in U3 admission candidates"
+        )
+    phase_store.freeze_evidence_cutoff(authority.evidence_cutoff)
+    for entry in admitted:
+        phase_store.append_evidence(entry)
+    seal = phase_store.freeze_evidence()
+    artifact = phase_store.evidence_artifact
+    evidence_path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / U3_EVIDENCE_RELATIVE_PATH,
+    )
+    artifact_bytes = canonical_json_bytes(artifact)
+    if evidence_path.exists():
+        try:
+            existing = evidence_path.read_bytes()
+        except OSError as error:
+            raise FoundationInputError("persisted U3 evidence artifact is unreadable") from error
+        if existing != artifact_bytes:
+            raise FoundationInputError("persisted U3 evidence artifact changed")
+    else:
+        atomic_write_bytes(evidence_path, artifact_bytes)
+    phase_store.complete(
+        "U3",
+        artifact_hashes=(seal.artifact_sha256,),
+        evidence_authority=seal,
+    )
+    recovery.create_checkpoint(
+        layout,
+        phase_store,
+        boundary_kind="phase",
+        boundary_id="U3",
+        boundary_ordinal=0,
+        artifact_paths=(evidence_path,),
+        now=now,
+    )
+    return seal
 
 
 def _request_sha256(layout: RunLayout) -> str:
@@ -1525,6 +1686,8 @@ def advance_u2(
         raise FoundationInputError("blocked U2 disposition authorizes completion")
     _persist_u2_ledger(layout, disposition)
     return FoundationProgress("blocked", phase_store, None, None)
+
+
 __all__ = (
     "FoundationInputError",
     "FoundationProgress",
@@ -1533,6 +1696,8 @@ __all__ = (
     "advance_foundation",
     "advance_u0",
     "advance_u2",
+    "build_evidence_admission_authority",
+    "complete_u3_evidence",
     "load_input_inventory",
     "load_host_capability_attestation",
     "load_request_profile",

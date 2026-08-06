@@ -29,7 +29,7 @@
     "evidenceEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["evidence_id", "identity", "statement", "source_refs", "observed_at", "confidence", "event_date", "publication_date", "interest", "upstream_lineage", "supported_claim", "cannot_prove"],
+      "required": ["evidence_id", "identity", "statement", "source_refs", "observed_at", "confidence", "event_date", "publication_date", "interest", "upstream_lineage", "supported_claim", "cannot_prove", "attribution"],
       "properties": {
         "evidence_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "identity": {
@@ -44,12 +44,103 @@
           ]
         },
         "confidence": {"enum": ["low", "medium", "high", "unknown"]},
-        "event_date": {"type": "string", "format": "date"},
-        "publication_date": {"type": "string", "format": "date"},
+        "event_date": {
+          "oneOf": [
+            {"type": "string", "format": "date"},
+            {"type": "null"}
+          ]
+        },
+        "publication_date": {
+          "oneOf": [
+            {"type": "string", "format": "date"},
+            {"type": "null"}
+          ]
+        },
         "interest": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
         "upstream_lineage": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
         "supported_claim": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "cannot_prove": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+        "cannot_prove": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "attribution": {"$ref": "#/$defs/attribution"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"identity": {"const": "user-claim"}},
+            "required": ["identity"]
+          },
+          "then": {
+            "properties": {
+              "attribution": {
+                "properties": {
+                  "origin_kind": {"enum": ["request", "material"]},
+                  "span": {"$ref": "#/$defs/byteSpan"}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "identity": {"enum": ["observed", "reported"]}
+            },
+            "required": ["identity"]
+          },
+          "then": {
+            "properties": {
+              "attribution": {
+                "properties": {
+                  "origin_kind": {"const": "source"}
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "identity": {"enum": ["model-candidate", "simulated"]}
+            },
+            "required": ["identity"]
+          },
+          "then": {
+            "properties": {
+              "attribution": {
+                "properties": {
+                  "origin_kind": {"enum": ["model", "subagent"]},
+                  "span": {"type": "null"}
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "byteSpan": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {"type": "integer", "minimum": 0},
+        {"type": "integer", "minimum": 1}
+      ],
+      "items": false
+    },
+    "attribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origin_kind", "origin_ref", "content_sha256", "span", "proof_grade"],
+      "properties": {
+        "origin_kind": {"enum": ["request", "material", "source", "model", "subagent"]},
+        "origin_ref": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "content_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "span": {
+          "oneOf": [
+            {"$ref": "#/$defs/byteSpan"},
+            {"type": "null"}
+          ]
+        },
+        "proof_grade": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
       }
     },
     "unknown": {

@@ -53,10 +53,23 @@ def _binding() -> dict[str, object]:
 
 
 def _entry(evidence_id: str, identity: str, upstream: str = "report-1"):
+    statement = f"statement-{evidence_id}"
+    if identity in {"observed", "reported"}:
+        origin_kind = "source"
+        origin_ref = upstream
+        span = None
+    elif identity == "user-claim":
+        origin_kind = "request"
+        origin_ref = "request.bin"
+        span = [0, 1]
+    else:
+        origin_kind = "model"
+        origin_ref = upstream
+        span = None
     return {
         "evidence_id": evidence_id,
         "identity": identity,
-        "statement": f"statement-{evidence_id}",
+        "statement": statement,
         "source_refs": [upstream],
         "observed_at": "2026-08-01T00:00:00Z" if identity == "observed" else None,
         "confidence": "medium" if identity in {"observed", "reported"} else "unknown",
@@ -66,6 +79,13 @@ def _entry(evidence_id: str, identity: str, upstream: str = "report-1"):
         "upstream_lineage": [upstream],
         "supported_claim": "claim-1",
         "cannot_prove": "does not prove universal validity",
+        "attribution": {
+            "origin_kind": origin_kind,
+            "origin_ref": origin_ref,
+            "content_sha256": hashlib.sha256(statement.encode("utf-8")).hexdigest(),
+            "span": span,
+            "proof_grade": "fixture-bound",
+        },
     }
 
 
