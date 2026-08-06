@@ -17,6 +17,9 @@
         "source_manifest_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "promoted_semantic_snapshot_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "source_lock_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "read_plan_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "action_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "host_receipt_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "receipt_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "reader_mode": {"enum": ["full-source", "paragraph", "table", "assistive"]},
@@ -29,15 +32,28 @@
   "unevaluatedProperties": false,
   "$defs": {
     "executionIdentity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "process_id", "executable", "user"],
-      "properties": {
-        "kind": {"const": "host-process"},
-        "process_id": {"type": "integer", "minimum": 1},
-        "executable": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "user": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "process_id", "executable", "user"],
+          "properties": {
+            "kind": {"const": "host-process"},
+            "process_id": {"type": "integer", "minimum": 1},
+            "executable": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+            "user": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "execution_id"],
+          "properties": {
+            "kind": {"const": "host-result-receipt"},
+            "execution_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+          }
+        }
+      ]
     }
   }
 }

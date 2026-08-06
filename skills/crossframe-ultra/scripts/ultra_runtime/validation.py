@@ -76,6 +76,7 @@ _SECRET_PATTERNS = (
 _U1_SOURCE_LOCK_PATH = "recovery/u1-authority/source-lock.json"
 _U1_READ_PLAN_PATH = "recovery/u1-authority/read-plan.json"
 _U1_SOURCE_COVERAGE_PATH = "recovery/u1-authority/source-coverage.json"
+_RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
 _COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
 _COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
 
@@ -259,7 +260,11 @@ def _load_verified_disk_authority(
                 "phase checkpoint differs from the manifest artifact set",
                 phase_id=phase_id,
             )
-    expected_u1_paths = {_U1_SOURCE_LOCK_PATH, _U1_SOURCE_COVERAGE_PATH}
+    expected_u1_paths = {
+        _U1_SOURCE_LOCK_PATH,
+        _U1_READ_PLAN_PATH,
+        _U1_SOURCE_COVERAGE_PATH,
+    }
     if set(refs_by_phase.get("U1", {})) != expected_u1_paths:
         raise _AuthorityDAGError(
             "U1 checkpoint does not bind the fixed source authority files",
@@ -877,9 +882,11 @@ def _validate_read_events(
         source_lock_path = _artifact_path(layout, _U1_SOURCE_LOCK_PATH)
         read_plan_path = _artifact_path(layout, _U1_READ_PLAN_PATH)
         source_coverage_path = _artifact_path(layout, _U1_SOURCE_COVERAGE_PATH)
+        run_contract_path = _artifact_path(layout, _RUN_CONTRACT_PATH)
         source_lock_raw = source_lock_path.read_bytes()
         read_plan_raw = read_plan_path.read_bytes()
         source_coverage_raw = source_coverage_path.read_bytes()
+        run_contract_raw = run_contract_path.read_bytes()
         source_lock = load_json_object_bytes(
             source_lock_raw,
             source=_U1_SOURCE_LOCK_PATH,
@@ -892,12 +899,22 @@ def _validate_read_events(
             source_coverage_raw,
             source=_U1_SOURCE_COVERAGE_PATH,
         )
+        run_contract = load_json_object_bytes(
+            run_contract_raw,
+            source=_RUN_CONTRACT_PATH,
+        )
         if (
             source_lock_raw != canonical_json_bytes(source_lock)
             or read_plan_raw != canonical_json_bytes(read_plan)
             or source_coverage_raw != canonical_json_bytes(source_coverage)
+            or run_contract_raw != canonical_json_bytes(run_contract)
         ):
             raise ValueError("persisted U1 authority bytes are not canonical")
+        if sha256_bytes(run_contract_raw) != raw_run_authority.get(
+            "run_contract_sha256"
+        ):
+            raise ValueError("persisted run contract differs from run authority")
+        expected_request_sha256 = run_contract.get("request_sha256")
         read_events_raw = _artifact_path(layout, READ_EVENTS_PATH).read_bytes()
         if not read_events_raw or not read_events_raw.endswith(b"\n"):
             raise source_integrity.SourceCoverageError(
@@ -915,9 +932,13 @@ def _validate_read_events(
                 )
             read_events.append(event)
         expected_source_lock_sha256 = u1_refs.get(_U1_SOURCE_LOCK_PATH)
+        expected_read_plan_sha256 = u1_refs.get(_U1_READ_PLAN_PATH)
         expected_read_coverage_sha256 = u1_refs.get(_U1_SOURCE_COVERAGE_PATH)
-        if not isinstance(expected_source_lock_sha256, str) or not isinstance(
-            expected_read_coverage_sha256, str
+        if (
+            not isinstance(expected_request_sha256, str)
+            or not isinstance(expected_source_lock_sha256, str)
+            or not isinstance(expected_read_plan_sha256, str)
+            or not isinstance(expected_read_coverage_sha256, str)
         ):
             raise ValueError("verified U1 checkpoint hashes are unavailable")
         source_integrity._validate_persisted_u1_authority(
@@ -934,7 +955,9 @@ def _validate_read_events(
             expected_parent_event_sha256=str(u0_event["event_sha256"]),
             expected_evidence_cutoff=str(raw_run_authority["evidence_cutoff"]),
             expected_inputs=expected_inputs,
+            expected_request_sha256=expected_request_sha256,
             expected_source_lock_sha256=expected_source_lock_sha256,
+            expected_read_plan_sha256=expected_read_plan_sha256,
             expected_read_coverage_sha256=expected_read_coverage_sha256,
         )
     except source_integrity.SourceCoverageError as error:

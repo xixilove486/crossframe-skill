@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-read-plan.schema.json",
+  "title": "CrossFrame Ultra immutable U1 source read plan",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "request_sha256",
+        "input_snapshot_sha256",
+        "parent_event_sha256",
+        "source_lock_sha256",
+        "source_manifest_sha256",
+        "promoted_semantic_snapshot_sha256",
+        "reader_mode",
+        "batch_size",
+        "source_unit_count",
+        "paragraph_count",
+        "table_count",
+        "source_unit_ids",
+        "source_units"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.read-plan"},
+        "phase_id": {"const": "U1"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "input_snapshot_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "source_lock_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "source_manifest_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "promoted_semantic_snapshot_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "reader_mode": {"enum": ["full-source", "paragraph", "table", "assistive"]},
+        "batch_size": {"type": "integer", "minimum": 1, "maximum": 512},
+        "source_unit_count": {"const": 4753},
+        "paragraph_count": {"const": 4631},
+        "table_count": {"const": 122},
+        "source_unit_ids": {
+          "type": "array",
+          "minItems": 4753,
+          "maxItems": 4753,
+          "uniqueItems": true,
+          "items": {"$ref": "ultra-common.schema.json#/$defs/identifier"}
+        },
+        "source_units": {
+          "type": "array",
+          "minItems": 4753,
+          "maxItems": 4753,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/sourceUnit"}
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "sourceUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unit_id", "kind", "ordinal", "sha256"],
+      "properties": {
+        "unit_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "kind": {"enum": ["paragraph", "table"]},
+        "ordinal": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+      }
+    }
+  }
+}

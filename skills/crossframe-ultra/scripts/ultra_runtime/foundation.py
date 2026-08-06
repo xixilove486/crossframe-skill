@@ -12,6 +12,8 @@ from .constants import current_version_binding
 from .host_handshake import (
     HostActionSeal,
     HostResultSeal,
+    _seal_action,
+    _seal_result,
     issue_host_action,
     load_pending_action,
 )
@@ -813,11 +815,570 @@ def advance_u0(
     return FoundationProgress("awaiting-host-action", None, action, None)
 
 
+def _u1_authority_path(layout: RunLayout, name: str) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir / "u1-authority" / name,
+    )
+
+
+def _load_canonical_u1_object(path: Path, *, label: str) -> dict[str, object]:
+    try:
+        raw = path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(f"{label} is unavailable") from error
+    if raw != canonical_json_bytes(document):
+        raise FoundationInputError(f"{label} is not canonical JSON")
+    return document
+
+
+def _persist_immutable_u1_object(
+    path: Path,
+    document: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    snapshot = copy.deepcopy(dict(document))
+    if path.exists():
+        existing = _load_canonical_u1_object(path, label=label)
+        if existing != snapshot:
+            raise FoundationInputError(f"{label} changed after it was sealed")
+        return
+    atomic_write_json(path, snapshot)
+
+
+def _prepare_u1_authority(
+    layout: RunLayout,
+    *,
+    repo: Path,
+    phase_store: object,
+    now: datetime,
+):
+    from . import source_integrity
+
+    if getattr(phase_store, "current_phase", None) != "U0":
+        raise FoundationInputError("U1 requires a completed U0 boundary")
+    events = phase_store.events
+    if not events or events[-1].get("phase_id") != "U0":
+        raise FoundationInputError("U1 parent event authority is unavailable")
+    parent_event_sha256 = str(events[-1]["event_sha256"])
+    manifest = source_integrity.load_source_manifest(
+        repo / "skills/crossframe-ultra/references/source-manifest.json",
+        expected_sha256=str(phase_store._source_sha256),
+    )
+    measurement = getattr(phase_store, "_u1_prerequisite_measurement", None)
+    inputs, input_snapshot_sha256 = _snapshot_all_inputs(layout)
+    if input_snapshot_sha256 != phase_store._input_snapshot_sha256:
+        raise FoundationInputError("U1 input snapshot differs from sealed U0 authority")
+    source_lock_path = _u1_authority_path(layout, "source-lock.json")
+    read_plan_path = _u1_authority_path(layout, "read-plan.json")
+    existing_u1_authority = source_lock_path.exists() and read_plan_path.exists()
+    if source_lock_path.exists() != read_plan_path.exists():
+        raise FoundationInputError("U1 source lock and read plan must exist together")
+    if not source_lock_path.exists():
+        if measurement is None:
+            raise FoundationInputError("U1 prerequisite measurement is unavailable")
+        source_lock = source_integrity.build_source_lock(
+            run_id=layout.run_dir.name,
+            version_binding=current_version_binding(),
+            generated_at=_canonical_utc(now),
+            prerequisite_measurement=measurement,
+            parent_event_sha256=parent_event_sha256,
+            evidence_cutoff=phase_store.evidence_cutoff,
+            run_layout=layout,
+            inputs=inputs,
+            remeasure_prerequisites=False,
+        )
+        _persist_immutable_u1_object(
+            source_lock_path,
+            source_lock,
+            label="U1 source lock",
+        )
+        source_lock_sha256 = sha256_bytes(source_lock_path.read_bytes())
+        read_plan = source_integrity.build_read_plan(
+            manifest,
+            promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+            source_manifest_sha256=manifest.sha256,
+            source_lock_sha256=source_lock_sha256,
+            parent_event_sha256=parent_event_sha256,
+            run_id=layout.run_dir.name,
+            version_binding=current_version_binding(),
+            generated_at=_canonical_utc(now),
+            request_sha256=str(phase_store.run_contract["request_sha256"]),
+            input_snapshot_sha256=input_snapshot_sha256,
+            reader_mode="full-source",
+            batch_size=source_integrity.SOURCE_READ_BATCH_SIZE,
+        )
+        _persist_immutable_u1_object(
+            read_plan_path,
+            read_plan,
+            label="U1 read plan",
+        )
+    source_lock = _load_canonical_u1_object(
+        source_lock_path,
+        label="U1 source lock",
+    )
+    read_plan = _load_canonical_u1_object(
+        read_plan_path,
+        label="U1 read plan",
+    )
+    try:
+        source_lock_sha256 = source_integrity.validate_source_lock_envelope(
+            source_lock,
+            expected_run_id=layout.run_dir.name,
+            expected_run_mode=str(phase_store.run_contract["run_mode"]),
+            expected_version_binding=current_version_binding(),
+            expected_parent_event_sha256=parent_event_sha256,
+            expected_evidence_cutoff=phase_store.evidence_cutoff,
+            expected_inputs=inputs,
+            run_layout=layout,
+        )
+        if source_lock_sha256 != sha256_bytes(source_lock_path.read_bytes()):
+            raise FoundationInputError("U1 source lock disk hash differs")
+        read_plan_sha256 = source_integrity.validate_read_plan(
+            read_plan,
+            manifest=manifest,
+            expected_run_id=layout.run_dir.name,
+            expected_version_binding=current_version_binding(),
+            expected_request_sha256=str(phase_store.run_contract["request_sha256"]),
+            expected_input_snapshot_sha256=input_snapshot_sha256,
+            expected_source_lock_sha256=source_lock_sha256,
+            expected_parent_event_sha256=parent_event_sha256,
+            expected_reader_mode="full-source",
+            expected_batch_size=source_integrity.SOURCE_READ_BATCH_SIZE,
+            validate_schema=not existing_u1_authority,
+        )
+    except FoundationInputError:
+        raise
+    except Exception as error:
+        raise FoundationInputError("U1 read plan or source lock is invalid") from error
+    if read_plan_sha256 != sha256_bytes(read_plan_path.read_bytes()):
+        raise FoundationInputError("U1 read plan disk hash differs")
+    return (
+        manifest,
+        source_lock,
+        source_lock_sha256,
+        source_lock_path,
+        read_plan,
+        read_plan_sha256,
+        read_plan_path,
+        parent_event_sha256,
+    )
+
+
+def _u1_action_directory(layout: RunLayout) -> Path:
+    return _u1_authority_path(layout, "read-actions")
+
+
+def _persist_u1_action(layout: RunLayout, action: HostActionSeal) -> None:
+    path = assert_safe_descendant(
+        layout.root,
+        _u1_action_directory(layout) / f"{action.action_sha256}.json",
+    )
+    _persist_immutable_u1_object(path, action.document, label="U1 source-read action")
+
+
+def _load_u1_actions(
+    layout: RunLayout,
+    *,
+    read_plan: Mapping[str, object],
+    read_plan_sha256: str,
+    source_lock_sha256: str,
+    parent_event_sha256: str,
+    request_sha256: str,
+) -> tuple[HostActionSeal, ...]:
+    directory = _u1_action_directory(layout)
+    if not directory.exists():
+        return ()
+    try:
+        paths = tuple(sorted(directory.glob("*.json")))
+    except OSError as error:
+        raise FoundationInputError("U1 source-read actions cannot be enumerated") from error
+    units = read_plan.get("source_units")
+    batch_size = read_plan.get("batch_size")
+    if not isinstance(units, list) or not isinstance(batch_size, int):
+        raise FoundationInputError("U1 read plan batch authority is invalid")
+    actions: list[HostActionSeal] = []
+    for path in paths:
+        document = _load_canonical_u1_object(path, label="U1 source-read action")
+        try:
+            action = _seal_action(layout, document)
+        except Exception as error:
+            raise FoundationInputError("U1 source-read action seal is invalid") from error
+        payload = action.document.get("payload")
+        if not isinstance(payload, Mapping) or set(payload) != {
+            "read_plan_sha256",
+            "source_lock_sha256",
+            "reader_mode",
+            "batch_ordinal",
+            "source_unit_count",
+            "source_units",
+        }:
+            raise FoundationInputError("U1 source-read action payload is invalid")
+        ordinal = payload.get("batch_ordinal")
+        if not isinstance(ordinal, int) or isinstance(ordinal, bool) or ordinal < 1:
+            raise FoundationInputError("U1 source-read batch ordinal is invalid")
+        start = (ordinal - 1) * batch_size
+        expected_units = [
+            {
+                "source_unit_id": unit["unit_id"],
+                "source_unit_sha256": unit["sha256"],
+            }
+            for unit in units[start : start + batch_size]
+        ]
+        if (
+            action.document.get("phase_id") != "U1"
+            or action.document.get("action_kind") != "source-read"
+            or action.document.get("parent_event_sha256") != parent_event_sha256
+            or action.document.get("request_sha256") != request_sha256
+            or payload.get("read_plan_sha256") != read_plan_sha256
+            or payload.get("source_lock_sha256") != source_lock_sha256
+            or payload.get("reader_mode") != read_plan.get("reader_mode")
+            or payload.get("source_units") != expected_units
+            or payload.get("source_unit_count") != len(expected_units)
+            or action.document.get("result_relative_path")
+            != f"work/host/U01-read-{ordinal:06d}.json"
+        ):
+            raise FoundationInputError("U1 source-read action differs from read plan")
+        actions.append(action)
+    actions.sort(key=lambda item: int(item.document["payload"]["batch_ordinal"]))
+    if [action.document["payload"]["batch_ordinal"] for action in actions] != list(
+        range(1, len(actions) + 1)
+    ):
+        raise FoundationInputError("U1 source-read action batches are not contiguous")
+    return tuple(actions)
+
+
+def _load_accepted_u1_result(
+    layout: RunLayout,
+    action: HostActionSeal,
+) -> HostResultSeal | None:
+    path = assert_safe_descendant(
+        layout.root,
+        layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json",
+    )
+    if not path.exists():
+        return None
+    document = _load_canonical_u1_object(path, label="accepted U1 host receipt")
+    try:
+        return _seal_result(layout, action=action, receipt=document)
+    except Exception as error:
+        raise FoundationInputError("accepted U1 host receipt is invalid") from error
+
+
+def _load_u1_read_events(path: Path) -> tuple[dict[str, object], ...]:
+    if not path.exists():
+        return ()
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise FoundationInputError("U1 read event journal is unavailable") from error
+    if not raw or not raw.endswith(b"\n"):
+        raise FoundationInputError("U1 read event journal is incomplete")
+    events: list[dict[str, object]] = []
+    for ordinal, line in enumerate(raw.splitlines(keepends=True), start=1):
+        try:
+            event = load_json_object_bytes(line, source=f"{path}:{ordinal}")
+        except (TypeError, ValueError) as error:
+            raise FoundationInputError("U1 read event journal is invalid") from error
+        if line != canonical_json_bytes(event):
+            raise FoundationInputError("U1 read event journal is not canonical")
+        events.append(event)
+    return tuple(events)
+
+
+def _append_u1_read_events(
+    path: Path,
+    *,
+    expected_events: Sequence[Mapping[str, object]],
+) -> tuple[dict[str, object], ...]:
+    disk_events = _load_u1_read_events(path)
+    snapshots = tuple(copy.deepcopy(dict(event)) for event in expected_events)
+    if len(disk_events) > len(snapshots) or disk_events != snapshots[: len(disk_events)]:
+        raise FoundationInputError("U1 read event journal differs from accepted receipts")
+    if len(disk_events) < len(snapshots):
+        existing = b"".join(canonical_json_bytes(event) for event in disk_events)
+        appended = b"".join(
+            canonical_json_bytes(event) for event in snapshots[len(disk_events) :]
+        )
+        atomic_write_bytes(path, existing + appended)
+    return _load_u1_read_events(path)
+
+
+def _issue_u1_read_action(
+    layout: RunLayout,
+    *,
+    read_plan: Mapping[str, object],
+    read_plan_sha256: str,
+    source_lock_sha256: str,
+    parent_event_sha256: str,
+    request_sha256: str,
+    batch_ordinal: int,
+    now: datetime,
+) -> HostActionSeal:
+    units = read_plan.get("source_units")
+    batch_size = read_plan.get("batch_size")
+    if not isinstance(units, list) or not isinstance(batch_size, int):
+        raise FoundationInputError("U1 read plan cannot issue a bounded batch")
+    start = (batch_ordinal - 1) * batch_size
+    selected = units[start : start + batch_size]
+    if not selected:
+        raise FoundationInputError("U1 source-read action has no remaining units")
+    action = issue_host_action(
+        layout,
+        action_kind="source-read",
+        phase_id="U1",
+        parent_event_sha256=parent_event_sha256,
+        request_sha256=request_sha256,
+        payload={
+            "read_plan_sha256": read_plan_sha256,
+            "source_lock_sha256": source_lock_sha256,
+            "reader_mode": read_plan["reader_mode"],
+            "batch_ordinal": batch_ordinal,
+            "source_unit_count": len(selected),
+            "source_units": [
+                {
+                    "source_unit_id": unit["unit_id"],
+                    "source_unit_sha256": unit["sha256"],
+                }
+                for unit in selected
+            ],
+        },
+        result_relative_path=f"work/host/U01-read-{batch_ordinal:06d}.json",
+        now=now,
+    )
+    _persist_u1_action(layout, action)
+    return action
+
+
+def _advance_u1(
+    layout: RunLayout,
+    *,
+    repo: Path,
+    phase_store: object,
+    now: datetime,
+) -> FoundationProgress:
+    from . import recovery, source_integrity
+
+    (
+        manifest,
+        _source_lock,
+        source_lock_sha256,
+        source_lock_path,
+        read_plan,
+        read_plan_sha256,
+        read_plan_path,
+        parent_event_sha256,
+    ) = _prepare_u1_authority(
+        layout,
+        repo=repo,
+        phase_store=phase_store,
+        now=now,
+    )
+    request_sha256 = str(phase_store.run_contract["request_sha256"])
+    actions = _load_u1_actions(
+        layout,
+        read_plan=read_plan,
+        read_plan_sha256=read_plan_sha256,
+        source_lock_sha256=source_lock_sha256,
+        parent_event_sha256=parent_event_sha256,
+        request_sha256=request_sha256,
+    )
+    pending = load_pending_action(layout)
+    if pending is not None and (
+        pending.document.get("phase_id") != "U1"
+        or pending.document.get("action_kind") != "source-read"
+    ):
+        raise FoundationInputError("pending host action differs from U1 authority")
+    read_events_path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl",
+    )
+    disk_events = _load_u1_read_events(read_events_path)
+    disk_offset = 0
+    expected_events: list[dict[str, object]] = []
+    outstanding: HostActionSeal | None = None
+    for action in actions:
+        accepted = _load_accepted_u1_result(layout, action)
+        if accepted is None:
+            if outstanding is not None or pending != action:
+                raise FoundationInputError(
+                    "U1 source-read action lacks its pending or accepted authority"
+                )
+            outstanding = action
+            continue
+        if outstanding is not None:
+            raise FoundationInputError("U1 accepted actions follow an incomplete batch")
+        try:
+            payload = action.document["payload"]
+            batch_count = int(payload["source_unit_count"])
+            admitted = disk_events[disk_offset : disk_offset + batch_count]
+            if admitted and admitted[0].get("action_sha256") == action.action_sha256:
+                if len(admitted) != batch_count:
+                    raise FoundationInputError("U1 admitted read batch is incomplete")
+                batch_events = source_integrity.validate_admitted_host_read_events(
+                    admitted,
+                    accepted.document,
+                    action=action,
+                    manifest=manifest,
+                )
+                disk_offset += batch_count
+            else:
+                batch_events = source_integrity.validate_host_read_receipt(
+                    accepted.document,
+                    action=action,
+                    repo=repo,
+                    manifest=manifest,
+                )
+        except Exception as error:
+            raise FoundationInputError("accepted U1 host read receipt is invalid") from error
+        expected_events.extend(batch_events)
+    if pending is not None and pending not in actions:
+        raise FoundationInputError("pending U1 action is not durably persisted")
+    if disk_offset != len(disk_events):
+        raise FoundationInputError("U1 read event journal has no accepted action authority")
+    read_events = _append_u1_read_events(
+        read_events_path,
+        expected_events=expected_events,
+    )
+    if outstanding is not None:
+        return FoundationProgress(
+            "awaiting-host-action",
+            phase_store,
+            outstanding,
+            None,
+        )
+    total = int(read_plan["source_unit_count"])
+    if len(read_events) < total:
+        if pending is not None:
+            raise FoundationInputError("U1 pending action does not match durable batches")
+        action = _issue_u1_read_action(
+            layout,
+            read_plan=read_plan,
+            read_plan_sha256=read_plan_sha256,
+            source_lock_sha256=source_lock_sha256,
+            parent_event_sha256=parent_event_sha256,
+            request_sha256=request_sha256,
+            batch_ordinal=len(actions) + 1,
+            now=now,
+        )
+        return FoundationProgress(
+            "awaiting-host-action",
+            phase_store,
+            action,
+            None,
+        )
+    if len(read_events) != total or pending is not None:
+        raise FoundationInputError("U1 read coverage exceeds or conflicts with its plan")
+    coverage = source_integrity.build_host_read_coverage(
+        read_events,
+        read_plan=read_plan,
+        expected_run_id=layout.run_dir.name,
+        expected_version_binding=current_version_binding(),
+        expected_parent_event_sha256=parent_event_sha256,
+        expected_source_lock_sha256=source_lock_sha256,
+        expected_read_plan_sha256=read_plan_sha256,
+    )
+    coverage_path = _u1_authority_path(layout, "source-coverage.json")
+    _persist_immutable_u1_object(
+        coverage_path,
+        coverage,
+        label="U1 source coverage",
+    )
+    coverage_sha256 = sha256_bytes(coverage_path.read_bytes())
+    inputs, _input_snapshot_sha256 = _snapshot_all_inputs(layout)
+    try:
+        authority = source_integrity._validate_persisted_u1_authority(
+            repo=repo,
+            run_layout=layout,
+            manifest=manifest,
+            source_lock=_source_lock,
+            read_plan=read_plan,
+            coverage=coverage,
+            read_events=read_events,
+            expected_run_id=layout.run_dir.name,
+            expected_run_mode=str(phase_store.run_contract["run_mode"]),
+            expected_version_binding=current_version_binding(),
+            expected_parent_event_sha256=parent_event_sha256,
+            expected_evidence_cutoff=phase_store.evidence_cutoff,
+            expected_inputs=inputs,
+            expected_request_sha256=request_sha256,
+            expected_source_lock_sha256=source_lock_sha256,
+            expected_read_plan_sha256=read_plan_sha256,
+            expected_read_coverage_sha256=coverage_sha256,
+        )
+    except Exception as error:
+        raise FoundationInputError("final U1 disk authority validation failed") from error
+    phase_store.complete(
+        "U1",
+        artifact_hashes=(
+            source_lock_sha256,
+            read_plan_sha256,
+            coverage_sha256,
+        ),
+        u1_authority=authority,
+    )
+    recovery.create_checkpoint(
+        layout,
+        phase_store,
+        boundary_kind="phase",
+        boundary_id="U1",
+        boundary_ordinal=0,
+        artifact_paths=(source_lock_path, read_plan_path, coverage_path),
+        now=now,
+    )
+    return FoundationProgress("advanced", phase_store, None, "U1")
+
+
+def advance_foundation(
+    layout: RunLayout,
+    *,
+    repo: Path,
+    now: datetime,
+) -> FoundationProgress:
+    if not isinstance(repo, Path) or not repo.resolve().is_dir():
+        raise ValueError("repo must be an existing pathlib.Path directory")
+    _require_utc(now, "now")
+    from . import recovery
+
+    checkpoints_dir = layout.recovery_dir / "checkpoints"
+    if not checkpoints_dir.is_dir():
+        return advance_u0(layout, repo=repo, now=now)
+    try:
+        resumed = recovery.resume_run(
+            layout,
+            now=now,
+            source_repository=repo.resolve(),
+        )
+    except Exception as error:
+        if isinstance(error, FoundationInputError):
+            raise
+        raise FoundationInputError("foundation recovery authority is invalid") from error
+    phase_store = resumed.phase_store
+    if phase_store is None:
+        raise FoundationInputError("foundation recovery did not return a phase store")
+    if phase_store.current_phase == "U0":
+        return _advance_u1(
+            layout,
+            repo=repo.resolve(),
+            phase_store=phase_store,
+            now=now,
+        )
+    if phase_store.current_phase == "U1":
+        return FoundationProgress("advanced", phase_store, None, "U1")
+    raise FoundationInputError("foundation recovery is outside the U0-U1 Task 3 boundary")
+
+
 __all__ = (
     "FoundationInputError",
     "FoundationProgress",
     "HostCapabilitySeal",
     "RequestProfile",
+    "advance_foundation",
     "advance_u0",
     "load_input_inventory",
     "load_host_capability_attestation",

@@ -563,6 +563,12 @@ def _validate_invalidated_phases(
 def _validate_phase_output_contract(
     phase_id: str, outputs: tuple[str, ...]
 ) -> None:
+    if phase_id == "U1":
+        if len(outputs) != 3 or len(set(outputs)) != 3:
+            raise PhaseIntegrityError(
+                "U1 output contract requires distinct source-lock, read-plan, and coverage hashes"
+            )
+        return
     if phase_id == "U7":
         if len(outputs) < 2:
             raise PhaseIntegrityError(
@@ -606,6 +612,7 @@ class PhaseStore:
         capability_attestation: object,
         source_repository: Path | None = None,
         u1_prerequisite_measurement: object | None = None,
+        u1_prerequisite_roles: Mapping[str, object] | None = None,
         run_layout: RunLayout,
         expected_eligibility_basis_sha256: str | None = None,
     ) -> None:
@@ -676,12 +683,20 @@ class PhaseStore:
 
         verified_measurement = None
         prerequisite_roles: dict[str, object] | None = None
+        if (
+            u1_prerequisite_measurement is not None
+            and u1_prerequisite_roles is not None
+        ):
+            raise PhaseIntegrityError(
+                "U1 prerequisite measurement and recovered roles are mutually exclusive"
+            )
         if u1_prerequisite_measurement is not None:
             from .source_integrity import verify_u1_prerequisites
 
             try:
                 verified_measurement = verify_u1_prerequisites(
-                    u1_prerequisite_measurement
+                    u1_prerequisite_measurement,
+                    remeasure=False,
                 )
             except Exception as error:
                 raise PhaseIntegrityError("U1 prerequisite authority is invalid") from error
@@ -704,6 +719,45 @@ class PhaseStore:
                 "free_space_reserve_bytes": verified_measurement.free_space_reserve_bytes,
                 "free_space_status": verified_measurement.free_space_status,
             }
+        elif u1_prerequisite_roles is not None:
+            if not isinstance(u1_prerequisite_roles, Mapping):
+                raise PhaseIntegrityError("recovered U1 prerequisite roles are invalid")
+            prerequisite_roles = copy.deepcopy(dict(u1_prerequisite_roles))
+            expected_role_fields = {
+                "run_mode",
+                "source_release_id",
+                "source_manifest_sha256",
+                "release_manifest_sha256",
+                "compatibility_matrix_sha256",
+                "knowledge_report_sha256",
+                "skill_tree_sha256",
+                "free_space_reserve_bytes",
+                "free_space_status",
+            }
+            hash_fields = expected_role_fields - {
+                "run_mode",
+                "source_release_id",
+                "free_space_reserve_bytes",
+                "free_space_status",
+            }
+            if (
+                set(prerequisite_roles) != expected_role_fields
+                or prerequisite_roles["run_mode"] != contract["run_mode"]
+                or prerequisite_roles["source_manifest_sha256"] != source_sha256
+                or not isinstance(prerequisite_roles["source_release_id"], str)
+                or not prerequisite_roles["source_release_id"]
+                or any(
+                    not _is_sha256(prerequisite_roles[field])
+                    for field in hash_fields
+                )
+                or not isinstance(prerequisite_roles["free_space_reserve_bytes"], int)
+                or isinstance(prerequisite_roles["free_space_reserve_bytes"], bool)
+                or prerequisite_roles["free_space_reserve_bytes"] < 1
+                or prerequisite_roles["free_space_status"] != "available"
+            ):
+                raise PhaseIntegrityError(
+                    "recovered U1 prerequisite roles differ from the run"
+                )
 
         self.run_id = run_id
         self._version_binding = binding
@@ -843,6 +897,7 @@ class PhaseStore:
             "input_root": verified.input_root,
             "acl_status": verified.acl_status,
             "source_lock_artifact_sha256": verified.source_lock_artifact_sha256,
+            "read_plan_artifact_sha256": verified.read_plan_artifact_sha256,
             "read_coverage_artifact_sha256": verified.read_coverage_artifact_sha256,
             "authorizes_phase": verified.authorizes_phase,
         }
@@ -1307,6 +1362,7 @@ class PhaseStore:
                 raise PhaseIntegrityError("U1 request or input snapshot authority differs")
             expected_outputs = (
                 verified_u1.source_lock_artifact_sha256,
+                verified_u1.read_plan_artifact_sha256,
                 verified_u1.read_coverage_artifact_sha256,
             )
             if outputs != expected_outputs:
@@ -1331,6 +1387,7 @@ class PhaseStore:
                 "input_root": verified_u1.input_root,
                 "acl_status": verified_u1.acl_status,
                 "source_lock_artifact_sha256": verified_u1.source_lock_artifact_sha256,
+                "read_plan_artifact_sha256": verified_u1.read_plan_artifact_sha256,
                 "read_coverage_artifact_sha256": verified_u1.read_coverage_artifact_sha256,
                 "authorizes_phase": verified_u1.authorizes_phase,
             }
@@ -1608,6 +1665,7 @@ class PhaseStore:
             or output_artifact_hashes
             != (
                 verified.source_lock_artifact_sha256,
+                verified.read_plan_artifact_sha256,
                 verified.read_coverage_artifact_sha256,
             )
         ):
@@ -1632,6 +1690,7 @@ class PhaseStore:
             "input_root": verified.input_root,
             "acl_status": verified.acl_status,
             "source_lock_artifact_sha256": verified.source_lock_artifact_sha256,
+            "read_plan_artifact_sha256": verified.read_plan_artifact_sha256,
             "read_coverage_artifact_sha256": verified.read_coverage_artifact_sha256,
             "authorizes_phase": verified.authorizes_phase,
         }

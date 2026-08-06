@@ -412,8 +412,14 @@ def persisted_u1_authority_args(run: BuiltRun) -> dict[str, object]:
         "expected_parent_event_sha256": str(u0_event["event_sha256"]),
         "expected_evidence_cutoff": str(run_authority["evidence_cutoff"]),
         "expected_inputs": expected_inputs,
+        "expected_request_sha256": str(
+            load_json(run.path("artifacts/ultra-run-contract.json"))["request_sha256"]
+        ),
         "expected_source_lock_sha256": str(
             u1_refs["recovery/u1-authority/source-lock.json"]
+        ),
+        "expected_read_plan_sha256": str(
+            u1_refs["recovery/u1-authority/read-plan.json"]
         ),
         "expected_read_coverage_sha256": str(
             u1_refs["recovery/u1-authority/source-coverage.json"]
@@ -470,6 +476,115 @@ def test_validator_set_binds_every_runtime_and_u1_authority_checker(
             path.write_bytes(original)
 
 
+def test_task3_validator_binds_sealed_request_and_read_plan_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=(tmp_path / "prod").resolve(),
+        test_root=(tmp_path / "test").resolve(),
+    )
+    layout = modules.paths.build_run_layout(modules.paths.RunMode.TEST, RUN_ID, policy)
+    monkeypatch.setattr(modules.validation, "default_root_policy", lambda: policy)
+    request_sha256 = "1" * 64
+    parent_event_sha256 = "2" * 64
+    run_contract = {"request_sha256": request_sha256}
+    source_lock = {"authority": "source-lock"}
+    read_plan = {"authority": "read-plan"}
+    source_coverage = {"authority": "source-coverage"}
+    read_event = {"source_unit_id": "V82-P0001"}
+    paths = {
+        "recovery/u1-authority/source-lock.json": source_lock,
+        "recovery/u1-authority/read-plan.json": read_plan,
+        "recovery/u1-authority/source-coverage.json": source_coverage,
+        "artifacts/ultra-run-contract.json": run_contract,
+    }
+    for relative, document in paths.items():
+        write_json(layout.run_dir / relative, document)
+    read_events_path = layout.run_dir / modules.artifacts.READ_EVENTS_PATH
+    read_events_path.parent.mkdir(parents=True, exist_ok=True)
+    read_events_path.write_bytes(canonical_bytes(read_event))
+
+    captured: dict[str, object] = {}
+
+    def capture_persisted_authority(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    source_manifest = object()
+    monkeypatch.setattr(
+        modules.source_integrity,
+        "load_source_manifest",
+        lambda *_args, **_kwargs: source_manifest,
+    )
+    monkeypatch.setattr(
+        modules.source_integrity,
+        "_validate_persisted_u1_authority",
+        capture_persisted_authority,
+    )
+    u1_refs = {
+        relative: hashlib.sha256((layout.run_dir / relative).read_bytes()).hexdigest()
+        for relative in (
+            "recovery/u1-authority/source-lock.json",
+            "recovery/u1-authority/read-plan.json",
+            "recovery/u1-authority/source-coverage.json",
+        )
+    }
+    authority = {
+        "run_authority": {
+            "source_sha256": "3" * 64,
+            "run_contract_sha256": hashlib.sha256(
+                (layout.run_dir / "artifacts/ultra-run-contract.json").read_bytes()
+            ).hexdigest(),
+            "evidence_cutoff": STAMP,
+            "input_refs": [
+                {
+                    "path": "input/request.md",
+                    "sha256": "4" * 64,
+                    "media_type": "text/markdown",
+                }
+            ],
+        },
+        "events": (
+            {
+                "phase_id": "U0",
+                "event_sha256": parent_event_sha256,
+            },
+        ),
+        "refs_by_phase": {"U1": u1_refs},
+    }
+    manifest = {
+        "artifacts": [
+            {
+                "schema_id": "crossframe.ultra.v82.read-event",
+                "path": modules.artifacts.READ_EVENTS_PATH,
+            }
+        ]
+    }
+    issues: dict[str, list[tuple[str, str]]] = {"source-read-coverage": []}
+
+    modules.validation._validate_read_events(
+        REPO_ROOT,
+        layout,
+        manifest,
+        authority,
+        issues,
+    )
+
+    assert issues == {"source-read-coverage": []}
+    assert captured["manifest"] is source_manifest
+    assert captured["expected_request_sha256"] == request_sha256
+    assert captured["expected_source_lock_sha256"] == u1_refs[
+        "recovery/u1-authority/source-lock.json"
+    ]
+    assert captured["expected_read_plan_sha256"] == u1_refs[
+        "recovery/u1-authority/read-plan.json"
+    ]
+    assert captured["expected_read_coverage_sha256"] == u1_refs[
+        "recovery/u1-authority/source-coverage.json"
+    ]
+
+
 def test_disk_fresh_validation_is_canonical_read_only_and_schema_valid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -515,6 +630,9 @@ def test_persisted_u1_authority_reconstruction_returns_an_issuer_seal(
     assert run.modules.source_integrity.verify_u1_authority_seal(seal) is seal
     assert seal.source_lock_artifact_sha256 == arguments[
         "expected_source_lock_sha256"
+    ]
+    assert seal.read_plan_artifact_sha256 == arguments[
+        "expected_read_plan_sha256"
     ]
     assert seal.read_coverage_artifact_sha256 == arguments[
         "expected_read_coverage_sha256"

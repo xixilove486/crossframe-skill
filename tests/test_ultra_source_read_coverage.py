@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -401,6 +402,246 @@ def test_source_manifest_and_read_plan_bind_exact_4753_units_without_claiming_re
     assert len(plan["source_units"]) == 4753
     assert "read_events" not in plan
     assert source_lock["source_manifest_sha256"] == SOURCE_MANIFEST_SHA256
+
+
+def test_task3_u1_read_plan_binds_the_complete_runtime_authority() -> None:
+    import ultra_runtime.source_integrity as module
+    from ultra_runtime.schemas import validate_instance
+
+    snapshot = _snapshot(module)
+    plan = module.build_read_plan(
+        snapshot,
+        promoted_semantic_snapshot_sha256=snapshot.semantic_sha256,
+        source_lock_sha256="2" * 64,
+        parent_event_sha256=PARENT_EVENT_SHA256,
+        run_id=RUN_ID,
+        version_binding=_binding(),
+        generated_at=STAMP,
+        request_sha256="3" * 64,
+        input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
+        reader_mode="full-source",
+        batch_size=512,
+    )
+
+    validate_instance("ultra-read-plan.schema.json", plan)
+    assert plan["schema_id"] == "crossframe.ultra.v82.read-plan"
+    assert plan["phase_id"] == "U1"
+    assert plan["run_id"] == RUN_ID
+    assert plan["request_sha256"] == "3" * 64
+    assert plan["input_snapshot_sha256"] == INPUT_SNAPSHOT_SHA256
+    assert plan["source_unit_count"] == 4_753
+    assert len(plan["source_units"]) == 4_753
+    assert plan["content_sha256"] == _hash_without(plan, "content_sha256")
+    assert "read_events" not in plan
+
+
+def test_task3_u1_resume_revalidates_plan_without_quadratic_schema_scan(
+    monkeypatch,
+) -> None:
+    import ultra_runtime.source_integrity as module
+
+    snapshot = _snapshot(module)
+    plan = module.build_read_plan(
+        snapshot,
+        promoted_semantic_snapshot_sha256=snapshot.semantic_sha256,
+        source_lock_sha256="2" * 64,
+        parent_event_sha256=PARENT_EVENT_SHA256,
+        run_id=RUN_ID,
+        version_binding=_binding(),
+        generated_at=STAMP,
+        request_sha256="3" * 64,
+        input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
+        reader_mode="full-source",
+        batch_size=512,
+    )
+
+    def reject_full_plan_schema(schema_name, _instance):
+        if schema_name == "ultra-read-plan.schema.json":
+            raise AssertionError("partial resume must use the immutable linear plan check")
+
+    monkeypatch.setattr(module, "validate_instance", reject_full_plan_schema)
+    digest = module.validate_read_plan(
+        plan,
+        manifest=snapshot,
+        expected_run_id=RUN_ID,
+        expected_version_binding=_binding(),
+        expected_request_sha256="3" * 64,
+        expected_input_snapshot_sha256=INPUT_SNAPSHOT_SHA256,
+        expected_source_lock_sha256="2" * 64,
+        expected_parent_event_sha256=PARENT_EVENT_SHA256,
+        validate_schema=False,
+    )
+
+    assert digest == hashlib.sha256(_canonical(plan)).hexdigest()
+
+
+def _task3_read_item(
+    *,
+    action_sha256: str,
+    read_plan_sha256: str,
+    reader_mode: str,
+    execution_id: str,
+    read_at: str,
+    source_unit_id: str,
+    source_unit_sha256: str,
+) -> dict[str, str]:
+    payload = {
+        "receipt_type": "crossframe.ultra.v82.host-source-read",
+        "action_sha256": action_sha256,
+        "read_plan_sha256": read_plan_sha256,
+        "reader_mode": reader_mode,
+        "execution_id": execution_id,
+        "read_at": read_at,
+        "source_unit_id": source_unit_id,
+        "source_unit_sha256": source_unit_sha256,
+    }
+    return {
+        "source_unit_id": source_unit_id,
+        "source_unit_sha256": source_unit_sha256,
+        "receipt_sha256": hashlib.sha256(_canonical(payload)).hexdigest(),
+    }
+
+
+def _task3_host_read_receipt(
+    tmp_path: Path,
+    *,
+    execution_id: str,
+    mutation: str,
+):
+    from ultra_runtime.host_handshake import issue_host_action
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
+
+    import ultra_runtime.source_integrity as module
+
+    policy = RootPolicy(tmp_path / "production", tmp_path / "test")
+    layout = build_run_layout(RunMode.TEST, RUN_ID, policy)
+    layout.recovery_dir.mkdir(parents=True, exist_ok=True)
+    snapshot = _snapshot(module)
+    unit = copy.deepcopy(snapshot.document["source_units"][0])
+    read_plan_sha256 = "4" * 64
+    action = issue_host_action(
+        layout,
+        action_kind="source-read",
+        phase_id="U1",
+        parent_event_sha256=PARENT_EVENT_SHA256,
+        request_sha256="3" * 64,
+        payload={
+            "read_plan_sha256": read_plan_sha256,
+            "source_lock_sha256": "2" * 64,
+            "reader_mode": "full-source",
+            "batch_ordinal": 1,
+            "source_unit_count": 1,
+            "source_units": [
+                {
+                    "source_unit_id": unit["unit_id"],
+                    "source_unit_sha256": unit["sha256"],
+                }
+            ],
+        },
+        result_relative_path="work/host/U01-read-000001.json",
+        now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+    )
+    result_plan_sha256 = (
+        "5" * 64 if mutation == "plan" else read_plan_sha256
+    )
+    result_unit_sha256 = (
+        "6" * 64 if mutation == "content" else str(unit["sha256"])
+    )
+    read_at = "2026-08-02T00:00:01Z"
+    item = _task3_read_item(
+        action_sha256=action.action_sha256,
+        read_plan_sha256=result_plan_sha256,
+        reader_mode="full-source",
+        execution_id=execution_id,
+        read_at=read_at,
+        source_unit_id=str(unit["unit_id"]),
+        source_unit_sha256=result_unit_sha256,
+    )
+    result = {
+        "schema_id": "crossframe.ultra.v82.source-read-result",
+        "schema_version": 1,
+        "action_sha256": action.action_sha256,
+        "read_plan_sha256": result_plan_sha256,
+        "reader_mode": "full-source",
+        "execution_id": execution_id,
+        "read_at": read_at,
+        "items": [item],
+    }
+    action.result_path.parent.mkdir(parents=True, exist_ok=True)
+    action.result_path.write_bytes(_canonical(result))
+    receipt = {
+        "schema_id": "crossframe.ultra.v82.host-result-receipt",
+        "schema_version": 1,
+        "run_id": RUN_ID,
+        "version_binding": _binding(),
+        "phase_id": "U1",
+        "action_kind": "source-read",
+        "parent_event_sha256": PARENT_EVENT_SHA256,
+        "request_sha256": "3" * 64,
+        "action_sha256": action.action_sha256,
+        "result_relative_path": "work/host/U01-read-000001.json",
+        "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "execution_id": execution_id,
+        "completed_at": "2026-08-02T00:00:02Z",
+    }
+    receipt["receipt_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
+    return module, snapshot, action, receipt
+
+
+@pytest.mark.parametrize(
+    ("execution_id", "mutation", "message"),
+    (
+        ("runtime-bootstrap", "none", "host execution|runtime"),
+        ("host-reader-001", "plan", "read plan|action"),
+        ("host-reader-001", "content", "source hash|content hash"),
+    ),
+)
+def test_task3_u1_rejects_runtime_or_tampered_host_read_receipts(
+    tmp_path: Path,
+    execution_id: str,
+    mutation: str,
+    message: str,
+) -> None:
+    module, snapshot, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id=execution_id,
+        mutation=mutation,
+    )
+
+    with pytest.raises(module.SourceCoverageError, match=message):
+        module.validate_host_read_receipt(
+            receipt,
+            action=action,
+            repo=ROOT,
+            manifest=snapshot,
+        )
+
+
+def test_task3_u1_receipt_reloads_only_its_requested_source_units(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    module, snapshot, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-001",
+        mutation="none",
+    )
+
+    def reject_full_snapshot(*_args, **_kwargs):
+        raise AssertionError("a bounded host receipt must not rebuild all 4,753 units")
+
+    monkeypatch.setattr(module, "_load_committed_read_records", reject_full_snapshot)
+    events = module.validate_host_read_receipt(
+        receipt,
+        action=action,
+        repo=ROOT,
+        manifest=snapshot,
+    )
+
+    assert len(events) == 1
+    assert events[0]["source_unit_id"] == snapshot.document["source_units"][0][
+        "unit_id"
+    ]
 
 
 def test_source_lock_producer_passes_public_schema_and_recomputes_both_hash_roles(

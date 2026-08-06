@@ -44,6 +44,7 @@ SCHEMA_NAMES = (
     "ultra-output-plan.schema.json",
     "ultra-phase-event.schema.json",
     "ultra-read-event.schema.json",
+    "ultra-read-plan.schema.json",
     "ultra-recovery-checkpoint.schema.json",
     "ultra-recursive-lineage.schema.json",
     "ultra-recursive-state.schema.json",

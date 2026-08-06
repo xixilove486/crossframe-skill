@@ -8,6 +8,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 from typing import Literal
 
 from .constants import PHASES, current_version_binding
@@ -856,17 +857,18 @@ def _validated_u1_recovery_authority(
     outputs = u1_event.get("output_artifact_hashes")
     expected_paths = (
         _U1_SOURCE_LOCK_PATH.as_posix(),
+        _U1_READ_PLAN_PATH.as_posix(),
         _U1_SOURCE_COVERAGE_PATH.as_posix(),
     )
     if (
         not isinstance(refs, list)
-        or len(refs) != 2
+        or len(refs) != 3
         or tuple(
             item.get("path") if isinstance(item, Mapping) else None for item in refs
         )
         != expected_paths
         or not isinstance(outputs, list)
-        or len(outputs) != 2
+        or len(outputs) != 3
         or [
             item.get("sha256") if isinstance(item, Mapping) else None
             for item in refs
@@ -980,8 +982,10 @@ def _validated_u1_recovery_authority(
             expected_parent_event_sha256=str(u1_event["parent_event_sha256"]),
             expected_evidence_cutoff=str(authority["evidence_cutoff"]),
             expected_inputs=tuple(recovery_inputs),
+            expected_request_sha256=str(store.run_contract["request_sha256"]),
             expected_source_lock_sha256=str(outputs[0]),
-            expected_read_coverage_sha256=str(outputs[1]),
+            expected_read_plan_sha256=str(outputs[1]),
+            expected_read_coverage_sha256=str(outputs[2]),
         )
     except Exception as error:
         raise RecoveryIntegrityError("U1 persisted authority validation failed") from error
@@ -992,6 +996,8 @@ def _restore_phase_store(
     authority: Mapping[str, object],
     events: Sequence[Mapping[str, object]],
     checkpoints: Sequence[Mapping[str, object]],
+    *,
+    source_repository: Path | None = None,
 ) -> PhaseStore:
     contract_path = layout.artifacts_dir / "ultra-run-contract.json"
     try:
@@ -1053,7 +1059,89 @@ def _restore_phase_store(
         raise RecoveryIntegrityError(
             "persisted host capability attestation hash differs from contract"
         )
-    source_repository = Path(__file__).resolve().parents[4]
+    selected_repository = (
+        source_repository.resolve()
+        if isinstance(source_repository, Path)
+        else Path(__file__).resolve().parents[4]
+    )
+    u1_prerequisite_measurement = None
+    u1_prerequisite_roles = None
+    if source_repository is not None:
+        from . import source_integrity
+
+        try:
+            run_mode = str(contract["run_mode"])
+            source_lock_path = layout.run_dir / _U1_SOURCE_LOCK_PATH
+            if source_lock_path.is_file():
+                source_lock = _read_canonical_object(source_lock_path)
+                validate_instance("ultra-source-lock.schema.json", source_lock)
+                if (
+                    source_lock.get("content_sha256")
+                    != compute_artifact_content_sha256(source_lock)
+                    or source_lock.get("run_id") != authority["run_id"]
+                    or source_lock.get("version_binding")
+                    != authority["version_binding"]
+                    or source_lock.get("source_manifest_sha256")
+                    != authority["source_sha256"]
+                    or source_lock.get("input_snapshot_sha256")
+                    != authority.get("input_snapshot_sha256")
+                    or source_lock.get("lock_status") != "locked"
+                ):
+                    raise RecoveryIntegrityError(
+                        "persisted U1 source lock cannot restore prerequisite roles"
+                    )
+                free_space_status = (
+                    "available"
+                    if shutil.disk_usage(selected_repository).free
+                    >= source_integrity.MIN_FREE_SPACE_RESERVE_BYTES
+                    else "insufficient"
+                )
+                u1_prerequisite_roles = {
+                    "run_mode": run_mode,
+                    "source_release_id": source_lock["source_release_id"],
+                    "source_manifest_sha256": source_lock[
+                        "source_manifest_sha256"
+                    ],
+                    "release_manifest_sha256": source_lock[
+                        "release_manifest_sha256"
+                    ],
+                    "compatibility_matrix_sha256": source_lock[
+                        "compatibility_matrix_sha256"
+                    ],
+                    "knowledge_report_sha256": source_lock[
+                        "knowledge_report_sha256"
+                    ],
+                    "skill_tree_sha256": source_lock["skill_tree_sha256"],
+                    "free_space_reserve_bytes": source_integrity.MIN_FREE_SPACE_RESERVE_BYTES,
+                    "free_space_status": free_space_status,
+                }
+            else:
+                manifest = source_integrity.load_source_manifest(
+                    selected_repository
+                    / "skills"
+                    / "crossframe-ultra"
+                    / "references"
+                    / "source-manifest.json",
+                    expected_sha256=str(authority["source_sha256"]),
+                )
+                u1_prerequisite_measurement = source_integrity.measure_u1_prerequisites(
+                    selected_repository,
+                    manifest=manifest,
+                    release_manifest_path=(
+                        selected_repository
+                        / "skills"
+                        / "crossframe-ultra"
+                        / "references"
+                        / "release-manifest.json"
+                        if run_mode == "test"
+                        else None
+                    ),
+                    run_mode=run_mode,
+                )
+        except Exception as error:
+            raise RecoveryIntegrityError(
+                "U1 prerequisite authority cannot be restored"
+            ) from error
     try:
         store = PhaseStore(
             run_id=str(authority["run_id"]),
@@ -1065,7 +1153,9 @@ def _restore_phase_store(
             now=generated_at,
             run_contract=contract,
             capability_attestation=capability_attestation,
-            source_repository=source_repository,
+            source_repository=selected_repository,
+            u1_prerequisite_measurement=u1_prerequisite_measurement,
+            u1_prerequisite_roles=u1_prerequisite_roles,
             run_layout=layout,
         )
         if store.run_contract_artifact_sha256 != authority["run_contract_sha256"]:
@@ -1166,7 +1256,6 @@ def create_checkpoint(
         raise RecoveryCompatibilityError("new checkpoints require exact current versions")
     _validate_event_chain(events, authority, compatibility=compatibility)
     refs = _artifact_refs(layout, artifact_paths)
-    u1_read_plan: dict[str, object] | None = None
     if boundary_kind == "phase":
         phase_id = phase_store.current_phase
         if (
@@ -1181,16 +1270,21 @@ def create_checkpoint(
         if phase_id == "U1":
             if tuple(item["path"] for item in refs) != (
                 _U1_SOURCE_LOCK_PATH.as_posix(),
+                _U1_READ_PLAN_PATH.as_posix(),
                 _U1_SOURCE_COVERAGE_PATH.as_posix(),
             ):
                 raise RecoveryIntegrityError(
                     "U1 checkpoint must use the fixed recovery authority paths"
                 )
-            u1_read_plan = _u1_recovery_read_plan(
-                phase_store,
-                parent_event_sha256=str(events[-1]["parent_event_sha256"]),
-                source_lock_sha256=refs[0]["sha256"],
-            )
+            accepted = phase_store._accepted_u1_snapshot()
+            if [item["sha256"] for item in refs] != [
+                accepted["source_lock_artifact_sha256"],
+                accepted["read_plan_artifact_sha256"],
+                accepted["read_coverage_artifact_sha256"],
+            ]:
+                raise RecoveryIntegrityError(
+                    "U1 checkpoint hashes differ from accepted source authority"
+                )
     elif boundary_kind == "article-packet":
         phase_id = "U11"
         if (
@@ -1248,10 +1342,6 @@ def create_checkpoint(
         else:
             _write_immutable(authority_path, authority)
         _sync_events(events_path, events)
-        if u1_read_plan is not None:
-            read_plan_path = layout.run_dir / _U1_READ_PLAN_PATH
-            assert_safe_descendant(layout.root, read_plan_path)
-            _write_immutable(read_plan_path, u1_read_plan)
         existing, _, _, _ = _load_checkpoints_unlocked(layout)
         slot = _checkpoint_slot(checkpoint)
         if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
@@ -1292,7 +1382,12 @@ def select_resume_checkpoint(layout: RunLayout) -> dict[str, object]:
     return _select_latest(checkpoints)
 
 
-def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
+def resume_run(
+    layout: RunLayout,
+    *,
+    now: datetime,
+    source_repository: Path | None = None,
+) -> RecoveryResult:
     _validate_layout(layout)
     _require_utc(now, "now")
     checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
@@ -1329,6 +1424,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
         authority,
         durable_events,
         checkpoints,
+        source_repository=source_repository,
     )
     if status.status == "running":
         resumed = status

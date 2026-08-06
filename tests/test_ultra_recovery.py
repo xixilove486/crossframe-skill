@@ -249,6 +249,7 @@ def _issue_test_recovered_u1_authority(source_integrity, snapshot):
         "input_root": seal.input_root,
         "acl_status": seal.acl_status,
         "source_lock_artifact_sha256": seal.source_lock_artifact_sha256,
+        "read_plan_artifact_sha256": seal.read_plan_artifact_sha256,
         "read_coverage_artifact_sha256": seal.read_coverage_artifact_sha256,
         "authorizes_phase": seal.authorizes_phase,
     }
@@ -281,7 +282,9 @@ def _install_disk_u1_validator(monkeypatch, recovery_run):
         expected_parent_event_sha256,
         expected_evidence_cutoff,
         expected_inputs,
+        expected_request_sha256,
         expected_source_lock_sha256,
+        expected_read_plan_sha256,
         expected_read_coverage_sha256,
     ):
         del repo, manifest
@@ -298,8 +301,11 @@ def _install_disk_u1_validator(monkeypatch, recovery_run):
             != expected["authority"].parent_event_sha256
             or expected_evidence_cutoff != STAMP
             or list(expected_inputs) != expected["source_lock"]["inputs"]
+            or expected_request_sha256 != expected["read_plan"]["request_sha256"]
             or expected_source_lock_sha256
             != expected["authority"].source_lock_artifact_sha256
+            or expected_read_plan_sha256
+            != expected["authority"].read_plan_artifact_sha256
             or expected_read_coverage_sha256
             != expected["authority"].read_coverage_artifact_sha256
         ):
@@ -358,6 +364,8 @@ def _reseal_u1_authority(layout, *, stale_role=False, changed_metadata=False):
         event["read_event_sha256"] for event in read_events
     ]
     read_plan["source_lock_sha256"] = source_lock_sha256
+    read_plan["content_sha256"] = compute_artifact_content_sha256(read_plan)
+    read_plan_sha256 = hashlib.sha256(_canonical(read_plan)).hexdigest()
     coverage_sha256 = hashlib.sha256(_canonical(coverage)).hexdigest()
     jsonio.atomic_write_json(source_lock_path, source_lock)
     jsonio.atomic_write_json(coverage_path, coverage)
@@ -373,7 +381,11 @@ def _reseal_u1_authority(layout, *, stale_role=False, changed_metadata=False):
         for line in events_path.read_text(encoding="utf-8").splitlines()
     ]
     u1_event = next(event for event in phase_events if event["phase_id"] == "U1")
-    u1_event["output_artifact_hashes"] = [source_lock_sha256, coverage_sha256]
+    u1_event["output_artifact_hashes"] = [
+        source_lock_sha256,
+        read_plan_sha256,
+        coverage_sha256,
+    ]
     u1_event["content_sha256"] = state_machine._compute_event_content_sha256(u1_event)
     u1_event["event_sha256"] = state_machine.compute_event_sha256(u1_event)
     jsonio.atomic_write_bytes(
@@ -385,7 +397,8 @@ def _reseal_u1_authority(layout, *, stale_role=False, changed_metadata=False):
     checkpoint = jsonio.load_json_object(checkpoint_path)
     checkpoint["phase_event_sha256"] = u1_event["event_sha256"]
     checkpoint["artifact_hashes"][0]["sha256"] = source_lock_sha256
-    checkpoint["artifact_hashes"][1]["sha256"] = coverage_sha256
+    checkpoint["artifact_hashes"][1]["sha256"] = read_plan_sha256
+    checkpoint["artifact_hashes"][2]["sha256"] = coverage_sha256
     checkpoint["content_sha256"] = compute_artifact_content_sha256(checkpoint)
     raw = _canonical(checkpoint)
     checkpoint_path.unlink()
@@ -407,6 +420,7 @@ def u1_recovery_run(tmp_path_factory):
         "U1",
         artifact_hashes=(
             authority.source_lock_artifact_sha256,
+            authority.read_plan_artifact_sha256,
             authority.read_coverage_artifact_sha256,
         ),
         u1_authority=authority,
@@ -423,6 +437,7 @@ def u1_recovery_run(tmp_path_factory):
         store.capability_attestation.artifact_bytes,
     )
     jsonio.atomic_write_json(layout.run_dir / U1_SOURCE_LOCK, issued["source_lock"])
+    jsonio.atomic_write_json(layout.run_dir / U1_READ_PLAN, issued["read_plan"])
     jsonio.atomic_write_json(
         layout.run_dir / U1_SOURCE_COVERAGE,
         issued["source_coverage"],
@@ -437,7 +452,11 @@ def u1_recovery_run(tmp_path_factory):
         boundary_kind="phase",
         boundary_id="U1",
         boundary_ordinal=0,
-        artifact_paths=(layout.run_dir / U1_SOURCE_LOCK, layout.run_dir / U1_SOURCE_COVERAGE),
+        artifact_paths=(
+            layout.run_dir / U1_SOURCE_LOCK,
+            layout.run_dir / U1_READ_PLAN,
+            layout.run_dir / U1_SOURCE_COVERAGE,
+        ),
         now=NOW + timedelta(seconds=1),
     )
     read_plan_path = layout.run_dir / U1_READ_PLAN
@@ -445,9 +464,6 @@ def u1_recovery_run(tmp_path_factory):
     persisted_read_plan = (
         jsonio.load_json_object(read_plan_path) if read_plan_persisted else None
     )
-    if not read_plan_persisted:
-        jsonio.atomic_write_json(read_plan_path, issued["read_plan"])
-
     fixture_root = tmp_path_factory.mktemp("u1-recovery-snapshots")
     u1_root = fixture_root / "u1"
     shutil.copytree(layout.root, u1_root)
@@ -865,7 +881,7 @@ def test_missing_u1_read_plan_fails_without_authorizing_tools(
     statuses, interrupted, before = _interrupt(layout)
     _install_disk_u1_validator(monkeypatch, u1_recovery_run)
 
-    with pytest.raises(recovery.RecoveryIntegrityError, match="read plan|U1"):
+    with pytest.raises(recovery.RecoveryIntegrityError, match=r"read[- ]plan|U1"):
         recovery.resume_run(layout, now=NOW + timedelta(seconds=3))
 
     assert statuses.read() == interrupted
