@@ -7,12 +7,14 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["trigger", "request_sha256", "run_mode", "sensitivity", "retention", "outbound_permission", "evidence_cutoff", "capabilities", "resource_limits"],
+      "required": ["trigger", "request_sha256", "analysis_kind", "capability_attestation_sha256", "run_mode", "sensitivity", "retention", "outbound_permission", "evidence_cutoff", "capabilities", "resource_limits"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.run-contract"},
         "phase_id": {"const": "U0"},
         "trigger": {"enum": ["crossframe-ultra", "CrossFrame Ultra", "$crossframe-ultra", "/crossframe-ultra"]},
         "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "analysis_kind": {"enum": ["open-world", "closed-input"]},
+        "capability_attestation_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "run_mode": {"enum": ["production", "test"]},
         "sensitivity": {"enum": ["public", "internal", "private", "restricted"]},
         "retention": {"enum": ["retain", "delivery-only", "user-directed"]},

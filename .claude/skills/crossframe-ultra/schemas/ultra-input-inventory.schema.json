@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-input-inventory.schema.json",
+  "title": "CrossFrame Ultra material input inventory",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/artifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["request_sha256", "materials", "material_universe_sha256"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.input-inventory"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "materials": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "allOf": [
+              {"$ref": "ultra-common.schema.json#/$defs/artifactHash"},
+              {
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "pattern": "^materials/MAT-[0-9]{4}\\.[a-z0-9]{1,10}(?![\\s\\S])"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "material_universe_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"}
+      }
+    }
+  ],
+  "unevaluatedProperties": false
+}

@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import copy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 from typing import Literal
 
 from .constants import PHASES, current_version_binding
@@ -21,7 +22,22 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import (
+    CancelledRunError,
+    CancellationIntent,
+    Lease,
+    LeaseConflictError,
+    _cancel_intent_lock_path,
+    acquire_cancel_convergence_lease,
+    acquire_run_lease,
+    load_cancel_intent,
+    release_run_lease,
+    request_cancel,
+    require_run_lease_owner,
+)
 from .paths import (
+    PRODUCTION_ROOT,
+    TEST_ROOT,
     RunLayout,
     RunMode,
     RootPolicy,
@@ -59,6 +75,7 @@ _U1_SOURCE_LOCK_PATH = Path("recovery/u1-authority/source-lock.json")
 _U1_SOURCE_COVERAGE_PATH = Path("recovery/u1-authority/source-coverage.json")
 _U1_READ_PLAN_PATH = Path("recovery/u1-authority/read-plan.json")
 _U1_READ_EVENTS_PATH = Path("artifacts/U00-U03-evidence/ultra-read-events.jsonl")
+_EVIDENCE_FORK_AUTHORITY_PREFIX = "evidence-lineage-fork-authority"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,159}")
 _AUTHORITY_FIELDS = frozenset(
@@ -88,6 +105,7 @@ _CHECKPOINT_FIELDS = frozenset(
         "boundary_kind",
         "boundary_id",
         "boundary_ordinal",
+        "generation",
         "phase_event_sha256",
         "artifact_hashes",
         "evidence_cutoff",
@@ -116,6 +134,38 @@ _EVENT_FIELDS = frozenset(
         "failure_code",
         "invalidated_phases",
         "event_sha256",
+    }
+)
+_EVIDENCE_FORK_AUTHORITY_FIELDS = frozenset(
+    {
+        "schema_id",
+        "schema_version",
+        "run_id",
+        "version_binding",
+        "generated_at",
+        "content_sha256",
+        "phase_id",
+        "fork_entropy_sha256",
+        "lineage_request_sha256",
+        "parent_root",
+        "parent_mode",
+        "parent_run_id",
+        "parent_run_authority_sha256",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+        "status",
+    }
+)
+_REPAIR_EVENT_EXTRA_FIELDS = frozenset(
+    {
+        "generation",
+        "reset_from_phase",
+        "repair_attempt_id",
+        "repair_plan_sha256",
+        "failed_report_sha256",
+        "preserved_snapshot_sha256",
+        "superseded_event_sha256s",
     }
 )
 
@@ -147,6 +197,7 @@ class RecoveryResult:
     checkpoint: Mapping[str, object] | None
     status: RunStatusRecord | None
     phase_store: PhaseStore | None
+    active_generation: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +206,16 @@ class ForkResult:
     layout: RunLayout
     parent_checkpoint: Mapping[str, object]
     migration: Mapping[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceForkResult:
+    run_id: str
+    layout: RunLayout
+    parent_u3_event_sha256: str
+    parent_evidence_sha256: str
+    evidence_cutoff: str
+    lineage: Mapping[str, object]
 
 
 def _is_sha256(value: object) -> bool:
@@ -438,12 +499,19 @@ def _validate_event_chain(
     if not events:
         raise RecoveryIntegrityError("phase event chain is empty")
     expected_parent = "0" * 64
-    completed = 0
+    active_completed: list[dict[str, object]] = []
+    generation = 0
     terminal_seen = False
     snapshots: list[dict[str, object]] = []
     for index, event in enumerate(events):
         snapshot = copy.deepcopy(dict(event))
-        if set(snapshot) != _EVENT_FIELDS:
+        status = snapshot.get("status")
+        expected_fields = (
+            _EVENT_FIELDS | _REPAIR_EVENT_EXTRA_FIELDS
+            if status == "invalidated"
+            else _EVENT_FIELDS | ({"generation"} if "generation" in snapshot else set())
+        )
+        if set(snapshot) != expected_fields:
             raise RecoveryIntegrityError("phase event chain contains a non-closed event")
         if (
             snapshot.get("schema_id") != PHASE_EVENT_SCHEMA_ID
@@ -468,12 +536,14 @@ def _validate_event_chain(
         except ValueError as error:
             raise RecoveryIntegrityError("phase event timestamp is invalid") from error
         phase_id = snapshot.get("phase_id")
-        status = snapshot.get("status")
         if terminal_seen:
             raise RecoveryIntegrityError("phase event appears after a terminal event")
         if status == "complete":
-            if completed >= len(PHASES) or phase_id != PHASES[completed]:
+            if len(active_completed) >= len(PHASES) or phase_id != PHASES[len(active_completed)]:
                 raise RecoveryIntegrityError("completed phase event order is invalid")
+            event_generation = snapshot.get("generation", 0)
+            if event_generation != generation:
+                raise RecoveryIntegrityError("completed phase event generation is invalid")
             outputs = snapshot.get("output_artifact_hashes")
             if not isinstance(outputs, list) or any(not _is_sha256(item) for item in outputs):
                 raise RecoveryIntegrityError("completed phase outputs are invalid")
@@ -489,9 +559,51 @@ def _validate_event_chain(
                 or snapshot.get("invalidated_phases") != []
             ):
                 raise RecoveryIntegrityError("completed phase event disposition is invalid")
-            completed += 1
+            active_completed.append(snapshot)
+        elif status == "invalidated":
+            reset_from_phase = snapshot.get("reset_from_phase")
+            repair_generation = snapshot.get("generation")
+            if (
+                not isinstance(reset_from_phase, str)
+                or reset_from_phase not in PHASES
+                or phase_id != reset_from_phase
+                or repair_generation != generation + 1
+                or snapshot.get("event_type") != "repair-invalidation"
+                or not isinstance(snapshot.get("failure_code"), str)
+                or not str(snapshot["failure_code"]).strip()
+                or snapshot.get("output_artifact_hashes") != []
+            ):
+                raise RecoveryIntegrityError("repair invalidation disposition is invalid")
+            reset_index = PHASES.index(reset_from_phase)
+            if len(active_completed) <= reset_index:
+                raise RecoveryIntegrityError("repair invalidates an incomplete phase")
+            expected_superseded = [
+                str(item["event_sha256"])
+                for item in active_completed[reset_index:]
+            ]
+            if (
+                snapshot.get("invalidated_phases") != list(PHASES[reset_index:])
+                or snapshot.get("superseded_event_sha256s") != expected_superseded
+                or any(
+                    not _is_sha256(snapshot.get(field))
+                    for field in (
+                        "repair_plan_sha256",
+                        "failed_report_sha256",
+                        "preserved_snapshot_sha256",
+                    )
+                )
+                or not isinstance(snapshot.get("repair_attempt_id"), str)
+                or not str(snapshot["repair_attempt_id"]).strip()
+            ):
+                raise RecoveryIntegrityError("repair invalidation authority is invalid")
+            active_completed = active_completed[:reset_index]
+            generation = int(repair_generation)
         elif status in {"failed", "blocked", "cancelled"}:
-            expected_phase = PHASES[completed] if completed < len(PHASES) else None
+            expected_phase = (
+                PHASES[len(active_completed)]
+                if len(active_completed) < len(PHASES)
+                else None
+            )
             if (
                 phase_id != expected_phase
                 or snapshot.get("event_type") != f"phase-{status}"
@@ -564,18 +676,174 @@ def _quarantine(layout: RunLayout, path: Path) -> None:
         raise RecoveryIntegrityError("half-written checkpoint cannot be quarantined") from error
 
 
-def _checkpoint_slot(value: Mapping[str, object]) -> tuple[str, str, int]:
+def _checkpoint_slot(value: Mapping[str, object]) -> tuple[int, str, str, int]:
     return (
+        int(value["generation"]),
         str(value["phase_id"]),
         str(value["boundary_kind"]),
         int(value["boundary_ordinal"]),
     )
 
 
-def _checkpoint_sort_key(value: Mapping[str, object]) -> tuple[int, int, int]:
+def _checkpoint_sort_key(value: Mapping[str, object]) -> tuple[int, int, int, int]:
     phase = str(value["phase_id"])
     kind_rank = 0 if value["boundary_kind"] == "article-packet" else 1
-    return PHASES.index(phase), kind_rank, int(value["boundary_ordinal"])
+    return (
+        int(value["generation"]),
+        PHASES.index(phase),
+        kind_rank,
+        int(value["boundary_ordinal"]),
+    )
+
+
+def _superseded_checkpoint_refs(
+    layout: RunLayout,
+    *,
+    checkpoint: Mapping[str, object],
+    events_by_hash: Mapping[str, Mapping[str, object]],
+) -> dict[str, dict[str, str]] | None:
+    event_sha256 = checkpoint.get("phase_event_sha256")
+    checkpoint_generation = checkpoint.get("generation")
+    checkpoint_phase = checkpoint.get("phase_id")
+    invalidations = [
+        event
+        for event in events_by_hash.values()
+        if event.get("status") == "invalidated"
+        and (
+            event_sha256 in event.get("superseded_event_sha256s", ())
+            or (
+                checkpoint.get("boundary_kind") == "article-packet"
+                and checkpoint_phase in event.get("invalidated_phases", ())
+                and type(checkpoint_generation) is int
+                and event.get("generation") == checkpoint_generation + 1
+            )
+        )
+    ]
+    if not invalidations:
+        return None
+    if len(invalidations) != 1:
+        raise RecoveryIntegrityError(
+            "checkpoint event has ambiguous supersession authority"
+        )
+    invalidation = invalidations[0]
+    attempt_id = invalidation.get("repair_attempt_id")
+    if not isinstance(attempt_id, str) or _IDENTIFIER_RE.fullmatch(attempt_id) is None:
+        raise RecoveryIntegrityError("checkpoint supersession attempt is invalid")
+    attempt_root = layout.recovery_dir / "repair-attempts" / attempt_id
+    snapshot_path = attempt_root / "superseded-snapshot.json"
+    try:
+        assert_safe_descendant(layout.root, snapshot_path)
+        raw = snapshot_path.read_bytes()
+        snapshot = load_json_object_bytes(raw, source=str(snapshot_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(
+            "checkpoint supersession snapshot is unavailable"
+        ) from error
+    if (
+        raw != canonical_json_bytes(snapshot)
+        or sha256_bytes(raw) != invalidation.get("preserved_snapshot_sha256")
+        or set(snapshot)
+        != {
+            "schema_id",
+            "schema_version",
+            "run_id",
+            "version_binding",
+            "generated_at",
+            "content_sha256",
+            "phase_id",
+            "repair_attempt_id",
+            "artifacts",
+        }
+        or snapshot.get("schema_id")
+        != "crossframe.ultra.v82.repair-superseded-snapshot"
+        or snapshot.get("schema_version") != 1
+        or snapshot.get("run_id") != layout.run_dir.name
+        or snapshot.get("version_binding") != current_version_binding()
+        or snapshot.get("repair_attempt_id") != attempt_id
+        or snapshot.get("phase_id") != invalidation.get("reset_from_phase")
+        or snapshot.get("content_sha256")
+        != compute_artifact_content_sha256(snapshot)
+    ):
+        raise RecoveryIntegrityError("checkpoint supersession snapshot is invalid")
+    try:
+        _parse_canonical_utc(
+            snapshot.get("generated_at"),
+            "checkpoint supersession generated_at",
+        )
+    except ValueError as error:
+        raise RecoveryIntegrityError(
+            "checkpoint supersession timestamp is invalid"
+        ) from error
+    artifacts = snapshot.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise RecoveryIntegrityError("checkpoint supersession inventory is empty")
+    preserved: dict[str, dict[str, str]] = {}
+    superseded_root = attempt_root / "superseded"
+    for item in artifacts:
+        if not isinstance(item, Mapping) or set(item) != {
+            "original_path",
+            "snapshot_path",
+            "sha256",
+            "media_type",
+        }:
+            raise RecoveryIntegrityError(
+                "checkpoint supersession inventory entry is invalid"
+            )
+        original_path = item.get("original_path")
+        snapshot_relative = item.get("snapshot_path")
+        digest = item.get("sha256")
+        media_type = item.get("media_type")
+        if (
+            not isinstance(original_path, str)
+            or not isinstance(snapshot_relative, str)
+            or not _is_sha256(digest)
+            or not isinstance(media_type, str)
+            or not media_type
+            or original_path in preserved
+        ):
+            raise RecoveryIntegrityError(
+                "checkpoint supersession inventory authority is invalid"
+            )
+        candidate = layout.run_dir / Path(snapshot_relative)
+        try:
+            assert_safe_descendant(layout.root, candidate)
+            candidate.relative_to(superseded_root)
+            payload = candidate.read_bytes()
+        except (OSError, TypeError, ValueError) as error:
+            raise RecoveryIntegrityError(
+                "checkpoint supersession artifact is unavailable"
+            ) from error
+        if hashlib.sha256(payload).hexdigest() != digest:
+            raise RecoveryIntegrityError(
+                "checkpoint supersession artifact hash differs"
+            )
+        preserved[original_path] = {
+            "path": original_path,
+            "sha256": str(digest),
+            "media_type": media_type,
+        }
+    return preserved
+
+
+def _active_event_sha256s_at_generation(
+    events: Sequence[Mapping[str, object]],
+    generation: int,
+) -> frozenset[str]:
+    bounded: list[Mapping[str, object]] = []
+    for event in events:
+        if (
+            event.get("status") == "invalidated"
+            and type(event.get("generation")) is int
+            and int(event["generation"]) > generation
+        ):
+            break
+        bounded.append(event)
+    resolved_generation, active = _active_completed_events(bounded)
+    if resolved_generation != generation:
+        raise RecoveryIntegrityError(
+            "checkpoint generation has no repair invalidation authority"
+        )
+    return frozenset(str(event["event_sha256"]) for event in active)
 
 
 def _validate_checkpoint(
@@ -603,12 +871,15 @@ def _validate_checkpoint(
     boundary_kind = snapshot.get("boundary_kind")
     boundary_id = snapshot.get("boundary_id")
     ordinal = snapshot.get("boundary_ordinal")
+    generation = snapshot.get("generation")
     if phase_id not in PHASES or boundary_kind not in {"phase", "article-packet"}:
         raise RecoveryIntegrityError("checkpoint boundary authority is invalid")
     if not isinstance(boundary_id, str) or _IDENTIFIER_RE.fullmatch(boundary_id) is None:
         raise RecoveryIntegrityError("checkpoint boundary identifier is invalid")
     if type(ordinal) is not int or ordinal < 0:
         raise RecoveryIntegrityError("checkpoint boundary ordinal is invalid")
+    if type(generation) is not int or generation < 0:
+        raise RecoveryIntegrityError("checkpoint generation is invalid")
     if type(snapshot.get("completed_boundary")) is not bool or type(
         snapshot.get("resumable")
     ) is not bool:
@@ -618,6 +889,10 @@ def _validate_checkpoint(
     if event is None:
         raise RecoveryIntegrityError("checkpoint phase event is not in the run ancestry")
     if boundary_kind == "phase":
+        if generation != event.get("generation", 0):
+            raise RecoveryIntegrityError(
+                "checkpoint generation differs from its phase event"
+            )
         if boundary_id != phase_id or ordinal != 0:
             raise RecoveryIntegrityError("phase checkpoint boundary is invalid")
         if event.get("phase_id") != phase_id or event.get("status") != "complete":
@@ -627,6 +902,14 @@ def _validate_checkpoint(
             raise RecoveryIntegrityError("article packet checkpoint boundary is invalid")
         if event.get("phase_id") != "U10" or event.get("status") != "complete":
             raise RecoveryIntegrityError("article packet checkpoint does not bind the U10 head")
+        active_event_sha256s = _active_event_sha256s_at_generation(
+            tuple(events_by_hash.values()),
+            generation,
+        )
+        if event_hash not in active_event_sha256s:
+            raise RecoveryIntegrityError(
+                "article packet checkpoint does not bind its generation's active U10 head"
+            )
     try:
         generated_at = _parse_canonical_utc(
             snapshot.get("generated_at"), "checkpoint generated_at"
@@ -636,10 +919,49 @@ def _validate_checkpoint(
         raise RecoveryIntegrityError("checkpoint timestamp authority is invalid") from error
     if generated_at < event_time:
         raise RecoveryIntegrityError("checkpoint predates its phase event")
+    if boundary_kind == "article-packet" and generation:
+        generation_invalidations = [
+            candidate
+            for candidate in events_by_hash.values()
+            if candidate.get("status") == "invalidated"
+            and candidate.get("generation") == generation
+        ]
+        if len(generation_invalidations) != 1:
+            raise RecoveryIntegrityError(
+                "article packet checkpoint generation has no unique invalidation"
+            )
+        try:
+            invalidation_time = _parse_canonical_utc(
+                generation_invalidations[0].get("timestamp"),
+                "repair invalidation timestamp",
+            )
+        except ValueError as error:
+            raise RecoveryIntegrityError(
+                "repair invalidation timestamp authority is invalid"
+            ) from error
+        if generated_at < invalidation_time:
+            raise RecoveryIntegrityError(
+                "article packet checkpoint predates its repair invalidation"
+            )
     raw_refs = snapshot.get("artifact_hashes")
     if not isinstance(raw_refs, list) or not raw_refs:
         raise RecoveryIntegrityError("checkpoint artifact hash boundary is empty")
-    refs = [_validate_disk_ref(layout, item, role="checkpoint") for item in raw_refs]
+    superseded_refs = _superseded_checkpoint_refs(
+        layout,
+        checkpoint=snapshot,
+        events_by_hash=events_by_hash,
+    )
+    if superseded_refs is None:
+        refs = [
+            _validate_disk_ref(layout, item, role="checkpoint")
+            for item in raw_refs
+        ]
+    else:
+        refs = [_validate_ref_record(item, role="checkpoint") for item in raw_refs]
+        if any(superseded_refs.get(item["path"]) != item for item in refs):
+            raise RecoveryIntegrityError(
+                "checkpoint refs differ from the preserved superseded snapshot"
+            )
     if len({item["path"] for item in refs}) != len(refs) or len(
         {item["sha256"] for item in refs}
     ) != len(refs):
@@ -679,7 +1001,7 @@ def _load_checkpoints_unlocked(
     events = _read_events(layout, authority, compatibility=compatibility)
     events_by_hash = {str(event["event_sha256"]): event for event in events}
     checkpoints: list[dict[str, object]] = []
-    slots: dict[tuple[str, str, int], str] = {}
+    slots: dict[tuple[int, str, str, int], str] = {}
     try:
         candidates = sorted(
             (path for path in checkpoints_dir.iterdir() if path.is_file()),
@@ -856,17 +1178,18 @@ def _validated_u1_recovery_authority(
     outputs = u1_event.get("output_artifact_hashes")
     expected_paths = (
         _U1_SOURCE_LOCK_PATH.as_posix(),
+        _U1_READ_PLAN_PATH.as_posix(),
         _U1_SOURCE_COVERAGE_PATH.as_posix(),
     )
     if (
         not isinstance(refs, list)
-        or len(refs) != 2
+        or len(refs) != 3
         or tuple(
             item.get("path") if isinstance(item, Mapping) else None for item in refs
         )
         != expected_paths
         or not isinstance(outputs, list)
-        or len(outputs) != 2
+        or len(outputs) != 3
         or [
             item.get("sha256") if isinstance(item, Mapping) else None
             for item in refs
@@ -980,8 +1303,10 @@ def _validated_u1_recovery_authority(
             expected_parent_event_sha256=str(u1_event["parent_event_sha256"]),
             expected_evidence_cutoff=str(authority["evidence_cutoff"]),
             expected_inputs=tuple(recovery_inputs),
+            expected_request_sha256=str(store.run_contract["request_sha256"]),
             expected_source_lock_sha256=str(outputs[0]),
-            expected_read_coverage_sha256=str(outputs[1]),
+            expected_read_plan_sha256=str(outputs[1]),
+            expected_read_coverage_sha256=str(outputs[2]),
         )
     except Exception as error:
         raise RecoveryIntegrityError("U1 persisted authority validation failed") from error
@@ -992,6 +1317,8 @@ def _restore_phase_store(
     authority: Mapping[str, object],
     events: Sequence[Mapping[str, object]],
     checkpoints: Sequence[Mapping[str, object]],
+    *,
+    source_repository: Path | None = None,
 ) -> PhaseStore:
     contract_path = layout.artifacts_dir / "ultra-run-contract.json"
     try:
@@ -1020,6 +1347,8 @@ def _restore_phase_store(
     contract_fields = (
         "trigger",
         "request_sha256",
+        "analysis_kind",
+        "capability_attestation_sha256",
         "run_mode",
         "sensitivity",
         "retention",
@@ -1029,63 +1358,110 @@ def _restore_phase_store(
         "resource_limits",
     )
     contract = {field: copy.deepcopy(artifact[field]) for field in contract_fields}
-    capabilities = contract.get("capabilities")
-    availability = {
-        str(name): "available"
-        for name, state in (
-            capabilities.items() if isinstance(capabilities, Mapping) else ()
+    from .foundation import (
+        FoundationInputError,
+        load_host_capability_attestation,
+    )
+
+    try:
+        capability_attestation = load_host_capability_attestation(
+            layout,
+            expected_request_sha256=str(contract["request_sha256"]),
+            expected_version_binding=authority["version_binding"],
         )
-        if state in {"available", "required"}
-    }
-    source_repository = Path(__file__).resolve().parents[4]
-    u1_event = next(
-        (
-            event
-            for event in events
-            if event.get("phase_id") == "U1" and event.get("status") == "complete"
-        ),
-        None,
+    except FoundationInputError as error:
+        raise RecoveryIntegrityError(
+            "persisted host capability attestation is invalid"
+        ) from error
+    if (
+        capability_attestation.artifact_sha256
+        != contract["capability_attestation_sha256"]
+    ):
+        raise RecoveryIntegrityError(
+            "persisted host capability attestation hash differs from contract"
+        )
+    selected_repository = (
+        source_repository.resolve()
+        if isinstance(source_repository, Path)
+        else Path(__file__).resolve().parents[4]
     )
     u1_prerequisite_measurement = None
-    if u1_event is None:
+    u1_prerequisite_roles = None
+    if source_repository is not None:
         from . import source_integrity
 
         try:
-            manifest = source_integrity.load_source_manifest(
-                source_repository
-                / "skills"
-                / "crossframe-ultra"
-                / "references"
-                / "source-manifest.json",
-                expected_sha256=str(authority["source_sha256"]),
-            )
-            measurement_arguments: dict[str, object] = {
-                "manifest": manifest,
-                "run_mode": str(contract["run_mode"]),
-            }
-            if contract["run_mode"] == "test":
-                measurement_arguments["release_manifest_path"] = (
-                    source_repository
+            run_mode = str(contract["run_mode"])
+            source_lock_path = layout.run_dir / _U1_SOURCE_LOCK_PATH
+            if source_lock_path.is_file():
+                source_lock = _read_canonical_object(source_lock_path)
+                validate_instance("ultra-source-lock.schema.json", source_lock)
+                if (
+                    source_lock.get("content_sha256")
+                    != compute_artifact_content_sha256(source_lock)
+                    or source_lock.get("run_id") != authority["run_id"]
+                    or source_lock.get("version_binding")
+                    != authority["version_binding"]
+                    or source_lock.get("source_manifest_sha256")
+                    != authority["source_sha256"]
+                    or source_lock.get("input_snapshot_sha256")
+                    != authority.get("input_snapshot_sha256")
+                    or source_lock.get("lock_status") != "locked"
+                ):
+                    raise RecoveryIntegrityError(
+                        "persisted U1 source lock cannot restore prerequisite roles"
+                    )
+                free_space_status = (
+                    "available"
+                    if shutil.disk_usage(selected_repository).free
+                    >= source_integrity.MIN_FREE_SPACE_RESERVE_BYTES
+                    else "insufficient"
+                )
+                u1_prerequisite_roles = {
+                    "run_mode": run_mode,
+                    "source_release_id": source_lock["source_release_id"],
+                    "source_manifest_sha256": source_lock[
+                        "source_manifest_sha256"
+                    ],
+                    "release_manifest_sha256": source_lock[
+                        "release_manifest_sha256"
+                    ],
+                    "compatibility_matrix_sha256": source_lock[
+                        "compatibility_matrix_sha256"
+                    ],
+                    "knowledge_report_sha256": source_lock[
+                        "knowledge_report_sha256"
+                    ],
+                    "skill_tree_sha256": source_lock["skill_tree_sha256"],
+                    "free_space_reserve_bytes": source_integrity.MIN_FREE_SPACE_RESERVE_BYTES,
+                    "free_space_status": free_space_status,
+                }
+            else:
+                manifest = source_integrity.load_source_manifest(
+                    selected_repository
                     / "skills"
                     / "crossframe-ultra"
                     / "references"
-                    / "release-manifest.json"
+                    / "source-manifest.json",
+                    expected_sha256=str(authority["source_sha256"]),
                 )
-            u1_prerequisite_measurement = (
-                source_integrity.measure_u1_prerequisites(
-                    source_repository,
-                    **measurement_arguments,
+                u1_prerequisite_measurement = source_integrity.measure_u1_prerequisites(
+                    selected_repository,
+                    manifest=manifest,
+                    release_manifest_path=(
+                        selected_repository
+                        / "skills"
+                        / "crossframe-ultra"
+                        / "references"
+                        / "release-manifest.json"
+                        if run_mode == "test"
+                        else None
+                    ),
+                    run_mode=run_mode,
                 )
-            )
-            if not u1_prerequisite_measurement.ready:
-                raise RecoveryIntegrityError(
-                    "restored U0 has no current U1 prerequisite authority"
-                )
-        except RecoveryIntegrityError:
-            raise
         except Exception as error:
             raise RecoveryIntegrityError(
-                "restored U0 cannot remeasure U1 prerequisites"
+                "U1 prerequisite authority cannot be restored"
             ) from error
     try:
         store = PhaseStore(
@@ -1097,9 +1473,10 @@ def _restore_phase_store(
             evidence_cutoff=str(authority["evidence_cutoff"]),
             now=generated_at,
             run_contract=contract,
-            capability_availability=availability,
-            source_repository=source_repository,
+            capability_attestation=capability_attestation,
+            source_repository=selected_repository,
             u1_prerequisite_measurement=u1_prerequisite_measurement,
+            u1_prerequisite_roles=u1_prerequisite_roles,
             run_layout=layout,
         )
         if store.run_contract_artifact_sha256 != authority["run_contract_sha256"]:
@@ -1186,8 +1563,27 @@ def create_checkpoint(
     boundary_ordinal: int,
     artifact_paths: Sequence[Path],
     now: datetime,
+    lease: Lease | None = None,
 ) -> dict[str, object]:
     _validate_layout(layout)
+    if load_cancel_intent(layout) is not None:
+        raise CancelledRunError("cancel intent blocks checkpoint commit")
+    if lease is None:
+        owned = acquire_run_lease(layout, now, timedelta(minutes=5))
+        try:
+            return create_checkpoint(
+                layout,
+                phase_store,
+                boundary_kind=boundary_kind,
+                boundary_id=boundary_id,
+                boundary_ordinal=boundary_ordinal,
+                artifact_paths=artifact_paths,
+                now=now,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    require_run_lease_owner(layout, lease)
     timestamp = _iso_utc(now)
     authority = _authority_from_store(layout, phase_store)
     events = phase_store.events
@@ -1200,7 +1596,6 @@ def create_checkpoint(
         raise RecoveryCompatibilityError("new checkpoints require exact current versions")
     _validate_event_chain(events, authority, compatibility=compatibility)
     refs = _artifact_refs(layout, artifact_paths)
-    u1_read_plan: dict[str, object] | None = None
     if boundary_kind == "phase":
         phase_id = phase_store.current_phase
         if (
@@ -1215,16 +1610,21 @@ def create_checkpoint(
         if phase_id == "U1":
             if tuple(item["path"] for item in refs) != (
                 _U1_SOURCE_LOCK_PATH.as_posix(),
+                _U1_READ_PLAN_PATH.as_posix(),
                 _U1_SOURCE_COVERAGE_PATH.as_posix(),
             ):
                 raise RecoveryIntegrityError(
                     "U1 checkpoint must use the fixed recovery authority paths"
                 )
-            u1_read_plan = _u1_recovery_read_plan(
-                phase_store,
-                parent_event_sha256=str(events[-1]["parent_event_sha256"]),
-                source_lock_sha256=refs[0]["sha256"],
-            )
+            accepted = phase_store._accepted_u1_snapshot()
+            if [item["sha256"] for item in refs] != [
+                accepted["source_lock_artifact_sha256"],
+                accepted["read_plan_artifact_sha256"],
+                accepted["read_coverage_artifact_sha256"],
+            ]:
+                raise RecoveryIntegrityError(
+                    "U1 checkpoint hashes differ from accepted source authority"
+                )
     elif boundary_kind == "article-packet":
         phase_id = "U11"
         if (
@@ -1254,6 +1654,7 @@ def create_checkpoint(
         "boundary_kind": boundary_kind,
         "boundary_id": boundary_id,
         "boundary_ordinal": boundary_ordinal,
+        "generation": phase_store.active_generation,
         "phase_event_sha256": events[-1]["event_sha256"],
         "artifact_hashes": refs,
         "evidence_cutoff": phase_store.evidence_cutoff,
@@ -1273,28 +1674,50 @@ def create_checkpoint(
     except Exception as error:
         raise RecoveryIntegrityError("checkpoint violates the public schema") from error
     checkpoints_dir, _, authority_path, events_path, lock_path = _paths(layout)
-    with _exclusive_path_lock(lock_path):
-        checkpoints_dir.mkdir(parents=True, exist_ok=True)
-        if authority_path.exists():
-            existing = _read_canonical_object(authority_path)
-            if existing != authority:
-                raise RecoveryIntegrityError("immutable run recovery authority changed")
-        else:
-            _write_immutable(authority_path, authority)
-        _sync_events(events_path, events)
-        if u1_read_plan is not None:
-            read_plan_path = layout.run_dir / _U1_READ_PLAN_PATH
-            assert_safe_descendant(layout.root, read_plan_path)
-            _write_immutable(read_plan_path, u1_read_plan)
-        existing, _, _, _ = _load_checkpoints_unlocked(layout)
-        slot = _checkpoint_slot(checkpoint)
-        if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
-            raise RecoveryIntegrityError("duplicate logical checkpoint slot")
-        raw = canonical_json_bytes(checkpoint)
-        checkpoint_hash = sha256_bytes(raw)
-        target = checkpoints_dir / f"{checkpoint_hash}.json"
-        _write_immutable(target, checkpoint)
+    with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+        if load_cancel_intent(layout) is not None:
+            raise CancelledRunError("cancel intent blocks checkpoint commit")
+        require_run_lease_owner(layout, lease)
+        with _exclusive_path_lock(lock_path):
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            if authority_path.exists():
+                existing = _read_canonical_object(authority_path)
+                if existing != authority:
+                    raise RecoveryIntegrityError("immutable run recovery authority changed")
+            else:
+                _write_immutable(authority_path, authority)
+            _sync_events(events_path, events)
+            existing, _, _, _ = _load_checkpoints_unlocked(layout)
+            slot = _checkpoint_slot(checkpoint)
+            if any(_checkpoint_slot(item) == slot and item != checkpoint for item in existing):
+                raise RecoveryIntegrityError("duplicate logical checkpoint slot")
+            raw = canonical_json_bytes(checkpoint)
+            checkpoint_hash = sha256_bytes(raw)
+            target = checkpoints_dir / f"{checkpoint_hash}.json"
+            _write_immutable(target, checkpoint)
     return copy.deepcopy(checkpoint)
+
+
+def _has_durable_u12_checkpoint(layout: RunLayout) -> bool:
+    _validate_layout(layout)
+    checkpoints_dir, _, _, _, _ = _paths(layout)
+    if not checkpoints_dir.is_dir():
+        return False
+    checkpoints, _, compatibility, events = _load_checkpoints_unlocked(layout)
+    if compatibility == "reject":
+        return False
+    completed_u12_events = {
+        str(event["event_sha256"])
+        for event in events
+        if event.get("phase_id") == "U12" and event.get("status") == "complete"
+    }
+    return any(
+        checkpoint.get("boundary_kind") == "phase"
+        and checkpoint.get("phase_id") == "U12"
+        and checkpoint.get("completed_boundary") is True
+        and checkpoint.get("phase_event_sha256") in completed_u12_events
+        for checkpoint in checkpoints
+    )
 
 
 def load_checkpoints(layout: RunLayout) -> tuple[dict[str, object], ...]:
@@ -1305,47 +1728,47 @@ def load_checkpoints(layout: RunLayout) -> tuple[dict[str, object], ...]:
 
 def _select_latest(
     checkpoints: Sequence[Mapping[str, object]],
+    *,
+    events: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
+    active_generation, active_events = _active_completed_events(events)
+    active_event_sha256s = {
+        str(event["event_sha256"]) for event in active_events
+    }
     candidates = [
         copy.deepcopy(dict(item))
         for item in checkpoints
-        if item.get("completed_boundary") is True and item.get("resumable") is True
+        if item.get("completed_boundary") is True
+        and item.get("resumable") is True
+        and item.get("phase_event_sha256") in active_event_sha256s
+        and (
+            item.get("boundary_kind") == "phase"
+            or item.get("generation") == active_generation
+        )
     ]
     if not candidates:
-        raise RecoveryStateError("no completed resumable checkpoint is available")
+        if not checkpoints:
+            raise RecoveryStateError(
+                "no completed resumable checkpoint is available"
+            )
+        raise RecoveryStateError("no active completed resumable checkpoint is available")
     return max(candidates, key=_checkpoint_sort_key)
 
 
 def select_resume_checkpoint(layout: RunLayout) -> dict[str, object]:
     _validate_layout(layout)
-    checkpoints, _, compatibility, _ = _load_checkpoints_unlocked(layout)
+    checkpoints, _, compatibility, events = _load_checkpoints_unlocked(layout)
     if compatibility != "resume":
         raise RecoveryCompatibilityError(
             f"checkpoint compatibility is {compatibility}, not resume"
         )
-    return _select_latest(checkpoints)
+    return _select_latest(checkpoints, events=events)
 
 
-def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
-    _validate_layout(layout)
-    _require_utc(now, "now")
-    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
-    status = _status_if_present(layout)
-    if compatibility in {"read-only", "fork-required"}:
-        return RecoveryResult(
-            outcome=compatibility,
-            compatibility_result=compatibility,
-            checkpoint=None,
-            status=status,
-            phase_store=None,
-        )
-    if compatibility != "resume":
-        raise RecoveryCompatibilityError("checkpoint compatibility rejects recovery")
-    if status is None:
-        raise RecoveryStateError("run status authority is unavailable")
-    if status.status in {"cancelled", "failed", "complete"}:
-        raise RecoveryStateError(f"{status.status} run is terminal and cannot resume")
-    checkpoint = _select_latest(checkpoints)
+def _events_for_resume(
+    events: Sequence[Mapping[str, object]],
+    checkpoint: Mapping[str, object],
+) -> tuple[dict[str, object], ...]:
     checkpoint_event_sha256 = checkpoint.get("phase_event_sha256")
     try:
         checkpoint_event_ordinal = next(
@@ -1357,12 +1780,62 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
         raise RecoveryIntegrityError(
             "resume checkpoint phase event is unavailable"
         ) from error
-    durable_events = events[: checkpoint_event_ordinal + 1]
+    checkpoint_generation = checkpoint.get("generation")
+    if type(checkpoint_generation) is not int or checkpoint_generation < 0:
+        raise RecoveryIntegrityError("resume checkpoint generation is invalid")
+    active_generation, _ = _active_completed_events(events)
+    if checkpoint_generation > active_generation:
+        raise RecoveryIntegrityError("resume checkpoint is from a future generation")
+    boundary = checkpoint_event_ordinal
+    if active_generation:
+        invalidations = [
+            index
+            for index, event in enumerate(events)
+            if event.get("status") == "invalidated"
+            and event.get("generation") == active_generation
+        ]
+        if len(invalidations) != 1:
+            raise RecoveryIntegrityError(
+                "active repair generation has no unique invalidation event"
+            )
+        boundary = max(boundary, invalidations[0])
+    return tuple(copy.deepcopy(dict(event)) for event in events[: boundary + 1])
+
+
+def resume_run(
+    layout: RunLayout,
+    *,
+    now: datetime,
+    source_repository: Path | None = None,
+    lease: Lease | None = None,
+) -> RecoveryResult:
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
+    status = _status_if_present(layout)
+    if compatibility in {"read-only", "fork-required"}:
+        return RecoveryResult(
+            outcome=compatibility,
+            compatibility_result=compatibility,
+            checkpoint=None,
+            status=status,
+            phase_store=None,
+            active_generation=_active_completed_events(events)[0],
+        )
+    if compatibility != "resume":
+        raise RecoveryCompatibilityError("checkpoint compatibility rejects recovery")
+    if status is None:
+        raise RecoveryStateError("run status authority is unavailable")
+    if status.status in {"cancelled", "failed", "complete"}:
+        raise RecoveryStateError(f"{status.status} run is terminal and cannot resume")
+    checkpoint = _select_latest(checkpoints, events=events)
+    durable_events = _events_for_resume(events, checkpoint)
     phase_store = _restore_phase_store(
         layout,
         authority,
         durable_events,
         checkpoints,
+        source_repository=source_repository,
     )
     if status.status == "running":
         resumed = status
@@ -1377,6 +1850,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
                 current_phase=phase_id,
                 last_complete_phase=last_complete,
                 reason="resumed from immutable checkpoint",
+                lease=lease,
             )
         except Exception as error:
             raise RecoveryStateError("run status cannot resume from the checkpoint") from error
@@ -1386,6 +1860,7 @@ def resume_run(layout: RunLayout, *, now: datetime) -> RecoveryResult:
         checkpoint=checkpoint,
         status=resumed,
         phase_store=phase_store,
+        active_generation=phase_store.active_generation,
     )
 
 
@@ -1396,7 +1871,8 @@ def _terminal_event(
     reason: str,
     now: datetime,
 ) -> dict[str, object]:
-    completed = sum(event.get("status") == "complete" for event in events)
+    active_generation, active = _active_completed_events(events)
+    completed = len(active)
     if completed >= len(PHASES):
         raise RecoveryStateError("completed U12 run cannot be cancelled")
     timestamp = _iso_utc(now)
@@ -1427,6 +1903,8 @@ def _terminal_event(
         "invalidated_phases": [],
         "event_sha256": "0" * 64,
     }
+    if active_generation:
+        event["generation"] = active_generation
     event["content_sha256"] = _compute_event_content_sha256(event)
     event["event_sha256"] = compute_event_sha256(event)
     try:
@@ -1434,6 +1912,123 @@ def _terminal_event(
     except Exception as error:
         raise RecoveryIntegrityError("cancellation event violates the public schema") from error
     return event
+
+
+def _converge_cancel_owned(
+    layout: RunLayout,
+    *,
+    lease: Lease,
+    intent: CancellationIntent,
+    now: datetime,
+) -> RunStatusRecord:
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    require_run_lease_owner(layout, lease)
+    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
+    if compatibility == "reject":
+        raise RecoveryCompatibilityError("unsupported run cannot be cancelled")
+    status = _status_if_present(layout)
+    if status is None:
+        raise RecoveryStateError("run status authority is unavailable")
+    if status.status in {"failed", "complete"}:
+        raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
+    transition_at = max(
+        now,
+        _parse_canonical_utc(intent.requested_at, "cancel intent requested_at"),
+        _parse_canonical_utc(status.updated_at, "run status updated_at")
+        + timedelta(microseconds=1),
+    )
+    if events:
+        transition_at = max(
+            transition_at,
+            _parse_canonical_utc(
+                events[-1].get("timestamp"),
+                "phase event timestamp",
+            )
+            + timedelta(microseconds=1),
+        )
+    if not checkpoints and not authority and not events:
+        if status.current_phase != "U0" or status.last_complete_phase is not None:
+            raise RecoveryIntegrityError("status-only cancellation requires pre-U0 authority")
+        if status.status == "cancelled":
+            return status
+        try:
+            return RunStatusStore(layout).transition(
+                status,
+                "cancelled",
+                transition_at,
+                reason=intent.reason,
+                lease=lease,
+                _cancel_convergence_intent=intent,
+            )
+        except Exception as error:
+            raise RecoveryStateError("run status cancellation transition failed") from error
+    if status.status == "cancelled":
+        if events[-1].get("status") != "cancelled":
+            raise RecoveryIntegrityError("cancelled status lacks terminal phase authority")
+        return status
+    _, completed_events = _active_completed_events(events)
+    last_complete_phase = (
+        None if not completed_events else str(completed_events[-1]["phase_id"])
+    )
+    if events[-1].get("status") == "cancelled":
+        event = events[-1]
+        try:
+            return RunStatusStore(layout).transition(
+                status,
+                "cancelled",
+                transition_at,
+                current_phase=str(event["phase_id"]),
+                last_complete_phase=last_complete_phase,
+                reason=str(event["failure_code"]),
+                lease=lease,
+                _cancel_convergence_intent=intent,
+            )
+        except Exception as error:
+            raise RecoveryStateError("run status cancellation transition failed") from error
+    if events[-1].get("status") not in {"complete", "invalidated"}:
+        raise RecoveryStateError("run already has a terminal phase event")
+    event = _terminal_event(
+        authority,
+        events,
+        reason=intent.reason,
+        now=transition_at,
+    )
+    _, _, _, events_path, lock_path = _paths(layout)
+    with _exclusive_path_lock(lock_path):
+        _sync_events(events_path, (*events, event))
+    try:
+        return RunStatusStore(layout).transition(
+            status,
+            "cancelled",
+            transition_at,
+            current_phase=str(event["phase_id"]),
+            last_complete_phase=last_complete_phase,
+            reason=intent.reason,
+            lease=lease,
+            _cancel_convergence_intent=intent,
+        )
+    except Exception as error:
+        raise RecoveryStateError("run status cancellation transition failed") from error
+
+
+def converge_cancel_if_requested(
+    layout: RunLayout,
+    *,
+    lease: Lease,
+    now: datetime,
+) -> RunStatusRecord | None:
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    intent = load_cancel_intent(layout)
+    if intent is None:
+        return None
+    return _converge_cancel_owned(
+        layout,
+        lease=lease,
+        intent=intent,
+        now=now,
+    )
 
 
 def cancel_run(
@@ -1446,66 +2041,32 @@ def cancel_run(
     _require_utc(now, "now")
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("cancellation reason must be non-empty")
-    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(layout)
-    if compatibility == "reject":
-        raise RecoveryCompatibilityError("unsupported run cannot be cancelled")
     status = _status_if_present(layout)
     if status is None:
         raise RecoveryStateError("run status authority is unavailable")
     if status.status in {"failed", "complete"}:
         raise RecoveryStateError(f"{status.status} run is terminal and cannot be cancelled")
-    if not checkpoints and not authority and not events:
-        if status.current_phase != "U0" or status.last_complete_phase is not None:
-            raise RecoveryIntegrityError("status-only cancellation requires pre-U0 authority")
-        if status.status == "cancelled":
-            return status
-        try:
-            return RunStatusStore(layout).transition(
-                status,
-                "cancelled",
-                now,
-                reason=reason.strip(),
-            )
-        except Exception as error:
-            raise RecoveryStateError("run status cancellation transition failed") from error
-    if status.status == "cancelled":
-        if events[-1].get("status") != "cancelled":
-            raise RecoveryIntegrityError("cancelled status lacks terminal phase authority")
-        return status
-    completed_events = [item for item in events if item.get("status") == "complete"]
-    last_complete_phase = (
-        None if not completed_events else str(completed_events[-1]["phase_id"])
-    )
-    if events[-1].get("status") == "cancelled":
-        event = events[-1]
-        try:
-            return RunStatusStore(layout).transition(
-                status,
-                "cancelled",
-                now,
-                current_phase=str(event["phase_id"]),
-                last_complete_phase=last_complete_phase,
-                reason=str(event["failure_code"]),
-            )
-        except Exception as error:
-            raise RecoveryStateError("run status cancellation transition failed") from error
-    if events[-1].get("status") != "complete":
-        raise RecoveryStateError("run already has a terminal phase event")
-    event = _terminal_event(authority, events, reason=reason.strip(), now=now)
-    _, _, _, events_path, lock_path = _paths(layout)
-    with _exclusive_path_lock(lock_path):
-        _sync_events(events_path, (*events, event))
+    intent = request_cancel(layout, reason=reason, now=now)
     try:
-        return RunStatusStore(layout).transition(
-            status,
-            "cancelled",
+        lease = acquire_cancel_convergence_lease(
+            layout,
             now,
-            current_phase=str(event["phase_id"]),
-            last_complete_phase=last_complete_phase,
-            reason=reason.strip(),
+            timedelta(minutes=5),
         )
-    except Exception as error:
-        raise RecoveryStateError("run status cancellation transition failed") from error
+    except LeaseConflictError:
+        pending = _status_if_present(layout)
+        if pending is None:
+            raise RecoveryStateError("run status authority is unavailable")
+        return pending
+    try:
+        return _converge_cancel_owned(
+            layout,
+            lease=lease,
+            intent=intent,
+            now=now,
+        )
+    finally:
+        release_run_lease(layout, lease)
 
 
 def _copy_verified_ref(
@@ -1535,6 +2096,29 @@ def _copy_verified_ref(
     return validated
 
 
+def _next_evidence_input_path(
+    child_layout: RunLayout,
+    inherited_refs: Sequence[Mapping[str, object]],
+) -> Path:
+    used = {
+        str(ref.get("path"))
+        for ref in inherited_refs
+        if isinstance(ref.get("path"), str)
+    }
+    relative = Path("input/new-evidence.bin")
+    if relative.as_posix() in used:
+        ordinal = 2
+        while True:
+            candidate = Path(f"input/new-evidence-{ordinal:04d}.bin")
+            if candidate.as_posix() not in used:
+                relative = candidate
+                break
+            ordinal += 1
+    target = child_layout.run_dir / relative
+    assert_safe_descendant(child_layout.root, target)
+    return target
+
+
 def fork_run(
     parent_layout: RunLayout,
     *,
@@ -1554,12 +2138,12 @@ def fork_run(
         raise ValueError("fork reason must be non-empty")
     if not isinstance(entropy, bytes):
         raise TypeError("entropy must be bytes")
-    checkpoints, authority, compatibility, _ = _load_checkpoints_unlocked(parent_layout)
+    checkpoints, authority, compatibility, events = _load_checkpoints_unlocked(parent_layout)
     if compatibility != "fork-required":
         raise RecoveryCompatibilityError(
             "recovery fork is allowed only for a fork-required version migration"
         )
-    parent_checkpoint = _select_latest(checkpoints)
+    parent_checkpoint = _select_latest(checkpoints, events=events)
     child_run_id = create_run_id(now, entropy)
     child_layout = build_run_layout(mode, child_run_id, policy)
     if child_layout.run_dir.exists():
@@ -1609,8 +2193,371 @@ def fork_run(
     )
 
 
+def _active_completed_events(
+    events: Sequence[Mapping[str, object]],
+) -> tuple[int, tuple[dict[str, object], ...]]:
+    generation = 0
+    active: list[dict[str, object]] = []
+    for raw in events:
+        event = copy.deepcopy(dict(raw))
+        status = event.get("status")
+        if status == "complete":
+            active.append(event)
+        elif status == "invalidated":
+            reset = event.get("reset_from_phase")
+            if not isinstance(reset, str) or reset not in PHASES:
+                raise RecoveryIntegrityError("repair invalidation reset phase is invalid")
+            active = active[: PHASES.index(reset)]
+            generation = int(event.get("generation", generation + 1))
+    return generation, tuple(active)
+
+
+def _verified_evidence_parent(
+    parent_layout: RunLayout,
+) -> tuple[dict[str, object], dict[str, object], str, str]:
+    authority, compatibility = _validate_authority(parent_layout)
+    if compatibility != "resume":
+        raise RecoveryCompatibilityError(
+            "new evidence fork requires an exact current parent"
+        )
+    events = _read_events(parent_layout, authority, compatibility=compatibility)
+    _, active = _active_completed_events(events)
+    if len(active) <= PHASES.index("U3") or active[3].get("phase_id") != "U3":
+        raise RecoveryStateError("new evidence fork requires a frozen active U3")
+    u3_event = active[3]
+    outputs = u3_event.get("output_artifact_hashes")
+    if not isinstance(outputs, list) or len(outputs) != 1 or not _is_sha256(outputs[0]):
+        raise RecoveryIntegrityError("active U3 evidence authority is invalid")
+    parent_evidence_sha256 = str(outputs[0])
+    evidence_matches = []
+    try:
+        for candidate in parent_layout.artifacts_dir.rglob("*"):
+            if (
+                candidate.is_file()
+                and sha256_bytes(candidate.read_bytes()) == parent_evidence_sha256
+            ):
+                evidence_matches.append(candidate)
+    except OSError as error:
+        raise RecoveryIntegrityError(
+            "parent evidence artifact cannot be verified"
+        ) from error
+    if not evidence_matches:
+        raise RecoveryIntegrityError(
+            "active U3 evidence artifact is absent from disk"
+        )
+    authority_path = parent_layout.recovery_dir / _AUTHORITY_FILENAME
+    try:
+        authority_sha256 = sha256_bytes(authority_path.read_bytes())
+    except OSError as error:
+        raise RecoveryIntegrityError(
+            "parent recovery authority cannot be verified"
+        ) from error
+    return authority, u3_event, parent_evidence_sha256, authority_sha256
+
+
+def _parent_layout_from_evidence_fork_authority(
+    authority: Mapping[str, object],
+) -> RunLayout:
+    parent_mode = authority.get("parent_mode")
+    parent_root_text = authority.get("parent_root")
+    parent_run_id = authority.get("parent_run_id")
+    if (
+        parent_mode not in {RunMode.PRODUCTION.value, RunMode.TEST.value}
+        or not isinstance(parent_root_text, str)
+        or not parent_root_text
+        or not isinstance(parent_run_id, str)
+    ):
+        raise RecoveryIntegrityError("evidence fork parent locator is invalid")
+    parent_root = Path(parent_root_text)
+    try:
+        if parent_mode == RunMode.PRODUCTION.value:
+            if parent_root != PRODUCTION_ROOT:
+                raise RecoveryIntegrityError(
+                    "production evidence fork parent must use the fixed root"
+                )
+            policy = RootPolicy(PRODUCTION_ROOT, TEST_ROOT)
+            mode = RunMode.PRODUCTION
+        else:
+            if parent_root == PRODUCTION_ROOT:
+                raise RecoveryIntegrityError(
+                    "test evidence fork parent cannot claim the production root"
+                )
+            policy = RootPolicy(
+                parent_root.parent / ".crossframe-ultra-unselected-production",
+                parent_root,
+            )
+            mode = RunMode.TEST
+        return build_run_layout(mode, parent_run_id, policy)
+    except RecoveryIntegrityError:
+        raise
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(
+            "evidence fork parent locator is invalid"
+        ) from error
+
+
+def _evidence_fork_identity_bytes(
+    authority: Mapping[str, object],
+) -> bytes:
+    fields = (
+        "fork_entropy_sha256",
+        "parent_root",
+        "parent_mode",
+        "parent_run_id",
+        "parent_run_authority_sha256",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+    )
+    if any(field not in authority for field in fields):
+        raise RecoveryIntegrityError("evidence fork identity authority is incomplete")
+    return canonical_json_bytes(
+        {
+            "generated_at": authority.get("generated_at"),
+            **{field: authority[field] for field in fields},
+        }
+    )
+
+
+def _evidence_fork_authority_path(layout: RunLayout) -> Path:
+    return assert_safe_descendant(
+        layout.root,
+        layout.input_dir
+        / f"{_EVIDENCE_FORK_AUTHORITY_PREFIX}-{layout.run_dir.name}.json",
+    )
+
+
+def _validate_evidence_fork_authority(
+    child_layout: RunLayout,
+    *,
+    lineage_request: Mapping[str, object],
+    lineage_request_bytes: bytes,
+) -> dict[str, object]:
+    _validate_layout(child_layout)
+    if not isinstance(lineage_request, Mapping) or not isinstance(
+        lineage_request_bytes, bytes
+    ):
+        raise TypeError("evidence lineage request authority is invalid")
+    authority_path = _evidence_fork_authority_path(child_layout)
+    if authority_path.is_symlink() or not authority_path.is_file():
+        raise RecoveryIntegrityError("evidence lineage fork authority is unavailable")
+    authority = _read_canonical_object(authority_path)
+    if (
+        set(authority) != _EVIDENCE_FORK_AUTHORITY_FIELDS
+        or authority.get("schema_id")
+        != "crossframe.ultra.v82.evidence-lineage-fork-authority"
+        or authority.get("schema_version") != 1
+        or authority.get("run_id") != child_layout.run_dir.name
+        or authority.get("version_binding") != current_version_binding()
+        or authority.get("phase_id") != "U0"
+        or authority.get("status") != "anchored-at-fork"
+        or authority.get("content_sha256")
+        != compute_artifact_content_sha256(authority)
+    ):
+        raise RecoveryIntegrityError("evidence lineage fork authority differs")
+    try:
+        generated_at = _parse_canonical_utc(
+            authority.get("generated_at"),
+            "fork generated_at",
+        )
+    except ValueError as error:
+        raise RecoveryIntegrityError(
+            "evidence lineage fork authority time is invalid"
+        ) from error
+    if (
+        not _is_sha256(authority.get("fork_entropy_sha256"))
+        or create_run_id(
+            generated_at,
+            _evidence_fork_identity_bytes(authority),
+        )
+        != child_layout.run_dir.name
+    ):
+        raise RecoveryIntegrityError("evidence fork identity authority differs")
+    try:
+        status = RunStatusStore(child_layout).read()
+        authority_bytes = authority_path.read_bytes()
+    except (OSError, TypeError, ValueError) as error:
+        raise RecoveryIntegrityError(
+            "evidence lineage fork status authority is unavailable"
+        ) from error
+    if status.fork_authority_sha256 != sha256_bytes(authority_bytes):
+        raise RecoveryIntegrityError(
+            "evidence lineage fork status authority differs"
+        )
+    inherited_fields = (
+        "parent_run_id",
+        "parent_u3_event_sha256",
+        "parent_evidence_sha256",
+        "parent_evidence_cutoff",
+    )
+    if (
+        authority.get("lineage_request_sha256")
+        != sha256_bytes(lineage_request_bytes)
+        or any(
+            authority.get(field) != lineage_request.get(field)
+            for field in inherited_fields
+        )
+    ):
+        raise RecoveryIntegrityError("evidence lineage fork authority differs")
+    parent_layout = _parent_layout_from_evidence_fork_authority(authority)
+    (
+        parent_authority,
+        parent_u3_event,
+        parent_evidence_sha256,
+        parent_authority_sha256,
+    ) = _verified_evidence_parent(parent_layout)
+    if (
+        authority.get("parent_run_authority_sha256")
+        != parent_authority_sha256
+        or authority.get("parent_u3_event_sha256")
+        != parent_u3_event.get("event_sha256")
+        or authority.get("parent_evidence_sha256") != parent_evidence_sha256
+        or authority.get("parent_evidence_cutoff")
+        != parent_authority.get("evidence_cutoff")
+        or lineage_request.get("inherited_input_refs")
+        != parent_authority.get("input_refs")
+    ):
+        raise RecoveryIntegrityError("evidence fork parent authority differs")
+    return copy.deepcopy(authority)
+
+
+def fork_for_new_evidence(
+    parent_layout: RunLayout,
+    *,
+    mode: RunMode,
+    policy: RootPolicy,
+    evidence_bytes: bytes,
+    now: datetime,
+    entropy: bytes,
+) -> EvidenceForkResult:
+    _validate_layout(parent_layout)
+    _require_utc(now, "now")
+    if not isinstance(mode, RunMode):
+        raise TypeError("mode must be a RunMode")
+    if not isinstance(policy, RootPolicy):
+        raise TypeError("policy must be a RootPolicy")
+    if not isinstance(evidence_bytes, bytes) or not evidence_bytes:
+        raise ValueError("new evidence bytes must be non-empty")
+    if not isinstance(entropy, bytes):
+        raise TypeError("entropy must be bytes")
+    (
+        authority,
+        u3_event,
+        parent_evidence_sha256,
+        parent_authority_sha256,
+    ) = _verified_evidence_parent(parent_layout)
+    parent_cutoff = _parse_canonical_utc(
+        authority.get("evidence_cutoff"),
+        "parent evidence cutoff",
+    )
+    if now <= parent_cutoff:
+        raise RecoveryStateError("evidence child cutoff must be strictly later")
+
+    cutoff = _iso_utc(now)
+    parent_mode = (
+        RunMode.PRODUCTION.value
+        if parent_layout.root == PRODUCTION_ROOT
+        else RunMode.TEST.value
+    )
+    fork_entropy_sha256 = sha256_bytes(entropy)
+    fork_identity = {
+        "generated_at": cutoff,
+        "fork_entropy_sha256": fork_entropy_sha256,
+        "parent_root": str(parent_layout.root),
+        "parent_mode": parent_mode,
+        "parent_run_id": parent_layout.run_dir.name,
+        "parent_run_authority_sha256": parent_authority_sha256,
+        "parent_u3_event_sha256": u3_event["event_sha256"],
+        "parent_evidence_sha256": parent_evidence_sha256,
+        "parent_evidence_cutoff": authority["evidence_cutoff"],
+    }
+    child_run_id = create_run_id(
+        now,
+        _evidence_fork_identity_bytes(fork_identity),
+    )
+    child_layout = build_run_layout(mode, child_run_id, policy)
+    if child_layout.run_dir.exists():
+        raise RecoveryStateError("evidence child run already exists")
+    raw_input_refs = authority.get("input_refs")
+    if not isinstance(raw_input_refs, list) or not raw_input_refs:
+        raise RecoveryIntegrityError("evidence fork parent has no frozen input refs")
+    inherited = [
+        _copy_verified_ref(parent_layout, child_layout, ref)
+        for ref in raw_input_refs
+    ]
+    new_evidence_path = _next_evidence_input_path(child_layout, inherited)
+    atomic_write_bytes(new_evidence_path, evidence_bytes)
+    new_evidence_ref = _artifact_ref(child_layout, new_evidence_path)
+    lineage: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.evidence-lineage",
+        "schema_version": 1,
+        "run_id": child_run_id,
+        "version_binding": current_version_binding(),
+        "generated_at": cutoff,
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "parent_run_id": parent_layout.run_dir.name,
+        "parent_u3_event_sha256": u3_event["event_sha256"],
+        "parent_evidence_sha256": parent_evidence_sha256,
+        "parent_evidence_cutoff": authority["evidence_cutoff"],
+        "evidence_cutoff": cutoff,
+        "inherited_input_refs": inherited,
+        "new_evidence_ref": new_evidence_ref,
+        "status": "pending-u0-attestation",
+    }
+    lineage["content_sha256"] = compute_artifact_content_sha256(lineage)
+    try:
+        validate_instance("ultra-evidence-lineage.schema.json", lineage)
+    except Exception as error:
+        raise RecoveryIntegrityError(
+            "evidence lineage request violates the public schema"
+        ) from error
+    lineage_bytes = canonical_json_bytes(lineage)
+    fork_authority: dict[str, object] = {
+        "schema_id": "crossframe.ultra.v82.evidence-lineage-fork-authority",
+        "schema_version": 1,
+        "run_id": child_run_id,
+        "version_binding": current_version_binding(),
+        "generated_at": cutoff,
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "fork_entropy_sha256": fork_entropy_sha256,
+        "lineage_request_sha256": sha256_bytes(lineage_bytes),
+        "parent_root": str(parent_layout.root),
+        "parent_mode": parent_mode,
+        "parent_run_id": parent_layout.run_dir.name,
+        "parent_run_authority_sha256": parent_authority_sha256,
+        "parent_u3_event_sha256": u3_event["event_sha256"],
+        "parent_evidence_sha256": parent_evidence_sha256,
+        "parent_evidence_cutoff": authority["evidence_cutoff"],
+        "status": "anchored-at-fork",
+    }
+    fork_authority["content_sha256"] = compute_artifact_content_sha256(
+        fork_authority
+    )
+    fork_authority_bytes = canonical_json_bytes(fork_authority)
+    RunStatusStore(child_layout).create(
+        now,
+        fork_authority_sha256=sha256_bytes(fork_authority_bytes),
+    )
+    fork_authority_path = _evidence_fork_authority_path(child_layout)
+    _write_immutable(fork_authority_path, fork_authority)
+    lineage_path = child_layout.recovery_dir / "evidence-lineage-request.json"
+    assert_safe_descendant(child_layout.root, lineage_path)
+    _write_immutable(lineage_path, lineage)
+    return EvidenceForkResult(
+        run_id=child_run_id,
+        layout=child_layout,
+        parent_u3_event_sha256=str(u3_event["event_sha256"]),
+        parent_evidence_sha256=parent_evidence_sha256,
+        evidence_cutoff=cutoff,
+        lineage=copy.deepcopy(lineage),
+    )
+
+
 __all__ = (
     "ForkResult",
+    "EvidenceForkResult",
     "RecoveryCompatibilityError",
     "RecoveryError",
     "RecoveryIntegrityError",
@@ -1619,6 +2566,7 @@ __all__ = (
     "cancel_run",
     "create_checkpoint",
     "fork_run",
+    "fork_for_new_evidence",
     "load_checkpoints",
     "resume_run",
     "select_resume_checkpoint",

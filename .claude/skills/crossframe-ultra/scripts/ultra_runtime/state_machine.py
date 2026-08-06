@@ -43,9 +43,7 @@ PHASE_ORDER = PHASES
 PHASE_EVENT_SCHEMA_ID = "crossframe.ultra.v82.phase-event"
 RUN_CONTRACT_SCHEMA_ID = "crossframe.ultra.v82.run-contract"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
-_CAPABILITY_STATES = frozenset(
-    {"available", "required", "unavailable", "not-applicable"}
-)
+_CAPABILITY_REQUIREMENT_STATES = frozenset({"required", "not-applicable"})
 _CAPABILITY_NAMES = frozenset(
     {
         "filesystem",
@@ -61,6 +59,8 @@ _RUN_CONTRACT_FIELDS = frozenset(
     {
         "trigger",
         "request_sha256",
+        "analysis_kind",
+        "capability_attestation_sha256",
         "run_mode",
         "sensitivity",
         "retention",
@@ -99,7 +99,7 @@ _LATE_PHASE_OUTPUT_COUNTS = {
     "U8": 2,
     "U9": 3,
     "U10": 2,
-    "U11": 5,
+    "U11": 6,
     "U12": 5,
 }
 _FINAL_DELIVERY_FILENAMES = (
@@ -140,6 +140,17 @@ _EVENT_FIELDS = frozenset(
         "failure_code",
         "invalidated_phases",
         "event_sha256",
+    }
+)
+_REPAIR_EVENT_EXTRA_FIELDS = frozenset(
+    {
+        "generation",
+        "reset_from_phase",
+        "repair_attempt_id",
+        "repair_plan_sha256",
+        "failed_report_sha256",
+        "preserved_snapshot_sha256",
+        "superseded_event_sha256s",
     }
 )
 _SOURCE_REPOSITORY = Path(__file__).resolve().parents[4]
@@ -188,6 +199,7 @@ class RetrievalBoundary:
 class _U0AuthoritySeal:
     run_id: str
     run_contract_sha256: str
+    capability_attestation_sha256: str
     capability_availability: dict[str, str]
     expected_eligibility_basis_sha256: str | None
     _issuer_token: str
@@ -267,6 +279,7 @@ def _u0_authority_fields(seal: _U0AuthoritySeal) -> dict[str, object]:
     return {
         "run_id": seal.run_id,
         "run_contract_sha256": seal.run_contract_sha256,
+        "capability_attestation_sha256": seal.capability_attestation_sha256,
         "capability_availability": copy.deepcopy(seal.capability_availability),
         "expected_eligibility_basis_sha256": seal.expected_eligibility_basis_sha256,
     }
@@ -276,12 +289,18 @@ def _make_u0_authority(
     *,
     run_id: str,
     run_contract_sha256: str,
+    capability_attestation_sha256: str,
     availability: Mapping[str, str],
     expected_eligibility_basis_sha256: str | None,
 ) -> _U0AuthoritySeal:
     seal = object.__new__(_U0AuthoritySeal)
     object.__setattr__(seal, "run_id", run_id)
     object.__setattr__(seal, "run_contract_sha256", run_contract_sha256)
+    object.__setattr__(
+        seal,
+        "capability_attestation_sha256",
+        capability_attestation_sha256,
+    )
     object.__setattr__(seal, "capability_availability", copy.deepcopy(dict(availability)))
     object.__setattr__(
         seal,
@@ -430,25 +449,7 @@ def _make_run_contract_artifact(
     return artifact
 
 
-def _validated_capability_availability(
-    value: Mapping[str, str] | None,
-) -> dict[str, str]:
-    if value is not None and not isinstance(value, Mapping):
-        raise RunContractError("capability availability must be an object")
-    availability = copy.deepcopy(dict(value or {}))
-    if any(name not in _CAPABILITY_NAMES for name in availability):
-        raise RunContractError("capability availability contains an unknown capability")
-    for name, state in availability.items():
-        if state not in _CAPABILITY_STATES:
-            raise RunContractError(f"invalid availability for {name}: {state!r}")
-    return availability
-
-
-def validate_run_contract(
-    value: Mapping[str, object],
-    *,
-    capability_availability: Mapping[str, str] | None = None,
-) -> dict[str, object]:
+def validate_run_contract(value: Mapping[str, object]) -> dict[str, object]:
     contract = _plain_mapping(value, name="run contract")
     _require_exact_fields(contract, _RUN_CONTRACT_FIELDS, name="run contract")
     enums = {
@@ -459,6 +460,7 @@ def validate_run_contract(
             "/crossframe-ultra",
         },
         "run_mode": {"production", "test"},
+        "analysis_kind": {"open-world", "closed-input"},
         "sensitivity": {"public", "internal", "private", "restricted"},
         "retention": {"retain", "delivery-only", "user-directed"},
         "outbound_permission": {"allowed", "deidentified-only", "denied"},
@@ -468,13 +470,19 @@ def validate_run_contract(
             raise RunContractError(f"invalid {field}: {contract[field]!r}")
     if not _is_sha256(contract["request_sha256"]):
         raise RunContractError("request_sha256 must be a lowercase SHA-256")
+    if not _is_sha256(contract["capability_attestation_sha256"]):
+        raise RunContractError(
+            "capability_attestation_sha256 must be a lowercase SHA-256"
+        )
     _parse_timestamp(contract["evidence_cutoff"], error_type=RunContractError)
 
     capabilities = _plain_mapping(contract["capabilities"], name="capabilities")
     _require_exact_fields(capabilities, _CAPABILITY_NAMES, name="capabilities")
     for name, state in capabilities.items():
-        if state not in _CAPABILITY_STATES:
-            raise RunContractError(f"invalid capability state for {name}: {state!r}")
+        if state not in _CAPABILITY_REQUIREMENT_STATES:
+            raise RunContractError(
+                f"invalid capability requirement for {name}: {state!r}"
+            )
     contract["capabilities"] = capabilities
 
     limits = _plain_mapping(contract["resource_limits"], name="resource limits")
@@ -492,10 +500,6 @@ def validate_run_contract(
         raise RunContractError("maximum_repair_attempts must be between zero and three")
     contract["resource_limits"] = limits
 
-    availability = _validated_capability_availability(capability_availability)
-    for name, state in capabilities.items():
-        if state == "required" and availability.get(name) != "available":
-            raise RunBlockedError(f"required capability is unavailable: {name}")
     return contract
 
 
@@ -523,7 +527,14 @@ def _validate_run_layout_authority(
         policy = (
             RootPolicy(run_layout.root, run_layout.root.parent / "test-control")
             if mode is RunMode.PRODUCTION
-            else RootPolicy(PRODUCTION_ROOT, run_layout.root)
+            else RootPolicy(
+                (
+                    PRODUCTION_ROOT
+                    if PRODUCTION_ROOT.is_absolute()
+                    else run_layout.root.parent / "production-control"
+                ),
+                run_layout.root,
+            )
         )
         expected = build_run_layout(mode, run_id, policy)
         assert_safe_descendant(
@@ -563,6 +574,12 @@ def _validate_invalidated_phases(
 def _validate_phase_output_contract(
     phase_id: str, outputs: tuple[str, ...]
 ) -> None:
+    if phase_id == "U1":
+        if len(outputs) != 3 or len(set(outputs)) != 3:
+            raise PhaseIntegrityError(
+                "U1 output contract requires distinct source-lock, read-plan, and coverage hashes"
+            )
+        return
     if phase_id == "U7":
         if len(outputs) < 2:
             raise PhaseIntegrityError(
@@ -603,9 +620,10 @@ class PhaseStore:
         evidence_cutoff: str,
         now: datetime,
         run_contract: Mapping[str, object],
-        capability_availability: Mapping[str, str] | None = None,
+        capability_attestation: object,
         source_repository: Path | None = None,
         u1_prerequisite_measurement: object | None = None,
+        u1_prerequisite_roles: Mapping[str, object] | None = None,
         run_layout: RunLayout,
         expected_eligibility_basis_sha256: str | None = None,
     ) -> None:
@@ -616,11 +634,44 @@ class PhaseStore:
         _parse_timestamp(evidence_cutoff, error_type=PhaseIntegrityError)
         timestamp = _format_timestamp(now)
         binding = _validate_version_binding(version_binding)
-        availability = _validated_capability_availability(capability_availability)
-        contract = validate_run_contract(
-            run_contract,
-            capability_availability=availability,
+        contract = validate_run_contract(run_contract)
+        from .foundation import (
+            FoundationInputError,
+            verify_host_capability_seal,
         )
+
+        try:
+            verified_attestation = verify_host_capability_seal(
+                capability_attestation
+            )
+        except FoundationInputError as error:
+            raise RunContractError("capability attestation seal is invalid") from error
+        attestation_document = verified_attestation.document
+        availability = verified_attestation.measured_availability
+        attestation_bindings = {
+            "run_id": run_id,
+            "version_binding": binding,
+            "request_sha256": contract["request_sha256"],
+            "analysis_kind": contract["analysis_kind"],
+            "run_mode": contract["run_mode"],
+            "requirements": contract["capabilities"],
+            "sensitivity": contract["sensitivity"],
+            "retention": contract["retention"],
+            "outbound_permission": contract["outbound_permission"],
+            "evidence_cutoff": contract["evidence_cutoff"],
+            "resource_limits": contract["resource_limits"],
+        }
+        if (
+            verified_attestation.artifact_sha256
+            != contract["capability_attestation_sha256"]
+            or any(
+                attestation_document.get(field) != expected
+                for field, expected in attestation_bindings.items()
+            )
+        ):
+            raise RunContractError(
+                "capability attestation differs from the run contract"
+            )
         if contract["evidence_cutoff"] != evidence_cutoff:
             raise RunContractError("run contract evidence cutoff differs from the run")
         accepted_layout = _validate_run_layout_authority(
@@ -643,12 +694,20 @@ class PhaseStore:
 
         verified_measurement = None
         prerequisite_roles: dict[str, object] | None = None
+        if (
+            u1_prerequisite_measurement is not None
+            and u1_prerequisite_roles is not None
+        ):
+            raise PhaseIntegrityError(
+                "U1 prerequisite measurement and recovered roles are mutually exclusive"
+            )
         if u1_prerequisite_measurement is not None:
             from .source_integrity import verify_u1_prerequisites
 
             try:
                 verified_measurement = verify_u1_prerequisites(
-                    u1_prerequisite_measurement
+                    u1_prerequisite_measurement,
+                    remeasure=False,
                 )
             except Exception as error:
                 raise PhaseIntegrityError("U1 prerequisite authority is invalid") from error
@@ -671,6 +730,45 @@ class PhaseStore:
                 "free_space_reserve_bytes": verified_measurement.free_space_reserve_bytes,
                 "free_space_status": verified_measurement.free_space_status,
             }
+        elif u1_prerequisite_roles is not None:
+            if not isinstance(u1_prerequisite_roles, Mapping):
+                raise PhaseIntegrityError("recovered U1 prerequisite roles are invalid")
+            prerequisite_roles = copy.deepcopy(dict(u1_prerequisite_roles))
+            expected_role_fields = {
+                "run_mode",
+                "source_release_id",
+                "source_manifest_sha256",
+                "release_manifest_sha256",
+                "compatibility_matrix_sha256",
+                "knowledge_report_sha256",
+                "skill_tree_sha256",
+                "free_space_reserve_bytes",
+                "free_space_status",
+            }
+            hash_fields = expected_role_fields - {
+                "run_mode",
+                "source_release_id",
+                "free_space_reserve_bytes",
+                "free_space_status",
+            }
+            if (
+                set(prerequisite_roles) != expected_role_fields
+                or prerequisite_roles["run_mode"] != contract["run_mode"]
+                or prerequisite_roles["source_manifest_sha256"] != source_sha256
+                or not isinstance(prerequisite_roles["source_release_id"], str)
+                or not prerequisite_roles["source_release_id"]
+                or any(
+                    not _is_sha256(prerequisite_roles[field])
+                    for field in hash_fields
+                )
+                or not isinstance(prerequisite_roles["free_space_reserve_bytes"], int)
+                or isinstance(prerequisite_roles["free_space_reserve_bytes"], bool)
+                or prerequisite_roles["free_space_reserve_bytes"] < 1
+                or prerequisite_roles["free_space_status"] != "available"
+            ):
+                raise PhaseIntegrityError(
+                    "recovered U1 prerequisite roles differ from the run"
+                )
 
         self.run_id = run_id
         self._version_binding = binding
@@ -694,12 +792,14 @@ class PhaseStore:
         self._u0_authority = _make_u0_authority(
             run_id=run_id,
             run_contract_sha256=self._run_contract_sha256,
+            capability_attestation_sha256=verified_attestation.artifact_sha256,
             availability=availability,
             expected_eligibility_basis_sha256=(
                 expected_eligibility_basis_sha256
             ),
         )
         self._capability_availability = _freeze(availability)
+        self._capability_attestation = verified_attestation
         self._source_repository = authority_repository
         self._run_layout = accepted_layout
         self._run_input_root = accepted_layout.input_dir.resolve(strict=False)
@@ -708,6 +808,7 @@ class PhaseStore:
         self._events: list[dict[str, object]] = []
         self._event_hashes: set[str] = set()
         self._completed: list[str] = []
+        self._generation = 0
         self._evidence_ledger = EvidenceLedger(
             run_id,
             evidence_cutoff,
@@ -734,6 +835,16 @@ class PhaseStore:
         return self._run_contract_sha256
 
     @property
+    def capability_availability(self) -> Mapping[str, str]:
+        value = _thaw(self._capability_availability)
+        assert isinstance(value, dict)
+        return value
+
+    @property
+    def capability_attestation(self) -> object:
+        return self._capability_attestation
+
+    @property
     def run_input_root(self) -> Path:
         return self._run_input_root
 
@@ -748,6 +859,10 @@ class PhaseStore:
     @property
     def current_phase(self) -> str | None:
         return self._completed[-1] if self._completed else None
+
+    @property
+    def active_generation(self) -> int:
+        return self._generation
 
     @property
     def evidence_frozen(self) -> bool:
@@ -798,6 +913,7 @@ class PhaseStore:
             "input_root": verified.input_root,
             "acl_status": verified.acl_status,
             "source_lock_artifact_sha256": verified.source_lock_artifact_sha256,
+            "read_plan_artifact_sha256": verified.read_plan_artifact_sha256,
             "read_coverage_artifact_sha256": verified.read_coverage_artifact_sha256,
             "authorizes_phase": verified.authorizes_phase,
         }
@@ -954,6 +1070,10 @@ class PhaseStore:
         return PHASE_ORDER[index] if index < len(PHASE_ORDER) else None
 
     def _check_phase(self, phase_id: str) -> None:
+        from .locks import CancelledRunError, load_cancel_intent
+
+        if load_cancel_intent(self._run_layout) is not None:
+            raise CancelledRunError("cancel intent blocks phase commit")
         expected = self._expected_phase()
         if phase_id != expected:
             raise PhaseTransitionError(
@@ -1032,13 +1152,20 @@ class PhaseStore:
             "failure_code": failure_code,
             "invalidated_phases": list(invalidated_phases),
         }
+        if self._generation:
+            event["generation"] = self._generation
         event["content_sha256"] = _compute_event_content_sha256(event)
         event["event_sha256"] = compute_event_sha256(event)
         return event
 
     def _append_event(self, event: Mapping[str, object]) -> dict[str, object]:
         snapshot = copy.deepcopy(dict(event))
-        if frozenset(snapshot) != _EVENT_FIELDS:
+        expected_fields = (
+            _EVENT_FIELDS | _REPAIR_EVENT_EXTRA_FIELDS
+            if snapshot.get("status") == "invalidated"
+            else _EVENT_FIELDS | ({"generation"} if "generation" in snapshot else set())
+        )
+        if frozenset(snapshot) != expected_fields:
             raise PhaseIntegrityError("event fields do not match the closed contract")
         if snapshot.get("schema_id") != PHASE_EVENT_SCHEMA_ID:
             raise PhaseIntegrityError("event schema_id is invalid")
@@ -1215,6 +1342,8 @@ class PhaseStore:
                 outputs != (self._run_contract_sha256,)
                 or u0.run_id != self.run_id
                 or u0.run_contract_sha256 != self._run_contract_sha256
+                or u0.capability_attestation_sha256
+                != self.run_contract["capability_attestation_sha256"]
             ):
                 raise PhaseIntegrityError("U0 must bind the sealed run contract authority")
         if phase_id == "U1":
@@ -1260,6 +1389,7 @@ class PhaseStore:
                 raise PhaseIntegrityError("U1 request or input snapshot authority differs")
             expected_outputs = (
                 verified_u1.source_lock_artifact_sha256,
+                verified_u1.read_plan_artifact_sha256,
                 verified_u1.read_coverage_artifact_sha256,
             )
             if outputs != expected_outputs:
@@ -1284,6 +1414,7 @@ class PhaseStore:
                 "input_root": verified_u1.input_root,
                 "acl_status": verified_u1.acl_status,
                 "source_lock_artifact_sha256": verified_u1.source_lock_artifact_sha256,
+                "read_plan_artifact_sha256": verified_u1.read_plan_artifact_sha256,
                 "read_coverage_artifact_sha256": verified_u1.read_coverage_artifact_sha256,
                 "authorizes_phase": verified_u1.authorizes_phase,
             }
@@ -1431,7 +1562,13 @@ class PhaseStore:
         if not isinstance(event, Mapping):
             raise PhaseIntegrityError("replayed event must be an object")
         snapshot = copy.deepcopy(dict(event))
-        if frozenset(snapshot) != _EVENT_FIELDS:
+        status = snapshot.get("status")
+        expected_fields = (
+            _EVENT_FIELDS | _REPAIR_EVENT_EXTRA_FIELDS
+            if status == "invalidated"
+            else _EVENT_FIELDS | ({"generation"} if "generation" in snapshot else set())
+        )
+        if frozenset(snapshot) != expected_fields:
             raise PhaseIntegrityError("replayed event fields do not match the closed contract")
         if snapshot.get("event_sha256") in self._event_hashes:
             raise PhaseIntegrityError("event hash replay detected")
@@ -1440,7 +1577,8 @@ class PhaseStore:
         phase_id = snapshot.get("phase_id")
         if not isinstance(phase_id, str):
             raise PhaseIntegrityError("replayed event phase is invalid")
-        self._check_phase(phase_id)
+        if status != "invalidated":
+            self._check_phase(phase_id)
         expected_parent = self._check_bindings(
             parent_event_sha256=(
                 snapshot.get("parent_event_sha256")
@@ -1475,7 +1613,6 @@ class PhaseStore:
         if snapshot.get("run_contract_sha256") != self._run_contract_sha256:
             raise PhaseIntegrityError("replayed event run contract differs")
         _parse_timestamp(snapshot.get("timestamp"), error_type=PhaseIntegrityError)
-        status = snapshot.get("status")
         raw_outputs = snapshot.get("output_artifact_hashes")
         if not isinstance(raw_outputs, list):
             raise PhaseIntegrityError("replayed output hashes must be an array")
@@ -1484,12 +1621,46 @@ class PhaseStore:
         if not isinstance(raw_invalidated, list):
             raise PhaseIntegrityError("replayed invalidated phases must be an array")
         if status == "complete":
+            if snapshot.get("generation", 0) != self._generation:
+                raise PhaseIntegrityError("completed event generation is inconsistent")
             if snapshot.get("event_type") != "phase-completed" or snapshot.get(
                 "failure_code"
             ) is not None:
                 raise PhaseIntegrityError("completed event failure fields are inconsistent")
             if raw_invalidated:
                 raise PhaseIntegrityError("completed events cannot invalidate phases")
+        elif status == "invalidated":
+            reset_from_phase = snapshot.get("reset_from_phase")
+            generation = snapshot.get("generation")
+            if (
+                not isinstance(reset_from_phase, str)
+                or reset_from_phase not in PHASE_ORDER
+                or phase_id != reset_from_phase
+                or generation != self._generation + 1
+                or snapshot.get("event_type") != "repair-invalidation"
+                or not isinstance(snapshot.get("failure_code"), str)
+                or not str(snapshot["failure_code"]).strip()
+                or outputs
+            ):
+                raise PhaseIntegrityError("repair invalidation fields are inconsistent")
+            reset_index = PHASE_ORDER.index(reset_from_phase)
+            if len(self._completed) <= reset_index:
+                raise PhaseIntegrityError("repair invalidates an incomplete phase")
+            active_events: list[dict[str, object]] = []
+            for prior in self._events:
+                if prior.get("status") == "complete":
+                    active_events.append(prior)
+                elif prior.get("status") == "invalidated":
+                    prior_reset = str(prior["reset_from_phase"])
+                    active_events = active_events[: PHASE_ORDER.index(prior_reset)]
+            expected_superseded = [
+                str(item["event_sha256"]) for item in active_events[reset_index:]
+            ]
+            if (
+                raw_invalidated != list(PHASE_ORDER[reset_index:])
+                or snapshot.get("superseded_event_sha256s") != expected_superseded
+            ):
+                raise PhaseIntegrityError("repair invalidation authority is inconsistent")
         elif status in {"failed", "blocked", "cancelled"}:
             failure_code = snapshot.get("failure_code")
             if (
@@ -1517,7 +1688,10 @@ class PhaseStore:
                     parent_event_sha256=expected_parent,
                 )
         appended = self._append_event(snapshot)
-        if status in {"failed", "blocked", "cancelled"}:
+        if status == "invalidated":
+            self._completed = self._completed[:reset_index]
+            self._generation = int(generation)
+        elif status in {"failed", "blocked", "cancelled"}:
             self._terminal = True
         return appended
 
@@ -1561,6 +1735,7 @@ class PhaseStore:
             or output_artifact_hashes
             != (
                 verified.source_lock_artifact_sha256,
+                verified.read_plan_artifact_sha256,
                 verified.read_coverage_artifact_sha256,
             )
         ):
@@ -1585,6 +1760,7 @@ class PhaseStore:
             "input_root": verified.input_root,
             "acl_status": verified.acl_status,
             "source_lock_artifact_sha256": verified.source_lock_artifact_sha256,
+            "read_plan_artifact_sha256": verified.read_plan_artifact_sha256,
             "read_coverage_artifact_sha256": verified.read_coverage_artifact_sha256,
             "authorizes_phase": verified.authorizes_phase,
         }

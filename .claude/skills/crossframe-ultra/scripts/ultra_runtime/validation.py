@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import copy
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -18,11 +18,20 @@ from .artifacts import (
 )
 from .constants import current_version_binding
 from .jsonio import (
+    _exclusive_path_lock,
     atomic_write_bytes,
     canonical_json_bytes,
     load_json_object,
     load_json_object_bytes,
     sha256_bytes,
+)
+from .locks import (
+    CancelledRunError,
+    Lease,
+    _cancel_intent_lock_path,
+    _validation_current_commit_lock_path,
+    load_cancel_intent,
+    require_run_lease_owner,
 )
 from .paths import (
     RunLayout,
@@ -39,8 +48,12 @@ from .schemas import (
 
 _SCHEMAS_BY_ID = {
     "crossframe.ultra.v82.run-contract": "ultra-run-contract.schema.json",
+    "crossframe.ultra.v82.host-capability-attestation": (
+        "ultra-host-capability-attestation.schema.json"
+    ),
     "crossframe.ultra.v82.retrieval-ledger": "ultra-retrieval-ledger.schema.json",
     "crossframe.ultra.v82.evidence-ledger": "ultra-evidence-ledger.schema.json",
+    "crossframe.ultra.v82.evidence-lineage": "ultra-evidence-lineage.schema.json",
     "crossframe.ultra.v82.world-volume": "ultra-world-volume.schema.json",
     "crossframe.ultra.v82.transformation-ledger": "ultra-transformation-ledger.schema.json",
     "crossframe.ultra.v82.concept-disposition": "ultra-concept-disposition.schema.json",
@@ -56,6 +69,7 @@ _SCHEMAS_BY_ID = {
     "crossframe.ultra.v82.output-plan": "ultra-output-plan.schema.json",
     "crossframe.ultra.v82.semantic-coverage": "ultra-semantic-coverage.schema.json",
     "crossframe.ultra.v82.article-review": "ultra-article-review.schema.json",
+    "crossframe.ultra.v82.semantic-review": "ultra-semantic-review.schema.json",
 }
 _CHECK_ORDER = (
     "manifest-integrity",
@@ -76,8 +90,24 @@ _SECRET_PATTERNS = (
 _U1_SOURCE_LOCK_PATH = "recovery/u1-authority/source-lock.json"
 _U1_READ_PLAN_PATH = "recovery/u1-authority/read-plan.json"
 _U1_SOURCE_COVERAGE_PATH = "recovery/u1-authority/source-coverage.json"
+_U2_RETRIEVAL_LEDGER_PATH = (
+    "artifacts/U00-U03-evidence/U02-retrieval-ledger.json"
+)
+_RUN_CONTRACT_PATH = "artifacts/ultra-run-contract.json"
+_HOST_CAPABILITY_ATTESTATION_PATH = (
+    "artifacts/U00-U03-evidence/U00-host-capability-attestation.json"
+)
+_EVIDENCE_LINEAGE_PATH = (
+    "artifacts/U00-U03-evidence/U00-evidence-lineage.json"
+)
+_EVIDENCE_LINEAGE_REQUEST_PATH = "recovery/evidence-lineage-request.json"
 _COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
 _COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
+_VALIDATION_LAYER_IDS = (
+    "deterministic",
+    "adversarial",
+    "fresh-semantic",
+)
 
 
 class _AuthorityDAGError(ValueError):
@@ -106,6 +136,7 @@ def validator_set_sha256(repo: Path) -> str:
     root = _checked_repo(repo)
     runtime = root / "skills/crossframe-ultra/scripts/ultra_runtime"
     relative_files = [
+        "skills/crossframe-ultra/references/compatibility-matrix.json",
         "skills/crossframe-ultra/references/source-manifest.json",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py",
@@ -118,7 +149,7 @@ def validator_set_sha256(repo: Path) -> str:
     )
     relative_files.extend(
         path.relative_to(root).as_posix()
-        for path in sorted((root / "skills/crossframe-ultra/schemas").glob("*.json"))
+        for path in sorted((root / "skills/crossframe-ultra/schemas").rglob("*.json"))
     )
     hashes: dict[str, str] = {}
     for relative in relative_files:
@@ -150,6 +181,71 @@ def _artifact_path(layout: RunLayout, relative: str) -> Path:
     return candidate
 
 
+def _active_phase_checkpoints(
+    recovery: object,
+    events: Sequence[Mapping[str, object]],
+    checkpoints: Sequence[Mapping[str, object]],
+) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
+    selector = getattr(recovery, "_active_completed_events", None)
+    if not callable(selector):
+        raise _AuthorityDAGError("active recovery generation selector is unavailable")
+    _, active_events = selector(events)
+    selected: list[dict[str, object]] = []
+    for event in active_events:
+        event_sha256 = event.get("event_sha256")
+        matches = [
+            checkpoint
+            for checkpoint in checkpoints
+            if checkpoint.get("boundary_kind") == "phase"
+            and checkpoint.get("phase_event_sha256") == event_sha256
+        ]
+        if len(matches) != 1:
+            raise _AuthorityDAGError(
+                "active phase event must bind exactly one checkpoint",
+                phase_id=str(event.get("phase_id")),
+            )
+        selected.append(copy.deepcopy(dict(matches[0])))
+    return (
+        tuple(copy.deepcopy(dict(event)) for event in active_events),
+        tuple(selected),
+    )
+
+
+def _validate_u2_source_projection_authority(
+    layout: RunLayout,
+    *,
+    u2_refs: Mapping[str, object],
+    request_sha256: object,
+) -> None:
+    from .foundation import (
+        FoundationInputError,
+        _load_validated_u2_source_projection,
+    )
+
+    expected_ledger_sha256 = u2_refs.get(_U2_RETRIEVAL_LEDGER_PATH)
+    if (
+        set(u2_refs) != {_U2_RETRIEVAL_LEDGER_PATH}
+        or not isinstance(expected_ledger_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", expected_ledger_sha256) is None
+        or not isinstance(request_sha256, str)
+    ):
+        raise _AuthorityDAGError(
+            "verified U2 retrieval ledger authority is invalid",
+            phase_id="U2",
+        )
+    try:
+        _load_validated_u2_source_projection(
+            layout,
+            expected_ledger_sha256=expected_ledger_sha256,
+            expected_request_sha256=request_sha256,
+        )
+    except FoundationInputError as error:
+        raise _AuthorityDAGError(
+            f"verified U2 source projection authority is invalid: {error}",
+            phase_id="U2",
+        ) from error
+
+
 def _load_verified_disk_authority(
     layout: RunLayout,
     manifest: Mapping[str, Any],
@@ -179,7 +275,7 @@ def _load_verified_disk_authority(
         raise _AuthorityDAGError("checkpoint directory is empty")
 
     checkpoints: list[dict[str, object]] = []
-    slots: set[tuple[str, str, int]] = set()
+    slots: set[tuple[int, str, str, int]] = set()
     for path in candidates:
         phase_id: str | None = None
         try:
@@ -212,18 +308,18 @@ def _load_verified_disk_authority(
             ) from error
     checkpoints.sort(key=recovery._checkpoint_sort_key)
 
+    active_events, active_phase_checkpoints = _active_phase_checkpoints(
+        recovery,
+        events,
+        checkpoints,
+    )
     phase_ids = tuple(
         str(event["phase_id"])
-        for event in events
-        if event.get("status") == "complete"
+        for event in active_events
     )
     if phase_ids not in {_COMPLETE_THROUGH_U11, _COMPLETE_THROUGH_U12}:
         raise _AuthorityDAGError("phase chain is not complete through U11")
-    phase_checkpoints = [
-        checkpoint
-        for checkpoint in checkpoints
-        if checkpoint.get("boundary_kind") == "phase"
-    ]
+    phase_checkpoints = list(active_phase_checkpoints)
     if tuple(str(checkpoint["phase_id"]) for checkpoint in phase_checkpoints) != phase_ids:
         raise _AuthorityDAGError("phase checkpoints do not exactly cover the event chain")
 
@@ -253,13 +349,106 @@ def _load_verified_disk_authority(
         manifest_refs.setdefault(phase_id, {})[str(record["path"])] = str(
             record["sha256"]
         )
-    for phase_id in ("U0", *tuple(f"U{number}" for number in range(2, 12))):
+    u0_checkpoint_refs = refs_by_phase.get("U0", {})
+    if set(u0_checkpoint_refs) != {_RUN_CONTRACT_PATH}:
+        raise _AuthorityDAGError(
+            "U0 checkpoint does not bind only the fixed run contract",
+            phase_id="U0",
+        )
+    u0_manifest_refs = manifest_refs.get("U0", {})
+    expected_u0_manifest_paths = {
+        _RUN_CONTRACT_PATH,
+        _HOST_CAPABILITY_ATTESTATION_PATH,
+    }
+    lineage_request_path = _artifact_path(layout, _EVIDENCE_LINEAGE_REQUEST_PATH)
+    if lineage_request_path.exists() and (
+        lineage_request_path.is_symlink() or not lineage_request_path.is_file()
+    ):
+        raise _AuthorityDAGError(
+            "evidence lineage request is not a regular immutable file",
+            phase_id="U0",
+        )
+    has_evidence_lineage_request = lineage_request_path.is_file()
+    if has_evidence_lineage_request:
+        expected_u0_manifest_paths.add(_EVIDENCE_LINEAGE_PATH)
+    if set(u0_manifest_refs) != expected_u0_manifest_paths:
+        raise _AuthorityDAGError(
+            "U0 manifest does not contain the fixed authority files",
+            phase_id="U0",
+        )
+    if (
+        u0_checkpoint_refs[_RUN_CONTRACT_PATH]
+        != u0_manifest_refs[_RUN_CONTRACT_PATH]
+    ):
+        raise _AuthorityDAGError(
+            "U0 checkpoint run contract differs from the manifest",
+            phase_id="U0",
+        )
+    try:
+        run_contract = load_json_object(_artifact_path(layout, _RUN_CONTRACT_PATH))
+    except Exception as error:
+        raise _AuthorityDAGError(
+            "U0 run contract is unavailable",
+            phase_id="U0",
+        ) from error
+    if (
+        run_contract.get("capability_attestation_sha256")
+        != u0_manifest_refs[_HOST_CAPABILITY_ATTESTATION_PATH]
+    ):
+        raise _AuthorityDAGError(
+            "U0 capability attestation differs from the run contract",
+            phase_id="U0",
+        )
+    evidence_lineage: dict[str, object] | None = None
+    if has_evidence_lineage_request:
+        from .foundation import (
+            FoundationInputError,
+            validate_evidence_lineage_admission,
+        )
+
+        u0_event = next(
+            event for event in active_events if event.get("phase_id") == "U0"
+        )
+        try:
+            evidence_lineage = validate_evidence_lineage_admission(
+                layout,
+                request_sha256=str(run_contract["request_sha256"]),
+                capability_attestation_sha256=str(
+                    run_contract["capability_attestation_sha256"]
+                ),
+                run_contract_sha256=u0_checkpoint_refs[_RUN_CONTRACT_PATH],
+                u0_event=u0_event,
+            )
+            lineage_path = _artifact_path(layout, _EVIDENCE_LINEAGE_PATH)
+            if (
+                evidence_lineage is None
+                or sha256_bytes(lineage_path.read_bytes())
+                != u0_manifest_refs[_EVIDENCE_LINEAGE_PATH]
+            ):
+                raise FoundationInputError(
+                    "finalized evidence lineage differs from the manifest"
+                )
+        except (FoundationInputError, KeyError, OSError) as error:
+            raise _AuthorityDAGError(
+                f"finalized evidence lineage authority is invalid: {error}",
+                phase_id="U0",
+            ) from error
+    _validate_u2_source_projection_authority(
+        layout,
+        u2_refs=refs_by_phase.get("U2", {}),
+        request_sha256=run_contract.get("request_sha256"),
+    )
+    for phase_id in tuple(f"U{number}" for number in range(2, 12)):
         if refs_by_phase.get(phase_id) != manifest_refs.get(phase_id):
             raise _AuthorityDAGError(
                 "phase checkpoint differs from the manifest artifact set",
                 phase_id=phase_id,
             )
-    expected_u1_paths = {_U1_SOURCE_LOCK_PATH, _U1_SOURCE_COVERAGE_PATH}
+    expected_u1_paths = {
+        _U1_SOURCE_LOCK_PATH,
+        _U1_READ_PLAN_PATH,
+        _U1_SOURCE_COVERAGE_PATH,
+    }
     if set(refs_by_phase.get("U1", {})) != expected_u1_paths:
         raise _AuthorityDAGError(
             "U1 checkpoint does not bind the fixed source authority files",
@@ -278,13 +467,17 @@ def _load_verified_disk_authority(
                 "U12 checkpoint does not bind the fixed completion files",
                 phase_id="U12",
             )
-    u11_event = next(event for event in events if event.get("phase_id") == "U11")
+    u11_event = next(
+        event for event in active_events if event.get("phase_id") == "U11"
+    )
     if manifest.get("phase_chain_head_sha256") != u11_event.get("event_sha256"):
         raise _AuthorityDAGError("manifest does not bind the verified U11 chain head")
     return {
         "run_authority": copy.deepcopy(run_authority),
-        "events": tuple(copy.deepcopy(event) for event in events),
+        "events": tuple(copy.deepcopy(event) for event in active_events),
         "refs_by_phase": copy.deepcopy(refs_by_phase),
+        "active_generation": int(u11_event.get("generation", 0)),
+        "evidence_lineage": copy.deepcopy(evidence_lineage),
     }
 
 
@@ -393,16 +586,17 @@ def _validate_claim_semantics(
     loaded: Mapping[str, list[dict[str, object]]],
     issues: dict[str, list[tuple[str, str]]],
 ) -> None:
+    from . import judgment
+
     evidence_docs = loaded.get("crossframe.ultra.v82.evidence-ledger", [])
     graph_docs = loaded.get("crossframe.ultra.v82.claim-mechanism-graph", [])
-    identities: dict[str, str] = {}
+    evidence_records: dict[str, Mapping[str, object]] = {}
     for evidence in evidence_docs:
         for item in evidence.get("entries", []):
             if isinstance(item, Mapping):
                 evidence_id = item.get("evidence_id")
-                identity = item.get("identity")
-                if isinstance(evidence_id, str) and isinstance(identity, str):
-                    identities[evidence_id] = identity
+                if isinstance(evidence_id, str):
+                    evidence_records[evidence_id] = item
     for graph in graph_docs:
         if _has_empty_rival(graph):
             _issue(
@@ -425,19 +619,60 @@ def _validate_claim_semantics(
                 "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
             )
         for claim in graph.get("claims", []):
-            if not isinstance(claim, Mapping) or claim.get("identity") != "observed":
+            if not isinstance(claim, Mapping) or claim.get("identity") not in {
+                "observed",
+                "reported",
+                "inferred-from-material",
+            }:
                 continue
-            refs = claim.get("evidence_refs", [])
-            if isinstance(refs, list) and any(
-                identities.get(ref) == "simulated" for ref in refs
-            ):
+            try:
+                judgment.validate_support_edges(
+                    claim=claim,
+                    evidence_records=evidence_records,
+                    factual=True,
+                )
+            except judgment.ClaimMechanismError as error:
                 _issue(
                     issues,
                     "semantic-tamper-resistance",
-                    "ULTRA-SIMULATION-AS-FACT",
+                    "ULTRA-EVIDENCE-HOLLOW",
                     "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
                 )
-                break
+                if "simulated" in str(error):
+                    _issue(
+                        issues,
+                        "semantic-tamper-resistance",
+                        "ULTRA-SIMULATION-AS-FACT",
+                        "artifacts/U06-U08-inference/ultra-claim-mechanism-graph.json",
+                    )
+
+    for verdict in loaded.get("crossframe.ultra.v82.verdict", []):
+        for lock in verdict.get("five_verdicts", []):
+            if not isinstance(lock, Mapping) or lock.get("kind") != "fact":
+                continue
+            try:
+                judgment.validate_support_edges(
+                    claim={
+                        "statement": lock.get("proposition"),
+                        "evidence_refs": lock.get("evidence_refs"),
+                    },
+                    evidence_records=evidence_records,
+                    factual=True,
+                )
+            except judgment.ClaimMechanismError as error:
+                _issue(
+                    issues,
+                    "semantic-tamper-resistance",
+                    "ULTRA-EVIDENCE-HOLLOW",
+                    "artifacts/U09-verdict-action/ultra-verdict.json",
+                )
+                if "simulated" in str(error):
+                    _issue(
+                        issues,
+                        "semantic-tamper-resistance",
+                        "ULTRA-SIMULATION-AS-FACT",
+                        "artifacts/U09-verdict-action/ultra-verdict.json",
+                    )
 
 
 def _validate_world_and_lineage(
@@ -877,9 +1112,11 @@ def _validate_read_events(
         source_lock_path = _artifact_path(layout, _U1_SOURCE_LOCK_PATH)
         read_plan_path = _artifact_path(layout, _U1_READ_PLAN_PATH)
         source_coverage_path = _artifact_path(layout, _U1_SOURCE_COVERAGE_PATH)
+        run_contract_path = _artifact_path(layout, _RUN_CONTRACT_PATH)
         source_lock_raw = source_lock_path.read_bytes()
         read_plan_raw = read_plan_path.read_bytes()
         source_coverage_raw = source_coverage_path.read_bytes()
+        run_contract_raw = run_contract_path.read_bytes()
         source_lock = load_json_object_bytes(
             source_lock_raw,
             source=_U1_SOURCE_LOCK_PATH,
@@ -892,12 +1129,22 @@ def _validate_read_events(
             source_coverage_raw,
             source=_U1_SOURCE_COVERAGE_PATH,
         )
+        run_contract = load_json_object_bytes(
+            run_contract_raw,
+            source=_RUN_CONTRACT_PATH,
+        )
         if (
             source_lock_raw != canonical_json_bytes(source_lock)
             or read_plan_raw != canonical_json_bytes(read_plan)
             or source_coverage_raw != canonical_json_bytes(source_coverage)
+            or run_contract_raw != canonical_json_bytes(run_contract)
         ):
             raise ValueError("persisted U1 authority bytes are not canonical")
+        if sha256_bytes(run_contract_raw) != raw_run_authority.get(
+            "run_contract_sha256"
+        ):
+            raise ValueError("persisted run contract differs from run authority")
+        expected_request_sha256 = run_contract.get("request_sha256")
         read_events_raw = _artifact_path(layout, READ_EVENTS_PATH).read_bytes()
         if not read_events_raw or not read_events_raw.endswith(b"\n"):
             raise source_integrity.SourceCoverageError(
@@ -915,9 +1162,13 @@ def _validate_read_events(
                 )
             read_events.append(event)
         expected_source_lock_sha256 = u1_refs.get(_U1_SOURCE_LOCK_PATH)
+        expected_read_plan_sha256 = u1_refs.get(_U1_READ_PLAN_PATH)
         expected_read_coverage_sha256 = u1_refs.get(_U1_SOURCE_COVERAGE_PATH)
-        if not isinstance(expected_source_lock_sha256, str) or not isinstance(
-            expected_read_coverage_sha256, str
+        if (
+            not isinstance(expected_request_sha256, str)
+            or not isinstance(expected_source_lock_sha256, str)
+            or not isinstance(expected_read_plan_sha256, str)
+            or not isinstance(expected_read_coverage_sha256, str)
         ):
             raise ValueError("verified U1 checkpoint hashes are unavailable")
         source_integrity._validate_persisted_u1_authority(
@@ -934,7 +1185,9 @@ def _validate_read_events(
             expected_parent_event_sha256=str(u0_event["event_sha256"]),
             expected_evidence_cutoff=str(raw_run_authority["evidence_cutoff"]),
             expected_inputs=expected_inputs,
+            expected_request_sha256=expected_request_sha256,
             expected_source_lock_sha256=expected_source_lock_sha256,
+            expected_read_plan_sha256=expected_read_plan_sha256,
             expected_read_coverage_sha256=expected_read_coverage_sha256,
         )
     except source_integrity.SourceCoverageError as error:
@@ -969,7 +1222,10 @@ def _validate_article_coverage(
     layout: RunLayout,
     loaded: Mapping[str, list[dict[str, object]]],
     issues: dict[str, list[tuple[str, str]]],
-) -> None:
+    *,
+    required_concept_semantic_unit_ids: frozenset[str],
+    disk_authority: Mapping[str, object] | None,
+) -> str:
     coverage_docs = loaded.get("crossframe.ultra.v82.semantic-coverage", [])
     article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
     if len(coverage_docs) != 1 or not article_path.is_file():
@@ -979,7 +1235,7 @@ def _validate_article_coverage(
             "ULTRA-COVERAGE-MISSING",
             PARTIAL_ARTICLE_PATH,
         )
-        return
+        return "fail"
     coverage = coverage_docs[0]
     article_bytes = article_path.read_bytes()
     if coverage.get("article_sha256") != sha256_bytes(article_bytes):
@@ -1056,6 +1312,132 @@ def _validate_article_coverage(
             "artifacts/U09-U10-verdict/U11-article-review.json",
         )
 
+    semantic_status = "fail"
+    try:
+        from . import semantic_review
+
+        semantic_document = _single_document(
+            loaded, "crossframe.ultra.v82.semantic-review"
+        )
+        output_plan = _single_document(
+            loaded, "crossframe.ultra.v82.output-plan"
+        )
+        evidence = _single_document(
+            loaded, "crossframe.ultra.v82.evidence-ledger"
+        )
+        concept_disposition = _single_document(
+            loaded, "crossframe.ultra.v82.concept-disposition"
+        )
+        intake_path = layout.recovery_dir / "request-intake-authority.json"
+        intake_raw = intake_path.read_bytes()
+        intake = load_json_object_bytes(intake_raw, source=str(intake_path))
+        request_sha256 = intake.get("request_sha256")
+        article_review = _single_document(
+            loaded, "crossframe.ultra.v82.article-review"
+        )
+        if (
+            disk_authority is None
+            or intake_raw != canonical_json_bytes(intake)
+            or not isinstance(request_sha256, str)
+        ):
+            raise ValueError("semantic review request or disk authority is absent")
+        active_generation = disk_authority.get("active_generation")
+        events = disk_authority.get("events")
+        if type(active_generation) is not int or active_generation < 0 or not isinstance(
+            events,
+            tuple,
+        ):
+            raise ValueError("semantic review active generation is unavailable")
+        u10_events = [
+            event
+            for event in events
+            if isinstance(event, Mapping)
+            and event.get("phase_id") == "U10"
+            and event.get("status") == "complete"
+        ]
+        if len(u10_events) != 1:
+            raise ValueError("semantic review U10 parent authority is unavailable")
+        units = semantic_review.validate_required_concept_units(
+            concept_disposition,
+            required_concept_semantic_unit_ids,
+        )
+        action = semantic_review.load_semantic_review_action(
+            layout,
+            active_generation,
+        )
+        if action is None:
+            raise ValueError("semantic review action authority is absent")
+        semantic_review.validate_semantic_review_action(
+            layout,
+            action,
+            request_sha256=request_sha256,
+            request_intake_authority_sha256=sha256_bytes(intake_raw),
+            u10_parent_event_sha256=str(u10_events[0]["event_sha256"]),
+            active_generation=active_generation,
+            article_sha256=sha256_bytes(article_bytes),
+            output_plan_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(output_plan)
+            ),
+            coverage_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(coverage)
+            ),
+            article_review_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(article_review)
+            ),
+            evidence_ledger_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(evidence)
+            ),
+            concept_disposition_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(concept_disposition)
+            ),
+            required_concept_semantic_unit_ids=units,
+        )
+        accepted = semantic_review.load_accepted_semantic_review_result(
+            layout,
+            action,
+        )
+        if accepted is None:
+            raise ValueError("semantic review accepted receipt is absent")
+        host_result = semantic_review.load_host_semantic_review_result(
+            layout,
+            action,
+        )
+        deterministic_status = (
+            "pass"
+            if not any(
+                records
+                for check_id, records in issues.items()
+                if check_id != "semantic-tamper-resistance"
+            )
+            else "fail"
+        )
+        adversarial_status = (
+            "fail" if issues["semantic-tamper-resistance"] else "pass"
+        )
+        validated_semantic = semantic_review.validate_semantic_review(
+            semantic_document,
+            action=action,
+            accepted_result=accepted,
+            host_result=host_result,
+            version_binding=current_version_binding(),
+            expected_deterministic_status=deterministic_status,
+            expected_adversarial_status=adversarial_status,
+        )
+        if (
+            validated_semantic.get("overall_status") != "pass"
+            or validated_semantic.get("publication_allowed") is not True
+        ):
+            raise ValueError("semantic review does not allow publication")
+        semantic_status = "pass"
+    except Exception:
+        _issue(
+            issues,
+            "article-coverage",
+            "ULTRA-SEMANTIC-REVIEW",
+            "artifacts/U09-U10-verdict/U11-semantic-review.json",
+        )
+    return semantic_status
+
 
 def _validate_logs(
     layout: RunLayout, issues: dict[str, list[tuple[str, str]]]
@@ -1102,6 +1484,47 @@ def _report_checks(
     return checks
 
 
+def _build_validation_layers(
+    issues: Mapping[str, list[tuple[str, str]]],
+    *,
+    semantic_review_status: str,
+) -> list[dict[str, object]]:
+    if semantic_review_status not in {"pass", "fail"}:
+        raise ValueError("semantic review status must be pass or fail")
+    adversarial_records = issues["semantic-tamper-resistance"]
+    deterministic_records = [
+        record
+        for check_id, records in issues.items()
+        if check_id != "semantic-tamper-resistance"
+        for record in records
+        if record[0] != "ULTRA-SEMANTIC-REVIEW"
+    ]
+    records_by_layer = {
+        "deterministic": deterministic_records,
+        "adversarial": adversarial_records,
+        "fresh-semantic": (
+            []
+            if semantic_review_status == "pass"
+            else [
+                (
+                    "ULTRA-SEMANTIC-REVIEW",
+                    "artifacts/U09-U10-verdict/U11-semantic-review.json",
+                )
+            ]
+        ),
+    }
+    return [
+        {
+            "layer_id": layer_id,
+            "status": "fail" if records_by_layer[layer_id] else "pass",
+            "artifact_refs": sorted(
+                {artifact for _, artifact in records_by_layer[layer_id]}
+            ),
+        }
+        for layer_id in _VALIDATION_LAYER_IDS
+    ]
+
+
 def validate_run_from_disk(
     repo: Path,
     mode: RunMode,
@@ -1123,6 +1546,10 @@ def validate_run_from_disk(
         manifest_document = {}
     manifest_sha = sha256_bytes(raw_manifest)
     manifest: dict[str, object] | None = None
+    loaded: dict[str, list[dict[str, object]]] = {}
+    required_concept_semantic_unit_ids = frozenset()
+    semantic_review_status = "fail"
+    active_generation = 0
     try:
         manifest = validate_artifact_manifest(layout, manifest_path)
     except ArtifactManifestError as error:
@@ -1152,6 +1579,7 @@ def validate_run_from_disk(
         disk_authority: dict[str, object] | None = None
         try:
             disk_authority = _load_verified_disk_authority(layout, manifest)
+            active_generation = int(disk_authority["active_generation"])
         except _AuthorityDAGError as error:
             _issue(
                 issues,
@@ -1193,11 +1621,40 @@ def validate_run_from_disk(
                 )
         _validate_claim_semantics(loaded, issues)
         _validate_world_and_lineage(loaded, issues)
-        _validate_article_coverage(layout, loaded, issues)
+        semantic_review_status = _validate_article_coverage(
+            layout,
+            loaded,
+            issues,
+            required_concept_semantic_unit_ids=(
+                required_concept_semantic_unit_ids
+            ),
+            disk_authority=disk_authority,
+        )
     _validate_logs(layout, issues)
 
     checks = _report_checks(issues)
-    status = "fail" if any(check["status"] != "pass" for check in checks) else "pass"
+    layers = _build_validation_layers(
+        issues,
+        semantic_review_status=semantic_review_status,
+    )
+    status = (
+        "pass"
+        if all(check["status"] == "pass" for check in checks)
+        and all(layer["status"] == "pass" for layer in layers)
+        else "fail"
+    )
+    article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
+    article_sha256 = (
+        sha256_bytes(article_path.read_bytes())
+        if article_path.is_file()
+        else "0" * 64
+    )
+    semantic_documents = loaded.get("crossframe.ultra.v82.semantic-review", [])
+    semantic_review_artifact_sha256 = (
+        sha256_bytes(canonical_json_bytes(semantic_documents[0]))
+        if len(semantic_documents) == 1
+        else "0" * 64
+    )
     generated_at = manifest_document.get("generated_at")
     if not isinstance(generated_at, str):
         generated_at = "1970-01-01T00:00:00Z"
@@ -1212,8 +1669,15 @@ def validate_run_from_disk(
         "attempt_id": f"fresh-{manifest_sha[:16]}",
         "manifest_sha256": manifest_sha,
         "validator_set_sha256": validator_hash,
+        "active_generation": active_generation,
+        "article_sha256": article_sha256,
+        "semantic_review_artifact_sha256": (
+            semantic_review_artifact_sha256
+        ),
         "checks": checks,
+        "layers": layers,
         "overall_status": status,
+        "publication_allowed": status == "pass",
         "validated_at": generated_at,
         "fresh_context": True,
     }
@@ -1270,16 +1734,66 @@ def _validated_report_bytes(
         raise ValueError("fresh validator report is stale for the current manifest")
     if report["validator_set_sha256"] != validator_hash:
         raise ValueError("fresh validator report uses another validator generation")
-    expected_status = (
+    checks_status = (
         "pass"
         if all(check["status"] == "pass" for check in report["checks"])
         else "blocked"
         if any(check["status"] == "blocked" for check in report["checks"])
         else "fail"
     )
+    layers = report.get("layers")
+    if not isinstance(layers, list) or tuple(
+        layer.get("layer_id") if isinstance(layer, Mapping) else None
+        for layer in layers
+    ) != _VALIDATION_LAYER_IDS:
+        raise ValueError("fresh validator report layer contract is invalid")
+    layers_pass = all(layer.get("status") == "pass" for layer in layers)
+    expected_status = "pass" if checks_status == "pass" and layers_pass else checks_status
+    if expected_status == "pass" and not layers_pass:
+        expected_status = "fail"
     if report["overall_status"] != expected_status:
         raise ValueError("fresh validator report overall status contradicts its checks")
+    if report.get("publication_allowed") is not (expected_status == "pass"):
+        raise ValueError("fresh validator report publication contradicts its layers")
+    article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
+    expected_article_sha256 = (
+        sha256_bytes(article_path.read_bytes())
+        if article_path.is_file()
+        else "0" * 64
+    )
+    if report.get("article_sha256") != expected_article_sha256:
+        raise ValueError("fresh validator report is stale for the current article")
+    semantic_path = _artifact_path(
+        layout,
+        "artifacts/U09-U10-verdict/U11-semantic-review.json",
+    )
+    expected_semantic_sha256 = (
+        sha256_bytes(semantic_path.read_bytes())
+        if semantic_path.is_file()
+        else "0" * 64
+    )
+    if report.get("semantic_review_artifact_sha256") != expected_semantic_sha256:
+        raise ValueError(
+            "fresh validator report is stale for the semantic review artifact"
+        )
+    if semantic_path.is_file():
+        semantic_document = load_json_object(semantic_path)
+        if report.get("active_generation") != semantic_document.get(
+            "active_generation"
+        ):
+            raise ValueError(
+                "fresh validator report uses another active recovery generation"
+            )
     return report
+
+
+def _require_validation_commit_authority(
+    layout: RunLayout,
+    lease: Lease,
+) -> None:
+    if load_cancel_intent(layout) is not None:
+        raise CancelledRunError("cancel intent blocks validation commit")
+    require_run_lease_owner(layout, lease)
 
 
 def commit_validation_attempt(
@@ -1289,6 +1803,7 @@ def commit_validation_attempt(
     report_bytes: bytes,
     expected_manifest_sha256: str,
     expected_validator_set_sha256: str,
+    lease: Lease,
 ) -> dict[str, object]:
     if not isinstance(layout, RunLayout):
         raise TypeError("layout must be a RunLayout")
@@ -1303,51 +1818,59 @@ def commit_validation_attempt(
         if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
             raise ValueError(f"{name} must be a SHA-256 digest")
 
-    manifest_path = validation_manifest_path(layout)
-    manifest = validate_artifact_manifest(layout, manifest_path)
-    current_manifest_sha = sha256_bytes(manifest_path.read_bytes())
-    if current_manifest_sha != expected_manifest_sha256:
-        raise ValueError("stale validator report: manifest generation changed")
-    current_validator_hash = validator_set_sha256(_repo_root())
-    if (
-        manifest["validator_set_sha256"] != expected_validator_set_sha256
-        or current_validator_hash != expected_validator_set_sha256
-    ):
-        raise ValueError("validator-set generation changed before report commit")
-    report = _validated_report_bytes(
-        layout,
-        report_bytes,
-        attempt_id=attempt_id,
-        manifest_sha256=current_manifest_sha,
-        validator_hash=current_validator_hash,
-    )
-    fresh_bytes = validate_run_from_disk(
-        _repo_root(), _mode_for_layout(layout), layout.run_dir.name
-    )
-    if fresh_bytes != report_bytes:
-        raise ValueError("parent report bytes differ from fresh disk validation")
+    _require_validation_commit_authority(layout, lease)
 
-    attempt_path = (
-        layout.validation_attempts_dir
-        / attempt_id
-        / "ultra-validator-report.json"
-    )
-    current_path = layout.validation_current_dir / "ultra-validator-report.json"
-    for path in (attempt_path, current_path):
-        assert_safe_descendant(layout.root, path)
-    if attempt_path.exists() and attempt_path.read_bytes() != report_bytes:
-        raise ValueError("validation attempt slot already contains different bytes")
-    atomic_write_bytes(attempt_path, report_bytes)
-    if attempt_path.read_bytes() != report_bytes:
-        raise ValueError("validation attempt changed during durable write")
-    _validated_report_bytes(
-        layout,
-        attempt_path.read_bytes(),
-        attempt_id=attempt_id,
-        manifest_sha256=current_manifest_sha,
-        validator_hash=current_validator_hash,
-    )
-    atomic_write_bytes(current_path, report_bytes)
-    if current_path.read_bytes() != report_bytes:
-        raise ValueError("validation/current changed during atomic replacement")
-    return copy.deepcopy(report)
+    with _exclusive_path_lock(_validation_current_commit_lock_path(layout)):
+        _require_validation_commit_authority(layout, lease)
+        manifest_path = validation_manifest_path(layout)
+        manifest = validate_artifact_manifest(layout, manifest_path)
+        current_manifest_sha = sha256_bytes(manifest_path.read_bytes())
+        if current_manifest_sha != expected_manifest_sha256:
+            raise ValueError("stale validator report: manifest generation changed")
+        current_validator_hash = validator_set_sha256(_repo_root())
+        if (
+            manifest["validator_set_sha256"] != expected_validator_set_sha256
+            or current_validator_hash != expected_validator_set_sha256
+        ):
+            raise ValueError("validator-set generation changed before report commit")
+        report = _validated_report_bytes(
+            layout,
+            report_bytes,
+            attempt_id=attempt_id,
+            manifest_sha256=current_manifest_sha,
+            validator_hash=current_validator_hash,
+        )
+        fresh_bytes = validate_run_from_disk(
+            _repo_root(), _mode_for_layout(layout), layout.run_dir.name
+        )
+        if fresh_bytes != report_bytes:
+            raise ValueError("parent report bytes differ from fresh disk validation")
+        _require_validation_commit_authority(layout, lease)
+
+        attempt_path = (
+            layout.validation_attempts_dir
+            / attempt_id
+            / "ultra-validator-report.json"
+        )
+        current_path = layout.validation_current_dir / "ultra-validator-report.json"
+        for path in (attempt_path, current_path):
+            assert_safe_descendant(layout.root, path)
+        if attempt_path.exists() and attempt_path.read_bytes() != report_bytes:
+            raise ValueError("validation attempt slot already contains different bytes")
+        _require_validation_commit_authority(layout, lease)
+        atomic_write_bytes(attempt_path, report_bytes)
+        if attempt_path.read_bytes() != report_bytes:
+            raise ValueError("validation attempt changed during durable write")
+        _validated_report_bytes(
+            layout,
+            attempt_path.read_bytes(),
+            attempt_id=attempt_id,
+            manifest_sha256=current_manifest_sha,
+            validator_hash=current_validator_hash,
+        )
+        with _exclusive_path_lock(_cancel_intent_lock_path(layout)):
+            _require_validation_commit_authority(layout, lease)
+            atomic_write_bytes(current_path, report_bytes)
+            if current_path.read_bytes() != report_bytes:
+                raise ValueError("validation/current changed during atomic replacement")
+        return copy.deepcopy(report)

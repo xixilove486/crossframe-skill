@@ -238,7 +238,22 @@
         "mechanism_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
         "recursive_node_ids": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
         "status": {"enum": ["locked", "bounded", "undecidable"]}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"kind": {"const": "fact"}},
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "evidence_refs": {
+                "$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

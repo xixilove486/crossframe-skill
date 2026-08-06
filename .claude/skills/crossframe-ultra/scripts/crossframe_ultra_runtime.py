@@ -20,6 +20,11 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from ultra_runtime.indexes import IndexStore
+from ultra_runtime.foundation import (
+    advance_foundation,
+    parse_request_profile,
+    seal_input_inventory,
+)
 from ultra_runtime.jsonio import (
     atomic_write_bytes,
     atomic_write_json,
@@ -27,8 +32,13 @@ from ultra_runtime.jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
-from ultra_runtime.locks import acquire_run_lease, release_run_lease
-from ultra_runtime.materialization import prepare_authoring, seal_request_intake_authority
+from ultra_runtime.locks import Lease, acquire_run_lease, release_run_lease
+from ultra_runtime.materialization import (
+    foundation_progress_projection,
+    preflight_foundation_progress,
+    prepare_authoring,
+    seal_request_intake_authority,
+)
 from ultra_runtime.paths import (
     RootPolicy,
     RunLayout,
@@ -56,6 +66,7 @@ COMMANDS = (
     "repair-plan",
     "resume",
     "fork",
+    "evidence-fork",
     "cancel",
     "rebuild-index",
 )
@@ -85,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     request = start.add_mutually_exclusive_group(required=True)
     request.add_argument("--request-file", metavar="PATH")
     request.add_argument("--request-stdin", action="store_true")
+    start.add_argument(
+        "--material-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+    )
 
     prepare = subparsers.add_parser(
         "prepare", help="prepare model-owned authoring slots", add_help=False
@@ -125,6 +142,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_run(fork)
     fork.add_argument("--reason", required=True, metavar="TEXT")
+
+    evidence_fork = subparsers.add_parser(
+        "evidence-fork",
+        help="fork a same-version child for new evidence",
+        add_help=False,
+    )
+    _add_run(evidence_fork)
+    evidence_input = evidence_fork.add_mutually_exclusive_group(required=True)
+    evidence_input.add_argument("--evidence-file", metavar="PATH")
+    evidence_input.add_argument("--evidence-stdin", action="store_true")
 
     cancel = subparsers.add_parser("cancel", help="cancel a run", add_help=False)
     _add_run(cancel)
@@ -234,6 +261,11 @@ def _start(
         if not request_path.is_file():
             raise ValueError(f"--request-file is not a file: {request_path}")
         request_bytes = request_path.read_bytes()
+    material_files = tuple(Path(value).resolve() for value in args.material_file)
+    for material_path in material_files:
+        if not material_path.is_file():
+            raise ValueError(f"--material-file is not a file: {material_path}")
+    parse_request_profile(request_bytes)
     run_id = create_run_id(now, entropy)
     layout = build_run_layout(_mode(args.mode), run_id, policy)
     if layout.run_dir.exists():
@@ -244,6 +276,13 @@ def _start(
     atomic_write_json(
         layout.input_dir / "request-metadata.json",
         {"request_sha256": request_sha256, "request_size": len(request_bytes)},
+    )
+    seal_input_inventory(
+        layout,
+        request_sha256=request_sha256,
+        material_files=material_files,
+        now=now,
+        request_bytes=request_bytes,
     )
     created = RunStatusStore(layout).create(now)
     seal_request_intake_authority(
@@ -265,24 +304,6 @@ def _start(
     return 0
 
 
-def _advance_to_running(layout: RunLayout, now: datetime) -> object:
-    store = RunStatusStore(layout)
-    current = store.read()
-    if current.status == "running":
-        return current
-    if current.status not in {"created", "interrupted", "blocked", "needs_attention"}:
-        raise RuntimeError(f"run status {current.status!r} cannot enter authoring")
-    return store.transition(
-        current,
-        "running",
-        now,
-        current_phase=current.current_phase,
-        last_complete_phase=current.last_complete_phase,
-        reason="runtime command admitted",
-        validation_passed=False,
-    )
-
-
 def _prepare(
     args: argparse.Namespace,
     *,
@@ -291,18 +312,35 @@ def _prepare(
     now: datetime,
 ) -> int:
     layout = _layout(args, policy)
-    with _run_lease(layout, now):
-        _advance_to_running(layout, now)
+    with _run_lease(layout, now) as lease:
+        preflight_foundation_progress(
+            layout,
+            RunStatusStore(layout),
+            now=now,
+            lease=lease,
+        )
         prepared = prepare_authoring(layout)
+        foundation = advance_foundation(
+            layout,
+            repo=_validate_repo(args.repo),
+            now=now,
+            lease=lease,
+        )
+        progress = foundation_progress_projection(layout, foundation)
     IndexStore(layout.root).rebuild()
-    _emit_json(
-        stdout,
+    response = _json_safe(progress)
+    assert isinstance(response, dict)
+    response.update(
         {
             "authoring_dir": str(prepared.authoring_dir.resolve()),
             "control_path": str(prepared.control_path.resolve()),
             "run_id": args.run_id,
             "slots": list(prepared.relative_slots),
-        },
+        }
+    )
+    _emit_json(
+        stdout,
+        response,
     )
     return 0
 
@@ -366,8 +404,8 @@ def _checkpoint(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        resumed = recovery.resume_run(layout, now=now)
+    with _run_lease(layout, now) as lease:
+        resumed = recovery.resume_run(layout, now=now, lease=lease)
         phase_store = _phase_store_from_recovery(resumed)
         artifact_paths = _matching_artifact_paths(layout, phase_store, args.phase)
         checkpoint = recovery.create_checkpoint(
@@ -378,6 +416,7 @@ def _checkpoint(
             boundary_ordinal=0,
             artifact_paths=artifact_paths,
             now=now,
+            lease=lease,
         )
     _emit_json(stdout, checkpoint)
     return 0
@@ -429,7 +468,11 @@ def _fresh_checker(repo: Path, mode: RunMode, run_id: str) -> bytes:
     return completed.stdout
 
 
-def _commit_report(layout: RunLayout, report_bytes: bytes) -> dict[str, object]:
+def _commit_report(
+    layout: RunLayout,
+    report_bytes: bytes,
+    lease: Lease,
+) -> dict[str, object]:
     validation = _task12("validation")
     report = load_json_object_bytes(report_bytes, source="fresh checker stdout")
     return validation.commit_validation_attempt(
@@ -438,6 +481,7 @@ def _commit_report(layout: RunLayout, report_bytes: bytes) -> dict[str, object]:
         report_bytes=report_bytes,
         expected_manifest_sha256=report["manifest_sha256"],
         expected_validator_set_sha256=report["validator_set_sha256"],
+        lease=lease,
     )
 
 
@@ -451,10 +495,10 @@ def _validate(
 ) -> int:
     mode = _mode(args.mode)
     layout = _layout(args, policy)
-    with _run_lease(layout, now):
+    with _run_lease(layout, now) as lease:
         report_bytes = _fresh_checker(repo, mode, args.run_id)
         report = load_json_object_bytes(report_bytes, source="fresh checker stdout")
-        _commit_report(layout, report_bytes)
+        _commit_report(layout, report_bytes, lease)
     if args.json_output:
         stdout.write(report_bytes.decode("utf-8"))
     else:
@@ -482,12 +526,13 @@ def _repair_plan(
         layout.validation_current_dir / "ultra-validator-report.json"
     )
     attempts = [path for path in layout.validation_attempts_dir.iterdir() if path.is_dir()]
-    with _run_lease(layout, now):
+    with _run_lease(layout, now) as lease:
         plan = repair.build_repair_plan(
             layout,
             attempt_id=current_report["attempt_id"],
             attempt_number=len(attempts),
             now=now,
+            lease=lease,
         )
     _emit_json(stdout, plan)
     return 0
@@ -502,14 +547,15 @@ def _resume(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        result = recovery.resume_run(layout, now=now)
+    with _run_lease(layout, now) as lease:
+        result = recovery.resume_run(layout, now=now, lease=lease)
     IndexStore(layout.root).rebuild()
     _emit_json(
         stdout,
         {
             "outcome": result.outcome,
             "compatibility_result": result.compatibility_result,
+            "active_generation": result.active_generation,
             "checkpoint": result.checkpoint,
             "status": (
                 None if result.status is None else _record_to_object(result.status)
@@ -543,6 +589,37 @@ def _fork(
     return 0
 
 
+def _evidence_fork(
+    args: argparse.Namespace,
+    *,
+    stdin: object,
+    stdout: TextIO,
+    policy: RootPolicy,
+    now: datetime,
+    entropy: bytes,
+) -> int:
+    parent_layout = _layout(args, policy)
+    if args.evidence_stdin:
+        evidence_bytes = _read_stdin_bytes(stdin)
+    else:
+        evidence_path = Path(args.evidence_file).resolve()
+        if not evidence_path.is_file():
+            raise ValueError(f"--evidence-file is not a file: {evidence_path}")
+        evidence_bytes = evidence_path.read_bytes()
+    recovery = _task12("recovery")
+    result = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=_mode(args.mode),
+        policy=policy,
+        evidence_bytes=evidence_bytes,
+        now=now,
+        entropy=entropy,
+    )
+    IndexStore(result.layout.root).rebuild()
+    _emit_json(stdout, result)
+    return 0
+
+
 def _cancel(
     args: argparse.Namespace,
     *,
@@ -552,12 +629,11 @@ def _cancel(
 ) -> int:
     layout = _layout(args, policy)
     recovery = _task12("recovery")
-    with _run_lease(layout, now):
-        status = recovery.cancel_run(
-            layout,
-            reason="operator requested cancellation",
-            now=now,
-        )
+    status = recovery.cancel_run(
+        layout,
+        reason="operator requested cancellation",
+        now=now,
+    )
     IndexStore(layout.root).rebuild()
     _emit_json(stdout, _record_to_object(status))
     return 0
@@ -572,6 +648,7 @@ def _materialize(
     now: datetime,
     entropy: bytes,
 ) -> int:
+    layout = _layout(args, policy)
     materialization = importlib.import_module("ultra_runtime.materialization")
     runner = getattr(materialization, "materialize_complete_run", None)
     if not callable(runner):
@@ -584,8 +661,10 @@ def _materialize(
         now=now,
         entropy=entropy,
         fresh_check=lambda stage: _fresh_checker(repo, _mode(args.mode), args.run_id),
-        commit_report=lambda stage, report_bytes: _commit_report(
-            build_run_layout(_mode(args.mode), args.run_id, policy), report_bytes
+        commit_report=lambda stage, report_bytes, lease: _commit_report(
+            build_run_layout(_mode(args.mode), args.run_id, policy),
+            report_bytes,
+            lease,
         ),
     )
     _emit_json(stdout, result)
@@ -657,6 +736,15 @@ def execute(
     if args.command == "fork":
         return _fork(
             args,
+            stdout=stdout,
+            policy=policy,
+            now=current_time,
+            entropy=entropy_value(),
+        )
+    if args.command == "evidence-fork":
+        return _evidence_fork(
+            args,
+            stdin=stdin,
             stdout=stdout,
             policy=policy,
             now=current_time,

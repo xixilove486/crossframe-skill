@@ -17,6 +17,14 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import (
+    CancelledRunError,
+    Lease,
+    LeaseNeedsAttentionError,
+    LeaseOwnershipError,
+    load_cancel_intent,
+    require_run_lease_owner,
+)
 from .paths import RunLayout, assert_safe_descendant
 
 
@@ -78,6 +86,11 @@ _BACKUP_REQUIRED_STATES = frozenset(
 )
 _PUBLISHED_STATES = frozenset(
     {"published", "postchecked", "u12-durable", "complete"}
+)
+_VALIDATION_LAYER_IDS = (
+    "deterministic",
+    "adversarial",
+    "fresh-semantic",
 )
 
 
@@ -263,7 +276,15 @@ def _remove_staging(layout: RunLayout, paths: PublicationPaths) -> None:
         pass
 
 
-def _validate_report_bytes(report_bytes: bytes, stage: str) -> bytes:
+def _validate_report_bytes(
+    report_bytes: bytes,
+    stage: str,
+    *,
+    expected_article_sha256: str,
+    expected_manifest_sha256: str,
+    expected_semantic_review_artifact_sha256: str,
+    expected_active_generation: int,
+) -> bytes:
     if not isinstance(report_bytes, bytes):
         raise TypeError(f"{stage} fresh checker must return bytes")
     report = load_json_object_bytes(report_bytes, source=f"{stage} fresh checker stdout")
@@ -280,7 +301,76 @@ def _validate_report_bytes(report_bytes: bytes, stage: str) -> bytes:
         raise RuntimeError(
             f"{stage} fresh checker did not report overall_status=pass: {failures}"
         )
+    layers = report.get("layers")
+    if not isinstance(layers, list) or tuple(
+        layer.get("layer_id") if isinstance(layer, Mapping) else None
+        for layer in layers
+    ) != _VALIDATION_LAYER_IDS:
+        raise RuntimeError(f"{stage} fresh checker validation layer contract is invalid")
+    failed_layers = [
+        str(layer.get("layer_id"))
+        for layer in layers
+        if not isinstance(layer, Mapping) or layer.get("status") != "pass"
+    ]
+    if failed_layers:
+        raise RuntimeError(
+            f"{stage} fresh checker has failed validation layer: {failed_layers}"
+        )
+    checks = report.get("checks", [])
+    if not isinstance(checks, list) or not checks or any(
+        not isinstance(check, Mapping) or check.get("status") != "pass"
+        for check in checks
+    ):
+        raise RuntimeError(f"{stage} fresh checker contains a failed check")
+    if report.get("publication_allowed") is not True:
+        raise RuntimeError(f"{stage} fresh checker did not allow publication")
+    if report.get("article_sha256") != expected_article_sha256:
+        raise RuntimeError(f"{stage} fresh checker article generation is stale")
+    if report.get("manifest_sha256") != expected_manifest_sha256:
+        raise RuntimeError(f"{stage} fresh checker manifest generation is stale")
+    if (
+        report.get("semantic_review_artifact_sha256")
+        != expected_semantic_review_artifact_sha256
+    ):
+        raise RuntimeError(
+            f"{stage} fresh checker semantic review generation is stale"
+        )
+    if report.get("active_generation") != expected_active_generation:
+        raise RuntimeError(
+            f"{stage} fresh checker active recovery generation is stale"
+        )
     return report_bytes
+
+
+def _semantic_publication_authority(layout: RunLayout) -> tuple[str, int]:
+    path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir
+        / "U09-U10-verdict"
+        / "U11-semantic-review.json",
+    )
+    try:
+        raw = path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "publication requires the runtime-owned semantic review artifact"
+        ) from error
+    if (
+        raw != canonical_json_bytes(document)
+        or document.get("schema_id")
+        != "crossframe.ultra.v82.semantic-review"
+        or document.get("phase_id") != "U11"
+        or document.get("run_id") != layout.run_dir.name
+        or document.get("overall_status") != "pass"
+        or document.get("publication_allowed") is not True
+        or type(document.get("active_generation")) is not int
+        or int(document["active_generation"]) < 0
+    ):
+        raise RuntimeError(
+            "publication semantic review authority is invalid or non-passing"
+        )
+    return sha256_bytes(raw), int(document["active_generation"])
 
 
 def _attach_note(error: BaseException, note: str) -> None:
@@ -536,9 +626,12 @@ def _restore_previous(
     layout: RunLayout,
     paths: PublicationPaths,
     previous: Mapping[Path, bytes | None],
+    *,
+    before_write: Callable[[], None],
 ) -> None:
     for official, prior in previous.items():
         assert_safe_descendant(layout.root, official)
+        before_write()
         if prior is None:
             official.unlink(missing_ok=True)
         else:
@@ -552,6 +645,12 @@ def _restore_previous(
                 atomic_write_bytes(official, prior)
 
 
+def _require_publication_authority(layout: RunLayout, lease: Lease) -> None:
+    if load_cancel_intent(layout) is not None:
+        raise CancelledRunError("cancel intent blocks publication")
+    require_run_lease_owner(layout, lease)
+
+
 def publish_delivery(
     layout: RunLayout,
     *,
@@ -561,9 +660,10 @@ def publish_delivery(
     artifact_index_bytes: bytes,
     manifest_bytes: bytes,
     fresh_check: Callable[[str], bytes],
-    commit_report: Callable[[str, bytes], object],
+    commit_report: Callable[[str, bytes, Lease], object],
     mark_needs_attention: Callable[[str], object],
     defer_completion: bool = True,
+    lease: Lease | None = None,
 ) -> PublicationResult:
     """Publish the fixed final set with durable rollback evidence.
 
@@ -584,6 +684,37 @@ def publish_delivery(
         )
     paths = publication_paths(layout, transaction_id)
     _journal_file_exists(layout, paths.journal_path)
+    from .locks import (
+        acquire_run_lease,
+        release_run_lease,
+    )
+
+    if lease is None:
+        owned = acquire_run_lease(
+            layout,
+            datetime.now(timezone.utc),
+            timedelta(minutes=30),
+        )
+        try:
+            return publish_delivery(
+                layout,
+                transaction_id=transaction_id,
+                article_bytes=article_bytes,
+                dossier_bytes=dossier_bytes,
+                artifact_index_bytes=artifact_index_bytes,
+                manifest_bytes=manifest_bytes,
+                fresh_check=fresh_check,
+                commit_report=commit_report,
+                mark_needs_attention=mark_needs_attention,
+                defer_completion=defer_completion,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    _require_publication_authority(layout, lease)
+    semantic_review_sha256, active_generation = _semantic_publication_authority(
+        layout
+    )
     payloads = _payload_by_target(
         paths,
         article_bytes=article_bytes,
@@ -629,11 +760,21 @@ def publish_delivery(
             failure=None,
         )
 
+        _require_publication_authority(layout, lease)
+        precheck_report_bytes = fresh_check("pre-publish")
+        _require_publication_authority(layout, lease)
         precheck_report = _validate_report_bytes(
-            fresh_check("pre-publish"), "pre-publish"
+            precheck_report_bytes,
+            "pre-publish",
+            expected_article_sha256=sha256_bytes(article_bytes),
+            expected_manifest_sha256=sha256_bytes(manifest_bytes),
+            expected_semantic_review_artifact_sha256=semantic_review_sha256,
+            expected_active_generation=active_generation,
         )
         precheck_passed = True
-        commit_report("pre-publish", precheck_report)
+        _require_publication_authority(layout, lease)
+        commit_report("pre-publish", precheck_report, lease)
+        _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -666,7 +807,9 @@ def publish_delivery(
             staged = _staged_path(paths, official)
             if sha256_bytes(staged.read_bytes()) != sha256_bytes(payloads[official]):
                 raise RuntimeError(f"staged publication hash mismatch for {official.name}")
+            _require_publication_authority(layout, lease)
             atomic_write_bytes(official, staged.read_bytes())
+            _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -679,11 +822,21 @@ def publish_delivery(
             failure=None,
         )
 
+        _require_publication_authority(layout, lease)
+        postcheck_report_bytes = fresh_check("post-publish")
+        _require_publication_authority(layout, lease)
         postcheck_report = _validate_report_bytes(
-            fresh_check("post-publish"), "post-publish"
+            postcheck_report_bytes,
+            "post-publish",
+            expected_article_sha256=sha256_bytes(article_bytes),
+            expected_manifest_sha256=sha256_bytes(manifest_bytes),
+            expected_semantic_review_artifact_sha256=semantic_review_sha256,
+            expected_active_generation=active_generation,
         )
         postcheck_passed = True
-        commit_report("post-publish", postcheck_report)
+        _require_publication_authority(layout, lease)
+        commit_report("post-publish", postcheck_report, lease)
+        _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -702,9 +855,20 @@ def publish_delivery(
             postcheck_passed=True,
         )
     except BaseException as error:
+        try:
+            require_run_lease_owner(layout, lease)
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         rollback_error: BaseException | None = None
         try:
-            _restore_previous(layout, paths, previous)
+            _restore_previous(
+                layout,
+                paths,
+                previous,
+                before_write=lambda: require_run_lease_owner(layout, lease),
+            )
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as caught:
             rollback_error = caught
         failure = f"{type(error).__name__}: {error}"
@@ -712,6 +876,7 @@ def publish_delivery(
             failure += f"; rollback failed: {type(rollback_error).__name__}: {rollback_error}"
         postcheck_passed = False
         try:
+            require_run_lease_owner(layout, lease)
             _write_journal(
                 layout,
                 paths,
@@ -723,17 +888,26 @@ def publish_delivery(
                 postcheck_passed=postcheck_passed,
                 failure=failure,
             )
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as journal_error:
             _attach_note(error, f"failed to update publish journal: {journal_error}")
+        if not isinstance(
+            error,
+            (CancelledRunError, LeaseOwnershipError),
+        ):
+            try:
+                mark_needs_attention(failure)
+            except BaseException as attention_error:
+                _attach_note(
+                    error,
+                    f"failed to mark run needs_attention: {attention_error}",
+                )
         try:
-            mark_needs_attention(failure)
-        except BaseException as attention_error:
-            _attach_note(
-                error,
-                f"failed to mark run needs_attention: {attention_error}",
-            )
-        try:
+            require_run_lease_owner(layout, lease)
             _remove_staging(layout, paths)
+        except (LeaseOwnershipError, LeaseNeedsAttentionError):
+            raise
         except BaseException as staging_error:
             _attach_note(
                 error,
@@ -928,7 +1102,9 @@ def _mark_u12_durable(
     *,
     event: Mapping[str, object],
     checkpoint: Mapping[str, object],
+    lease: Lease,
 ) -> None:
+    _require_publication_authority(layout, lease)
     journal = load_json_object(paths.journal_path)
     state, authorities = _validate_publish_journal(layout, paths, journal)
     _preflight_recovery_bytes(layout, state, authorities)
@@ -957,6 +1133,7 @@ def _mark_u12_durable(
         layout, paths, updated
     )
     _preflight_recovery_bytes(layout, updated_state, updated_authorities)
+    _require_publication_authority(layout, lease)
     atomic_write_json(paths.journal_path, updated)
 
 
@@ -1008,7 +1185,10 @@ def _roll_forward_u12_transaction(
     layout: RunLayout,
     paths: PublicationPaths,
     journal: Mapping[str, object],
+    *,
+    lease: Lease,
 ) -> dict[str, object]:
+    _require_publication_authority(layout, lease)
     reread = load_json_object(paths.journal_path)
     if dict(journal) != reread:
         raise RuntimeError("publish journal changed before U12 roll-forward")
@@ -1029,6 +1209,7 @@ def _roll_forward_u12_transaction(
             layout, paths, bound
         )
         _preflight_recovery_bytes(layout, bound_state, bound_authorities)
+        _require_publication_authority(layout, lease)
         atomic_write_json(paths.journal_path, bound)
         reread = bound
 
@@ -1038,6 +1219,7 @@ def _roll_forward_u12_transaction(
     status_store = RunStatusStore(layout)
     current = status_store.read()
     if current.status != "complete":
+        _require_publication_authority(layout, lease)
         previous = datetime.fromisoformat(current.updated_at[:-1] + "+00:00")
         transition_at = max(
             datetime.now(timezone.utc),
@@ -1052,12 +1234,14 @@ def _roll_forward_u12_transaction(
                 last_complete_phase=current.last_complete_phase,
                 reason="durable U12 transaction roll-forward admitted",
                 validation_passed=False,
+                lease=lease,
             )
             transition_at = transition_at + timedelta(microseconds=1)
         current = status_store.commit_u12_complete(
             current,
             transition_at,
             reason="durable U12 transaction roll-forward",
+            lease=lease,
         )
     if (
         current.current_phase != "U12"
@@ -1070,6 +1254,7 @@ def _roll_forward_u12_transaction(
     verdict_path = layout.artifacts_dir / "U09-U10-verdict/U09-verdict.json"
     verdict = load_json_object(verdict_path)
     build_final_chat_projection(layout, verdict, current)
+    _require_publication_authority(layout, lease)
     write_final_chat_projection(layout, verdict, current)
 
     reread = load_json_object(paths.journal_path)
@@ -1090,8 +1275,11 @@ def _roll_forward_u12_transaction(
         layout, paths, final
     )
     _preflight_recovery_bytes(layout, final_state, final_authorities)
+    _require_publication_authority(layout, lease)
     atomic_write_json(paths.journal_path, final)
+    _require_publication_authority(layout, lease)
     IndexStore(layout.root).rebuild()
+    _require_publication_authority(layout, lease)
     _remove_staging(layout, paths)
     return final
 
@@ -1100,6 +1288,7 @@ def recover_publish_transaction(
     layout: RunLayout,
     *,
     mark_needs_attention: Callable[[str], object],
+    lease: object | None = None,
 ) -> dict[str, object] | None:
     """Recover an incomplete fixed journal without accepting caller-selected paths."""
 
@@ -1109,6 +1298,27 @@ def recover_publish_transaction(
     journal_path = layout.recovery_dir / JOURNAL_FILENAME
     if not _journal_file_exists(layout, journal_path):
         return None
+    from .locks import (
+        acquire_run_lease,
+        release_run_lease,
+        require_run_lease_owner,
+    )
+
+    if lease is None:
+        owned = acquire_run_lease(
+            layout,
+            datetime.now(timezone.utc),
+            timedelta(minutes=30),
+        )
+        try:
+            return recover_publish_transaction(
+                layout,
+                mark_needs_attention=mark_needs_attention,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(layout, owned)
+    require_run_lease_owner(layout, lease)
     journal = load_json_object(journal_path)
     transaction_id = journal.get("transaction_id")
     if not isinstance(transaction_id, str):
@@ -1122,7 +1332,12 @@ def recover_publish_transaction(
             raise RuntimeError(
                 "durable U12 checkpoint is paired with an illegal journal state"
             )
-        return _roll_forward_u12_transaction(layout, paths, journal)
+        return _roll_forward_u12_transaction(
+            layout,
+            paths,
+            journal,
+            lease=lease,
+        )
     if state in {"u12-durable", "complete"}:
         raise RuntimeError(
             "publish journal declares durable U12 without a valid checkpoint"

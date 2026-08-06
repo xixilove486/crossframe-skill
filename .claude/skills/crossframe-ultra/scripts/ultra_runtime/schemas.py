@@ -33,13 +33,19 @@ SCHEMA_NAMES = (
     "ultra-concept-registry.schema.json",
     "ultra-contract-map.schema.json",
     "ultra-evidence-ledger.schema.json",
+    "ultra-evidence-lineage.schema.json",
     "ultra-forecast-ledger.schema.json",
     "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",
+    "ultra-host-action.schema.json",
+    "ultra-host-capability-attestation.schema.json",
+    "ultra-host-result-receipt.schema.json",
+    "ultra-input-inventory.schema.json",
     "ultra-order-evaluation.schema.json",
     "ultra-output-plan.schema.json",
     "ultra-phase-event.schema.json",
     "ultra-read-event.schema.json",
+    "ultra-read-plan.schema.json",
     "ultra-recovery-checkpoint.schema.json",
     "ultra-recursive-lineage.schema.json",
     "ultra-recursive-state.schema.json",
@@ -52,6 +58,7 @@ SCHEMA_NAMES = (
     "ultra-run-migration.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
+    "ultra-semantic-review.schema.json",
     "ultra-source-lock.schema.json",
     "ultra-source-manifest.schema.json",
     "ultra-transformation-ledger.schema.json",
@@ -78,12 +85,71 @@ _RULE_RESULTS = {
     "exact": "resume",
     "fallback": "reject",
 }
-_MIGRATION_MISMATCH_FIELDS = frozenset(
-    {"framework_revision", "artifact_schema_version"}
+_V1_TO_V2_MISMATCH_FIELDS = (
+    "runtime_version",
+    "artifact_schema_version",
+    "validator_version",
+    "article_contract_version",
 )
+_MIGRATION_MISMATCH_FIELDS = frozenset(_V1_TO_V2_MISMATCH_FIELDS)
 _READ_ONLY_MISMATCH_FIELDS = frozenset(
     {"runtime_version", "validator_version"}
 )
+LEGACY_V1_SCHEMA_NAMES = (
+    "ultra-action-ranking.schema.json",
+    "ultra-article-review.schema.json",
+    "ultra-artifact-manifest.schema.json",
+    "ultra-claim-mechanism-graph.schema.json",
+    "ultra-common.schema.json",
+    "ultra-compatibility-matrix.schema.json",
+    "ultra-concept-disposition.schema.json",
+    "ultra-concept-registry.schema.json",
+    "ultra-contract-map.schema.json",
+    "ultra-evidence-ledger.schema.json",
+    "ultra-forecast-ledger.schema.json",
+    "ultra-forecast-resolution-event.schema.json",
+    "ultra-framework-gap-ledger.schema.json",
+    "ultra-order-evaluation.schema.json",
+    "ultra-output-plan.schema.json",
+    "ultra-phase-event.schema.json",
+    "ultra-read-event.schema.json",
+    "ultra-recovery-checkpoint.schema.json",
+    "ultra-recursive-lineage.schema.json",
+    "ultra-recursive-state.schema.json",
+    "ultra-red-team-report.schema.json",
+    "ultra-release-manifest.schema.json",
+    "ultra-repair-plan.schema.json",
+    "ultra-retrieval-ledger.schema.json",
+    "ultra-route-map.schema.json",
+    "ultra-run-contract.schema.json",
+    "ultra-run-migration.schema.json",
+    "ultra-run-status.schema.json",
+    "ultra-semantic-coverage.schema.json",
+    "ultra-source-lock.schema.json",
+    "ultra-source-manifest.schema.json",
+    "ultra-transformation-ledger.schema.json",
+    "ultra-validator-report.schema.json",
+    "ultra-verdict.schema.json",
+    "ultra-world-volume.schema.json",
+)
+LEGACY_V1_SNAPSHOT_NAMES = (
+    "ultra-article-review.schema.json",
+    "ultra-claim-mechanism-graph.schema.json",
+    "ultra-common.schema.json",
+    "ultra-compatibility-matrix.schema.json",
+    "ultra-evidence-ledger.schema.json",
+    "ultra-phase-event.schema.json",
+    "ultra-read-event.schema.json",
+    "ultra-recovery-checkpoint.schema.json",
+    "ultra-release-manifest.schema.json",
+    "ultra-run-contract.schema.json",
+    "ultra-run-status.schema.json",
+    "ultra-semantic-coverage.schema.json",
+    "ultra-validator-report.schema.json",
+    "ultra-verdict.schema.json",
+)
+_LEGACY_V1_SCHEMA_NAME_SET = frozenset(LEGACY_V1_SCHEMA_NAMES)
+_LEGACY_V1_SNAPSHOT_NAME_SET = frozenset(LEGACY_V1_SNAPSHOT_NAMES)
 
 
 @_FORMAT_CHECKER.checks("date-time")
@@ -111,6 +177,10 @@ def _is_rfc3339_date_time(value: object) -> bool:
 
 def schema_root() -> Path:
     return Path(__file__).resolve().parents[2] / "schemas"
+
+
+def legacy_schema_root() -> Path:
+    return schema_root() / "legacy-v1"
 
 
 def _compatibility_matrix_path() -> Path:
@@ -155,6 +225,21 @@ def _validate_common_current_binding(document: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_current_release_identity(document: Mapping[str, Any]) -> None:
+    try:
+        schema_release_id = document["allOf"][1]["properties"]["release_id"][
+            "const"
+        ]
+    except (KeyError, IndexError, TypeError) as error:
+        raise UltraSchemaError(
+            "Ultra release schema does not expose an exact current release ID"
+        ) from error
+    if schema_release_id != runtime_constants.CURRENT_RELEASE_ID:
+        raise UltraSchemaError(
+            "Ultra release schema current release ID drifts from constants"
+        )
+
+
 def _validate_schema_document(
     schema_name: str,
     document: dict[str, Any],
@@ -169,6 +254,8 @@ def _validate_schema_document(
         raise UltraSchemaError(f"invalid Ultra schema {schema_name!r}: {error}") from error
     if schema_name == "ultra-common.schema.json":
         _validate_common_current_binding(document)
+    elif schema_name == "ultra-release-manifest.schema.json":
+        _validate_current_release_identity(document)
     return document
 
 
@@ -253,6 +340,84 @@ def _current_schema_documents() -> tuple[tuple[str, dict[str, Any]], ...]:
     )
 
 
+def _read_legacy_v1_schema_snapshot() -> tuple[tuple[str, bytes], ...]:
+    current_root = schema_root()
+    snapshot_root = legacy_schema_root()
+    if not snapshot_root.is_dir():
+        raise UltraSchemaError("legacy v1 schema snapshot directory is missing")
+    actual_snapshots = frozenset(
+        path.name for path in snapshot_root.glob("*.schema.json") if path.is_file()
+    )
+    if actual_snapshots != _LEGACY_V1_SNAPSHOT_NAME_SET:
+        raise UltraSchemaError("legacy v1 schema snapshot set is incomplete or expanded")
+    snapshot: list[tuple[str, bytes]] = []
+    for schema_name in LEGACY_V1_SCHEMA_NAMES:
+        root = (
+            snapshot_root
+            if schema_name in _LEGACY_V1_SNAPSHOT_NAME_SET
+            else current_root
+        )
+        path = root / schema_name
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise UltraSchemaError(
+                f"cannot read legacy v1 schema {schema_name!r}: {error}"
+            ) from error
+        if len(raw) > DEFAULT_MAX_JSON_BYTES:
+            raise UltraSchemaError(
+                f"legacy v1 schema exceeds the JSON byte limit: {schema_name!r}"
+            )
+        snapshot.append((schema_name, raw))
+    return tuple(snapshot)
+
+
+@lru_cache(maxsize=2)
+def _legacy_v1_schema_documents_cached(
+    snapshot: tuple[tuple[str, bytes], ...],
+) -> tuple[tuple[str, dict[str, Any]], ...]:
+    documents: list[tuple[str, dict[str, Any]]] = []
+    for schema_name, raw in snapshot:
+        try:
+            document = load_json_object_bytes(raw, source=f"legacy-v1/{schema_name}")
+            Draft202012Validator.check_schema(document)
+        except (MemoryError, RecursionError) as error:
+            raise UltraSchemaError(
+                f"legacy v1 schema resource limit exceeded for {schema_name!r}"
+            ) from error
+        except Exception as error:
+            raise UltraSchemaError(
+                f"invalid legacy v1 schema {schema_name!r}: {error}"
+            ) from error
+        documents.append((schema_name, document))
+    return tuple(documents)
+
+
+def _legacy_v1_schema_documents() -> tuple[tuple[str, dict[str, Any]], ...]:
+    return _legacy_v1_schema_documents_cached(_read_legacy_v1_schema_snapshot())
+
+
+def _legacy_v1_version_binding() -> dict[str, object]:
+    try:
+        common = dict(_legacy_v1_schema_documents())[
+            "ultra-common.schema.json"
+        ]
+        properties = common["$defs"]["currentVersionBinding"]["allOf"][1][
+            "properties"
+        ]
+        binding = {
+            field: definition["const"]
+            for field, definition in properties.items()
+        }
+    except (KeyError, TypeError) as error:
+        raise UltraSchemaError(
+            "legacy v1 common schema does not expose its exact version binding"
+        ) from error
+    if tuple(binding) != runtime_constants.VERSION_BINDING_FIELDS:
+        raise UltraSchemaError("legacy v1 version binding fields are incomplete")
+    return binding
+
+
 def _make_schema_registry(
     *,
     isolate_contents: bool,
@@ -296,6 +461,53 @@ def build_schema_registry() -> Registry[Any]:
         isolate_contents=True,
         documents=_current_schema_documents(),
     )
+
+
+def build_legacy_v1_schema_registry() -> Registry[Any]:
+    return _make_schema_registry(
+        isolate_contents=True,
+        documents=_legacy_v1_schema_documents(),
+    )
+
+
+@lru_cache(maxsize=64)
+def _legacy_v1_validator_for_cached(
+    schema_name: str,
+    snapshot: tuple[tuple[str, bytes], ...],
+) -> Draft202012Validator:
+    documents = dict(_legacy_v1_schema_documents_cached(snapshot))
+    return Draft202012Validator(
+        documents[schema_name],
+        registry=_make_schema_registry(
+            isolate_contents=False,
+            documents=tuple(documents.items()),
+        ),
+        format_checker=_FORMAT_CHECKER,
+    )
+
+
+def _legacy_v1_validator_for(schema_name: str) -> Draft202012Validator:
+    if (
+        not isinstance(schema_name, str)
+        or schema_name not in _LEGACY_V1_SCHEMA_NAME_SET
+    ):
+        raise UltraSchemaError(f"unknown legacy v1 schema: {schema_name!r}")
+    snapshot = _read_legacy_v1_schema_snapshot()
+    return _legacy_v1_validator_for_cached(schema_name, snapshot)
+
+
+def validate_legacy_v1_instance(
+    schema_name: str,
+    instance: Mapping[str, Any],
+) -> None:
+    try:
+        _legacy_v1_validator_for(schema_name).validate(instance)
+    except ValidationError as error:
+        if "version_binding" in error.absolute_path:
+            raise ValidationError(
+                f"legacy v1 version authority binding mismatch: {error.message}"
+            ) from error
+        raise
 
 
 @lru_cache(maxsize=128)
@@ -343,6 +555,175 @@ def compute_artifact_content_sha256(artifact: Mapping[str, Any]) -> str:
         ) from error
 
 
+def _legacy_run_directory(run_layout: object) -> Path:
+    candidate = (
+        run_layout
+        if isinstance(run_layout, Path)
+        else getattr(run_layout, "run_dir", None)
+    )
+    if not isinstance(candidate, Path):
+        raise UltraSchemaError("legacy validation requires a run directory authority")
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as error:
+        raise UltraSchemaError(f"legacy run directory is unavailable: {error}") from error
+    if not resolved.is_dir():
+        raise UltraSchemaError("legacy run authority is not a directory")
+    return resolved
+
+
+def _legacy_schema_name_for_document(document: Mapping[str, Any]) -> str | None:
+    schema_id = document.get("schema_id")
+    prefix = "crossframe.ultra.v82."
+    if not isinstance(schema_id, str) or not schema_id.startswith(prefix):
+        return None
+    candidate = f"ultra-{schema_id.removeprefix(prefix)}.schema.json"
+    return candidate if candidate in _LEGACY_V1_SCHEMA_NAME_SET else None
+
+
+def _validate_legacy_run_document(
+    document: Mapping[str, Any],
+    *,
+    relative_path: Path,
+    expected_run_id: str,
+    expected_binding: Mapping[str, object],
+) -> bool:
+    schema_name = _legacy_schema_name_for_document(document)
+    if schema_name is None:
+        if relative_path.parts and relative_path.parts[0] == "artifacts":
+            raise UltraSchemaError(
+                f"legacy artifact has no v1 schema authority: {relative_path.as_posix()}"
+            )
+        binding = document.get("version_binding")
+        if binding is not None and binding != expected_binding:
+            raise UltraSchemaError(
+                f"legacy control binding differs: {relative_path.as_posix()}"
+            )
+        content_sha256 = document.get("content_sha256")
+        if content_sha256 is not None and content_sha256 != (
+            compute_artifact_content_sha256(document)
+        ):
+            raise UltraSchemaError(
+                f"legacy control content hash differs: {relative_path.as_posix()}"
+            )
+        return False
+    validate_legacy_v1_instance(schema_name, document)
+    if document.get("run_id") != expected_run_id:
+        raise UltraSchemaError(
+            f"legacy artifact run_id differs: {relative_path.as_posix()}"
+        )
+    if document.get("version_binding") != expected_binding:
+        raise UltraSchemaError(
+            f"legacy artifact version binding differs: {relative_path.as_posix()}"
+        )
+    if schema_name == "ultra-read-event.schema.json":
+        read_event = copy.deepcopy(dict(document))
+        supplied = read_event.pop("read_event_sha256", None)
+        if supplied != sha256_bytes(canonical_json_bytes(read_event)):
+            raise UltraSchemaError(
+                f"legacy read event seal differs: {relative_path.as_posix()}"
+            )
+    elif document.get("content_sha256") != compute_artifact_content_sha256(document):
+        raise UltraSchemaError(
+            f"legacy artifact content hash differs: {relative_path.as_posix()}"
+        )
+    return True
+
+
+def validate_legacy_run_read_only(run_layout: object) -> dict[str, object]:
+    run_dir = _legacy_run_directory(run_layout)
+    status_path = run_dir / "run-status.json"
+    try:
+        status_raw = status_path.read_bytes()
+        status = load_json_object_bytes(status_raw, source="legacy run-status.json")
+    except (OSError, TypeError, ValueError) as error:
+        raise UltraSchemaError(f"legacy run status is unavailable: {error}") from error
+    if status_raw != canonical_json_bytes(status):
+        raise UltraSchemaError("legacy run status is not canonical JSON")
+    expected_binding = _legacy_v1_version_binding()
+    expected_run_id = status.get("run_id")
+    if not isinstance(expected_run_id, str) or not expected_run_id:
+        raise UltraSchemaError("legacy run status has no run_id authority")
+    if status.get("status") != "complete":
+        raise UltraCompatibilityError(
+            "in-progress v1 run requires an immutable v2 child"
+        )
+
+    validated_count = 0
+    control_count = 0
+    for path in sorted(run_dir.rglob("*.json")):
+        if path.is_symlink():
+            raise UltraSchemaError("legacy validation does not follow symbolic links")
+        resolved = path.resolve(strict=True)
+        try:
+            relative = resolved.relative_to(run_dir)
+        except ValueError as error:
+            raise UltraSchemaError("legacy document escapes its run directory") from error
+        raw = resolved.read_bytes()
+        if len(raw) > DEFAULT_MAX_JSON_BYTES:
+            raise UltraSchemaError(
+                f"legacy document exceeds the JSON byte limit: {relative.as_posix()}"
+            )
+        document = load_json_object_bytes(raw, source=relative.as_posix())
+        if raw != canonical_json_bytes(document):
+            raise UltraSchemaError(
+                f"legacy document is not canonical JSON: {relative.as_posix()}"
+            )
+        if _validate_legacy_run_document(
+            document,
+            relative_path=relative,
+            expected_run_id=expected_run_id,
+            expected_binding=expected_binding,
+        ):
+            validated_count += 1
+        else:
+            control_count += 1
+
+    for path in sorted(run_dir.rglob("*.jsonl")):
+        if path.is_symlink():
+            raise UltraSchemaError("legacy validation does not follow symbolic links")
+        resolved = path.resolve(strict=True)
+        try:
+            relative = resolved.relative_to(run_dir)
+        except ValueError as error:
+            raise UltraSchemaError("legacy journal escapes its run directory") from error
+        raw = resolved.read_bytes()
+        if not raw or not raw.endswith(b"\n"):
+            raise UltraSchemaError(
+                f"legacy JSONL journal is incomplete: {relative.as_posix()}"
+            )
+        if len(raw) > DEFAULT_MAX_JSON_BYTES:
+            raise UltraSchemaError(
+                f"legacy JSONL journal exceeds the byte limit: {relative.as_posix()}"
+            )
+        for ordinal, row in enumerate(raw.splitlines(keepends=True), start=1):
+            document = load_json_object_bytes(
+                row, source=f"{relative.as_posix()}:{ordinal}"
+            )
+            if row != canonical_json_bytes(document):
+                raise UltraSchemaError(
+                    f"legacy JSONL row is not canonical: {relative.as_posix()}:{ordinal}"
+                )
+            if _validate_legacy_run_document(
+                document,
+                relative_path=relative,
+                expected_run_id=expected_run_id,
+                expected_binding=expected_binding,
+            ):
+                validated_count += 1
+            else:
+                control_count += 1
+    if validated_count == 0:
+        raise UltraSchemaError("legacy run contains no v1 schema artifacts")
+    return {
+        "overall_status": "pass",
+        "compatibility": "read-only",
+        "version_binding": expected_binding,
+        "validated_artifact_count": validated_count,
+        "validated_control_count": control_count,
+    }
+
+
 def _validate_compatibility_matrix_policy(document: Mapping[str, Any]) -> None:
     rules = document["rules"]
     rule_ids = [rule["rule_id"] for rule in rules]
@@ -383,11 +764,13 @@ def _validate_compatibility_matrix_policy(document: Mapping[str, Any]) -> None:
 
         mismatch_fields = frozenset(rule["allowed_mismatch_fields"])
         if match_kind == "known-migration":
-            if len(mismatch_fields) != 1 or not mismatch_fields.issubset(
-                _MIGRATION_MISMATCH_FIELDS
+            if (
+                tuple(rule["allowed_mismatch_fields"])
+                != _V1_TO_V2_MISMATCH_FIELDS
+                or mismatch_fields != _MIGRATION_MISMATCH_FIELDS
             ):
                 raise UltraCompatibilityError(
-                    "Ultra compatibility migration rules must bind one migration field"
+                    "Ultra compatibility migration must bind the exact v1 to v2 delta"
                 )
         elif match_kind == "mismatch-subset":
             if not mismatch_fields or not mismatch_fields.issubset(
@@ -562,7 +945,7 @@ def _matches_rule(
     match_kind = rule["match_kind"]
     allowed = frozenset(rule["allowed_mismatch_fields"])
     if match_kind == "known-migration":
-        return known_migration and bool(mismatches) and mismatches.issubset(allowed)
+        return known_migration and mismatches == allowed
     if match_kind == "mismatch-subset":
         return bool(mismatches) and mismatches.issubset(allowed)
     if match_kind == "exact":
@@ -575,7 +958,11 @@ def _matches_rule(
 def resolve_compatibility(
     recorded_binding: Mapping[str, Any],
     current_binding: Mapping[str, Any] | None = None,
+    *,
+    run_status: str | None = None,
 ) -> str:
+    if run_status is not None and run_status not in runtime_constants.RUN_STATUSES:
+        return "reject"
     recorded_snapshot = _snapshot_mapping(recorded_binding)
     if current_binding is None:
         if recorded_snapshot is None or set(recorded_snapshot) != {
@@ -619,7 +1006,15 @@ def resolve_compatibility(
     for rule in sorted(matrix["rules"], key=lambda item: item["priority"]):
         if _matches_rule(rule, mismatches, migration_is_known):
             result = rule["result"]
-            return result if result in _COMPATIBILITY_RESULTS else "reject"
+            if result not in _COMPATIBILITY_RESULTS:
+                return "reject"
+            if (
+                result == "fork-required"
+                and migration_is_known
+                and run_status == "complete"
+            ):
+                return "read-only"
+            return result
     return "reject"
 
 

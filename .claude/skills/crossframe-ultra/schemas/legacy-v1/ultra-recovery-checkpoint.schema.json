@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-recovery-checkpoint.schema.json",
+  "title": "CrossFrame Ultra immutable recovery checkpoint",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": ["boundary_kind", "boundary_id", "boundary_ordinal", "phase_event_sha256", "artifact_hashes", "evidence_cutoff", "completed_boundary", "resumable"],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.recovery-checkpoint"},
+        "boundary_kind": {"enum": ["phase", "article-packet"]},
+        "boundary_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "boundary_ordinal": {"type": "integer", "minimum": 0},
+        "phase_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"},
+        "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
+        "completed_boundary": {"type": "boolean"},
+        "resumable": {"type": "boolean"}
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "boundary_kind": {"const": "phase"},
+            "boundary_ordinal": {"const": 0}
+          },
+          "oneOf": [
+            {"properties": {"phase_id": {"const": "U0"}, "boundary_id": {"const": "U0"}}},
+            {"properties": {"phase_id": {"const": "U1"}, "boundary_id": {"const": "U1"}}},
+            {"properties": {"phase_id": {"const": "U2"}, "boundary_id": {"const": "U2"}}},
+            {"properties": {"phase_id": {"const": "U3"}, "boundary_id": {"const": "U3"}}},
+            {"properties": {"phase_id": {"const": "U4"}, "boundary_id": {"const": "U4"}}},
+            {"properties": {"phase_id": {"const": "U5"}, "boundary_id": {"const": "U5"}}},
+            {"properties": {"phase_id": {"const": "U6"}, "boundary_id": {"const": "U6"}}},
+            {"properties": {"phase_id": {"const": "U7"}, "boundary_id": {"const": "U7"}}},
+            {"properties": {"phase_id": {"const": "U8"}, "boundary_id": {"const": "U8"}}},
+            {"properties": {"phase_id": {"const": "U9"}, "boundary_id": {"const": "U9"}}},
+            {"properties": {"phase_id": {"const": "U10"}, "boundary_id": {"const": "U10"}}},
+            {"properties": {"phase_id": {"const": "U11"}, "boundary_id": {"const": "U11"}}},
+            {"properties": {"phase_id": {"const": "U12"}, "boundary_id": {"const": "U12"}}}
+          ]
+        },
+        {
+          "properties": {
+            "phase_id": {"const": "U11"},
+            "boundary_kind": {"const": "article-packet"},
+            "boundary_ordinal": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    }
+  ],
+  "unevaluatedProperties": false
+}

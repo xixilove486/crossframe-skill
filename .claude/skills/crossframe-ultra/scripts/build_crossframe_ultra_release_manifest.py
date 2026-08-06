@@ -11,7 +11,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from ultra_runtime.constants import current_version_binding
+from ultra_runtime.constants import CURRENT_RELEASE_ID, current_version_binding
 from ultra_runtime.jsonio import atomic_write_json, canonical_json_bytes
 from ultra_runtime.schemas import (
     compute_artifact_content_sha256,
@@ -23,7 +23,7 @@ from ultra_runtime.source_integrity import canonical_skill_tree_hashes
 SKILL_RELATIVE = Path("skills/crossframe-ultra")
 SOURCE_MANIFEST_RELATIVE = Path("references/source-manifest.json")
 RELEASE_MANIFEST_RELATIVE = Path("references/release-manifest.json")
-RELEASE_STAMP = "2026-08-02T00:00:00Z"
+RELEASE_STAMP = "2026-08-06T08:53:37Z"
 
 
 class ReleaseManifestBuildError(ValueError):
@@ -85,7 +85,7 @@ def build_release_manifest(repo: Path) -> dict[str, object]:
         "run_id": "ultra-release-v8.2-r1",
         "version_binding": current_version_binding(),
         "generated_at": RELEASE_STAMP,
-        "release_id": "ultra-v8.2-r1",
+        "release_id": CURRENT_RELEASE_ID,
         "release_state": "stable",
         "stable_pointer": SOURCE_MANIFEST_RELATIVE.as_posix(),
         "framework_source": {

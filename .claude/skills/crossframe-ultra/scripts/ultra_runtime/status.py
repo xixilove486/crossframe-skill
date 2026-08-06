@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
 
 from .constants import PHASES, RUN_STATUSES, current_version_binding
@@ -56,6 +56,7 @@ _RUN_STATUS_SCHEMA = "ultra-run-status.schema.json"
 _RUN_STATUS_SCHEMA_ID = "crossframe.ultra.v82.run-status"
 _UNSET = object()
 _U12_COMPLETE_AUTHORITY = object()
+_REPAIR_REOPEN_AUTHORITY = object()
 
 
 class RunStatusError(UltraRuntimeError, RuntimeError):
@@ -78,6 +79,7 @@ class RunStatusRecord:
     version_binding: Mapping[str, object]
     generated_at: str
     content_sha256: str
+    fork_authority_sha256: str | None
     phase_id: str
     status: str
     previous_status: str | None
@@ -112,6 +114,7 @@ _STATUS_FIELDS = frozenset(
         "revision",
     }
 )
+_STATUS_OPTIONAL_FIELDS = frozenset({"fork_authority_sha256"})
 
 
 def _iso_utc(value: datetime) -> str:
@@ -132,7 +135,7 @@ def _parse_utc(value: object, field: str) -> datetime:
 
 
 def _record_to_object(record: RunStatusRecord) -> dict[str, object]:
-    return {
+    value: dict[str, object] = {
         "schema_id": record.schema_id,
         "schema_version": record.schema_version,
         "run_id": record.run_id,
@@ -151,13 +154,17 @@ def _record_to_object(record: RunStatusRecord) -> dict[str, object]:
         "created_at": record.created_at,
         "revision": record.revision,
     }
+    if record.fork_authority_sha256 is not None:
+        value["fork_authority_sha256"] = record.fork_authority_sha256
+    return value
 
 
 def _record_from_object(
     value: dict[str, object], expected_run_id: str
 ) -> RunStatusRecord:
-    if set(value) != _STATUS_FIELDS:
-        unexpected = sorted(set(value) - _STATUS_FIELDS)
+    allowed_fields = _STATUS_FIELDS | _STATUS_OPTIONAL_FIELDS
+    if not _STATUS_FIELDS.issubset(value) or set(value) - allowed_fields:
+        unexpected = sorted(set(value) - allowed_fields)
         missing = sorted(_STATUS_FIELDS - set(value))
         raise ValueError(
             f"run status must be a closed object; unexpected={unexpected}, missing={missing}"
@@ -199,6 +206,11 @@ def _record_from_object(
         version_binding=MappingProxyType(dict(snapshot["version_binding"])),
         generated_at=str(snapshot["generated_at"]),
         content_sha256=str(snapshot["content_sha256"]),
+        fork_authority_sha256=(
+            None
+            if snapshot.get("fork_authority_sha256") is None
+            else str(snapshot["fork_authority_sha256"])
+        ),
         phase_id=str(snapshot["phase_id"]),
         status=str(snapshot["status"]),
         previous_status=(
@@ -237,6 +249,7 @@ def _make_record(
     created_at: str,
     updated_at: str,
     revision: int,
+    fork_authority_sha256: str | None = None,
 ) -> RunStatusRecord:
     value: dict[str, object] = {
         "schema_id": _RUN_STATUS_SCHEMA_ID,
@@ -257,6 +270,8 @@ def _make_record(
         "created_at": created_at,
         "revision": revision,
     }
+    if fork_authority_sha256 is not None:
+        value["fork_authority_sha256"] = fork_authority_sha256
     value["content_sha256"] = compute_artifact_content_sha256(value)
     return _record_from_object(value, run_id)
 
@@ -286,8 +301,22 @@ class RunStatusStore:
         value = load_json_object(self.path)
         return _record_from_object(value, self.layout.run_dir.name)
 
-    def create(self, now: datetime) -> RunStatusRecord:
+    def create(
+        self,
+        now: datetime,
+        *,
+        fork_authority_sha256: str | None = None,
+    ) -> RunStatusRecord:
         _require_utc(now, "now")
+        if fork_authority_sha256 is not None and (
+            not isinstance(fork_authority_sha256, str)
+            or len(fork_authority_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in fork_authority_sha256
+            )
+        ):
+            raise ValueError("fork authority SHA-256 must be lowercase hexadecimal")
         self._assert_paths_safe()
         timestamp = _iso_utc(now)
         record = _make_record(
@@ -301,6 +330,7 @@ class RunStatusStore:
             created_at=timestamp,
             updated_at=timestamp,
             revision=0,
+            fork_authority_sha256=fork_authority_sha256,
         )
         with _exclusive_path_lock(self.authority_lock_path):
             self._assert_paths_safe()
@@ -321,11 +351,21 @@ class RunStatusStore:
         replacement: RunStatusRecord,
         *,
         completion_authority: object | None = None,
+        repair_authority: object | None = None,
+        lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
         _validate_record(replacement, run_id)
         completing = replacement.status == "complete"
+        repairing = repair_authority is _REPAIR_REOPEN_AUTHORITY
+        if completion_authority is not None and repair_authority is not None:
+            raise RunStatusTransitionError(
+                "completion and repair authorities are mutually exclusive"
+            )
+        if repair_authority is not None and not repairing:
+            raise RunStatusTransitionError("repair reopen authority is invalid")
         if completing and completion_authority is not _U12_COMPLETE_AUTHORITY:
             raise RunStatusTransitionError(
                 "ordinary status replacement cannot complete outside the durable U12 closure"
@@ -335,11 +375,19 @@ class RunStatusStore:
                 "U12 completion authority cannot be used for an ordinary replacement"
             )
         if (
+            _cancel_convergence_intent is not None
+            and replacement.status != "cancelled"
+        ):
+            raise RunStatusTransitionError(
+                "cancel convergence authority can only commit cancelled status"
+            )
+        if (
             replacement.schema_id != expected.schema_id
             or replacement.schema_version != expected.schema_version
             or replacement.run_id != expected.run_id
             or replacement.version_binding != expected.version_binding
             or replacement.created_at != expected.created_at
+            or replacement.fork_authority_sha256 != expected.fork_authority_sha256
         ):
             raise RunStatusTransitionError(
                 "schema, run, version, and created_at authority are immutable"
@@ -356,11 +404,11 @@ class RunStatusStore:
             raise RunStatusTransitionError(
                 "replacement updated_at must advance monotonically after the old value"
             )
-        if PHASES.index(replacement.current_phase) < PHASES.index(
+        if not repairing and PHASES.index(replacement.current_phase) < PHASES.index(
             expected.current_phase
         ):
             raise RunStatusTransitionError("current_phase cannot move backwards")
-        if expected.last_complete_phase is not None and (
+        if not repairing and expected.last_complete_phase is not None and (
             replacement.last_complete_phase is None
             or PHASES.index(replacement.last_complete_phase)
             < PHASES.index(expected.last_complete_phase)
@@ -368,7 +416,13 @@ class RunStatusStore:
             raise RunStatusTransitionError("last_complete_phase cannot move backwards")
         allowed = RUN_STATUS_TRANSITIONS[expected.status]
         allowed_completion = completing and expected.status == "running"
-        if not allowed_completion and replacement.status not in allowed:
+        allowed_repair = (
+            repairing
+            and expected.status not in {"complete", "failed", "cancelled"}
+            and replacement.status == "running"
+            and replacement.validation_passed is False
+        )
+        if not allowed_completion and not allowed_repair and replacement.status not in allowed:
             terminal = expected.status in {"complete", "failed", "cancelled"}
             qualifier = "terminal " if terminal else ""
             raise RunStatusTransitionError(
@@ -378,28 +432,83 @@ class RunStatusStore:
         self._assert_paths_safe()
         with _exclusive_path_lock(self.authority_lock_path):
             self._assert_paths_safe()
-            with _exclusive_path_lock(self.lifecycle_lock_path):
-                self._assert_paths_safe()
-                with _exclusive_path_lock(self.lock_path):
+            from .locks import (
+                CancelledRunError,
+                LeaseOwnershipError,
+                _cancel_intent_lock_path,
+                _read_lease,
+                _require_owner,
+                load_cancel_intent,
+            )
+
+            with _exclusive_path_lock(_cancel_intent_lock_path(self.layout)):
+                intent = load_cancel_intent(self.layout)
+                if intent is not None and (
+                    replacement.status != "cancelled"
+                    or _cancel_convergence_intent != intent
+                ):
+                    raise CancelledRunError(
+                        "cancel intent blocks ordinary status mutation"
+                    )
+                if intent is None and _cancel_convergence_intent is not None:
+                    raise RunStatusTransitionError(
+                        "cancel convergence authority requires the current cancel intent"
+                    )
+                with _exclusive_path_lock(self.lifecycle_lock_path):
                     self._assert_paths_safe()
-                    current = self.read()
-                    if (
-                        current.revision != expected.revision
-                        or current.updated_at != expected.updated_at
-                        or current != expected
-                    ):
-                        raise RunStatusConflictError(
-                            "status CAS rejected stale revision or updated_at"
+                    if lease is None:
+                        raise LeaseOwnershipError(
+                            "status mutation requires the current writer lease"
                         )
-                    atomic_write_json(self.path, _record_to_object(replacement))
+                    _require_owner(_read_lease(self.layout), lease)
+                    with _exclusive_path_lock(self.lock_path):
+                        self._assert_paths_safe()
+                        current = self.read()
+                        if (
+                            current.revision != expected.revision
+                            or current.updated_at != expected.updated_at
+                            or current != expected
+                        ):
+                            raise RunStatusConflictError(
+                                "status CAS rejected stale revision or updated_at"
+                            )
+                        atomic_write_json(self.path, _record_to_object(replacement))
         return replacement
 
     def replace(
         self,
         expected: RunStatusRecord,
         replacement: RunStatusRecord,
+        *,
+        lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
-        return self._replace(expected, replacement)
+        run_id = self.layout.run_dir.name
+        _validate_record(expected, run_id)
+        _validate_record(replacement, run_id)
+        if lease is not None:
+            return self._replace(
+                expected,
+                replacement,
+                lease=lease,
+                _cancel_convergence_intent=_cancel_convergence_intent,
+            )
+        from .locks import acquire_run_lease, release_run_lease
+
+        owned = acquire_run_lease(
+            self.layout,
+            _parse_utc(replacement.updated_at, "updated_at"),
+            timedelta(minutes=5),
+        )
+        try:
+            return self._replace(
+                expected,
+                replacement,
+                lease=owned,
+                _cancel_convergence_intent=_cancel_convergence_intent,
+            )
+        finally:
+            release_run_lease(self.layout, owned)
 
     def transition(
         self,
@@ -411,6 +520,8 @@ class RunStatusStore:
         last_complete_phase: str | None | object = _UNSET,
         reason: str | None = None,
         validation_passed: bool = False,
+        lease: object | None = None,
+        _cancel_convergence_intent: object | None = None,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         if not isinstance(status, str) or status not in RUN_STATUSES:
@@ -438,8 +549,83 @@ class RunStatusStore:
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
         )
-        return self.replace(expected, replacement)
+        return self.replace(
+            expected,
+            replacement,
+            lease=lease,
+            _cancel_convergence_intent=_cancel_convergence_intent,
+        )
+
+    def reopen_for_repair(
+        self,
+        expected: RunStatusRecord,
+        now: datetime,
+        *,
+        reset_from_phase: str,
+        invalidation_event_sha256: str,
+        generation: int,
+        lease: object,
+    ) -> RunStatusRecord:
+        _require_utc(now, "now")
+        _validate_record(expected, self.layout.run_dir.name)
+        if reset_from_phase not in PHASES:
+            raise ValueError("repair reset phase is outside U0-U12")
+        if not isinstance(invalidation_event_sha256, str):
+            raise TypeError("repair invalidation event SHA-256 must be a string")
+        if type(generation) is not int or generation < 1:
+            raise ValueError("repair generation must be a positive integer")
+        from . import recovery
+
+        authority, compatibility, _ = recovery._validate_authority_record(self.layout)
+        events = recovery._read_events(
+            self.layout,
+            authority,
+            compatibility=compatibility,
+        )
+        matches = [
+            event
+            for event in events
+            if event.get("event_sha256") == invalidation_event_sha256
+        ]
+        if len(matches) != 1:
+            raise RunStatusTransitionError(
+                "repair reopen requires one validated invalidation event"
+            )
+        invalidation = matches[0]
+        if (
+            invalidation.get("status") != "invalidated"
+            or invalidation.get("reset_from_phase") != reset_from_phase
+            or invalidation.get("generation") != generation
+        ):
+            raise RunStatusTransitionError(
+                "repair reopen authority differs from the requested boundary"
+            )
+        reset_index = PHASES.index(reset_from_phase)
+        last_complete = PHASES[reset_index - 1] if reset_index else None
+        replacement = _make_record(
+            run_id=expected.run_id,
+            status="running",
+            previous_status=expected.status,
+            current_phase=reset_from_phase,
+            last_complete_phase=last_complete,
+            reason=(
+                "repair generation "
+                f"{generation} reopened by {invalidation_event_sha256}"
+            ),
+            validation_passed=False,
+            created_at=expected.created_at,
+            updated_at=_iso_utc(now),
+            revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
+        )
+        return self._replace(
+            expected,
+            replacement,
+            repair_authority=_REPAIR_REOPEN_AUTHORITY,
+            lease=lease,
+        )
 
     def commit_u12_complete(
         self,
@@ -447,6 +633,7 @@ class RunStatusStore:
         now: datetime,
         *,
         reason: str,
+        lease: object | None = None,
     ) -> RunStatusRecord:
         _require_utc(now, "now")
         _validate_record(expected, self.layout.run_dir.name)
@@ -468,9 +655,24 @@ class RunStatusStore:
             created_at=expected.created_at,
             updated_at=_iso_utc(now),
             revision=expected.revision + 1,
+            fork_authority_sha256=expected.fork_authority_sha256,
         )
-        return self._replace(
-            expected,
-            replacement,
-            completion_authority=_U12_COMPLETE_AUTHORITY,
-        )
+        if lease is not None:
+            return self._replace(
+                expected,
+                replacement,
+                completion_authority=_U12_COMPLETE_AUTHORITY,
+                lease=lease,
+            )
+        from .locks import acquire_run_lease, release_run_lease
+
+        owned = acquire_run_lease(self.layout, now, timedelta(minutes=5))
+        try:
+            return self._replace(
+                expected,
+                replacement,
+                completion_authority=_U12_COMPLETE_AUTHORITY,
+                lease=owned,
+            )
+        finally:
+            release_run_lease(self.layout, owned)

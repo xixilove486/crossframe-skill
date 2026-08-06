@@ -72,6 +72,15 @@ BLIND_RECOVERY_FIELD_IDS = (
     "residuals",
     "reversal_conditions",
 )
+QUALITY_DIMENSIONS = (
+    "direct-answer",
+    "evidence-boundary",
+    "mechanism-competition",
+    "recursive-expansion",
+    "reversal-conditions",
+    "action-comparison",
+    "reader-independence",
+)
 
 _PACKET_FIELDS = frozenset(
     {
@@ -927,6 +936,131 @@ def validate_reader_article(article_text: str) -> None:
     _validate_reader_prose(article_text)
 
 
+def _quality_spans(article_text: str) -> tuple[str, ...]:
+    return tuple(
+        " ".join(raw.split())
+        for raw in re.split(
+            r"\n[ \t]*\n|^#{1,6}[^\n]*$",
+            article_text,
+            flags=re.MULTILINE,
+        )
+        if " ".join(raw.split())
+    )
+
+
+def _quality_content_characters(value: str) -> int:
+    return sum(character.isalnum() for character in value)
+
+
+def evaluate_answer_quality(
+    article_text: str,
+    contract: Mapping[str, object],
+) -> dict[str, object]:
+    if not isinstance(article_text, str):
+        raise TypeError("article_text must be text")
+    if not isinstance(contract, Mapping):
+        raise TypeError("answer quality contract must be a mapping")
+    raw_dimensions = contract.get("dimensions")
+    if not isinstance(raw_dimensions, Sequence) or isinstance(
+        raw_dimensions, (str, bytes, bytearray)
+    ):
+        raise ArticleContractError("answer quality dimensions must be a sequence")
+    dimensions = tuple(raw_dimensions)
+    dimension_ids = tuple(
+        item.get("dimension_id") if isinstance(item, Mapping) else None
+        for item in dimensions
+    )
+    if dimension_ids != QUALITY_DIMENSIONS:
+        raise ArticleContractError(
+            "answer quality contract must contain the frozen dimension order"
+        )
+
+    spans = _quality_spans(article_text)
+    used_spans: set[int] = set()
+    statuses: dict[str, str] = {}
+    for raw in dimensions:
+        if not isinstance(raw, Mapping):
+            raise ArticleContractError("answer quality dimension must be a mapping")
+        dimension_id = str(raw["dimension_id"])
+        minimum = raw.get("minimum_span_characters")
+        if type(minimum) is not int or minimum < 1:
+            raise ArticleContractError(
+                f"answer quality dimension {dimension_id} needs a positive span minimum"
+            )
+        raw_groups = raw.get("required_anchor_groups")
+        if not isinstance(raw_groups, Sequence) or isinstance(
+            raw_groups, (str, bytes, bytearray)
+        ) or not raw_groups:
+            raise ArticleContractError(
+                f"answer quality dimension {dimension_id} needs anchor groups"
+            )
+        matched: list[int] = []
+        for raw_group in raw_groups:
+            if not isinstance(raw_group, Sequence) or isinstance(
+                raw_group, (str, bytes, bytearray)
+            ) or not raw_group:
+                raise ArticleContractError(
+                    f"answer quality dimension {dimension_id} has an invalid anchor group"
+                )
+            anchors = tuple(raw_group)
+            if any(type(anchor) is not str or not anchor for anchor in anchors):
+                raise ArticleContractError(
+                    f"answer quality dimension {dimension_id} has an invalid anchor"
+                )
+            candidate = next(
+                (
+                    index
+                    for index, span in enumerate(spans)
+                    if index not in used_spans
+                    and _quality_content_characters(span) >= minimum
+                    and all(anchor in span for anchor in anchors)
+                ),
+                None,
+            )
+            if candidate is None:
+                matched = []
+                break
+            matched.append(candidate)
+        if matched:
+            used_spans.update(matched)
+            statuses[dimension_id] = "pass"
+        else:
+            statuses[dimension_id] = "fail"
+
+    simulated_values = contract.get("simulated_values", [])
+    qualifiers = contract.get("simulation_qualifiers", [])
+    if not isinstance(simulated_values, Sequence) or isinstance(
+        simulated_values, (str, bytes, bytearray)
+    ) or not isinstance(qualifiers, Sequence) or isinstance(
+        qualifiers, (str, bytes, bytearray)
+    ):
+        raise ArticleContractError("simulation quality boundaries must be sequences")
+    if any(type(value) is not str or not value for value in simulated_values) or any(
+        type(value) is not str or not value for value in qualifiers
+    ):
+        raise ArticleContractError("simulation quality boundaries must contain text")
+    simulated_as_fact = "pass"
+    for value in simulated_values:
+        containing = [span for span in spans if value in span]
+        if containing and any(
+            not any(qualifier in span for qualifier in qualifiers)
+            for span in containing
+        ):
+            simulated_as_fact = "fail"
+            break
+    overall = (
+        "pass"
+        if set(statuses.values()) == {"pass"} and simulated_as_fact == "pass"
+        else "fail"
+    )
+    return {
+        "schema_id": "crossframe.ultra.v82.answer-quality",
+        "dimensions": statuses,
+        "simulated_as_fact": simulated_as_fact,
+        "overall_status": overall,
+    }
+
+
 def assemble_article(
     output_plan: Mapping[str, object],
     packets: Iterable[Mapping[str, object]],
@@ -966,7 +1100,9 @@ __all__ = (
     "U10_OUTPUT_PLAN_PATH",
     "build_output_plan_artifact",
     "contains_machine_dump",
+    "evaluate_answer_quality",
     "OFFICIAL_ARTICLE_FILENAME",
+    "QUALITY_DIMENSIONS",
     "REQUIRED_READER_APPENDICES",
     "REQUIRED_READER_SECTIONS",
     "ReaderSection",

@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from .constants import PHASES, current_version_binding
+from .foundation import (
+    FoundationInputError,
+    load_input_inventory,
+    load_request_profile,
+)
+from .host_handshake import HostActionSeal
 from .jsonio import (
     atomic_write_bytes,
     atomic_write_json,
@@ -17,6 +23,7 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import Lease
 from .paths import (
     RootPolicy,
     RunLayout,
@@ -30,9 +37,6 @@ from .schemas import compute_artifact_content_sha256, validate_phase_artifact
 
 
 AUTHORING_SLOT_RELATIVE_PATHS = (
-    "U01-read-events.jsonl",
-    "U02-retrieval-ledger.json",
-    "U03-evidence-ledger.json",
     "U04-world-volume.json",
     "U05-transformation-ledger.json",
     "U05-concept-disposition.json",
@@ -71,12 +75,25 @@ _REQUEST_INTAKE_AUTHORITY_FIELDS = frozenset(
 )
 
 
-class FoundationInputError(ValueError):
-    """The immutable request cannot authorize a fresh U0-U3 foundation."""
-
-
 class FoundationRecoveryError(RuntimeError):
     """A partial foundation cannot continue from its durable checkpoint."""
+
+
+class _AuthoringWaitSignal(RuntimeError):
+    def __init__(self, action: Mapping[str, object]) -> None:
+        super().__init__("materialization is awaiting the next model-owned slot")
+        self.action = copy.deepcopy(dict(action))
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializationProgress:
+    outcome: str
+    run_id: str
+    status: str
+    current_phase: str
+    last_complete_phase: str | None
+    next_action: dict[str, object] | None
+    final_chat: dict[str, object] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,12 +310,193 @@ def prepare_authoring(layout: RunLayout) -> PreparedAuthoring:
     (layout.authoring_dir / "article" / "packets").mkdir(parents=True, exist_ok=True)
     control_path = layout.artifacts_dir / MATERIALIZATION_CONTROL_FILENAME
     assert_safe_descendant(layout.root, control_path)
-    atomic_write_json(control_path, build_materialization_control(layout))
+    control = build_materialization_control(layout)
+    if control_path.exists():
+        try:
+            raw = control_path.read_bytes()
+            existing = load_json_object_bytes(raw, source=str(control_path))
+        except (OSError, TypeError, ValueError) as error:
+            raise FoundationInputError("materialization control is unreadable") from error
+        if raw != canonical_json_bytes(existing) or existing != control:
+            raise FoundationInputError("materialization control authority differs")
+    else:
+        atomic_write_json(control_path, control)
     return PreparedAuthoring(
         authoring_dir=layout.authoring_dir,
         relative_slots=AUTHORING_SLOT_RELATIVE_PATHS,
         slot_paths=tuple(layout.authoring_dir / slot for slot in AUTHORING_SLOT_RELATIVE_PATHS),
         control_path=control_path,
+    )
+
+
+_AUTHORING_PHASE_GROUPS: dict[str, tuple[str, ...]] = {
+    "U4": ("U04-world-volume.json",),
+    "U5": ("U05-transformation-ledger.json", "U05-concept-disposition.json"),
+    "U6": ("U06-claim-mechanism-graph.json",),
+    "U7": ("U07-recursive-states/<node-id>.json", "U07-recursive-lineage.json"),
+    "U8": ("U08-order-evaluation.json", "U08-red-team-report.json"),
+    "U9": (
+        "U09-verdict.json",
+        "U09-action-ranking.json",
+        "U09-forecast-ledger.json",
+    ),
+    "U10": ("U10-framework-gap-ledger.json", "U10-output-plan.json"),
+    "U11": (
+        "U11-semantic-coverage.json",
+        "U11-article-review.json",
+        "完整推演档案.md",
+    ),
+}
+
+
+def _authoring_slot_paths(
+    layout: RunLayout,
+    relative_path: str,
+) -> tuple[Path, ...]:
+    if relative_path == "U07-recursive-states/<node-id>.json":
+        return tuple(
+            sorted(
+                (layout.authoring_dir / "U07-recursive-states").glob("*.json"),
+                key=lambda path: path.name,
+            )
+        )
+    if relative_path == "article/packets/<packet-id>.md":
+        return tuple(
+            sorted(
+                (layout.authoring_dir / "article/packets").glob("*.md"),
+                key=lambda path: path.name,
+            )
+        )
+    path = layout.authoring_dir / relative_path
+    return (path,) if path.is_file() else ()
+
+
+def _authoring_slot_exists(layout: RunLayout, relative_path: str) -> bool:
+    return bool(_authoring_slot_paths(layout, relative_path))
+
+
+def _validate_present_authoring_slots(
+    layout: RunLayout,
+    relative_paths: Sequence[str],
+) -> None:
+    for relative_path in relative_paths:
+        for path in _authoring_slot_paths(layout, relative_path):
+            try:
+                if path.suffix.casefold() == ".json":
+                    load_json_object(path)
+                    continue
+                raw = path.read_bytes()
+                text = raw.decode("utf-8")
+            except (OSError, TypeError, UnicodeDecodeError, ValueError) as error:
+                raise ValueError(
+                    f"model-authored slot is unreadable: {relative_path}"
+                ) from error
+            if not text.strip() or "\x00" in text or text.startswith("\ufeff"):
+                raise ValueError(
+                    f"model-authored slot is unreadable: {relative_path}"
+                )
+
+
+def next_authoring_action(
+    layout: RunLayout,
+    phase_store: object,
+) -> dict[str, object] | None:
+    """Return the unique next model-owned slot, or ``None`` when U4-U11 are ready."""
+
+    _validate_layout(layout)
+    current = getattr(phase_store, "current_phase", None)
+    if not isinstance(current, str):
+        return None
+    try:
+        phase_number = int(current[1:])
+    except (ValueError, IndexError):
+        return None
+    next_phase = f"U{phase_number + 1}"
+    group = _AUTHORING_PHASE_GROUPS.get(next_phase)
+    if group is None:
+        return None
+    if next_phase == "U11":
+        packet_slot = "article/packets/<packet-id>.md"
+        _validate_present_authoring_slots(layout, (*group, packet_slot))
+        if not _authoring_slot_exists(layout, packet_slot):
+            return {
+                "action_kind": "authoring",
+                "owner": "model",
+                "phase_id": "U11",
+                "relative_path": packet_slot,
+            }
+    else:
+        _validate_present_authoring_slots(layout, group)
+    missing = tuple(path for path in group if not _authoring_slot_exists(layout, path))
+    if not missing:
+        return None
+    action: dict[str, object] = {
+        "action_kind": "authoring",
+        "owner": "model",
+        "phase_id": next_phase,
+        "relative_path": missing[0],
+    }
+    if len(missing) > 1:
+        action["relative_paths"] = list(missing)
+    return action
+
+
+def foundation_progress_projection(
+    layout: RunLayout,
+    progress: object,
+) -> MaterializationProgress:
+    """Project a foundation result into the stable public progress shape."""
+
+    pending = getattr(progress, "pending_action", None)
+    phase_store = getattr(progress, "phase_store", None)
+    completed_phase = getattr(progress, "completed_phase", None)
+    if pending is not None:
+        action = copy.deepcopy(getattr(pending, "document", pending))
+        phase_id = str(action.get("phase_id", completed_phase or "U0"))
+        last = None if phase_store is None else getattr(phase_store, "current_phase", None)
+        return MaterializationProgress(
+            outcome="awaiting-host-action",
+            run_id=layout.run_dir.name,
+            status="running",
+            current_phase=phase_id,
+            last_complete_phase=last,
+            next_action=action,
+            final_chat=None,
+        )
+    if getattr(progress, "outcome", None) == "blocked":
+        last = None if phase_store is None else getattr(phase_store, "current_phase", None)
+        current = last or completed_phase or "U0"
+        return MaterializationProgress(
+            outcome="blocked",
+            run_id=layout.run_dir.name,
+            status="blocked",
+            current_phase=str(current),
+            last_complete_phase=last,
+            next_action=None,
+            final_chat=None,
+        )
+    if phase_store is None:
+        raise FoundationRecoveryError("foundation progress has no PhaseStore")
+    last = getattr(phase_store, "current_phase", None)
+    action = next_authoring_action(layout, phase_store)
+    if action is not None:
+        return MaterializationProgress(
+            outcome="awaiting-authoring",
+            run_id=layout.run_dir.name,
+            status="running",
+            current_phase=str(action["phase_id"]),
+            last_complete_phase=last,
+            next_action=action,
+            final_chat=None,
+        )
+    return MaterializationProgress(
+        outcome="foundation-complete",
+        run_id=layout.run_dir.name,
+        status="running",
+        current_phase=str(last),
+        last_complete_phase=last,
+        next_action=None,
+        final_chat=None,
     )
 
 
@@ -1294,13 +1492,18 @@ def _completed_phase_event(phase_store: object, phase_id: str) -> dict[str, obje
     events = getattr(phase_store, "events", None)
     if not isinstance(events, tuple):
         return None
-    matching = [
-        dict(event)
-        for event in events
-        if isinstance(event, Mapping)
-        and event.get("phase_id") == phase_id
-        and event.get("status") == "complete"
-    ]
+    active: list[dict[str, object]] = []
+    for event in events:
+        if not isinstance(event, Mapping):
+            raise ValueError("phase event history contains a non-mapping")
+        if event.get("status") == "complete":
+            active.append(dict(event))
+        elif event.get("status") == "invalidated":
+            reset_from = event.get("reset_from_phase")
+            if not isinstance(reset_from, str) or reset_from not in PHASES:
+                raise ValueError("phase invalidation has no reset authority")
+            active = active[: PHASES.index(reset_from)]
+    matching = [event for event in active if event.get("phase_id") == phase_id]
     if len(matching) > 1:
         raise ValueError(f"phase {phase_id} has multiple complete events")
     return None if not matching else matching[0]
@@ -1365,6 +1568,14 @@ def _load_and_validate_upstream(
     spec: ArtifactSpec,
 ) -> dict[str, object]:
     source = layout.authoring_dir / relative_path
+    if relative_path in {
+        "U01-read-events.jsonl",
+        "U02-retrieval-ledger.json",
+        "U03-evidence-ledger.json",
+    } and source.exists():
+        raise FoundationRecoveryError(
+            f"runtime-owned foundation artifact was placed in model authoring: {relative_path}"
+        )
     if not source.is_file():
         destination = layout.artifacts_dir / spec.artifact_relative_path
         if destination.is_file():
@@ -1438,6 +1649,7 @@ def _seal_json_phase(
     input_artifact_hashes: Sequence[str],
     validate_documents: Callable[[Sequence[Mapping[str, object]]], None],
     create_checkpoint: Callable[..., object],
+    commit_guard: Callable[[], None],
 ) -> tuple[dict[str, object], list[dict[str, object]], list[Path]]:
     completed = _completed_phase_event(phase_store, phase_id)
     if completed is not None:
@@ -1450,6 +1662,7 @@ def _seal_json_phase(
     documents: list[dict[str, object]] = []
     destinations: list[Path] = []
     for source in sources:
+        commit_guard()
         spec = _spec_for_path(layout, source)
         authored_artifact_sha256 = _full_artifact_sha256(load_json_object(source))
         sealed = seal_authoring_artifact(
@@ -1460,6 +1673,7 @@ def _seal_json_phase(
             authority_values=authority_values,
         )
         destination = artifact_destination(layout, source)
+        commit_guard()
         atomic_write_json(destination, sealed)
         documents.append(sealed)
         destinations.append(destination)
@@ -1477,6 +1691,7 @@ def _seal_json_phase(
         else:
             authority_documents[name] = sealed
     validate_documents(documents)
+    commit_guard()
     event = record_materialized_phase(
         layout,
         phase_store,
@@ -1484,6 +1699,7 @@ def _seal_json_phase(
         destinations,
         input_artifact_hashes=input_artifact_hashes,
     )
+    commit_guard()
     create_checkpoint(
         layout,
         phase_store,
@@ -1624,11 +1840,14 @@ def materialize_u4_u11(
     *,
     now: datetime,
     create_checkpoint: Callable[..., object],
-) -> MaterializedBundle:
+    commit_guard: Callable[[], None],
+) -> MaterializedBundle | HostActionSeal:
     _validate_layout(layout)
     _require_utc(now, "now")
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
         raise ValueError("repo must be an existing Path")
+    if not callable(create_checkpoint) or not callable(commit_guard):
+        raise TypeError("create_checkpoint and commit_guard must be callable")
     prepared = prepare_authoring(layout)
     documents: dict[str, Mapping[str, object]] = {}
     phase_events: list[dict[str, object]] = []
@@ -1647,7 +1866,16 @@ def materialize_u4_u11(
         (evidence_path, evidence)
     ]
 
-    from . import article, concept_closure, coverage, forecast, judgment, recursion, world_volume
+    from . import (
+        article,
+        concept_closure,
+        coverage,
+        forecast,
+        judgment,
+        recursion,
+        semantic_review,
+        world_volume,
+    )
 
     u4_source = prepared.authoring_dir / "U04-world-volume.json"
 
@@ -1675,6 +1903,7 @@ def materialize_u4_u11(
         input_artifact_hashes=_phase_input_hashes(documents, "evidence"),
         validate_documents=validate_u4,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["world_volume"] = values[0]
     phase_events.append(event)
@@ -1721,6 +1950,7 @@ def materialize_u4_u11(
         input_artifact_hashes=_phase_input_hashes(documents, "evidence", "world_volume"),
         validate_documents=validate_u5,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     if required_concept_semantic_unit_ids is None:
         raise RuntimeError("U5 validation did not return concept semantic units")
@@ -1763,6 +1993,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u6,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["claim_mechanism_graph"] = values[0]
     phase_events.append(event)
@@ -1830,6 +2061,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u7,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     state_values = values[:-1]
     lineage = values[-1]
@@ -1881,6 +2113,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u8,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["order_evaluation"], documents["red_team_report"] = values
     phase_events.append(event)
@@ -1945,6 +2178,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u9,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["verdict"], documents["action_ranking"], documents["forecast_ledger"] = values
     phase_events.append(event)
@@ -2008,6 +2242,7 @@ def materialize_u4_u11(
         ),
         validate_documents=validate_u10,
         create_checkpoint=create_checkpoint,
+        commit_guard=commit_guard,
     )
     documents["framework_gap_ledger"], documents["output_plan"] = values
     phase_events.append(event)
@@ -2021,22 +2256,41 @@ def materialize_u4_u11(
     )
     packets = _packet_mappings(documents["output_plan"], packet_paths)
     partial_path = prepared.authoring_dir / PARTIAL_ARTICLE_RELATIVE_PATH
+    commit_guard()
     assembled = article.assemble_article(documents["output_plan"], packets, partial_path)
     u11_event = _completed_phase_event(phase_store, "U11")
+    active_generation = getattr(phase_store, "active_generation", 0)
+    if type(active_generation) is not int or active_generation < 0:
+        raise ValueError("U11 semantic review active generation is invalid")
+    persisted_semantic_action = semantic_review.load_semantic_review_action(
+        layout,
+        active_generation,
+    )
     u11_generated_at = now
-    if u11_event is not None:
+    if u11_event is not None or persisted_semantic_action is not None:
         existing_coverage_path = artifact_destination(
             layout,
             prepared.authoring_dir / "U11-semantic-coverage.json",
         )
         existing_coverage = load_json_object(existing_coverage_path)
+        if persisted_semantic_action is not None:
+            payload = persisted_semantic_action.document.get("payload")
+            if (
+                not isinstance(payload, Mapping)
+                or payload.get("coverage_artifact_sha256")
+                != _sha256_file(existing_coverage_path)
+            ):
+                raise ValueError(
+                    "persisted semantic review coverage authority differs"
+                )
         existing_timestamp = existing_coverage.get("generated_at")
         if not isinstance(existing_timestamp, str) or not existing_timestamp.endswith("Z"):
             raise ValueError("completed U11 coverage has no canonical generated_at")
         u11_generated_at = datetime.fromisoformat(
             existing_timestamp[:-1] + "+00:00"
         )
-    else:
+    if u11_event is None and persisted_semantic_action is None:
+        commit_guard()
         checkpoint_article_packets(
             layout,
             phase_store,
@@ -2046,6 +2300,7 @@ def materialize_u4_u11(
         )
 
     coverage_source = prepared.authoring_dir / "U11-semantic-coverage.json"
+    commit_guard()
     coverage_document = seal_authoring_artifact(
         layout,
         coverage_source,
@@ -2063,10 +2318,12 @@ def materialize_u4_u11(
         coverage_document["mappings"],
     )
     coverage_destination = artifact_destination(layout, coverage_source)
+    commit_guard()
     atomic_write_json(coverage_destination, coverage_document)
     documents["semantic_coverage"] = coverage_document
 
     review_source = prepared.authoring_dir / "U11-article-review.json"
+    commit_guard()
     authored_review = seal_authoring_artifact(
         layout,
         review_source,
@@ -2094,24 +2351,134 @@ def materialize_u4_u11(
     if authored_review != built_review:
         raise ValueError("model-authored article review differs from deterministic runtime review")
     review_destination = artifact_destination(layout, review_source)
+    commit_guard()
     atomic_write_json(review_destination, built_review)
     documents["article_review"] = built_review
 
+    intake_path = _request_intake_authority_path(layout)
+    try:
+        intake_raw = intake_path.read_bytes()
+        intake = load_json_object_bytes(intake_raw, source=str(intake_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise ValueError("semantic review requires request intake authority") from error
+    request_sha256 = intake.get("request_sha256")
+    run_contract = getattr(phase_store, "run_contract", None)
+    if (
+        intake_raw != canonical_json_bytes(intake)
+        or set(intake) != _REQUEST_INTAKE_AUTHORITY_FIELDS
+        or intake.get("schema_id")
+        != "crossframe.ultra.v82.request-intake-authority"
+        or intake.get("schema_version") != 1
+        or intake.get("run_id") != layout.run_dir.name
+        or intake.get("version_binding") != current_version_binding()
+        or intake.get("content_sha256")
+        != compute_artifact_content_sha256(intake)
+        or not isinstance(request_sha256, str)
+        or not isinstance(run_contract, Mapping)
+        or run_contract.get("request_sha256") != request_sha256
+    ):
+        raise ValueError("semantic review request intake authority differs")
+    required_concept_units = semantic_review.validate_required_concept_units(
+        documents["concept_disposition"],
+        required_concept_semantic_unit_ids,
+    )
+    u10_event = _completed_phase_event(phase_store, "U10")
+    if u10_event is None:
+        raise ValueError("semantic review requires the active U10 parent event")
+    commit_guard()
+    action = semantic_review.ensure_semantic_review_action(
+        layout,
+        request_sha256=request_sha256,
+        request_intake_authority_sha256=sha256_bytes(intake_raw),
+        u10_parent_event_sha256=_event_sha256(u10_event),
+        active_generation=active_generation,
+        article_sha256=assembled.article_sha256,
+        output_plan_artifact_sha256=_full_artifact_sha256(
+            documents["output_plan"]
+        ),
+        coverage_artifact_sha256=_full_artifact_sha256(coverage_document),
+        article_review_artifact_sha256=_full_artifact_sha256(built_review),
+        evidence_ledger_artifact_sha256=_full_artifact_sha256(
+            documents["evidence"]
+        ),
+        concept_disposition_artifact_sha256=_full_artifact_sha256(
+            documents["concept_disposition"]
+        ),
+        required_concept_semantic_unit_ids=required_concept_units,
+        now=now,
+    )
+    accepted = semantic_review.load_accepted_semantic_review_result(
+        layout,
+        action,
+    )
+    if accepted is None:
+        if u11_event is not None:
+            raise ValueError(
+                "completed U11 has no accepted semantic review receipt"
+            )
+        return action
+    host_result = semantic_review.load_host_semantic_review_result(
+        layout,
+        action,
+    )
+    semantic_document = semantic_review.project_semantic_review_artifact(
+        action=action,
+        accepted_result=accepted,
+        host_result=host_result,
+        version_binding=current_version_binding(),
+        generated_at=_canonical_utc(u11_generated_at),
+        deterministic_status="pass",
+        adversarial_status="pass",
+    )
+    if (
+        semantic_document.get("overall_status") != "pass"
+        or semantic_document.get("publication_allowed") is not True
+    ):
+        raise ValueError("fresh semantic review does not allow publication")
+    semantic_destination = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir
+        / "U09-U10-verdict"
+        / "U11-semantic-review.json",
+    )
+    if semantic_destination.exists():
+        try:
+            existing_raw = semantic_destination.read_bytes()
+            existing_semantic = load_json_object_bytes(
+                existing_raw,
+                source=str(semantic_destination),
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise ValueError("runtime semantic review artifact is unreadable") from error
+        if (
+            existing_raw != canonical_json_bytes(existing_semantic)
+            or existing_semantic != semantic_document
+        ):
+            raise ValueError("runtime semantic review artifact authority differs")
+    else:
+        commit_guard()
+        atomic_write_json(semantic_destination, semantic_document)
+    documents["semantic_review"] = semantic_document
+
     dossier_path = prepared.authoring_dir / "完整推演档案.md"
+    commit_guard()
     _canonical_markdown(dossier_path, "complete dossier")
     artifact_index_path = layout.artifacts_dir / "ultra-artifact-index.md"
     artifact_index_bytes = build_artifact_index_bytes(
         layout, additional_paths=(partial_path, dossier_path)
     )
+    commit_guard()
     atomic_write_bytes(artifact_index_path, artifact_index_bytes)
     u11_paths = (
         coverage_destination,
         review_destination,
+        semantic_destination,
         partial_path,
         dossier_path,
         artifact_index_path,
     )
     if u11_event is None:
+        commit_guard()
         u11_event = record_materialized_phase(
             layout,
             phase_store,
@@ -2119,6 +2486,7 @@ def materialize_u4_u11(
             u11_paths,
             input_artifact_hashes=_phase_input_hashes(documents, "output_plan"),
         )
+        commit_guard()
         create_checkpoint(
             layout,
             phase_store,
@@ -2134,7 +2502,12 @@ def materialize_u4_u11(
         raise ValueError("completed U11 artifacts differ from the phase event")
     phase_events.append(u11_event)
     artifact_paths.extend(
-        (coverage_destination, review_destination, artifact_index_path)
+        (
+            coverage_destination,
+            review_destination,
+            semantic_destination,
+            artifact_index_path,
+        )
     )
     return MaterializedBundle(
         phase_events=tuple(phase_events),
@@ -2147,15 +2520,24 @@ def materialize_u4_u11(
 
 
 @dataclass(frozen=True, slots=True)
-class CompleteMaterializationResult:
-    run_id: str
-    status: str
+class CompleteMaterializationResult(MaterializationProgress):
     manifest_path: Path
     article_path: Path
     dossier_path: Path
     artifact_index_path: Path
     final_chat_path: Path
     postcheck_passed: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RepairMaterializationResult:
+    run_id: str
+    status: str
+    outcome: str
+    repair_attempt_id: str
+    reopened_phase: str
+    active_generation: int
+    next_action: Mapping[str, str]
 
 
 def _resume_phase_store(result: object) -> object:
@@ -2175,6 +2557,70 @@ def _strictly_later(now: datetime, timestamp: str) -> datetime:
         raise ValueError("status updated_at is not a canonical UTC timestamp")
     previous = datetime.fromisoformat(timestamp[:-1] + "+00:00")
     return now if now > previous else previous + timedelta(microseconds=1)
+
+
+def preflight_foundation_progress(
+    layout: RunLayout,
+    status_store: object,
+    *,
+    now: datetime,
+    lease: object | None = None,
+) -> object:
+    """Validate immutable foundation state before any progress side effect."""
+
+    _validate_layout(layout)
+    _require_utc(now, "now")
+    current = status_store.read()
+    if current.status not in {"created", "running"}:
+        raise FoundationInputError(
+            f"foundation status boundary is {current.status!r}, not created or running"
+        )
+    _foundation_input_inventory(layout, status_record=current)
+    checkpoints_dir = layout.recovery_dir / "checkpoints"
+    checkpoints_exist = checkpoints_dir.is_dir() and any(
+        path.is_file() for path in checkpoints_dir.glob("*.json")
+    )
+    if not checkpoints_exist and (
+        current.current_phase != "U0" or current.last_complete_phase is not None
+    ):
+        raise FoundationInputError(
+            "fresh foundation status boundary must be created or running/U0 "
+            "with no completed phase"
+        )
+    if checkpoints_exist and current.current_phase != "U0":
+        from . import recovery
+
+        checkpoint = recovery.select_resume_checkpoint(layout)
+        expected_phase = str(checkpoint["phase_id"])
+        expected_last_complete = (
+            "U10"
+            if checkpoint.get("boundary_kind") == "article-packet"
+            else expected_phase
+        )
+        current_phase_ahead = PHASES.index(current.current_phase) > PHASES.index(
+            expected_phase
+        )
+        last_complete_ahead = (
+            current.last_complete_phase is not None
+            and PHASES.index(current.last_complete_phase)
+            > PHASES.index(expected_last_complete)
+        )
+        if current_phase_ahead or last_complete_ahead:
+            raise FoundationInputError(
+                "run status boundary is ahead of the durable checkpoint"
+            )
+    if current.status == "created":
+        current = status_store.transition(
+            current,
+            "running",
+            now,
+            current_phase=current.current_phase,
+            last_complete_phase=current.last_complete_phase,
+            reason="runtime progress admitted",
+            validation_passed=False,
+            lease=lease,
+        )
+    return current
 
 
 def _request_intake_authority_path(layout: RunLayout) -> Path:
@@ -2302,13 +2748,19 @@ def _foundation_input_inventory(
         raise FoundationInputError(
             "request intake authority differs from the current input bytes"
         )
+    load_input_inventory(layout)
 
-    files = tuple(
-        sorted(
-            (request_path, metadata_path),
-            key=lambda path: path.relative_to(layout.input_dir).as_posix(),
+    try:
+        files = tuple(
+            sorted(
+                (path for path in layout.input_dir.rglob("*") if path.is_file()),
+                key=lambda path: path.relative_to(layout.input_dir).as_posix(),
+            )
         )
-    )
+    except OSError as error:
+        raise FoundationInputError(
+            "fresh foundation input inventory is unreadable"
+        ) from error
     inputs = tuple(
         {
             "path": path.relative_to(layout.input_dir).as_posix(),
@@ -2316,6 +2768,10 @@ def _foundation_input_inventory(
             "media_type": (
                 "application/json"
                 if path.suffix.casefold() == ".json"
+                else "text/markdown"
+                if path.suffix.casefold() in {".md", ".markdown"}
+                else "text/plain"
+                if path.suffix.casefold() == ".txt"
                 else "application/octet-stream"
             ),
         }
@@ -2323,64 +2779,6 @@ def _foundation_input_inventory(
     )
     input_snapshot_sha256 = sha256_bytes(canonical_json_bytes(inputs))
     return request_bytes, metadata, inputs, input_snapshot_sha256
-
-
-def _closed_input_request(request_bytes: bytes) -> tuple[str, str]:
-    try:
-        request = load_json_object_bytes(
-            request_bytes,
-            source="input/request.bin",
-        )
-    except (TypeError, ValueError) as error:
-        raise FoundationInputError(
-            "fresh U0-U3 materialization requires a canonical closed-input JSON request"
-        ) from error
-    if request_bytes != canonical_json_bytes(request):
-        raise FoundationInputError("closed-input request bytes must be canonical JSON")
-    if set(request) != {"analysis_kind", "claim", "material"}:
-        raise FoundationInputError(
-            "closed-input request must contain exactly analysis_kind, claim, and material"
-        )
-    claim = request.get("claim")
-    material = request.get("material")
-    if (
-        request.get("analysis_kind") != "closed-input"
-        or not isinstance(claim, str)
-        or not claim.strip()
-        or not isinstance(material, str)
-        or not material.strip()
-    ):
-        raise FoundationInputError(
-            "fresh U0-U3 materialization supports only explicit closed-input requests"
-        )
-    return claim, material
-
-
-def _assert_fresh_foundation(layout: RunLayout) -> None:
-    fixed_paths = (
-        layout.artifacts_dir / "ultra-run-contract.json",
-        layout.artifacts_dir / "U00-U03-evidence/ultra-read-events.jsonl",
-        layout.artifacts_dir / "U00-U03-evidence/U02-retrieval-ledger.json",
-        layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json",
-        layout.authoring_dir / "U01-read-events.jsonl",
-        layout.authoring_dir / "U02-retrieval-ledger.json",
-        layout.authoring_dir / "U03-evidence-ledger.json",
-    )
-    residuals = [path for path in fixed_paths if path.exists()]
-    if layout.recovery_dir.exists():
-        intake_path = _request_intake_authority_path(layout)
-        residuals.extend(
-            path
-            for path in layout.recovery_dir.rglob("*")
-            if path.is_file() and path != intake_path
-        )
-    if residuals:
-        relative = sorted(
-            path.relative_to(layout.run_dir).as_posix() for path in residuals
-        )
-        raise FoundationInputError(
-            "fresh foundation contains residual durable state: " + ", ".join(relative)
-        )
 
 
 def _assert_no_uncheckpointed_foundation_residuals(
@@ -2427,48 +2825,6 @@ def _assert_no_uncheckpointed_foundation_residuals(
         )
 
 
-def _foundation_run_contract(
-    *,
-    mode: RunMode,
-    request_sha256: str,
-    evidence_cutoff: str,
-) -> tuple[dict[str, object], dict[str, str]]:
-    contract: dict[str, object] = {
-        "trigger": "crossframe-ultra",
-        "request_sha256": request_sha256,
-        "run_mode": mode.value,
-        "sensitivity": "private",
-        "retention": "retain",
-        "outbound_permission": "deidentified-only",
-        "evidence_cutoff": evidence_cutoff,
-        "capabilities": {
-            "filesystem": "available",
-            "docx_parser": "not-applicable",
-            "network": "not-applicable",
-            "retrieval": "not-applicable",
-            "validators": "available",
-            "subagents": "not-applicable",
-            "model_context": "available",
-        },
-        "resource_limits": {
-            "maximum_branches": 64,
-            "maximum_retrieval_rounds_without_material_novelty": 2,
-            "maximum_tool_retries": 3,
-            "maximum_repair_attempts": 3,
-        },
-    }
-    availability = {
-        "filesystem": "available",
-        "docx_parser": "unavailable",
-        "network": "unavailable",
-        "retrieval": "unavailable",
-        "validators": "available",
-        "subagents": "unavailable",
-        "model_context": "available",
-    }
-    return contract, availability
-
-
 def _u1_coverage_artifact(
     *,
     run_id: str,
@@ -2501,6 +2857,7 @@ def _create_phase_checkpoint(
     artifact_paths: Sequence[Path],
     *,
     now: datetime,
+    lease: object,
 ) -> object:
     create_checkpoint = getattr(recovery, "create_checkpoint", None)
     if not callable(create_checkpoint):
@@ -2513,13 +2870,17 @@ def _create_phase_checkpoint(
         boundary_ordinal=0,
         artifact_paths=tuple(artifact_paths),
         now=now,
+        lease=lease,
     )
 
 
 @dataclass(frozen=True, slots=True)
 class _FoundationContext:
+    analysis_kind: str
     claim: str
     material: str
+    material_inventory: tuple[dict[str, str], ...]
+    material_universe_sha256: str | None
     request_sha256: str
     evidence_cutoff: str
     inputs: tuple[dict[str, str], ...]
@@ -2541,10 +2902,23 @@ def _load_foundation_context(
 ) -> _FoundationContext:
     from . import source_integrity
 
-    request_bytes, metadata, inputs, input_snapshot_sha256 = (
+    _request_bytes, metadata, inputs, input_snapshot_sha256 = (
         _foundation_input_inventory(layout, status_record=status_record)
     )
-    claim, material = _closed_input_request(request_bytes)
+    profile = load_request_profile(layout)
+    material_texts: list[str] = []
+    for item in profile.material_inventory:
+        if item["media_type"] not in {"text/plain", "text/markdown"}:
+            continue
+        try:
+            material_texts.append(
+                (layout.input_dir / item["path"]).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError) as error:
+            raise FoundationInputError(
+                "text material inventory entry is unreadable"
+            ) from error
+    material = "\n\n".join(material_texts)
     evidence_cutoff = getattr(status_record, "created_at", None)
     if not isinstance(evidence_cutoff, str) or not evidence_cutoff:
         raise FoundationInputError(
@@ -2574,8 +2948,11 @@ def _load_foundation_context(
                 + ", ".join(measurement.missing)
             )
     return _FoundationContext(
-        claim=claim,
+        analysis_kind=profile.analysis_kind,
+        claim=profile.claim,
         material=material,
+        material_inventory=profile.material_inventory,
+        material_universe_sha256=profile.material_universe_sha256,
         request_sha256=str(metadata["request_sha256"]),
         evidence_cutoff=evidence_cutoff,
         inputs=inputs,
@@ -2595,6 +2972,7 @@ def _complete_foundation_u1(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import source_integrity
 
@@ -2713,6 +3091,7 @@ def _complete_foundation_u1(
         "U1",
         (source_lock_path, source_coverage_path),
         now=now,
+        lease=lease,
     )
 
 
@@ -2723,14 +3102,15 @@ def _complete_foundation_u2(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import retrieval
 
     decision = retrieval.assess_retrieval_eligibility(
         context.claim,
         phase_store=phase_store,
-        material_inventory=context.inputs,
-        material_universe_sha256=context.input_snapshot_sha256,
+        material_inventory=context.material_inventory,
+        material_universe_sha256=context.material_universe_sha256,
     )
     retrieval_ledger = retrieval.build_retrieval_ledger(
         decision,
@@ -2764,6 +3144,7 @@ def _complete_foundation_u2(
         "U2",
         (retrieval_path,),
         now=now,
+        lease=lease,
     )
 
 
@@ -2774,6 +3155,7 @@ def _complete_foundation_u3(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> None:
     from . import evidence
 
@@ -2820,6 +3202,7 @@ def _complete_foundation_u3(
         "U3",
         (evidence_path,),
         now=now,
+        lease=lease,
     )
 
 
@@ -2832,6 +3215,7 @@ def _continue_foundation_u0_u3(
     *,
     now: datetime,
     recovery: object,
+    lease: object,
 ) -> object:
     current_phase = getattr(phase_store, "current_phase", None)
     if current_phase not in {"U0", "U1", "U2"}:
@@ -2858,6 +3242,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
         current_phase = "U1"
     if current_phase == "U1":
@@ -2868,6 +3253,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
         current_phase = "U2"
     if current_phase == "U2":
@@ -2878,6 +3264,7 @@ def _continue_foundation_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
     return phase_store
 
@@ -2890,8 +3277,9 @@ def _establish_fresh_u0_u3(
     now: datetime,
     recovery: object,
     status_record: object,
+    lease: object,
 ) -> object:
-    from .state_machine import PhaseStore
+    from .foundation import advance_u0
 
     if (
         getattr(status_record, "status", None) != "running"
@@ -2901,7 +3289,18 @@ def _establish_fresh_u0_u3(
         raise FoundationInputError(
             "fresh foundation status boundary must be running/U0 with no completed phase"
         )
-    _assert_fresh_foundation(layout)
+    progress = advance_u0(layout, repo=repo, now=now, lease=lease)
+    if progress.outcome == "awaiting-host-action":
+        raise FoundationRecoveryError(
+            "fresh U0 is awaiting a capability-attestation host action"
+        )
+    phase_store = progress.phase_store
+    if (
+        progress.outcome != "advanced"
+        or progress.completed_phase != "U0"
+        or phase_store is None
+    ):
+        raise FoundationRecoveryError("fresh U0 did not produce a PhaseStore")
     context = _load_foundation_context(
         repo,
         layout,
@@ -2914,39 +3313,6 @@ def _establish_fresh_u0_u3(
     measurement = context.measurement
     if manifest is None or measurement is None:
         raise RuntimeError("fresh foundation U1 prerequisites are unavailable")
-    run_contract, capability_availability = _foundation_run_contract(
-        mode=mode,
-        request_sha256=context.request_sha256,
-        evidence_cutoff=context.evidence_cutoff,
-    )
-    phase_store = PhaseStore(
-        run_id=layout.run_dir.name,
-        version_binding=context.binding,
-        source_sha256=manifest.sha256,
-        input_artifact_hashes=tuple(item["sha256"] for item in context.inputs),
-        input_snapshot_sha256=context.input_snapshot_sha256,
-        evidence_cutoff=context.evidence_cutoff,
-        now=now,
-        run_contract=run_contract,
-        capability_availability=capability_availability,
-        source_repository=repo,
-        u1_prerequisite_measurement=measurement,
-        run_layout=layout,
-    )
-    run_contract_path = layout.artifacts_dir / "ultra-run-contract.json"
-    atomic_write_json(run_contract_path, dict(phase_store.run_contract))
-    phase_store.complete(
-        "U0",
-        artifact_hashes=(phase_store.run_contract_artifact_sha256,),
-    )
-    _create_phase_checkpoint(
-        recovery,
-        layout,
-        phase_store,
-        "U0",
-        (run_contract_path,),
-        now=now,
-    )
     return _continue_foundation_u0_u3(
         repo,
         layout,
@@ -2955,6 +3321,7 @@ def _establish_fresh_u0_u3(
         context,
         now=now,
         recovery=recovery,
+        lease=lease,
     )
 
 
@@ -2966,13 +3333,19 @@ def _resume_or_establish_u0_u3(
     now: datetime,
     recovery: object,
     status_record: object,
+    lease: object,
 ) -> object:
     resume_run = getattr(recovery, "resume_run", None)
     error_type = getattr(recovery, "RecoveryStateError", None)
     if not callable(resume_run) or not isinstance(error_type, type):
         raise RuntimeError("recovery foundation APIs are unavailable")
     try:
-        resumed = resume_run(layout, now=now)
+        resumed = resume_run(
+            layout,
+            now=now,
+            source_repository=repo.resolve(),
+            lease=lease,
+        )
     except error_type as error:
         if str(error) != "no completed resumable checkpoint is available":
             raise
@@ -2983,6 +3356,7 @@ def _resume_or_establish_u0_u3(
             now=now,
             recovery=recovery,
             status_record=status_record,
+            lease=lease,
         )
     phase_store = _resume_phase_store(resumed)
     current_phase = getattr(phase_store, "current_phase", None)
@@ -3003,6 +3377,7 @@ def _resume_or_establish_u0_u3(
             context,
             now=now,
             recovery=recovery,
+            lease=lease,
         )
     if current_phase not in PHASES[3:]:
         raise FoundationRecoveryError("durable foundation phase is invalid")
@@ -3021,6 +3396,87 @@ def _validator_set_authority(repo: Path, validation: object) -> str:
     return value
 
 
+def _apply_pending_validation_repair(
+    layout: RunLayout,
+    *,
+    now: datetime,
+    lease: object,
+) -> RepairMaterializationResult | None:
+    _require_utc(now, "now")
+    report_path = layout.validation_current_dir / "ultra-validator-report.json"
+    if not report_path.is_file():
+        return None
+    report = load_json_object(report_path)
+    if report.get("overall_status") != "fail":
+        return None
+    from . import repair
+
+    attempt_id, attempt_number = repair.current_attempt_identity(layout, now=now)
+    attempt_root = repair._repair_attempt_root(layout, attempt_id)
+    application_path = attempt_root / "repair-application.json"
+    if application_path.is_file():
+        committed_plan = load_json_object(
+            layout.validation_current_dir / "ultra-repair-plan.json"
+        )
+        repair.apply_repair_plan(
+            layout,
+            plan=committed_plan,
+            now=now,
+            lease=lease,
+        )
+        return None
+    plan = repair.build_repair_plan(
+        layout,
+        attempt_id=attempt_id,
+        attempt_number=attempt_number,
+        now=now,
+        lease=lease,
+    )
+    committed = repair.commit_repair_plan(
+        layout,
+        attempt_id=attempt_id,
+        plan=plan,
+        lease=lease,
+    )
+    if committed.get("status") != "planned":
+        return RepairMaterializationResult(
+            run_id=layout.run_dir.name,
+            status="needs_attention",
+            outcome="repair-needs-attention",
+            repair_attempt_id=attempt_id,
+            reopened_phase=str(committed["reset_from_phase"]),
+            active_generation=0,
+            next_action={
+                "phase_id": "U12",
+                "relative_path": "operator-review",
+            },
+        )
+    application = repair.apply_repair_plan(
+        layout,
+        plan=committed,
+        now=now,
+        lease=lease,
+    )
+    next_action = application.get("next_action")
+    if not isinstance(next_action, Mapping) or any(
+        not isinstance(next_action.get(field), str)
+        for field in ("phase_id", "relative_path")
+    ):
+        raise RuntimeError("repair application next action is invalid")
+    return RepairMaterializationResult(
+        run_id=layout.run_dir.name,
+        status="running",
+        outcome="repair-applied",
+        repair_attempt_id=attempt_id,
+        reopened_phase=str(application["reopened_phase"]),
+        active_generation=int(application["active_generation"]),
+        next_action={
+            "phase_id": str(next_action["phase_id"]),
+            "relative_path": str(next_action["relative_path"]),
+        },
+    )
+
+
 def _close_u12_transaction(
     layout: RunLayout,
     phase_store: object,
@@ -3030,6 +3486,7 @@ def _close_u12_transaction(
     status_store: object,
     now: datetime,
     mark_needs_attention: Callable[[str], object],
+    lease: object,
 ) -> tuple[dict[str, object], object, Path]:
     from .deliverables import (
         _mark_u12_durable,
@@ -3069,6 +3526,7 @@ def _close_u12_transaction(
                 paths.artifact_index_path,
             ),
             now=now,
+            lease=lease,
         )
         durable = True
         _mark_u12_durable(
@@ -3076,6 +3534,7 @@ def _close_u12_transaction(
             paths,
             event=event,
             checkpoint=checkpoint,
+            lease=lease,
         )
 
         journal = load_json_object(paths.journal_path)
@@ -3083,6 +3542,7 @@ def _close_u12_transaction(
             layout,
             paths,
             journal,
+            lease=lease,
         )
         if completed_journal.get("state") != "complete":
             raise RuntimeError("U12 publish journal did not complete")
@@ -3179,6 +3639,7 @@ def _close_u12_transaction(
                 recover_publish_transaction(
                     layout,
                     mark_needs_attention=mark_needs_attention,
+                    lease=lease,
                 )
             except BaseException as rollback_error:
                 add_note = getattr(error, "add_note", None)
@@ -3196,8 +3657,8 @@ def materialize_complete_run(
     now: datetime,
     entropy: bytes,
     fresh_check: Callable[[str], bytes],
-    commit_report: Callable[[str, bytes], object],
-) -> CompleteMaterializationResult:
+    commit_report: Callable[[str, bytes, Lease], object],
+) -> CompleteMaterializationResult | MaterializationProgress | RepairMaterializationResult:
     """Materialize U4-U12 through Task 12's single PhaseStore and fixed APIs."""
 
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
@@ -3232,8 +3693,11 @@ def materialize_complete_run(
         recover_publish_transaction,
     )
     from .locks import (
+        CancelledRunError,
+        LeaseOwnershipError,
         LeaseNeedsAttentionError,
         acquire_run_lease,
+        require_run_lease_owner,
         release_run_lease,
     )
     from .status import RunStatusStore
@@ -3262,9 +3726,21 @@ def materialize_complete_run(
             last_complete_phase=current.last_complete_phase,
             reason=reason,
             validation_passed=False,
+            lease=lease,
         )
         attention_marked = True
         return changed
+
+    def stop_if_cancel_requested() -> None:
+        if lease is None:
+            return
+        converge = getattr(recovery, "converge_cancel_if_requested", None)
+        if not callable(converge):
+            raise RuntimeError("cancel convergence API is unavailable")
+        if converge(layout, lease=lease, now=now) is not None:
+            raise CancelledRunError(
+                "cancel intent converged before materialization commit"
+            )
 
     try:
         try:
@@ -3285,15 +3761,33 @@ def materialize_complete_run(
                 raise
             _foundation_input_inventory(layout, status_record=current)
             raise
+        stop_if_cancel_requested()
+        current = status_store.read()
+        repair_result = _apply_pending_validation_repair(
+            layout,
+            now=now,
+            lease=lease,
+        )
+        if repair_result is not None:
+            return repair_result
         current = status_store.read()
         checkpoints_dir = layout.recovery_dir / "checkpoints"
-        if checkpoints_dir.is_dir() and any(
+        if current.status != "complete":
+            current = preflight_foundation_progress(
+                layout,
+                status_store,
+                now=now,
+                lease=lease,
+            )
+        elif checkpoints_dir.is_dir() and any(
             path.is_file() for path in checkpoints_dir.glob("*.json")
         ):
             _foundation_input_inventory(layout, status_record=current)
         if current.status == "complete":
             recovered_publication = recover_publish_transaction(
-                layout, mark_needs_attention=mark_needs_attention
+                layout,
+                mark_needs_attention=mark_needs_attention,
+                lease=lease,
             )
             if not isinstance(
                 recovered_publication, Mapping
@@ -3304,8 +3798,17 @@ def materialize_complete_run(
                 str(recovered_publication["transaction_id"]),
             )
             return CompleteMaterializationResult(
+                outcome="complete",
                 run_id=run_id,
                 status="complete",
+                current_phase="U12",
+                last_complete_phase="U12",
+                next_action=None,
+                final_chat=(
+                    load_json_object(layout.run_dir / "final-chat.json")
+                    if (layout.run_dir / "final-chat.json").is_file()
+                    else None
+                ),
                 manifest_path=paths.manifest_path,
                 article_path=paths.article_path,
                 dossier_path=paths.dossier_path,
@@ -3314,56 +3817,111 @@ def materialize_complete_run(
                 postcheck_passed=True,
             )
 
-        phase_store = _resume_or_establish_u0_u3(
-            repo,
+        from .foundation import advance_foundation
+
+        foundation = advance_foundation(
             layout,
-            mode,
+            repo=repo.resolve(),
             now=now,
-            recovery=recovery,
-            status_record=current,
+            lease=lease,
         )
+        projected = foundation_progress_projection(layout, foundation)
+        if projected.outcome in {"awaiting-host-action", "awaiting-authoring", "blocked"}:
+            return projected
+        phase_store = getattr(foundation, "phase_store", None)
+        if phase_store is None or getattr(phase_store, "current_phase", None) not in {
+            "U3",
+            "U4",
+            "U5",
+            "U6",
+            "U7",
+            "U8",
+            "U9",
+            "U10",
+            "U11",
+        }:
+            raise FoundationRecoveryError("foundation coordinator did not seal U3")
         phase_store_restored = True
-        recovered_publication = recover_publish_transaction(
-            layout, mark_needs_attention=mark_needs_attention
+        current = status_store.read()
+        _foundation_input_inventory(layout, status_record=current)
+        prepare_authoring(layout)
+        if current.status != "running":
+            raise RuntimeError(
+                f"resumed run status {current.status!r} cannot materialize"
+            )
+
+        def create_owned_checkpoint(*args: Any, **kwargs: Any) -> object:
+            checkpoint = recovery.create_checkpoint(*args, **kwargs, lease=lease)
+            if (
+                kwargs.get("boundary_kind") == "phase"
+                and kwargs.get("boundary_id") in PHASES[4:11]
+            ):
+                action = next_authoring_action(layout, phase_store)
+                if action is not None:
+                    raise _AuthoringWaitSignal(action)
+            return checkpoint
+
+        def require_materialization_commit_authority() -> None:
+            require_run_lease_owner(layout, lease)
+            stop_if_cancel_requested()
+            require_run_lease_owner(layout, lease)
+
+        try:
+            bundle = materialize_u4_u11(
+                repo,
+                layout,
+                phase_store,
+                now=now,
+                create_checkpoint=create_owned_checkpoint,
+                commit_guard=require_materialization_commit_authority,
+            )
+        except _AuthoringWaitSignal as wait:
+            stop_if_cancel_requested()
+            last_complete = getattr(phase_store, "current_phase", None)
+            if not isinstance(last_complete, str):
+                raise RuntimeError(
+                    "authoring wait has no completed phase authority"
+                ) from wait
+            return MaterializationProgress(
+                outcome="awaiting-authoring",
+                run_id=run_id,
+                status="running",
+                current_phase=str(wait.action["phase_id"]),
+                last_complete_phase=last_complete,
+                next_action=copy.deepcopy(wait.action),
+                final_chat=None,
+            )
+        if isinstance(bundle, HostActionSeal):
+            stop_if_cancel_requested()
+            if (
+                bundle.document.get("action_kind") != "semantic-review"
+                or bundle.document.get("phase_id") != "U11"
+            ):
+                raise RuntimeError(
+                    "U11 materialization returned an unauthorized host action"
+                )
+            return MaterializationProgress(
+                outcome="awaiting-host-action",
+                run_id=run_id,
+                status="running",
+                current_phase="U11",
+                last_complete_phase="U10",
+                next_action=copy.deepcopy(bundle.document),
+                final_chat=None,
+            )
+        u11_event = bundle.phase_events[-1]
+        if u11_event.get("phase_id") != "U11":
+            raise RuntimeError("materialization did not end at a complete U11 event")
+        stop_if_cancel_requested()
+        recover_publish_transaction(
+            layout,
+            mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
         if attention_marked:
             raise RuntimeError(
                 "an incomplete publication was rolled back; operator attention is required"
             )
-        current = status_store.read()
-        if current.status == "complete":
-            if not isinstance(recovered_publication, Mapping) or recovered_publication.get(
-                "state"
-            ) != "complete":
-                raise RuntimeError("terminal complete run has no complete publish journal")
-            paths = publication_paths(
-                layout,
-                str(recovered_publication["transaction_id"]),
-            )
-            return CompleteMaterializationResult(
-                run_id=run_id,
-                status="complete",
-                manifest_path=paths.manifest_path,
-                article_path=paths.article_path,
-                dossier_path=paths.dossier_path,
-                artifact_index_path=paths.artifact_index_path,
-                final_chat_path=layout.run_dir / "final-chat.json",
-                postcheck_passed=True,
-            )
-        if current.status != "running":
-            raise RuntimeError(
-                f"resumed run status {current.status!r} cannot materialize"
-            )
-        bundle = materialize_u4_u11(
-            repo,
-            layout,
-            phase_store,
-            now=now,
-            create_checkpoint=recovery.create_checkpoint,
-        )
-        u11_event = bundle.phase_events[-1]
-        if u11_event.get("phase_id") != "U11":
-            raise RuntimeError("materialization did not end at a complete U11 event")
 
         validator_set_sha256 = _validator_set_authority(repo, validation)
         manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"
@@ -3405,7 +3963,9 @@ def materialize_complete_run(
             fresh_check=fresh_check,
             commit_report=commit_report,
             mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
+        stop_if_cancel_requested()
         current_report_path = (
             layout.validation_current_dir / "ultra-validator-report.json"
         )
@@ -3425,12 +3985,22 @@ def materialize_complete_run(
             status_store=status_store,
             now=now,
             mark_needs_attention=mark_needs_attention,
+            lease=lease,
         )
         if u12_event.get("phase_id") != "U12":
             raise RuntimeError("PhaseStore did not complete U12")
         return CompleteMaterializationResult(
+            outcome="complete",
             run_id=run_id,
             status="complete",
+            current_phase="U12",
+            last_complete_phase="U12",
+            next_action=None,
+            final_chat=(
+                load_json_object(final_chat_path)
+                if final_chat_path.is_file()
+                else None
+            ),
             manifest_path=publication.paths.manifest_path,
             article_path=publication.paths.article_path,
             dossier_path=publication.paths.dossier_path,
@@ -3439,7 +4009,19 @@ def materialize_complete_run(
             postcheck_passed=True,
         )
     except BaseException as error:
-        if isinstance(error, FoundationInputError):
+        if isinstance(error, CancelledRunError) and lease is not None:
+            try:
+                converge = getattr(recovery, "converge_cancel_if_requested", None)
+                if callable(converge):
+                    converge(layout, lease=lease, now=now)
+            except BaseException as cancellation_error:
+                add_note = getattr(error, "add_note", None)
+                if callable(add_note):
+                    add_note(
+                        "failed to converge durable cancellation: "
+                        f"{cancellation_error}"
+                    )
+        elif isinstance(error, FoundationInputError):
             try:
                 rejected = status_store.read()
                 if rejected.status in {"created", "running", "interrupted"}:
@@ -3451,6 +4033,7 @@ def materialize_complete_run(
                         last_complete_phase=rejected.last_complete_phase,
                         reason=f"fresh foundation input rejected: {error}",
                         validation_passed=False,
+                        lease=lease,
                     )
             except BaseException as status_error:
                 add_note = getattr(error, "add_note", None)
@@ -3475,6 +4058,7 @@ def materialize_complete_run(
             phase_store_restored
             and publication_journal_path.is_file()
             and not attention_marked
+            and not isinstance(error, (CancelledRunError, LeaseOwnershipError))
         ):
             try:
                 mark_needs_attention(f"materialization failed: {type(error).__name__}: {error}")
@@ -3495,6 +4079,8 @@ __all__ = (
     "AUTHORING_SLOT_RELATIVE_PATHS",
     "ArtifactSpec",
     "CompleteMaterializationResult",
+    "MaterializationProgress",
+    "RepairMaterializationResult",
     "MaterializedBundle",
     "PreparedAuthoring",
     "artifact_destination",
@@ -3505,6 +4091,8 @@ __all__ = (
     "build_artifact_index_bytes",
     "materialize_complete_run",
     "materialize_u4_u11",
+    "next_authoring_action",
+    "preflight_foundation_progress",
     "prepare_authoring",
     "record_materialized_phase",
     "seal_request_intake_authority",

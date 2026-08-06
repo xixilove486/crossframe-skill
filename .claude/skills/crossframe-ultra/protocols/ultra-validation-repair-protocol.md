@@ -10,17 +10,19 @@
 - `validation/attempts/<attempt-id>/ultra-validator-report.json`, verified before atomic promotion to `validation/current`.
 - For each failure: error code, artifact, earliest affected phase, downstream reset set, retryability, and concrete repair action.
 - A schema-valid repair plan preserving unaffected upstream hashes; after a pass, official delivery, final manifest, indexes, `complete`, and final-chat projection.
+- Successful `awaiting-host-action` or `awaiting-authoring` progress remains `running`; a missing unexpired host result or expected model-owned authoring slot is not a validation failure and does not create a repair plan.
 
 ## Dependencies
 
 - Use Task 12's independent validation/artifact/repair modules and canonical `check_crossframe_ultra_artifacts.py` plus `build_crossframe_ultra_repair_plan.py` after integration.
 - Revalidate source and release freshness, version binding, tree coverage, every structured artifact, hash ancestry, identity/provenance, world structure, recursion inheritance, judgment, forecasts, semantic coverage, blind recovery, fixed-root writes, privacy, logs, checkpoints, and delivery transaction.
+- Validate pending-action/result ancestry and append-only control history from disk. Only the current writer lease owner may append authoritative status, phase, checkpoint, repair, or publication state.
 - Task 13 alone performs materialization and official promotion after the fresh report passes.
 
 ## Stop/Failure
 
 <!-- ULTRA-FRESH-CONTEXT-VALIDATION -->
-Reject stale/copied/edited reports, another run's manifest, marker stuffing, fake reads, source/article hash mismatch, simulated-as-fact material, flattened state, lost lineage, root escape, secret leakage, early official delivery, or an overbroad repair plan. <!-- ULTRA-BOUNDED-LOCAL-REPAIR --> Repair only the earliest affected phase and downstream, revalidate fresh after each attempt, and refuse a fourth repair attempt; repeated failure becomes `needs_attention`. Never edit a report or reset a valid earlier phase to obtain a pass.
+Reject stale/copied/edited reports, another run's manifest, marker stuffing, fake reads, source/article hash mismatch, simulated-as-fact material, flattened state, lost lineage, root escape, secret leakage, early official delivery, non-owner mutation, deleted history, or an overbroad repair plan. <!-- ULTRA-BOUNDED-LOCAL-REPAIR --> Repair only the earliest affected phase and downstream, revalidate fresh after each attempt, and refuse a fourth repair attempt; repeated failure becomes `needs_attention`. Never hand-edit（不得手工编辑）control, checkpoint, validation report, phase history, or lease files, and never reset a valid earlier phase to obtain a pass.
 
 ## Corresponding validator
 

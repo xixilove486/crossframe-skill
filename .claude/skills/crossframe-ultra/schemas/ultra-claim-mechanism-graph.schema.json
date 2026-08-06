@@ -95,7 +95,26 @@
         "identity": {"$ref": "#/$defs/evidenceIdentity"},
         "evidence_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
         "status": {"enum": ["active", "rejected", "unknown", "withdrawn"]}
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identity": {
+                "enum": ["observed", "reported", "inferred-from-material"]
+              }
+            },
+            "required": ["identity"]
+          },
+          "then": {
+            "properties": {
+              "evidence_refs": {
+                "$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"
+              }
+            }
+          }
+        }
+      ]
     },
     "mechanism": {
       "type": "object",

@@ -18,7 +18,10 @@ from typing import Any, Mapping, Sequence
 from jsonschema import ValidationError
 
 from check_crossframe_ultra_v82_source import (
+    CANONICAL_BLOCK_RE,
     EXPECTED_TREE_MERKLE_ROOT,
+    SOURCE_RANGES,
+    SOURCE_TREE_RELATIVE,
     validate_committed_source_snapshot,
 )
 from check_crossframe_ultra_v82_knowledge import validate_knowledge
@@ -27,6 +30,7 @@ from .constants import (
     ARTICLE_CONTRACT_VERSION,
     ARTIFACT_SCHEMA_VERSION,
     COMPILER_VERSION,
+    CURRENT_RELEASE_ID,
     FRAMEWORK_RAW_SHA256,
     FRAMEWORK_REVISION,
     FRAMEWORK_SEMANTIC_SHA256,
@@ -34,12 +38,13 @@ from .constants import (
     RUNTIME_VERSION,
     VALIDATOR_VERSION,
 )
-from .jsonio import canonical_json_bytes
+from .jsonio import canonical_json_bytes, load_json_object_bytes, sha256_bytes
 from .paths import (
     PRODUCTION_ROOT,
     RunLayout,
     RunMode,
     RootPolicy,
+    _parse_canonical_utc,
     assert_safe_descendant,
     build_run_layout,
 )
@@ -51,6 +56,8 @@ EXPECTED_TABLE_COUNT = 122
 EXPECTED_SOURCE_UNIT_COUNT = 4_753
 MAX_SOURCE_MANIFEST_BYTES = 2 * 1024 * 1024
 MAX_U1_AUTHORITY_BYTES = 8 * 1024 * 1024
+MAX_U1_READ_EVENTS_BYTES = 32 * 1024 * 1024
+SOURCE_READ_BATCH_SIZE = 512
 MIN_FREE_SPACE_RESERVE_BYTES = 1 << 30
 READ_EVENT_SCHEMA_ID = "crossframe.ultra.v82.read-event"
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -120,6 +127,9 @@ _READ_EVENT_FIELDS = frozenset(
         "read_at",
         "read_event_sha256",
     }
+)
+_HOST_READ_EVENT_FIELDS = _READ_EVENT_FIELDS | frozenset(
+    {"read_plan_sha256", "action_sha256", "host_receipt_sha256"}
 )
 _PERSISTED_READ_COVERAGE_FIELDS = frozenset(
     {
@@ -249,6 +259,7 @@ class ReadCoverageAudit:
     run_id: str
     version_binding: dict[str, object]
     source_lock_artifact_sha256: str
+    read_plan_artifact_sha256: str
     parent_event_sha256: str
     artifact_sha256: str
     _issuer_token: str
@@ -302,6 +313,7 @@ class U1AuthoritySeal:
     input_root: Path
     acl_status: str
     source_lock_artifact_sha256: str
+    read_plan_artifact_sha256: str
     read_coverage_artifact_sha256: str
     authorizes_phase: bool
     _issuer_token: str
@@ -316,7 +328,6 @@ _ISSUED_READ_SESSIONS: dict[str, str] = {}
 _READ_SESSION_RECORDS: dict[
     str, dict[str, tuple[dict[str, object], dict[str, object], str]]
 ] = {}
-_ISSUED_READ_RECEIPTS: dict[str, str] = {}
 
 
 def _register_issuer_snapshot(
@@ -397,12 +408,8 @@ def _issue_receipt(
     object.__setattr__(receipt, "parent_event_sha256", parent_event_sha256)
     object.__setattr__(receipt, "_session_token", session_token)
     fields = _receipt_fields(receipt)
-    if authorizing:
-        token, seal_sha256 = _register_issuer_snapshot(
-            _ISSUED_READ_RECEIPTS, fields
-        )
-    else:
-        token, seal_sha256 = "", _opaque_seal_sha256(fields)
+    del authorizing
+    token, seal_sha256 = "", _opaque_seal_sha256(fields)
     object.__setattr__(receipt, "_issuer_token", token)
     object.__setattr__(receipt, "_seal_sha256", seal_sha256)
     return receipt
@@ -427,34 +434,8 @@ def _receipt_fields(receipt: ReadReceipt) -> dict[str, object]:
 
 
 def _valid_authorizing_receipt(receipt: object) -> bool:
-    if not isinstance(receipt, ReadReceipt):
-        return False
-    try:
-        fields = _receipt_fields(receipt)
-        issued = _ISSUED_READ_RECEIPTS.get(receipt._issuer_token)
-        payload = {
-            "receipt_type": "crossframe.ultra.v82.anchored-source-read",
-            "source_unit_id": receipt.source_unit["unit_id"],
-            "content_sha256": receipt.content_sha256,
-            "record_sha256": receipt._record_sha256,
-            "source_manifest_sha256": receipt.source_manifest_sha256,
-            "reader_mode": receipt.reader_mode,
-            "execution_identity": copy.deepcopy(receipt.execution_identity),
-            "read_at": receipt.read_at,
-            "run_id": receipt.run_id,
-            "version_binding": copy.deepcopy(receipt.version_binding),
-            "source_lock_sha256": receipt.source_lock_sha256,
-            "parent_event_sha256": receipt.parent_event_sha256,
-        }
-        return bool(
-            issued
-            and receipt._seal_sha256 == issued == _opaque_seal_sha256(fields)
-            and receipt._session_token in _ISSUED_READ_SESSIONS
-            and receipt.receipt_sha256
-            == hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
-        )
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return False
+    del receipt
+    return False
 
 
 def _read_session_fields(session: SourceReadSession) -> dict[str, object]:
@@ -813,11 +794,15 @@ def build_source_lock(
     evidence_cutoff: str,
     run_layout: RunLayout,
     inputs: Sequence[Mapping[str, object]],
+    remeasure_prerequisites: bool = True,
 ) -> dict[str, object]:
     binding = _validate_read_version_binding(version_binding)
     if not isinstance(run_id, str) or not run_id.strip():
         raise SourceLockError("source lock run_id must be non-empty")
-    measurement = verify_u1_prerequisites(prerequisite_measurement)
+    measurement = verify_u1_prerequisites(
+        prerequisite_measurement,
+        remeasure=remeasure_prerequisites,
+    )
     if not _is_sha256(parent_event_sha256):
         raise SourceLockError("parent_event_sha256 must be a lowercase SHA-256")
     _parse_read_timestamp(generated_at)
@@ -877,6 +862,7 @@ def validate_source_lock(
     expected_evidence_cutoff: str,
     expected_inputs: Sequence[Mapping[str, object]],
     run_layout: RunLayout,
+    remeasure_prerequisites: bool = True,
 ) -> SourceLockValidation:
     if not isinstance(artifact, Mapping):
         raise SourceLockError("source lock must be an object")
@@ -887,7 +873,10 @@ def validate_source_lock(
         raise SourceLockError(f"source lock violates public schema: {error.message}") from error
     if snapshot.get("content_sha256") != _artifact_content_sha256(snapshot):
         raise SourceLockError("source lock content hash is invalid")
-    measurement = verify_u1_prerequisites(prerequisite_measurement)
+    measurement = verify_u1_prerequisites(
+        prerequisite_measurement,
+        remeasure=remeasure_prerequisites,
+    )
     binding = _validate_read_version_binding(expected_version_binding)
     input_root = _validated_run_input_root(
         run_layout,
@@ -968,6 +957,52 @@ def validate_source_lock(
     object.__setattr__(seal, "_issuer_token", token)
     object.__setattr__(seal, "_seal_sha256", seal_sha256)
     return seal
+
+
+def validate_source_lock_envelope(
+    artifact: Mapping[str, object],
+    *,
+    expected_run_id: str,
+    expected_run_mode: str,
+    expected_version_binding: Mapping[str, object],
+    expected_parent_event_sha256: str,
+    expected_evidence_cutoff: str,
+    expected_inputs: Sequence[Mapping[str, object]],
+    run_layout: RunLayout,
+) -> str:
+    if not isinstance(artifact, Mapping):
+        raise SourceLockError("source lock must be an object")
+    snapshot = copy.deepcopy(dict(artifact))
+    try:
+        validate_instance("ultra-source-lock.schema.json", snapshot)
+    except ValidationError as error:
+        raise SourceLockError(
+            f"source lock violates public schema: {error.message}"
+        ) from error
+    if snapshot.get("content_sha256") != _artifact_content_sha256(snapshot):
+        raise SourceLockError("source lock content hash is invalid")
+    binding = _validate_read_version_binding(expected_version_binding)
+    input_root = _validated_run_input_root(
+        run_layout,
+        run_id=expected_run_id,
+        run_mode=expected_run_mode,
+    )
+    _root, inputs, _hashes, snapshot_sha256, measured_acl = _measure_locked_inputs(
+        input_root,
+        expected_inputs,
+    )
+    if (
+        snapshot.get("run_id") != expected_run_id
+        or snapshot.get("version_binding") != binding
+        or snapshot.get("parent_event_sha256") != expected_parent_event_sha256
+        or snapshot.get("evidence_cutoff") != expected_evidence_cutoff
+        or snapshot.get("inputs") != inputs
+        or snapshot.get("input_snapshot_sha256") != snapshot_sha256
+        or snapshot.get("acl_status") != measured_acl
+        or snapshot.get("lock_status") != "locked"
+    ):
+        raise SourceLockError("source lock envelope differs from run or input authority")
+    return sha256_bytes(canonical_json_bytes(snapshot))
 
 
 def _validate_persisted_source_lock(
@@ -1101,6 +1136,7 @@ def _valid_read_audit_seal(seal: object) -> bool:
         "run_id": seal.run_id,
         "version_binding": seal.version_binding,
         "source_lock_artifact_sha256": seal.source_lock_artifact_sha256,
+        "read_plan_artifact_sha256": seal.read_plan_artifact_sha256,
         "parent_event_sha256": seal.parent_event_sha256,
         "artifact_sha256": seal.artifact_sha256,
     }
@@ -1122,6 +1158,7 @@ def validate_u1_authority(
         or source_lock.version_binding != read_audit.version_binding
         or source_lock.parent_event_sha256 != read_audit.parent_event_sha256
         or source_lock.artifact_sha256 != read_audit.source_lock_artifact_sha256
+        or not _is_sha256(read_audit.read_plan_artifact_sha256)
     ):
         raise SourceLockError("U1 source/read authority boundary mismatch")
     seal = object.__new__(U1AuthoritySeal)
@@ -1148,6 +1185,11 @@ def validate_u1_authority(
     object.__setattr__(seal, "input_root", source_lock.input_root)
     object.__setattr__(seal, "acl_status", source_lock.acl_status)
     object.__setattr__(seal, "source_lock_artifact_sha256", source_lock.artifact_sha256)
+    object.__setattr__(
+        seal,
+        "read_plan_artifact_sha256",
+        read_audit.read_plan_artifact_sha256,
+    )
     object.__setattr__(seal, "read_coverage_artifact_sha256", read_audit.artifact_sha256)
     object.__setattr__(seal, "authorizes_phase", True)
     authority_fields = {
@@ -1170,6 +1212,7 @@ def validate_u1_authority(
         "input_root": seal.input_root,
         "acl_status": seal.acl_status,
         "source_lock_artifact_sha256": seal.source_lock_artifact_sha256,
+        "read_plan_artifact_sha256": seal.read_plan_artifact_sha256,
         "read_coverage_artifact_sha256": seal.read_coverage_artifact_sha256,
         "authorizes_phase": seal.authorizes_phase,
     }
@@ -1202,6 +1245,7 @@ def verify_u1_authority_seal(seal: object) -> U1AuthoritySeal:
         "input_root": seal.input_root,
         "acl_status": seal.acl_status,
         "source_lock_artifact_sha256": seal.source_lock_artifact_sha256,
+        "read_plan_artifact_sha256": seal.read_plan_artifact_sha256,
         "read_coverage_artifact_sha256": seal.read_coverage_artifact_sha256,
         "authorizes_phase": seal.authorizes_phase,
     }
@@ -1402,6 +1446,14 @@ def build_read_plan(
     source_manifest_sha256: str | None = None,
     source_lock_sha256: str | None = None,
     parent_event_sha256: str | None = None,
+    run_id: str | None = None,
+    version_binding: Mapping[str, object] | None = None,
+    generated_at: str | None = None,
+    request_sha256: str | None = None,
+    input_snapshot_sha256: str | None = None,
+    reader_mode: str | None = None,
+    batch_size: int | None = None,
+    validate_schema: bool = True,
 ) -> dict[str, object]:
     if not _is_sha256(promoted_semantic_snapshot_sha256):
         raise SourceManifestError("promoted semantic snapshot hash is invalid")
@@ -1411,7 +1463,7 @@ def build_read_plan(
     )
     if manifest_semantic != promoted_semantic_snapshot_sha256:
         raise SourceManifestError("promoted semantic snapshot differs from the manifest")
-    plan = {
+    plan: dict[str, object] = {
         "source_manifest_sha256": manifest_hash,
         "promoted_semantic_snapshot_sha256": promoted_semantic_snapshot_sha256,
         "source_unit_count": document["source_unit_count"],
@@ -1428,7 +1480,211 @@ def build_read_plan(
         if not _is_sha256(parent_event_sha256):
             raise SourceManifestError("read plan parent hash is invalid")
         plan["parent_event_sha256"] = parent_event_sha256
+    runtime_fields = (
+        run_id,
+        version_binding,
+        generated_at,
+        request_sha256,
+        input_snapshot_sha256,
+        reader_mode,
+        batch_size,
+    )
+    if all(value is None for value in runtime_fields):
+        return plan
+    if (
+        any(value is None for value in runtime_fields)
+        or source_lock_sha256 is None
+        or parent_event_sha256 is None
+    ):
+        raise SourceManifestError("runtime read plan bindings are incomplete")
+    assert run_id is not None
+    assert version_binding is not None
+    assert generated_at is not None
+    assert request_sha256 is not None
+    assert input_snapshot_sha256 is not None
+    assert reader_mode is not None
+    assert batch_size is not None
+    if not run_id.strip():
+        raise SourceManifestError("read plan run_id must be non-empty")
+    binding = _validate_read_version_binding(version_binding)
+    _parse_read_timestamp(generated_at)
+    if not _is_sha256(request_sha256) or not _is_sha256(input_snapshot_sha256):
+        raise SourceManifestError("read plan request or input snapshot hash is invalid")
+    if reader_mode not in _READER_MODES:
+        raise SourceManifestError("read plan reader mode is invalid")
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or not 1 <= batch_size <= SOURCE_READ_BATCH_SIZE
+    ):
+        raise SourceManifestError("read plan batch size is invalid")
+    plan.update(
+        {
+            "schema_id": "crossframe.ultra.v82.read-plan",
+            "schema_version": 1,
+            "run_id": run_id,
+            "version_binding": binding,
+            "generated_at": generated_at,
+            "content_sha256": "0" * 64,
+            "phase_id": "U1",
+            "request_sha256": request_sha256,
+            "input_snapshot_sha256": input_snapshot_sha256,
+            "reader_mode": reader_mode,
+            "batch_size": batch_size,
+        }
+    )
+    plan["content_sha256"] = _artifact_content_sha256(plan)
+    if validate_schema:
+        try:
+            validate_instance("ultra-read-plan.schema.json", plan)
+        except ValidationError as error:
+            raise SourceManifestError(
+                f"read plan violates public schema: {error.message}"
+            ) from error
     return plan
+
+
+def validate_read_plan(
+    plan: Mapping[str, object],
+    *,
+    manifest: SourceManifestSnapshot,
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, object],
+    expected_request_sha256: str,
+    expected_input_snapshot_sha256: str,
+    expected_source_lock_sha256: str,
+    expected_parent_event_sha256: str,
+    expected_reader_mode: str = "full-source",
+    expected_batch_size: int = SOURCE_READ_BATCH_SIZE,
+    validate_schema: bool = True,
+) -> str:
+    if not isinstance(plan, Mapping):
+        raise SourceCoverageError("read plan must be an object")
+    snapshot = copy.deepcopy(dict(plan))
+    if validate_schema:
+        try:
+            validate_instance("ultra-read-plan.schema.json", snapshot)
+        except ValidationError as error:
+            raise SourceCoverageError(
+                f"read plan violates public schema: {error.message}"
+            ) from error
+    if snapshot.get("content_sha256") != _artifact_content_sha256(snapshot):
+        raise SourceCoverageError("read plan content hash differs")
+    try:
+        rebuilt = build_read_plan(
+            manifest,
+            promoted_semantic_snapshot_sha256=manifest.semantic_sha256,
+            source_manifest_sha256=manifest.sha256,
+            source_lock_sha256=expected_source_lock_sha256,
+            parent_event_sha256=expected_parent_event_sha256,
+            run_id=expected_run_id,
+            version_binding=expected_version_binding,
+            generated_at=str(snapshot["generated_at"]),
+            request_sha256=expected_request_sha256,
+            input_snapshot_sha256=expected_input_snapshot_sha256,
+            reader_mode=expected_reader_mode,
+            batch_size=expected_batch_size,
+            validate_schema=validate_schema,
+        )
+    except (SourceManifestError, SourceCoverageError) as error:
+        raise SourceCoverageError("read plan authority cannot be reconstructed") from error
+    if snapshot != rebuilt:
+        raise SourceCoverageError("read plan differs from immutable source authority")
+    return sha256_bytes(canonical_json_bytes(snapshot))
+
+
+def _source_range_for_unit(source_unit: Mapping[str, object]) -> Mapping[str, object]:
+    unit = _validate_source_unit(source_unit)
+    kind = str(unit["kind"])
+    ordinal = int(unit["ordinal"])
+    start_field = "paragraph_start" if kind == "paragraph" else "table_start"
+    end_field = "paragraph_end" if kind == "paragraph" else "table_end"
+    for source_range in SOURCE_RANGES:
+        start = source_range.get(start_field)
+        end = source_range.get(end_field)
+        if not isinstance(start, str) or not isinstance(end, str):
+            continue
+        start_ordinal = int(re.search(r"[0-9]+$", start).group())
+        end_ordinal = int(re.search(r"[0-9]+$", end).group())
+        if start_ordinal <= ordinal <= end_ordinal:
+            return source_range
+    raise SourceCoverageError("source unit does not resolve to a committed source range")
+
+
+def _read_source_range_records(
+    repo: Path,
+    source_range: Mapping[str, object],
+    *,
+    cache: dict[str, dict[str, dict[str, object]]],
+) -> dict[str, dict[str, object]]:
+    relative = str(source_range["file"])
+    cached = cache.get(relative)
+    if cached is not None:
+        return cached
+    source_root = (repo.resolve() / SOURCE_TREE_RELATIVE).resolve()
+    path = source_root / relative
+    raw = _read_u1_authority_bytes(
+        path,
+        root=source_root,
+        label=f"source range {relative}",
+    )
+    try:
+        text = raw.decode("utf-8")
+        match = CANONICAL_BLOCK_RE.search(text)
+        if match is None or CANONICAL_BLOCK_RE.search(text, match.end()) is not None:
+            raise ValueError("canonical source record block is missing or repeated")
+        payload = json.loads(
+            match.group(1),
+            object_pairs_hook=_pairs_object,
+            parse_constant=lambda token: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON value: {token}")
+            ),
+        )
+    except (UnicodeDecodeError, ValueError, SourceManifestError) as error:
+        raise SourceCoverageError("committed source range cannot be parsed") from error
+    if not isinstance(payload, dict) or set(payload) != {"paragraphs", "tables"}:
+        raise SourceCoverageError("committed source range record envelope is invalid")
+    records: dict[str, dict[str, object]] = {}
+    for collection in (payload["paragraphs"], payload["tables"]):
+        if not isinstance(collection, list):
+            raise SourceCoverageError("committed source range records are invalid")
+        for record in collection:
+            if not isinstance(record, Mapping):
+                raise SourceCoverageError("committed source record is invalid")
+            snapshot = copy.deepcopy(dict(record))
+            anchor = snapshot.get("anchor")
+            if not isinstance(anchor, str) or anchor in records:
+                raise SourceCoverageError("committed source record anchor is invalid")
+            records[anchor] = snapshot
+    cache[relative] = records
+    return records
+
+
+def _read_source_unit_bytes(
+    repo: Path,
+    source_unit: Mapping[str, object],
+    *,
+    cache: dict[str, dict[str, dict[str, object]]],
+) -> bytes:
+    if not isinstance(repo, Path):
+        raise TypeError("repo must be a pathlib.Path")
+    unit = _validate_source_unit(source_unit)
+    source_range = _source_range_for_unit(unit)
+    records = _read_source_range_records(repo, source_range, cache=cache)
+    record = records.get(str(unit["unit_id"]))
+    if record is None:
+        raise SourceCoverageError("committed source range lacks the requested unit")
+    content = canonical_json_bytes({"kind": unit["kind"], **record})
+    if sha256_bytes(content) != unit["sha256"]:
+        raise SourceCoverageError("current source-unit bytes differ from the manifest")
+    return content
+
+
+def read_source_unit_bytes(
+    repo: Path,
+    source_unit: Mapping[str, object],
+) -> bytes:
+    return _read_source_unit_bytes(repo, source_unit, cache={})
 
 
 def _load_committed_read_records(
@@ -1752,6 +2008,380 @@ def make_read_event(
     return event
 
 
+def _host_execution_identity(execution_id: object) -> dict[str, str]:
+    if not isinstance(execution_id, str) or not execution_id:
+        raise SourceCoverageError("host execution identity is invalid")
+    lowered = execution_id.casefold()
+    if lowered.startswith("runtime-") or lowered.startswith("ultra-runtime"):
+        raise SourceCoverageError(
+            "runtime execution identity cannot serve as a host read receipt"
+        )
+    return {
+        "kind": "host-result-receipt",
+        "execution_id": execution_id,
+    }
+
+
+def _host_read_item_sha256(
+    *,
+    action_sha256: str,
+    read_plan_sha256: str,
+    reader_mode: str,
+    execution_id: str,
+    read_at: str,
+    source_unit_id: str,
+    source_unit_sha256: str,
+) -> str:
+    return sha256_bytes(
+        canonical_json_bytes(
+            {
+                "receipt_type": "crossframe.ultra.v82.host-source-read",
+                "action_sha256": action_sha256,
+                "read_plan_sha256": read_plan_sha256,
+                "reader_mode": reader_mode,
+                "execution_id": execution_id,
+                "read_at": read_at,
+                "source_unit_id": source_unit_id,
+                "source_unit_sha256": source_unit_sha256,
+            }
+        )
+    )
+
+
+def make_read_event_from_host_receipt(
+    *,
+    action: object,
+    host_receipt: Mapping[str, object],
+    receipt_item: Mapping[str, object],
+    source_unit: Mapping[str, object],
+    manifest: SourceManifestSnapshot,
+) -> dict[str, object]:
+    from .host_handshake import HostActionSeal
+
+    if not isinstance(action, HostActionSeal):
+        raise SourceCoverageError("source read action is not a sealed host action")
+    payload = action.document.get("payload")
+    if not isinstance(payload, Mapping):
+        raise SourceCoverageError("source read action payload is invalid")
+    unit = _validate_source_unit(source_unit)
+    identity = _host_execution_identity(host_receipt.get("execution_id"))
+    read_at = receipt_item.get("read_at")
+    _parse_read_timestamp(read_at)
+    source_lock_sha256 = payload.get("source_lock_sha256")
+    read_plan_sha256 = payload.get("read_plan_sha256")
+    if not _is_sha256(source_lock_sha256) or not _is_sha256(read_plan_sha256):
+        raise SourceCoverageError("source read action lacks plan or source-lock authority")
+    event: dict[str, object] = {
+        "schema_id": READ_EVENT_SCHEMA_ID,
+        "schema_version": 1,
+        "run_id": action.document["run_id"],
+        "version_binding": copy.deepcopy(action.document["version_binding"]),
+        "generated_at": read_at,
+        "content_sha256": unit["sha256"],
+        "phase_id": "U1",
+        "source_unit_id": unit["unit_id"],
+        "source_kind": unit["kind"],
+        "source_ordinal": unit["ordinal"],
+        "source_manifest_sha256": manifest.sha256,
+        "promoted_semantic_snapshot_sha256": manifest.semantic_sha256,
+        "source_lock_sha256": source_lock_sha256,
+        "read_plan_sha256": read_plan_sha256,
+        "action_sha256": action.action_sha256,
+        "host_receipt_sha256": host_receipt["receipt_sha256"],
+        "parent_event_sha256": action.document["parent_event_sha256"],
+        "receipt_sha256": receipt_item["receipt_sha256"],
+        "reader_mode": payload["reader_mode"],
+        "execution_identity": identity,
+        "read_at": read_at,
+    }
+    event["read_event_sha256"] = _read_event_sha256(event)
+    try:
+        validate_instance("ultra-read-event.schema.json", event)
+    except ValidationError as error:
+        raise SourceCoverageError(
+            f"host read event violates public schema: {error.message}"
+        ) from error
+    return event
+
+
+def validate_host_read_receipt(
+    receipt: Mapping[str, object],
+    *,
+    action: object,
+    repo: Path,
+    manifest: SourceManifestSnapshot,
+    layout: RunLayout | None = None,
+    result_document: Mapping[str, object] | None = None,
+) -> tuple[dict[str, object], ...]:
+    from .host_handshake import HostActionSeal
+
+    if not isinstance(receipt, Mapping):
+        raise SourceCoverageError("host read receipt must be an object")
+    if not isinstance(action, HostActionSeal):
+        raise SourceCoverageError("host read receipt requires a sealed action")
+    if not isinstance(repo, Path):
+        raise TypeError("repo must be a pathlib.Path")
+    document = copy.deepcopy(dict(receipt))
+    try:
+        validate_instance("ultra-host-result-receipt.schema.json", document)
+    except Exception as error:
+        raise SourceCoverageError("host read receipt violates its public schema") from error
+    supplied_receipt_sha256 = document.get("receipt_sha256")
+    receipt_payload = copy.deepcopy(document)
+    receipt_payload.pop("receipt_sha256", None)
+    if supplied_receipt_sha256 != sha256_bytes(canonical_json_bytes(receipt_payload)):
+        raise SourceCoverageError("host read receipt hash differs")
+    action_fields = (
+        "run_id",
+        "version_binding",
+        "phase_id",
+        "action_kind",
+        "parent_event_sha256",
+        "request_sha256",
+        "result_relative_path",
+    )
+    if (
+        action.document.get("phase_id") != "U1"
+        or action.document.get("action_kind") != "source-read"
+        or document.get("action_sha256") != action.action_sha256
+        or any(document.get(field) != action.document.get(field) for field in action_fields)
+    ):
+        raise SourceCoverageError("host read receipt action authority differs")
+    identity = _host_execution_identity(document.get("execution_id"))
+    del identity
+    if result_document is None and layout is not None:
+        try:
+            from .host_handshake import _load_bound_result_document
+
+            result, result_raw = _load_bound_result_document(
+                layout,
+                action=action,
+                receipt=document,
+            )
+        except Exception as error:
+            raise SourceCoverageError("host source-read result is unavailable") from error
+    elif result_document is None:
+        try:
+            result_raw = action.result_path.read_bytes()
+            result = load_json_object_bytes(result_raw, source=str(action.result_path))
+        except (OSError, TypeError, ValueError) as error:
+            raise SourceCoverageError("host source-read result is unavailable") from error
+    else:
+        result = copy.deepcopy(dict(result_document))
+        result_raw = canonical_json_bytes(result)
+    if result_raw != canonical_json_bytes(result):
+        raise SourceCoverageError("host source-read result is not canonical JSON")
+    if document.get("result_sha256") != sha256_bytes(result_raw):
+        raise SourceCoverageError("host source-read result hash differs")
+    result_fields = {
+        "schema_id",
+        "schema_version",
+        "action_sha256",
+        "read_plan_sha256",
+        "reader_mode",
+        "execution_id",
+        "read_at",
+        "items",
+    }
+    if set(result) != result_fields:
+        raise SourceCoverageError("host source-read result fields are not closed")
+    payload = action.document.get("payload")
+    if not isinstance(payload, Mapping):
+        raise SourceCoverageError("source-read action payload is invalid")
+    allowed_payload_fields = {
+        "read_plan_sha256",
+        "source_lock_sha256",
+        "reader_mode",
+        "batch_ordinal",
+        "source_unit_count",
+        "source_units",
+    }
+    if not set(payload).issubset(allowed_payload_fields) or not {
+        "read_plan_sha256",
+        "reader_mode",
+        "batch_ordinal",
+        "source_unit_count",
+        "source_units",
+    }.issubset(payload):
+        raise SourceCoverageError("source-read action payload fields are invalid")
+    if (
+        result.get("schema_id") != "crossframe.ultra.v82.source-read-result"
+        or result.get("schema_version") != 1
+        or result.get("action_sha256") != action.action_sha256
+        or result.get("read_plan_sha256") != payload.get("read_plan_sha256")
+    ):
+        raise SourceCoverageError("host source-read result read plan differs from action")
+    if (
+        result.get("reader_mode") != payload.get("reader_mode")
+        or result.get("execution_id") != document.get("execution_id")
+    ):
+        raise SourceCoverageError("host execution or reader mode differs from action receipt")
+    try:
+        issued_at = _parse_canonical_utc(
+            action.document.get("issued_at"),
+            "host action issued_at",
+        )
+        read_at = _parse_canonical_utc(
+            result.get("read_at"),
+            "host source-read read_at",
+        )
+        completed_at = _parse_canonical_utc(
+            document.get("completed_at"),
+            "host result completed_at",
+        )
+        expires_at = _parse_canonical_utc(
+            action.document.get("expires_at"),
+            "host action expires_at",
+        )
+    except (TypeError, ValueError) as error:
+        raise SourceCoverageError(
+            f"host source-read timestamp is invalid: {error}"
+        ) from error
+    if not issued_at <= read_at <= completed_at <= expires_at:
+        raise SourceCoverageError(
+            "host source-read read_at is outside its action completion window"
+        )
+    requested = payload.get("source_units")
+    items = result.get("items")
+    if (
+        not isinstance(requested, list)
+        or not isinstance(items, list)
+        or payload.get("source_unit_count") != len(requested)
+        or len(items) != len(requested)
+        or not items
+    ):
+        raise SourceCoverageError("host read receipt item count differs from action")
+    manifest_units = {
+        str(unit["unit_id"]): _validate_source_unit(unit)
+        for unit in manifest.document["source_units"]
+    }
+    source_cache: dict[str, dict[str, dict[str, object]]] = {}
+    accepted: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for expected, raw_item in zip(requested, items, strict=True):
+        if (
+            not isinstance(expected, Mapping)
+            or set(expected) != {"source_unit_id", "source_unit_sha256"}
+            or not isinstance(raw_item, Mapping)
+            or set(raw_item)
+            != {"source_unit_id", "source_unit_sha256", "receipt_sha256"}
+        ):
+            raise SourceCoverageError("host read receipt item fields are invalid")
+        item = copy.deepcopy(dict(raw_item))
+        unit_id = item.get("source_unit_id")
+        if unit_id in seen:
+            raise SourceCoverageError("host read receipt repeats a source unit")
+        seen.add(str(unit_id))
+        if (
+            item.get("source_unit_id") != expected.get("source_unit_id")
+            or item.get("source_unit_sha256")
+            != expected.get("source_unit_sha256")
+        ):
+            raise SourceCoverageError("host read receipt source hash differs from action")
+        source_unit = manifest_units.get(str(unit_id))
+        if source_unit is None:
+            raise SourceCoverageError("host read receipt references an unknown source unit")
+        measured = _read_source_unit_bytes(repo, source_unit, cache=source_cache)
+        if (
+            item.get("source_unit_sha256") != source_unit["sha256"]
+            or sha256_bytes(measured) != item.get("source_unit_sha256")
+        ):
+            raise SourceCoverageError("host read receipt source hash differs from current content")
+        expected_item_sha256 = _host_read_item_sha256(
+            action_sha256=action.action_sha256,
+            read_plan_sha256=str(result["read_plan_sha256"]),
+            reader_mode=str(result["reader_mode"]),
+            execution_id=str(result["execution_id"]),
+            read_at=str(result["read_at"]),
+            source_unit_id=str(unit_id),
+            source_unit_sha256=str(item["source_unit_sha256"]),
+        )
+        if item.get("receipt_sha256") != expected_item_sha256:
+            raise SourceCoverageError("host read receipt item hash differs")
+        event_item = copy.deepcopy(item)
+        event_item["read_at"] = result["read_at"]
+        accepted.append(
+            make_read_event_from_host_receipt(
+                action=action,
+                host_receipt=document,
+                receipt_item=event_item,
+                source_unit=source_unit,
+                manifest=manifest,
+            )
+        )
+    return tuple(accepted)
+
+
+def validate_admitted_host_read_events(
+    events: Sequence[Mapping[str, object]],
+    receipt: Mapping[str, object],
+    *,
+    action: object,
+    manifest: SourceManifestSnapshot,
+) -> tuple[dict[str, object], ...]:
+    from .host_handshake import HostActionSeal
+
+    if not isinstance(action, HostActionSeal) or not isinstance(receipt, Mapping):
+        raise SourceCoverageError("admitted read events lack host action authority")
+    payload = action.document.get("payload")
+    if not isinstance(payload, Mapping):
+        raise SourceCoverageError("admitted read event action payload is invalid")
+    requested = payload.get("source_units")
+    if not isinstance(requested, list) or len(events) != len(requested):
+        raise SourceCoverageError("admitted read event count differs from its action")
+    manifest_units = {
+        str(unit["unit_id"]): _validate_source_unit(unit)
+        for unit in manifest.document["source_units"]
+    }
+    snapshots: list[dict[str, object]] = []
+    execution_id = str(receipt.get("execution_id"))
+    _host_execution_identity(execution_id)
+    for expected, raw_event in zip(requested, events, strict=True):
+        if not isinstance(expected, Mapping) or not isinstance(raw_event, Mapping):
+            raise SourceCoverageError("admitted read event is invalid")
+        event = copy.deepcopy(dict(raw_event))
+        unit_id = str(expected.get("source_unit_id"))
+        unit = manifest_units.get(unit_id)
+        if unit is None:
+            raise SourceCoverageError("admitted read event references an unknown unit")
+        if (
+            frozenset(event) != _HOST_READ_EVENT_FIELDS
+            or event.get("run_id") != action.document.get("run_id")
+            or event.get("version_binding") != action.document.get("version_binding")
+            or event.get("parent_event_sha256")
+            != action.document.get("parent_event_sha256")
+            or event.get("source_unit_id") != unit_id
+            or event.get("content_sha256") != expected.get("source_unit_sha256")
+            or event.get("content_sha256") != unit["sha256"]
+            or event.get("source_manifest_sha256") != manifest.sha256
+            or event.get("promoted_semantic_snapshot_sha256")
+            != manifest.semantic_sha256
+            or event.get("source_lock_sha256") != payload.get("source_lock_sha256")
+            or event.get("read_plan_sha256") != payload.get("read_plan_sha256")
+            or event.get("action_sha256") != action.action_sha256
+            or event.get("host_receipt_sha256") != receipt.get("receipt_sha256")
+            or event.get("reader_mode") != payload.get("reader_mode")
+            or event.get("execution_identity")
+            != {"kind": "host-result-receipt", "execution_id": execution_id}
+            or event.get("generated_at") != event.get("read_at")
+            or event.get("read_event_sha256") != _read_event_sha256(event)
+        ):
+            raise SourceCoverageError("admitted read event differs from host receipt authority")
+        expected_item_sha256 = _host_read_item_sha256(
+            action_sha256=action.action_sha256,
+            read_plan_sha256=str(payload["read_plan_sha256"]),
+            reader_mode=str(payload["reader_mode"]),
+            execution_id=execution_id,
+            read_at=str(event["read_at"]),
+            source_unit_id=unit_id,
+            source_unit_sha256=str(unit["sha256"]),
+        )
+        if event.get("receipt_sha256") != expected_item_sha256:
+            raise SourceCoverageError("admitted read event item receipt hash differs")
+        snapshots.append(event)
+    return tuple(snapshots)
+
+
 @lru_cache(maxsize=1)
 def _authority_manifest_sha256() -> str | None:
     path = Path(__file__).resolve().parents[2] / "references" / "source-manifest.json"
@@ -1940,6 +2570,7 @@ def audit_read_capture(
     object.__setattr__(audit, "run_id", expected_run_id)
     object.__setattr__(audit, "version_binding", expected_binding)
     object.__setattr__(audit, "source_lock_artifact_sha256", expected_source_lock_sha256)
+    object.__setattr__(audit, "read_plan_artifact_sha256", "0" * 64)
     object.__setattr__(audit, "parent_event_sha256", expected_parent_event_sha256)
     object.__setattr__(audit, "artifact_sha256", artifact_sha256)
     fields = {
@@ -1951,6 +2582,7 @@ def audit_read_capture(
         "run_id": audit.run_id,
         "version_binding": audit.version_binding,
         "source_lock_artifact_sha256": audit.source_lock_artifact_sha256,
+        "read_plan_artifact_sha256": audit.read_plan_artifact_sha256,
         "parent_event_sha256": audit.parent_event_sha256,
         "artifact_sha256": audit.artifact_sha256,
     }
@@ -2141,6 +2773,7 @@ def _read_persisted_u1_events(
         run_layout.run_dir / _PERSISTED_U1_READ_EVENTS_PATH,
         root=run_layout.run_dir.resolve(strict=False),
         label="persisted read events",
+        max_bytes=MAX_U1_READ_EVENTS_BYTES,
     )
     if not raw or not raw.endswith(b"\n"):
         raise SourceCoverageError("persisted read event journal is incomplete")
@@ -2164,6 +2797,116 @@ def _read_persisted_u1_events(
     return tuple(disk_events), raw
 
 
+def _validate_persisted_host_read_authority(
+    *,
+    repo: Path,
+    run_layout: RunLayout,
+    manifest: SourceManifestSnapshot,
+    read_plan: Mapping[str, object],
+    read_plan_sha256: str,
+    source_lock_sha256: str,
+    events: Sequence[Mapping[str, object]],
+) -> None:
+    from .host_handshake import _seal_action, _seal_result
+
+    action_dir = run_layout.recovery_dir / "u1-authority" / "read-actions"
+    try:
+        action_paths = tuple(sorted(action_dir.glob("*.json")))
+    except OSError as error:
+        raise SourceCoverageError("persisted source-read actions cannot be enumerated") from error
+    if not action_paths:
+        raise SourceCoverageError("persisted source-read actions are unavailable")
+    units = read_plan.get("source_units")
+    batch_size = read_plan.get("batch_size")
+    if not isinstance(units, list) or not isinstance(batch_size, int):
+        raise SourceCoverageError("persisted read plan batches are invalid")
+    actions = []
+    for path in action_paths:
+        raw = _read_u1_authority_bytes(
+            path,
+            root=run_layout.run_dir.resolve(strict=False),
+            label="persisted source-read action",
+        )
+        document = _parse_u1_json(raw, label="persisted source-read action")
+        if raw != canonical_json_bytes(document):
+            raise SourceCoverageError("persisted source-read action is not canonical")
+        try:
+            action = _seal_action(run_layout, document)
+        except Exception as error:
+            raise SourceCoverageError("persisted source-read action is invalid") from error
+        if path.stem != action.action_sha256:
+            raise SourceCoverageError("persisted source-read action filename differs")
+        actions.append(action)
+    actions.sort(key=lambda item: int(item.document["payload"]["batch_ordinal"]))
+    if [action.document["payload"]["batch_ordinal"] for action in actions] != list(
+        range(1, len(actions) + 1)
+    ):
+        raise SourceCoverageError("persisted source-read batches are not contiguous")
+    rebuilt_events: list[dict[str, object]] = []
+    for ordinal, action in enumerate(actions, start=1):
+        payload = action.document.get("payload")
+        start = (ordinal - 1) * batch_size
+        expected_units = [
+            {
+                "source_unit_id": unit["unit_id"],
+                "source_unit_sha256": unit["sha256"],
+            }
+            for unit in units[start : start + batch_size]
+        ]
+        if (
+            not isinstance(payload, Mapping)
+            or set(payload)
+            != {
+                "read_plan_sha256",
+                "source_lock_sha256",
+                "reader_mode",
+                "batch_ordinal",
+                "source_unit_count",
+                "source_units",
+            }
+            or payload.get("read_plan_sha256") != read_plan_sha256
+            or payload.get("source_lock_sha256") != source_lock_sha256
+            or payload.get("reader_mode") != read_plan.get("reader_mode")
+            or payload.get("source_units") != expected_units
+            or payload.get("source_unit_count") != len(expected_units)
+        ):
+            raise SourceCoverageError("persisted source-read action differs from plan")
+        accepted_path = (
+            run_layout.recovery_dir
+            / "host-results"
+            / action.action_sha256
+            / "accepted.json"
+        )
+        accepted_raw = _read_u1_authority_bytes(
+            accepted_path,
+            root=run_layout.run_dir.resolve(strict=False),
+            label="persisted accepted source-read receipt",
+        )
+        receipt = _parse_u1_json(
+            accepted_raw,
+            label="persisted accepted source-read receipt",
+        )
+        if accepted_raw != canonical_json_bytes(receipt):
+            raise SourceCoverageError("persisted accepted source-read receipt is not canonical")
+        try:
+            _seal_result(run_layout, action=action, receipt=receipt)
+        except Exception as error:
+            raise SourceCoverageError("persisted accepted source-read receipt is invalid") from error
+        rebuilt_events.extend(
+            validate_host_read_receipt(
+                receipt,
+                action=action,
+                repo=repo,
+                manifest=manifest,
+                layout=run_layout,
+            )
+        )
+    if len(rebuilt_events) != EXPECTED_SOURCE_UNIT_COUNT:
+        raise SourceCoverageError("persisted host receipts do not cover exactly 4,753 units")
+    if tuple(rebuilt_events) != tuple(copy.deepcopy(dict(event)) for event in events):
+        raise SourceCoverageError("persisted read events differ from host receipts")
+
+
 def _validate_persisted_u1_authority(
     *,
     repo: Path,
@@ -2179,7 +2922,9 @@ def _validate_persisted_u1_authority(
     expected_parent_event_sha256: str,
     expected_evidence_cutoff: str,
     expected_inputs: Sequence[Mapping[str, object]],
+    expected_request_sha256: str,
     expected_source_lock_sha256: str,
+    expected_read_plan_sha256: str,
     expected_read_coverage_sha256: str,
 ) -> U1AuthoritySeal:
     if not isinstance(repo, Path):
@@ -2188,8 +2933,14 @@ def _validate_persisted_u1_authority(
         raise TypeError("run_layout must be a RunLayout")
     if not isinstance(manifest, SourceManifestSnapshot):
         raise TypeError("manifest must be a sealed SourceManifestSnapshot")
-    if not _is_sha256(expected_source_lock_sha256) or not _is_sha256(
-        expected_read_coverage_sha256
+    if any(
+        not _is_sha256(value)
+        for value in (
+            expected_request_sha256,
+            expected_source_lock_sha256,
+            expected_read_plan_sha256,
+            expected_read_coverage_sha256,
+        )
     ):
         raise SourceLockError("persisted U1 checkpoint hashes are invalid")
 
@@ -2235,38 +2986,49 @@ def _validate_persisted_u1_authority(
     ):
         raise SourceLockError("persisted source lock differs from checkpoint authority")
 
-    rebuilt_read_plan = build_read_plan(
-        manifest,
-        promoted_semantic_snapshot_sha256=str(
-            binding["framework_semantic_sha256"]
+    read_plan_sha256 = validate_read_plan(
+        read_plan_snapshot,
+        manifest=manifest,
+        expected_run_id=expected_run_id,
+        expected_version_binding=binding,
+        expected_request_sha256=expected_request_sha256,
+        expected_input_snapshot_sha256=str(
+            source_lock_snapshot["input_snapshot_sha256"]
         ),
-        source_manifest_sha256=manifest.sha256,
-        source_lock_sha256=source_lock_sha256,
-        parent_event_sha256=expected_parent_event_sha256,
+        expected_source_lock_sha256=source_lock_sha256,
+        expected_parent_event_sha256=expected_parent_event_sha256,
+        expected_reader_mode="full-source",
+        expected_batch_size=SOURCE_READ_BATCH_SIZE,
     )
-    if read_plan_raw != canonical_json_bytes(rebuilt_read_plan):
-        raise SourceCoverageError("persisted read plan differs from fresh source authority")
-    if read_plan_snapshot != rebuilt_read_plan:
-        raise SourceCoverageError("persisted read plan reconstruction mismatch")
+    if (
+        read_plan_sha256 != sha256_bytes(read_plan_raw)
+        or read_plan_sha256 != expected_read_plan_sha256
+    ):
+        raise SourceCoverageError("persisted read plan differs from checkpoint authority")
 
     coverage_sha256 = hashlib.sha256(coverage_raw).hexdigest()
     if coverage_sha256 != expected_read_coverage_sha256:
         raise SourceCoverageError(
             "persisted read coverage differs from checkpoint authority"
         )
-    _validate_persisted_read_capture(
-        event_snapshots,
-        manifest,
+    _validate_persisted_host_read_authority(
         repo=repo,
-        coverage=coverage_snapshot,
-        promoted_semantic_snapshot_sha256=str(
-            binding["framework_semantic_sha256"]
-        ),
+        run_layout=run_layout,
+        manifest=manifest,
+        read_plan=read_plan_snapshot,
+        read_plan_sha256=read_plan_sha256,
+        source_lock_sha256=source_lock_sha256,
+        events=event_snapshots,
+    )
+    read_audit = validate_host_read_coverage(
+        event_snapshots,
+        coverage_snapshot,
+        read_plan=read_plan_snapshot,
         expected_run_id=expected_run_id,
         expected_version_binding=binding,
-        expected_source_lock_sha256=source_lock_sha256,
         expected_parent_event_sha256=expected_parent_event_sha256,
-        source_manifest_sha256=manifest.sha256,
+        expected_source_lock_sha256=source_lock_sha256,
+        expected_read_plan_sha256=read_plan_sha256,
     )
 
     input_root = _validated_run_input_root(
@@ -2329,37 +3091,6 @@ def _validate_persisted_u1_authority(
     object.__setattr__(source_seal, "_issuer_token", source_token)
     object.__setattr__(source_seal, "_seal_sha256", source_seal_sha256)
 
-    _document, units, _manifest_hash, _manifest_semantic = _manifest_parts(
-        manifest,
-        source_manifest_sha256=manifest.sha256,
-    )
-    paragraphs = sum(1 for unit in units if unit["kind"] == "paragraph")
-    tables = sum(1 for unit in units if unit["kind"] == "table")
-    read_audit = object.__new__(ReadCoverageAudit)
-    audit_values = {
-        "total": len(units),
-        "paragraphs": paragraphs,
-        "tables": tables,
-        "complete": (
-            len(units) == EXPECTED_SOURCE_UNIT_COUNT
-            and paragraphs == EXPECTED_PARAGRAPH_COUNT
-            and tables == EXPECTED_TABLE_COUNT
-        ),
-        "authorizes_phase": True,
-        "run_id": expected_run_id,
-        "version_binding": copy.deepcopy(binding),
-        "source_lock_artifact_sha256": source_lock_sha256,
-        "parent_event_sha256": expected_parent_event_sha256,
-        "artifact_sha256": coverage_sha256,
-    }
-    for field, value in audit_values.items():
-        object.__setattr__(read_audit, field, value)
-    audit_token, audit_seal_sha256 = _register_issuer_snapshot(
-        _ISSUED_READ_AUDITS,
-        audit_values,
-    )
-    object.__setattr__(read_audit, "_issuer_token", audit_token)
-    object.__setattr__(read_audit, "_seal_sha256", audit_seal_sha256)
     return validate_u1_authority(source_seal, read_audit)
 
 
@@ -2389,13 +3120,146 @@ def _coverage_artifact_sha256(
     return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
 
 
-def _read_u1_authority_bytes(path: Path, *, root: Path, label: str) -> bytes:
+def build_host_read_coverage(
+    events: Sequence[Mapping[str, object]],
+    *,
+    read_plan: Mapping[str, object],
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, object],
+    expected_parent_event_sha256: str,
+    expected_source_lock_sha256: str,
+    expected_read_plan_sha256: str,
+) -> dict[str, object]:
+    if isinstance(events, (str, bytes)):
+        raise SourceCoverageError("host read events must be a sequence")
+    plan = copy.deepcopy(dict(read_plan))
+    binding = _validate_read_version_binding(expected_version_binding)
+    if (
+        not _is_sha256(expected_parent_event_sha256)
+        or not _is_sha256(expected_source_lock_sha256)
+        or not _is_sha256(expected_read_plan_sha256)
+    ):
+        raise SourceCoverageError("host read coverage authority hashes are invalid")
+    units = plan.get("source_units")
+    if not isinstance(units, list) or len(units) != EXPECTED_SOURCE_UNIT_COUNT:
+        raise SourceCoverageError("read plan does not contain exactly 4,753 units")
+    snapshots = tuple(copy.deepcopy(dict(event)) for event in events)
+    if len(snapshots) != EXPECTED_SOURCE_UNIT_COUNT:
+        raise SourceCoverageError("host read event count is not exactly 4,753")
+    action_sha256s: list[str] = []
+    host_receipt_sha256s: list[str] = []
+    receipt_sha256s: list[str] = []
+    event_sha256s: list[str] = []
+    for unit, event in zip(units, snapshots, strict=True):
+        if frozenset(event) != _HOST_READ_EVENT_FIELDS:
+            raise SourceCoverageError("host read event fields do not match the contract")
+        try:
+            validate_instance("ultra-read-event.schema.json", event)
+        except ValidationError as error:
+            raise SourceCoverageError(
+                f"host read event violates public schema: {error.message}"
+            ) from error
+        if (
+            event.get("run_id") != expected_run_id
+            or event.get("version_binding") != binding
+            or event.get("parent_event_sha256") != expected_parent_event_sha256
+            or event.get("source_lock_sha256") != expected_source_lock_sha256
+            or event.get("read_plan_sha256") != expected_read_plan_sha256
+            or event.get("source_unit_id") != unit.get("unit_id")
+            or event.get("content_sha256") != unit.get("sha256")
+            or event.get("read_event_sha256") != _read_event_sha256(event)
+        ):
+            raise SourceCoverageError("host read event differs from its immutable plan")
+        action_sha256 = str(event["action_sha256"])
+        host_receipt_sha256 = str(event["host_receipt_sha256"])
+        if not action_sha256s or action_sha256s[-1] != action_sha256:
+            if action_sha256 in action_sha256s:
+                raise SourceCoverageError("host read action batches are not contiguous")
+            action_sha256s.append(action_sha256)
+            host_receipt_sha256s.append(host_receipt_sha256)
+        elif host_receipt_sha256s[-1] != host_receipt_sha256:
+            raise SourceCoverageError("host read action has mixed result receipts")
+        receipt_sha256s.append(str(event["receipt_sha256"]))
+        event_sha256s.append(str(event["read_event_sha256"]))
+    if len(receipt_sha256s) != len(set(receipt_sha256s)):
+        raise SourceCoverageError("host read item receipts are not unique")
+    if len(event_sha256s) != len(set(event_sha256s)):
+        raise SourceCoverageError("host read events are not unique")
+    coverage: dict[str, object] = {
+        "artifact_type": "crossframe.ultra.v82.u1-source-coverage",
+        "run_id": expected_run_id,
+        "version_binding": binding,
+        "parent_event_sha256": expected_parent_event_sha256,
+        "source_lock_sha256": expected_source_lock_sha256,
+        "read_plan_sha256": expected_read_plan_sha256,
+        "source_unit_count": EXPECTED_SOURCE_UNIT_COUNT,
+        "action_sha256s": action_sha256s,
+        "host_receipt_sha256s": host_receipt_sha256s,
+        "receipt_sha256s": receipt_sha256s,
+        "read_event_sha256s": event_sha256s,
+    }
+    return coverage
+
+
+def validate_host_read_coverage(
+    events: Sequence[Mapping[str, object]],
+    coverage: Mapping[str, object],
+    *,
+    read_plan: Mapping[str, object],
+    expected_run_id: str,
+    expected_version_binding: Mapping[str, object],
+    expected_parent_event_sha256: str,
+    expected_source_lock_sha256: str,
+    expected_read_plan_sha256: str,
+) -> ReadCoverageAudit:
+    expected = build_host_read_coverage(
+        events,
+        read_plan=read_plan,
+        expected_run_id=expected_run_id,
+        expected_version_binding=expected_version_binding,
+        expected_parent_event_sha256=expected_parent_event_sha256,
+        expected_source_lock_sha256=expected_source_lock_sha256,
+        expected_read_plan_sha256=expected_read_plan_sha256,
+    )
+    if not isinstance(coverage, Mapping) or dict(coverage) != expected:
+        raise SourceCoverageError("persisted host read coverage differs")
+    artifact_sha256 = sha256_bytes(canonical_json_bytes(expected))
+    binding = _validate_read_version_binding(expected_version_binding)
+    audit = object.__new__(ReadCoverageAudit)
+    values = {
+        "total": EXPECTED_SOURCE_UNIT_COUNT,
+        "paragraphs": EXPECTED_PARAGRAPH_COUNT,
+        "tables": EXPECTED_TABLE_COUNT,
+        "complete": True,
+        "authorizes_phase": True,
+        "run_id": expected_run_id,
+        "version_binding": binding,
+        "source_lock_artifact_sha256": expected_source_lock_sha256,
+        "read_plan_artifact_sha256": expected_read_plan_sha256,
+        "parent_event_sha256": expected_parent_event_sha256,
+        "artifact_sha256": artifact_sha256,
+    }
+    for field, value in values.items():
+        object.__setattr__(audit, field, value)
+    token, seal_sha256 = _register_issuer_snapshot(_ISSUED_READ_AUDITS, values)
+    object.__setattr__(audit, "_issuer_token", token)
+    object.__setattr__(audit, "_seal_sha256", seal_sha256)
+    return audit
+
+
+def _read_u1_authority_bytes(
+    path: Path,
+    *,
+    root: Path,
+    label: str,
+    max_bytes: int = MAX_U1_AUTHORITY_BYTES,
+) -> bytes:
     try:
         checked = assert_safe_descendant(root.resolve(), path)
         before = checked.stat()
         if checked.is_symlink() or not stat.S_ISREG(before.st_mode):
             raise SourceLockError(f"{label} is not a regular authority file")
-        if before.st_size > MAX_U1_AUTHORITY_BYTES:
+        if before.st_size > max_bytes:
             raise SourceLockError(f"{label} exceeds the authority size limit")
         with checked.open("rb") as handle:
             opened = os.fstat(handle.fileno())
@@ -2411,13 +3275,13 @@ def _read_u1_authority_bytes(path: Path, *, root: Path, label: str) -> bytes:
                 opened.st_mtime_ns,
             ):
                 raise SourceLockError(f"{label} changed before it was opened")
-            payload = handle.read(MAX_U1_AUTHORITY_BYTES + 1)
+            payload = handle.read(max_bytes + 1)
             after = os.fstat(handle.fileno())
     except SourceLockError:
         raise
     except (OSError, ValueError) as error:
         raise SourceLockError(f"cannot read {label} authority") from error
-    if len(payload) > MAX_U1_AUTHORITY_BYTES or len(payload) != opened.st_size:
+    if len(payload) > max_bytes or len(payload) != opened.st_size:
         raise SourceLockError(f"{label} changed while it was read")
     if (opened.st_dev, opened.st_ino, opened.st_size) != (
         after.st_dev,
@@ -2524,6 +3388,9 @@ def _validate_release_document(
     skill_root: Path,
     verify_disk_tree: bool = True,
 ) -> tuple[str, str]:
+    release_id = document.get("release_id")
+    if release_id != CURRENT_RELEASE_ID:
+        raise SourceLockError("release manifest release ID is not current")
     try:
         validate_instance("ultra-release-manifest.schema.json", document)
     except ValidationError as error:
@@ -2555,10 +3422,7 @@ def _validate_release_document(
     }
     if source_counts != expected_counts:
         raise SourceLockError("release manifest source counts differ from the source authority")
-    release_id = document.get("release_id")
-    if not isinstance(release_id, str) or not release_id:
-        raise SourceLockError("release manifest release ID is invalid")
-    return release_id, _release_tree_sha256(
+    return CURRENT_RELEASE_ID, _release_tree_sha256(
         document,
         skill_root=skill_root,
         verify_disk_tree=verify_disk_tree,
@@ -2713,6 +3577,8 @@ def measure_u1_prerequisites(
 
 def verify_u1_prerequisites(
     measurement: object,
+    *,
+    remeasure: bool = True,
 ) -> U1PrerequisiteMeasurement:
     if not isinstance(measurement, U1PrerequisiteMeasurement):
         raise SourceLockError("U1 requires an issuer-produced prerequisite measurement")
@@ -2726,6 +3592,8 @@ def verify_u1_prerequisites(
         raise SourceLockError("U1 prerequisite measurement issuer integrity is invalid")
     if not measurement.ready:
         raise SourceLockError("U1 prerequisite measurement is not ready")
+    if not remeasure:
+        return measurement
     try:
         manifest = load_source_manifest(
             measurement._repo
@@ -2758,6 +3626,7 @@ __all__ = (
     "EXPECTED_TABLE_COUNT",
     "MIN_FREE_SPACE_RESERVE_BYTES",
     "READ_EVENT_SCHEMA_ID",
+    "SOURCE_READ_BATCH_SIZE",
     "ReadCaptureDiagnostic",
     "ReadCoverageAudit",
     "ReadReceipt",
@@ -2771,6 +3640,7 @@ __all__ = (
     "U1AuthoritySeal",
     "build_source_lock",
     "build_read_plan",
+    "build_host_read_coverage",
     "audit_read_capture",
     "capture_authority_read_diagnostic",
     "capture_source_unit_read",
@@ -2778,11 +3648,18 @@ __all__ = (
     "execution_identity",
     "load_source_manifest",
     "make_read_event",
+    "make_read_event_from_host_receipt",
     "measure_current_user_acl",
     "measure_u1_prerequisites",
     "open_source_read_session",
+    "read_source_unit_bytes",
     "verify_u1_prerequisites",
     "validate_source_lock",
+    "validate_source_lock_envelope",
+    "validate_host_read_coverage",
+    "validate_host_read_receipt",
+    "validate_admitted_host_read_events",
+    "validate_read_plan",
     "validate_u1_authority",
     "verify_u1_authority_seal",
 )

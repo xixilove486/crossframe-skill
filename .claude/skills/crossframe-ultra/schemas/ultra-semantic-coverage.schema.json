@@ -123,8 +123,13 @@
         "unit_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "unit_kind": {"$ref": "#/$defs/unitKind"},
         "section_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
-        "normalized_excerpt": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
-        "source_refs": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"}
+        "normalized_excerpt": {
+          "$ref": "ultra-common.schema.json#/$defs/nonemptyString",
+          "minLength": 12
+        },
+        "source_refs": {
+          "$ref": "ultra-common.schema.json#/$defs/identifierArray"
+        }
       }
     }
   }

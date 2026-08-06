@@ -10,7 +10,7 @@
       "required": ["release_id", "release_state", "stable_pointer", "framework_source", "compiler", "source_counts", "release_artifacts", "built_at", "validated_at"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.release-manifest"},
-        "release_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "release_id": {"const": "ultra-v8.2-r1-runtime-1.1.0"},
         "release_state": {"enum": ["staging", "validated", "stable", "superseded"]},
         "stable_pointer": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
         "framework_source": {"$ref": "#/$defs/frameworkSource"},
