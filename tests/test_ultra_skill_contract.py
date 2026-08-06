@@ -156,6 +156,12 @@ def test_skill_host_loop_treats_waiting_as_progress_and_control_as_runtime_owned
     assert "不得手工" in skill
 
 
+def test_skill_exposes_the_existing_receipt_admission_adapter_seam() -> None:
+    skill = _required_text(SKILL_PATH)
+    assert "ultra_runtime.host_handshake.accept_host_result(...)" in skill
+    assert "不是新的 CLI 命令" in skill
+
+
 def test_multi_runtime_routing_separates_comparison_from_choice_confirmation() -> None:
     skill = _required_text(SKILL_PATH)
     marker = "<!-- ULTRA-MULTI-RUNTIME-CONFIRM -->"

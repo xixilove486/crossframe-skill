@@ -296,6 +296,9 @@ def test_protocols_route_the_open_world_persistent_host_loop() -> None:
     assert "closed-input" in runtime
     assert "recovery/pending-action.json" in runtime
     assert "semantic-review" in runtime
+    for document in (routing, adapter):
+        assert "ultra_runtime.host_handshake.accept_host_result(...)" in document
+        assert "不是新的 CLI 命令" in document
     assert "真实" in source and "receipt" in source
     assert "subagent" in retrieval and "candidate" in retrieval
     assert "不是证据" in retrieval

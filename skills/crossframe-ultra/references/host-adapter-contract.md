@@ -10,9 +10,10 @@ Exact naming limits activation only. After the host has selected Ultra, pass the
 
 1. Call `start`, then call `prepare` for the returned run ID.
 2. Read the runtime-issued `recovery/pending-action.json` or the model-owned authoring slot returned by `prepare`.
-3. Execute the one pending action with a real authorized host tool. Write only the requested receipt or semantic file to the fixed result slot.
-4. Call `materialize`. Let the runtime validate, admit, seal, release its writer lease, and issue the next action.
-5. Repeat until U12 passes or the runtime returns a terminal boundary.
+3. Execute the one pending action with a real authorized host tool. Write only the requested action result to the fixed result slot.
+4. Submit the separate bound receipt through the provider-neutral adapter callback `ultra_runtime.host_handshake.accept_host_result(...)`. This is the existing adapter seam, 不是新的 CLI 命令.
+5. After runtime admission succeeds, call `materialize`. Let the runtime seal, release its writer lease, and issue the next action.
+6. Repeat until U12 passes or the runtime returns a terminal boundary.
 
 `outcome=awaiting-host-action` and `outcome=awaiting-authoring` are successful normal progress with `status=running`; execute the single next action and continue. Do not relabel either outcome as an exception, validation failure, or `needs_attention`.
 

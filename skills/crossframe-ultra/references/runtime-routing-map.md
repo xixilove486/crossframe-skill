@@ -65,9 +65,10 @@ The provider-neutral loop is:
 
 1. `start` freezes request bytes and input inventory.
 2. `prepare` idempotently returns the current `recovery/pending-action.json`, its fixed `work/host/...` result slot, or the next model-owned authoring slot.
-3. The host executes the pending action with a real authorized tool and writes only the requested receipt or semantic file to that slot.
-4. `materialize` validates and admits the result, seals any completed phase, releases the writer lease, and either returns the next action or advances.
-5. Repeat through U12; use `validate`, `repair-plan`, and `resume` only at their declared boundaries.
+3. The host executes the pending action with a real authorized tool and writes only the requested action result to that slot.
+4. The host submits the separate bound receipt through the provider-neutral adapter callback `ultra_runtime.host_handshake.accept_host_result(...)`; this is the existing adapter seam, 不是新的 CLI 命令.
+5. After runtime admission succeeds, `materialize` seals any completed phase, releases the writer lease, and either returns the next action or advances.
+6. Repeat through U12; use `validate`, `repair-plan`, and `resume` only at their declared boundaries.
 
 The runtime can issue these host action kinds:
 

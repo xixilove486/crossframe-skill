@@ -97,6 +97,8 @@ description: "Use only when the user explicitly invokes crossframe-ultra, CrossF
 
 `semantic-review` 只提供 action-bound reviewer identity 与九维判断；runtime 负责正式工件 envelope 和 publication disposition，且该判断不能覆盖 deterministic 或 adversarial failure。
 
+宿主写完 action 指定的 result slot 后，必须通过 provider-neutral adapter callback `ultra_runtime.host_handshake.accept_host_result(...)` 提交独立 receipt；这是已有 adapter seam，不是新的 CLI 命令。只有 receipt 被 runtime 接纳后才再次调用 `materialize`。
+
 联网、读源和 subagent 只能在 pending action 与 U0 权限内真实执行。subagent 输出和其它模型生成内容先是 untrusted `candidate`，不是证据；只有来源验证并经 U3 admission 接纳后才能进入证据账本。不得把候选、模拟、预测或用户问题改标为已观察事实。
 
 `outcome=awaiting-host-action` 与 `outcome=awaiting-authoring` 是 `status=running` 的正常进度：执行唯一 next action 后继续，不得把等待写成 validation failure、`needs_attention` 或异常。若进程在已完成 checkpoint 后中断，只通过 runtime 的 `resume` / `materialize` 恢复；新证据通过 `evidence-fork` 派生 child。不得手工编辑或删除 control、phase event、checkpoint、validation history 或 lease，也不得借手工清理推进运行。
