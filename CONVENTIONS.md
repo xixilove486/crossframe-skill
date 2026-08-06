@@ -14,10 +14,6 @@ After a completed Suite workflow has produced diagnosis, article, and review, su
 
 CrossFrame ProMax is a v8-only, exact-name only independent skill. Read `skills/crossframe-promax/SKILL.md` only when the user writes `crossframe-promax`, `CrossFrame ProMax`, `$crossframe-promax`, or `/crossframe-promax`. If both Max and ProMax are named, ProMax wins; generic maximality remains Max; suite never auto-upgrades; ProMax uses its own audit with no review chain and never falls back to Max.
 
-<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
-CrossFrame Ultra Skill is a fixed v8.2 reference runtime. Read `skills/crossframe-ultra/SKILL.md` only when the user writes exactly `crossframe-ultra`, `CrossFrame Ultra`, `$crossframe-ultra`, or `/crossframe-ultra`. An exact Ultra-only request routes to Ultra. Routing policy: generic maximum/deep/full requests remain Max; ProMax-over-Max remains unchanged; when Ultra and another runtime are both named, an explicit comparison runs each independently; when both are named without an explicit comparison, pause for runtime choice; suite without an exact Ultra name never routes to Ultra; Ultra failure never falls back.
-<!-- CROSSFRAME-ULTRA-ROUTING-END -->
-
 After explicit CrossFrame invocation, when the user asks for CrossFrame、跨尺度结构诊断、结构诊断、推演、开放断言、反俘获审查、低条件试探行动、强判断、高反身性、亲密关系、疗愈转移、公共制度、长期演化或概念解释:
 
 1. Read `skills/crossframe/SKILL.md`.
@@ -47,4 +43,4 @@ After explicit CrossFrame Essay or Suite invocation, when the user asks for 中�
 
 After explicit invocation of a CrossFrame-adjacent specialized workflow, use the matching sibling skill first: `crossframe-review`, `crossframe-dialogue`, `crossframe-casebook`, `crossframe-history`, `crossframe-max`, `crossframe-promax`, `crossframe-public`, `crossframe-org`, `crossframe-teach`, `crossframe-debate`, `crossframe-notebook`, or `crossframe-inquiry`. Except for the standalone v8-only ProMax runtime, each sibling skill remains a light wrapper around `skills/crossframe/` and must not duplicate the canonical framework text.
 
-This repository adapts exactly 17 CrossFrame skills.
+This repository adapts exactly 16 CrossFrame skills.

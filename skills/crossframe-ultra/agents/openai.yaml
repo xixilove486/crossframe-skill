@@ -1,7 +1,0 @@
-interface:
-  display_name: "CrossFrame Ultra Skill"
-  short_description: "Explicit-only v8.2 world-volume inference with hard judgments."
-  default_prompt: "Use $crossframe-ultra to run the complete v8.2 world-volume workflow and publish one independently readable Chinese article."
-
-policy:
-  allow_implicit_invocation: false

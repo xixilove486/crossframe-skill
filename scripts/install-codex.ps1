@@ -23,8 +23,7 @@ $skills = @(
   "skills/crossframe-org",
   "skills/crossframe-teach",
   "skills/crossframe-debate",
-  "skills/crossframe-notebook",
-  "skills/crossframe-ultra"
+  "skills/crossframe-notebook"
 )
 
 function Get-ValidatedChildPath {
@@ -77,11 +76,6 @@ function Assert-CanonicalSource {
   if (-not (Test-Path -LiteralPath $mirrorScript -PathType Leaf)) {
     throw "Canonical mirror checker not found: $mirrorScript"
   }
-  $rootWrapper = Join-Path $resolvedRoot "scripts\check_crossframe_ultra_artifacts.py"
-  if (-not (Test-Path -LiteralPath $rootWrapper -PathType Leaf)) {
-    throw "Canonical Ultra root wrapper not found: $rootWrapper"
-  }
-
   foreach ($skillPath in $skills) {
     $sourceSkill = Join-Path $resolvedRoot ($skillPath -replace "/", [System.IO.Path]::DirectorySeparatorChar)
     if (-not (Test-Path -LiteralPath $sourceSkill -PathType Container)) {
@@ -164,16 +158,7 @@ function Invoke-InstallationRollback {
     [Parameter(Mandatory = $true)]$BackedUpSkills,
     [Parameter(Mandatory = $true)][string]$LiveRoot,
     [Parameter(Mandatory = $true)][string]$StageRoot,
-    [Parameter(Mandatory = $true)][string]$BackupRoot,
-    [Parameter(Mandatory = $true)][bool]$WrapperPromoted,
-    [Parameter(Mandatory = $true)][bool]$WrapperBackedUp,
-    [Parameter(Mandatory = $true)][string]$InstallationRoot,
-    [Parameter(Mandatory = $true)][string]$TransactionRoot,
-    [Parameter(Mandatory = $true)][string]$LiveWrapper,
-    [Parameter(Mandatory = $true)][string]$StagedWrapper,
-    [Parameter(Mandatory = $true)][string]$BackupWrapper,
-    [Parameter(Mandatory = $true)][bool]$ScriptsRootCreated,
-    [Parameter(Mandatory = $true)][string]$ScriptsRoot
+    [Parameter(Mandatory = $true)][string]$BackupRoot
   )
 
   $rollbackSucceeded = $true
@@ -216,53 +201,6 @@ function Invoke-InstallationRollback {
     }
   }
 
-  $liveWrapperPath = Get-ValidatedChildPath -Root $InstallationRoot -Candidate $LiveWrapper -Label "wrapper rollback destination"
-  $stagedWrapperPath = Get-ValidatedChildPath -Root $TransactionRoot -Candidate $StagedWrapper -Label "wrapper rollback staging path"
-  $backupWrapperPath = Get-ValidatedChildPath -Root $BackupRoot -Candidate $BackupWrapper -Label "wrapper restore backup"
-  if ($WrapperPromoted -and (Test-Path -LiteralPath $liveWrapperPath)) {
-    try {
-      Move-Item -LiteralPath $liveWrapperPath -Destination $stagedWrapperPath
-    }
-    catch {
-      try {
-        Remove-Item -LiteralPath $liveWrapperPath -Force
-      }
-      catch {
-        $rollbackSucceeded = $false
-        Write-Warning "Could not roll back promoted Ultra root wrapper: $($_.Exception.Message)"
-      }
-    }
-  }
-
-  if ($WrapperBackedUp) {
-    try {
-      if (Test-Path -LiteralPath $liveWrapperPath) {
-        Remove-Item -LiteralPath $liveWrapperPath -Force
-      }
-      if (-not (Test-Path -LiteralPath $backupWrapperPath -PathType Leaf)) {
-        throw "Wrapper backup is missing: $backupWrapperPath"
-      }
-      Move-Item -LiteralPath $backupWrapperPath -Destination $liveWrapperPath
-    }
-    catch {
-      $rollbackSucceeded = $false
-      Write-Warning "Could not restore Ultra root wrapper backup: $($_.Exception.Message)"
-    }
-  }
-
-  if ($ScriptsRootCreated -and (Test-Path -LiteralPath $ScriptsRoot -PathType Container)) {
-    $remainingScripts = Get-ChildItem -LiteralPath $ScriptsRoot -Force | Select-Object -First 1
-    if (-not $remainingScripts) {
-      try {
-        Remove-Item -LiteralPath $ScriptsRoot -Force
-      }
-      catch {
-        $rollbackSucceeded = $false
-        Write-Warning "Could not remove empty installer-created scripts directory: $($_.Exception.Message)"
-      }
-    }
-  }
-
   return $rollbackSucceeded
 }
 
@@ -299,8 +237,7 @@ try {
   $transactionRoot = Get-ValidatedChildPath -Root $destinationRootResolved -Candidate $transactionRoot -Label "transaction directory"
   $stagingRoot = Get-ValidatedChildPath -Root $transactionRoot -Candidate (Join-Path $transactionRoot "staging") -Label "staging directory"
   $backupRoot = Get-ValidatedChildPath -Root $transactionRoot -Candidate (Join-Path $transactionRoot "backups") -Label "backup directory"
-  $wrapperStagingRoot = Get-ValidatedChildPath -Root $transactionRoot -Candidate (Join-Path $transactionRoot "root-wrapper") -Label "wrapper staging directory"
-  $null = New-Item -ItemType Directory -Path $stagingRoot, $backupRoot, $wrapperStagingRoot
+  $null = New-Item -ItemType Directory -Path $stagingRoot, $backupRoot
 
   if ($localRepository) {
     $canonicalRoot = Assert-CanonicalSource -CandidateRoot $Repo
@@ -319,15 +256,6 @@ try {
     }
     $canonicalRoot = Assert-CanonicalSource -CandidateRoot $canonicalCandidate
     $installerRepo = $Repo
-  }
-
-  $canonicalWrapper = Join-Path $canonicalRoot "scripts\check_crossframe_ultra_artifacts.py"
-  $stagedWrapper = Get-ValidatedChildPath -Root $wrapperStagingRoot -Candidate (Join-Path $wrapperStagingRoot "check_crossframe_ultra_artifacts.py") -Label "staged root wrapper"
-  Copy-Item -LiteralPath $canonicalWrapper -Destination $stagedWrapper
-  $canonicalWrapperHash = (Get-FileHash -LiteralPath $canonicalWrapper -Algorithm SHA256).Hash
-  $stagedWrapperHash = (Get-FileHash -LiteralPath $stagedWrapper -Algorithm SHA256).Hash
-  if (-not $canonicalWrapperHash.Equals($stagedWrapperHash, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Staged Ultra root wrapper verification failed"
   }
 
   $resolvedSkillsRoot = $stagingRoot
@@ -351,36 +279,9 @@ try {
 
   Invoke-PythonProcess -CommandArguments @($mirrorScript, "--repo", $canonicalRoot, "--mirror", $stagingRoot, "--check") -FailureMessage "Staged skill verification failed"
 
-  $installationRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $destinationRootResolved)).Path
-  $scriptsRoot = Get-ValidatedChildPath -Root $installationRoot -Candidate (Join-Path $installationRoot "scripts") -Label "destination scripts directory"
-  $liveWrapper = Get-ValidatedChildPath -Root $installationRoot -Candidate (Join-Path $scriptsRoot "check_crossframe_ultra_artifacts.py") -Label "root wrapper destination"
-  $backupWrapper = Get-ValidatedChildPath -Root $backupRoot -Candidate (Join-Path $backupRoot "check_crossframe_ultra_artifacts.py") -Label "root wrapper backup"
   $backedUpSkills = [System.Collections.Generic.List[string]]::new()
   $promotedSkills = [System.Collections.Generic.List[string]]::new()
-  $wrapperBackedUp = $false
-  $wrapperPromoted = $false
-  $scriptsRootCreated = $false
   try {
-    if (Test-Path -LiteralPath $scriptsRoot) {
-      if (-not (Test-Path -LiteralPath $scriptsRoot -PathType Container)) {
-        throw "Destination scripts path is not a directory: $scriptsRoot"
-      }
-    }
-    else {
-      $null = New-Item -ItemType Directory -Path $scriptsRoot
-      $scriptsRootCreated = $true
-    }
-
-    if (Test-Path -LiteralPath $liveWrapper) {
-      if (-not (Test-Path -LiteralPath $liveWrapper -PathType Leaf)) {
-        throw "Destination Ultra root wrapper is not a file: $liveWrapper"
-      }
-      Move-Item -LiteralPath $liveWrapper -Destination $backupWrapper
-      $wrapperBackedUp = $true
-    }
-    Move-Item -LiteralPath $stagedWrapper -Destination $liveWrapper
-    $wrapperPromoted = $true
-
     foreach ($skillPath in $skills) {
       $skillName = Split-Path -Leaf $skillPath
       $livePath = Get-ValidatedChildPath -Root $destinationRootResolved -Candidate (Join-Path $destinationRootResolved $skillName) -Label "destination"
@@ -400,7 +301,7 @@ try {
     }
   }
   catch {
-    $rollbackSucceeded = Invoke-InstallationRollback -PromotedSkills $promotedSkills -BackedUpSkills $backedUpSkills -LiveRoot $destinationRootResolved -StageRoot $stagingRoot -BackupRoot $backupRoot -WrapperPromoted $wrapperPromoted -WrapperBackedUp $wrapperBackedUp -InstallationRoot $installationRoot -TransactionRoot $transactionRoot -LiveWrapper $liveWrapper -StagedWrapper $stagedWrapper -BackupWrapper $backupWrapper -ScriptsRootCreated $scriptsRootCreated -ScriptsRoot $scriptsRoot
+    $rollbackSucceeded = Invoke-InstallationRollback -PromotedSkills $promotedSkills -BackedUpSkills $backedUpSkills -LiveRoot $destinationRootResolved -StageRoot $stagingRoot -BackupRoot $backupRoot
     if (-not $rollbackSucceeded) {
       $cleanupTransaction = $false
       Write-Warning "Rollback was incomplete; retained transaction data at $transactionRoot"

@@ -35,7 +35,6 @@ EXPECTED_CROSSFRAME_SKILLS = {
     "crossframe-review",
     "crossframe-suite",
     "crossframe-teach",
-    "crossframe-ultra",
 }
 ROUTING_BEGIN = "<!-- PROMAX-ROUTING-BEGIN -->"
 ROUTING_END = "<!-- PROMAX-ROUTING-END -->"
