@@ -7,22 +7,22 @@
     "framework_revision": "v8.2-r1",
     "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
     "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
   "generated_at": "2026-08-02T10:16:00Z",
-  "content_sha256": "d040b8248ff5a801279e66e1af5b5b3ddbcb7a7a332d9381153ea4d004dfdbc6",
+  "content_sha256": "be7fcbe55b45fdd3e19ed6715f392f325cb27fe3e09ab18e5ae2ff85d7fbea89",
   "phase_id": "U7",
-  "world_volume_artifact_sha256": "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5",
-  "transformation_ledger_artifact_sha256": "196e169890e2900713d0a9b42d46779ea59e2c26faf6f542cc7a9269c72abe1c",
-  "concept_disposition_artifact_sha256": "f5a176c3d6cc5edba0adc4ddb689979e046eb071baf97416c492b3a8bae8d226",
-  "claim_mechanism_graph_artifact_sha256": "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c",
+  "world_volume_artifact_sha256": "053716f0de6b642d2bc53b82862761c5815402005ecaad3e2f0abfc5103cc746",
+  "transformation_ledger_artifact_sha256": "76bc58745c59ea40566e17ad2324cfbd737d4f7fcd4a92ce2c179b42f8288084",
+  "concept_disposition_artifact_sha256": "bdfeaaaecd6108e985717b68a48105473bf78528b9ac2d30a35022b968151e06",
+  "claim_mechanism_graph_artifact_sha256": "40d6e4d2b7cbf2ce41ea0861513e0d01c14cfa0fe8ad50382c073f9aa116cb19",
   "recursive_state_artifact_hashes": [
-    "c22e8dc554168bef680279c42149228b4d3b2bf8b8aecbad16dcca0206798510"
+    "e36f7591e2f0e9052c5f1352174772e3d553a671a50c31c1e2f237baf823744f"
   ],
   "nodes": [
     {
@@ -32,7 +32,7 @@
         "NODE-MAIN-ORDER-1"
       ],
       "order": 1,
-      "recursive_state_artifact_sha256": "c22e8dc554168bef680279c42149228b4d3b2bf8b8aecbad16dcca0206798510"
+      "recursive_state_artifact_sha256": "e36f7591e2f0e9052c5f1352174772e3d553a671a50c31c1e2f237baf823744f"
     }
   ],
   "branches": [

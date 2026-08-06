@@ -7,27 +7,27 @@
     "framework_revision": "v8.2-r1",
     "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
     "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
   "generated_at": "2026-08-02T10:15:00Z",
-  "content_sha256": "7c4cfa4572913c90559d6dc6f736a03900c313958708d7a7c548b94adaacb150",
+  "content_sha256": "dee9d6fea054f526db8995a83cbc7a2ae1325daf387b5e1340a00467177afaf5",
   "phase_id": "U7",
-  "world_volume_artifact_sha256": "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5",
-  "transformation_ledger_artifact_sha256": "196e169890e2900713d0a9b42d46779ea59e2c26faf6f542cc7a9269c72abe1c",
-  "concept_disposition_artifact_sha256": "f5a176c3d6cc5edba0adc4ddb689979e046eb071baf97416c492b3a8bae8d226",
-  "claim_mechanism_graph_artifact_sha256": "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c",
+  "world_volume_artifact_sha256": "053716f0de6b642d2bc53b82862761c5815402005ecaad3e2f0abfc5103cc746",
+  "transformation_ledger_artifact_sha256": "76bc58745c59ea40566e17ad2324cfbd737d4f7fcd4a92ce2c179b42f8288084",
+  "concept_disposition_artifact_sha256": "bdfeaaaecd6108e985717b68a48105473bf78528b9ac2d30a35022b968151e06",
+  "claim_mechanism_graph_artifact_sha256": "40d6e4d2b7cbf2ce41ea0861513e0d01c14cfa0fe8ad50382c073f9aa116cb19",
   "recursive_state_artifact_hashes": [
-    "c22e8dc554168bef680279c42149228b4d3b2bf8b8aecbad16dcca0206798510",
-    "c55b6409cd204bf75c1286ecdf1e5e07cb0573010664c0ddf1df8febe4028b83",
-    "8b454ea3aae6cf6cb138fe4f8a11de09923243ab8fc22338d5658e5e7bda5367",
-    "0a96a21d979bb9b443ca4d04000def091fe35fc514e76f2c4e69cb85690b838e",
-    "7a97f9605aac00f6f662474bb138212536807e6d38c815bfc03c935c9677274b",
-    "9f4a364063ce6d35acefa57ba85fab180fa1a906e6dbfe60c716f7cf8b0f34d7"
+    "e36f7591e2f0e9052c5f1352174772e3d553a671a50c31c1e2f237baf823744f",
+    "5cc89b1e5dea6d4c02052936c0ad966cc13d5db73e9b9167477163ce5f29a95d",
+    "db76dee7e1c2098786bf6b1ad679efb14dd4b1af2a24fbcc4b698223a605a3c3",
+    "53e3d4cbe50e609ea8f1198bc8874eaaa502dfc53089c2d5e4bbda6aaafeffd2",
+    "575d6370db525efd8d0f32e22acd1cc9f5b232ca0f5082724939e24a01ece996",
+    "b681c7e49a294fa6c9edaf3741ddbe2e356e55b7b93d42b1be64b98fe0427427"
   ],
   "nodes": [
     {
@@ -35,28 +35,28 @@
       "path_id": "PATH-MAIN",
       "parent_node_ids": [],
       "order": 1,
-      "recursive_state_artifact_sha256": "c22e8dc554168bef680279c42149228b4d3b2bf8b8aecbad16dcca0206798510"
+      "recursive_state_artifact_sha256": "e36f7591e2f0e9052c5f1352174772e3d553a671a50c31c1e2f237baf823744f"
     },
     {
       "node_id": "NODE-RIVAL-ORDER-1",
       "path_id": "PATH-RIVAL",
       "parent_node_ids": [],
       "order": 1,
-      "recursive_state_artifact_sha256": "0a96a21d979bb9b443ca4d04000def091fe35fc514e76f2c4e69cb85690b838e"
+      "recursive_state_artifact_sha256": "53e3d4cbe50e609ea8f1198bc8874eaaa502dfc53089c2d5e4bbda6aaafeffd2"
     },
     {
       "node_id": "NODE-MIXTURE-ORDER-1",
       "path_id": "PATH-MIXTURE",
       "parent_node_ids": [],
       "order": 1,
-      "recursive_state_artifact_sha256": "7a97f9605aac00f6f662474bb138212536807e6d38c815bfc03c935c9677274b"
+      "recursive_state_artifact_sha256": "575d6370db525efd8d0f32e22acd1cc9f5b232ca0f5082724939e24a01ece996"
     },
     {
       "node_id": "NODE-RESIDUAL-ORDER-1",
       "path_id": "PATH-RESIDUAL",
       "parent_node_ids": [],
       "order": 1,
-      "recursive_state_artifact_sha256": "9f4a364063ce6d35acefa57ba85fab180fa1a906e6dbfe60c716f7cf8b0f34d7"
+      "recursive_state_artifact_sha256": "b681c7e49a294fa6c9edaf3741ddbe2e356e55b7b93d42b1be64b98fe0427427"
     },
     {
       "node_id": "NODE-MAIN-ORDER-2",
@@ -65,7 +65,7 @@
         "NODE-MAIN-ORDER-1"
       ],
       "order": 2,
-      "recursive_state_artifact_sha256": "c55b6409cd204bf75c1286ecdf1e5e07cb0573010664c0ddf1df8febe4028b83"
+      "recursive_state_artifact_sha256": "5cc89b1e5dea6d4c02052936c0ad966cc13d5db73e9b9167477163ce5f29a95d"
     },
     {
       "node_id": "NODE-MAIN-ORDER-3",
@@ -74,7 +74,7 @@
         "NODE-MAIN-ORDER-2"
       ],
       "order": 3,
-      "recursive_state_artifact_sha256": "8b454ea3aae6cf6cb138fe4f8a11de09923243ab8fc22338d5658e5e7bda5367"
+      "recursive_state_artifact_sha256": "db76dee7e1c2098786bf6b1ad679efb14dd4b1af2a24fbcc4b698223a605a3c3"
     }
   ],
   "branches": [

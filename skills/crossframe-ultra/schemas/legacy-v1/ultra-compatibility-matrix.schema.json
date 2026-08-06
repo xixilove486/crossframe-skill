@@ -119,16 +119,22 @@
           "then": {
             "properties": {
               "allowed_mismatch_fields": {
-                "type": "array",
-                "minItems": 4,
-                "maxItems": 4,
-                "prefixItems": [
-                  {"const": "runtime_version"},
-                  {"const": "artifact_schema_version"},
-                  {"const": "validator_version"},
-                  {"const": "article_contract_version"}
-                ],
-                "items": false
+                "oneOf": [
+                  {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "prefixItems": [{"const": "framework_revision"}],
+                    "items": false
+                  },
+                  {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "prefixItems": [{"const": "artifact_schema_version"}],
+                    "items": false
+                  }
+                ]
               },
               "result": {"const": "fork-required"}
             }

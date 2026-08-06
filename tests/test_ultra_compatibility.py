@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib
+import hashlib
 import json
+import subprocess
 import sys
 from collections import UserDict
 from pathlib import Path
+from types import SimpleNamespace
 from types import MappingProxyType
 from typing import Any
 
@@ -20,6 +23,21 @@ MATRIX_PATH = ULTRA_ROOT / "references/compatibility-matrix.json"
 RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
 SEMANTIC_SHA256 = "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
 TREE_SHA256 = "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+BASE_COMMIT = "f0e808d3bef871895b166abbecae73ca3c9afa8f"
+LEGACY_V1_SCHEMA_NAMES = (
+    "ultra-article-review.schema.json",
+    "ultra-claim-mechanism-graph.schema.json",
+    "ultra-common.schema.json",
+    "ultra-compatibility-matrix.schema.json",
+    "ultra-evidence-ledger.schema.json",
+    "ultra-phase-event.schema.json",
+    "ultra-read-event.schema.json",
+    "ultra-recovery-checkpoint.schema.json",
+    "ultra-run-contract.schema.json",
+    "ultra-semantic-coverage.schema.json",
+    "ultra-validator-report.schema.json",
+    "ultra-verdict.schema.json",
+)
 
 
 def canonical_content_sha256(value: dict[str, Any]) -> str:
@@ -56,15 +74,34 @@ def binding(**changes: Any) -> dict[str, Any]:
         "framework_revision": "v8.2-r1",
         "framework_raw_sha256": RAW_SHA256,
         "framework_semantic_sha256": SEMANTIC_SHA256,
-        "runtime_version": "1.0.0",
-        "artifact_schema_version": 1,
+        "runtime_version": "1.1.0",
+        "artifact_schema_version": 2,
         "compiler_version": "1.0.0",
-        "validator_version": "1.0.0",
-        "article_contract_version": "1.0.0",
+        "validator_version": "1.1.0",
+        "article_contract_version": "1.1.0",
         "source_tree_sha256": TREE_SHA256,
     }
     value.update(changes)
     return value
+
+
+def v1_binding(**changes: Any) -> dict[str, Any]:
+    value = binding(
+        runtime_version="1.0.0",
+        artifact_schema_version=1,
+        validator_version="1.0.0",
+        article_contract_version="1.0.0",
+    )
+    value.update(changes)
+    return value
+
+
+def tree_hash(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
 
 
 def mutate_rule_policy(matrix: dict[str, Any], case: str) -> None:
@@ -126,11 +163,11 @@ def test_frozen_constants_are_exact() -> None:
     assert runtime.FRAMEWORK_REVISION == "v8.2-r1"
     assert runtime.FRAMEWORK_RAW_SHA256 == RAW_SHA256
     assert runtime.FRAMEWORK_SEMANTIC_SHA256 == SEMANTIC_SHA256
-    assert runtime.RUNTIME_VERSION == "1.0.0"
-    assert runtime.ARTIFACT_SCHEMA_VERSION == 1
+    assert runtime.RUNTIME_VERSION == "1.1.0"
+    assert runtime.ARTIFACT_SCHEMA_VERSION == 2
     assert runtime.COMPILER_VERSION == "1.0.0"
-    assert runtime.VALIDATOR_VERSION == "1.0.0"
-    assert runtime.ARTICLE_CONTRACT_VERSION == "1.0.0"
+    assert runtime.VALIDATOR_VERSION == "1.1.0"
+    assert runtime.ARTICLE_CONTRACT_VERSION == "1.1.0"
     assert constants.SOURCE_TREE_SHA256 == TREE_SHA256
     assert constants.current_version_binding() == binding()
     assert runtime.PHASES == tuple(f"U{number}" for number in range(13))
@@ -144,6 +181,169 @@ def test_frozen_constants_are_exact() -> None:
         "cancelled",
         "complete",
     )
+
+
+def test_current_runtime_binding_is_v2_without_framework_drift() -> None:
+    runtime = load_runtime()
+    current = importlib.import_module("ultra_runtime.constants").current_version_binding()
+
+    assert current == binding()
+    assert runtime.RUNTIME_VERSION == "1.1.0"
+    assert runtime.ARTIFACT_SCHEMA_VERSION == 2
+    assert runtime.VALIDATOR_VERSION == "1.1.0"
+    assert runtime.ARTICLE_CONTRACT_VERSION == "1.1.0"
+    assert runtime.COMPILER_VERSION == "1.0.0"
+    assert runtime.FRAMEWORK_RAW_SHA256 == RAW_SHA256
+    assert runtime.FRAMEWORK_SEMANTIC_SHA256 == SEMANTIC_SHA256
+
+
+def test_completed_v1_is_read_only_and_in_progress_v1_requires_child() -> None:
+    runtime = load_runtime()
+
+    assert (
+        runtime.resolve_compatibility(
+            v1_binding(), binding(), run_status="complete"
+        )
+        == "read-only"
+    )
+    assert (
+        runtime.resolve_compatibility(
+            v1_binding(), binding(), run_status="running"
+        )
+        == "fork-required"
+    )
+
+
+def test_legacy_v1_schema_snapshots_are_exact_start_commit_bytes() -> None:
+    runtime = load_runtime()
+    legacy_root = runtime.legacy_schema_root()
+
+    assert tuple(path.name for path in sorted(legacy_root.glob("*.schema.json"))) == (
+        LEGACY_V1_SCHEMA_NAMES
+    )
+    for schema_name in LEGACY_V1_SCHEMA_NAMES:
+        relative = f"skills/crossframe-ultra/schemas/{schema_name}"
+        expected = subprocess.run(
+            ["git", "show", f"{BASE_COMMIT}:{relative}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        assert (legacy_root / schema_name).read_bytes() == expected
+
+
+def test_v1_read_only_validation_uses_legacy_registry_without_writing(
+    tmp_path: Path,
+) -> None:
+    runtime = load_runtime()
+    run_dir = tmp_path / "legacy-complete-run"
+    run_id = "ultra-run-20260802-0001"
+    status = {
+        "schema_id": "crossframe.ultra.v82.run-status",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": v1_binding(),
+        "generated_at": "2026-08-02T08:00:00Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U12",
+        "status": "complete",
+        "previous_status": "running",
+        "current_phase": "U12",
+        "last_complete_phase": "U12",
+        "reason": None,
+        "tools_allowed": False,
+        "validation_passed": True,
+        "updated_at": "2026-08-02T08:00:00Z",
+        "created_at": "2026-08-02T07:00:00Z",
+        "revision": 13,
+    }
+    status["content_sha256"] = canonical_content_sha256(status)
+    verdict = json.loads(
+        (ROOT / "tests/fixtures/ultra-runtime/verdict-valid.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    verdict.update(
+        run_id=run_id,
+        version_binding=v1_binding(),
+        generated_at="2026-08-02T08:00:00Z",
+    )
+    verdict["content_sha256"] = canonical_content_sha256(verdict)
+    run_dir.mkdir()
+    (run_dir / "run-status.json").write_text(
+        json.dumps(status, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    artifact_path = run_dir / "artifacts/U09-U10-verdict/U09-verdict.json"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text(
+        json.dumps(verdict, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n",
+        encoding="utf-8",
+    )
+    read_event = {
+        "schema_id": "crossframe.ultra.v82.read-event",
+        "schema_version": 1,
+        "run_id": run_id,
+        "version_binding": v1_binding(),
+        "generated_at": "2026-08-02T07:30:00Z",
+        "content_sha256": "a" * 64,
+        "phase_id": "U1",
+        "source_unit_id": "V82-P0001",
+        "source_kind": "paragraph",
+        "source_ordinal": 1,
+        "source_manifest_sha256": "b" * 64,
+        "promoted_semantic_snapshot_sha256": "c" * 64,
+        "source_lock_sha256": "d" * 64,
+        "parent_event_sha256": "e" * 64,
+        "receipt_sha256": "f" * 64,
+        "reader_mode": "full-source",
+        "execution_identity": {
+            "kind": "host-process",
+            "process_id": 1234,
+            "executable": "/usr/bin/python3",
+            "user": "fixture-user",
+        },
+        "read_at": "2026-08-02T07:30:00Z",
+        "read_event_sha256": "0" * 64,
+    }
+    read_event_payload = dict(read_event)
+    read_event_payload.pop("read_event_sha256")
+    read_event["read_event_sha256"] = hashlib.sha256(
+        (
+            json.dumps(
+                read_event_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+    ).hexdigest()
+    read_events_path = run_dir / "artifacts/U00-U03-evidence/ultra-read-events.jsonl"
+    read_events_path.parent.mkdir(parents=True, exist_ok=True)
+    read_events_path.write_text(
+        json.dumps(
+            read_event,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    before = tree_hash(run_dir)
+
+    report = runtime.validate_legacy_run_read_only(
+        SimpleNamespace(run_dir=run_dir)
+    )
+
+    assert report["overall_status"] == "pass"
+    assert report["compatibility"] == "read-only"
+    assert report["validated_artifact_count"] == 3
+    assert tree_hash(run_dir) == before
 
 
 def test_compatibility_matrix_is_schema_valid_and_mechanically_loaded() -> None:
@@ -217,9 +417,10 @@ def test_compatibility_is_mechanical() -> None:
     cases = (
         (binding(), "resume"),
         (binding(runtime_version="0.9.0"), "read-only"),
-        (binding(validator_version="1.1.0"), "read-only"),
-        (binding(framework_revision="v8.2-r0"), "fork-required"),
-        (binding(artifact_schema_version=0), "fork-required"),
+        (binding(validator_version="1.0.0"), "read-only"),
+        (v1_binding(), "fork-required"),
+        (binding(framework_revision="v8.2-r0"), "reject"),
+        (binding(artifact_schema_version=0), "reject"),
         (binding(artifact_schema_version=999), "reject"),
     )
     for recorded, expected in cases:
@@ -270,7 +471,7 @@ def test_constants_single_field_drift_invalidates_matrix(
     constants = importlib.import_module("ultra_runtime.constants")
     schemas_module = importlib.import_module("ultra_runtime.schemas")
     clear_legacy_cache(schemas_module._load_compatibility_matrix_cached)
-    monkeypatch.setattr(constants, "RUNTIME_VERSION", "1.0.1")
+    monkeypatch.setattr(constants, "RUNTIME_VERSION", "1.1.1")
 
     with pytest.raises(runtime.UltraCompatibilityError):
         runtime.load_compatibility_matrix()

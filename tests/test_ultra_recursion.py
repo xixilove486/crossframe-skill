@@ -34,21 +34,21 @@ VERSION_BINDING: dict[str, object] = {
     "framework_semantic_sha256": (
         "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
     ),
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": (
         "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
     ),
 }
-WORLD_SHA256 = "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5"
+WORLD_SHA256 = "053716f0de6b642d2bc53b82862761c5815402005ecaad3e2f0abfc5103cc746"
 TRANSFORMATION_SHA256 = (
-    "196e169890e2900713d0a9b42d46779ea59e2c26faf6f542cc7a9269c72abe1c"
+    "76bc58745c59ea40566e17ad2324cfbd737d4f7fcd4a92ce2c179b42f8288084"
 )
 CLAIM_GRAPH_SHA256 = (
-    "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c"
+    "40d6e4d2b7cbf2ce41ea0861513e0d01c14cfa0fe8ad50382c073f9aa116cb19"
 )
 CLAIM_GRAPH_CONTENT_SHA256 = (
     "3a9fb63b8bf7b4e6db616a62a29a3f499d6809d077cd7bbf67d60470a811af8a"

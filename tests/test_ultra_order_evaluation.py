@@ -31,19 +31,19 @@ VERSION_BINDING: dict[str, object] = {
     "framework_semantic_sha256": (
         "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
     ),
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": (
         "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
     ),
 }
 CLAIM_GRAPH_SHA256 = (
-    "cc5e6dfb83bed1ead965f5c87f6e990a65d546e384622fd17fc53a02ae7a409c"
+    "40d6e4d2b7cbf2ce41ea0861513e0d01c14cfa0fe8ad50382c073f9aa116cb19"
 )
-LINEAGE_SHA256 = "032ec27a6d3a6ddf353927a27a5e1df2d3b5efaf8573878f65d7c2cfb8a4e9aa"
+LINEAGE_SHA256 = "f7a619cb2bac6cbbd9d8f62b90980520b7705a66d1b6dbbb80c3439f79ff6141"
 
 
 def load_fixture(name: str) -> dict[str, Any]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import importlib
 import importlib.util
 import json
 import os
@@ -31,6 +32,22 @@ def load_checker():
 
 def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_runtime_v2_binding_has_no_framework_drift() -> None:
+    scripts = str(ULTRA / "scripts")
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    constants = importlib.import_module("ultra_runtime.constants")
+    binding = constants.current_version_binding()
+
+    assert binding["runtime_version"] == "1.1.0"
+    assert binding["artifact_schema_version"] == 2
+    assert binding["validator_version"] == "1.1.0"
+    assert binding["article_contract_version"] == "1.1.0"
+    assert binding["compiler_version"] == "1.0.0"
+    assert binding["framework_raw_sha256"] == RAW_SHA256
+    assert binding["framework_semantic_sha256"] == SEMANTIC_SHA256
 
 
 def copy_checker_repo(tmp_path: Path) -> Path:

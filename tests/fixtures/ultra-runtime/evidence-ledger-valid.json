@@ -7,15 +7,15 @@
     "framework_revision": "v8.2-r1",
     "framework_raw_sha256": "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20",
     "framework_semantic_sha256": "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0",
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
   "generated_at": "2026-08-02T07:30:00Z",
-  "content_sha256": "0004e2e3eae640dc639249cffd8bc8ea2c4ea0536afd61e856a55f38018427b0",
+  "content_sha256": "01f17e344303559e96f8f100d6e65e78bf7e01fadd8543b55dac63bb20293dca",
   "phase_id": "U3",
   "evidence_cutoff": "2026-08-02T00:00:00Z",
   "entries": [
@@ -31,7 +31,14 @@
       "interest": "The interviewee is the represented actor.",
       "upstream_lineage": ["UPSTREAM-INTERVIEW-ONE"],
       "supported_claim": "The actor occupies the declared family role.",
-      "cannot_prove": "The report alone cannot prove every downstream effect."
+      "cannot_prove": "The report alone cannot prove every downstream effect.",
+      "attribution": {
+        "origin_kind": "source",
+        "origin_ref": "SOURCE-INTERVIEW-ONE",
+        "content_sha256": "2723e7cf03da7206f4fcf1a8b54af96bdef2b5bc938f7b8e4b5679af7f5c8afb",
+        "span": null,
+        "proof_grade": "fixture-bound"
+      }
     },
     {
       "evidence_id": "EVIDENCE-ROSTER-ATLAS",
@@ -45,7 +52,14 @@
       "interest": "The roster is maintained by the project team.",
       "upstream_lineage": ["UPSTREAM-ROSTER-ATLAS"],
       "supported_claim": "The actor occupies the declared team manager role.",
-      "cannot_prove": "The roster does not prove how the mandate is exercised."
+      "cannot_prove": "The roster does not prove how the mandate is exercised.",
+      "attribution": {
+        "origin_kind": "source",
+        "origin_ref": "SOURCE-ROSTER-ATLAS",
+        "content_sha256": "7f7f244e026fc7e477a53dbc26b2cdbe05e3dc592087f6269e2d127802947e96",
+        "span": null,
+        "proof_grade": "fixture-bound"
+      }
     },
     {
       "evidence_id": "EVIDENCE-ASSOCIATION-CHARTER",
@@ -59,7 +73,14 @@
       "interest": "The supplied charter may support the user's mandate claim.",
       "upstream_lineage": ["UPSTREAM-ASSOCIATION-CHARTER"],
       "supported_claim": "The actor claims a bounded association delegation.",
-      "cannot_prove": "The supplied claim does not independently prove delegation validity."
+      "cannot_prove": "The supplied claim does not independently prove delegation validity.",
+      "attribution": {
+        "origin_kind": "request",
+        "origin_ref": "request.bin",
+        "content_sha256": "f0f8085b12a53cfd06ac55521b1bfca0f453174e2e9824b2c6c5fd4d850c648b",
+        "span": [0, 63],
+        "proof_grade": "fixture-bound"
+      }
     }
   ],
   "unknowns": []

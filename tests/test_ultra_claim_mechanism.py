@@ -33,11 +33,11 @@ VERSION_BINDING: dict[str, object] = {
     "framework_semantic_sha256": (
         "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
     ),
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": (
         "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
     ),

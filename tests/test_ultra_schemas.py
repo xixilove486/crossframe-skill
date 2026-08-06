@@ -293,11 +293,11 @@ def version_binding() -> dict[str, Any]:
         "framework_revision": "v8.2-r1",
         "framework_raw_sha256": FRAMEWORK_RAW_SHA256,
         "framework_semantic_sha256": FRAMEWORK_SEMANTIC_SHA256,
-        "runtime_version": "1.0.0",
-        "artifact_schema_version": 1,
+        "runtime_version": "1.1.0",
+        "artifact_schema_version": 2,
         "compiler_version": "1.0.0",
-        "validator_version": "1.0.0",
-        "article_contract_version": "1.0.0",
+        "validator_version": "1.1.0",
+        "article_contract_version": "1.1.0",
         "source_tree_sha256": SOURCE_TREE_SHA256,
     }
 
@@ -531,24 +531,23 @@ def transformation_record(
 
 def compatibility_matrix_instance() -> dict[str, Any]:
     current = version_binding()
-    framework_from = {**current, "framework_revision": "v8.2-r0"}
-    schema_from = {**current, "artifact_schema_version": 0}
+    legacy_v1 = {
+        **current,
+        "runtime_version": "1.0.0",
+        "artifact_schema_version": 1,
+        "validator_version": "1.0.0",
+        "article_contract_version": "1.0.0",
+    }
     return artifact(
         "ultra-compatibility-matrix.schema.json",
         matrix_version=1,
         binding_fields=list(version_binding()),
         allowed_results=["resume", "read-only", "fork-required", "reject"],
         known_migrations={
-            "framework_revisions": [
-                {
-                    "from_binding": framework_from,
-                    "to_binding": current,
-                    "result": "fork-required",
-                }
-            ],
+            "framework_revisions": [],
             "artifact_schemas": [
                 {
-                    "from_binding": schema_from,
+                    "from_binding": legacy_v1,
                     "to_binding": current,
                     "result": "fork-required",
                 }
@@ -556,17 +555,15 @@ def compatibility_matrix_instance() -> dict[str, Any]:
         },
         rules=[
             {
-                "rule_id": "known-framework-migration",
+                "rule_id": "v1-to-v2-migration",
                 "priority": 10,
                 "match_kind": "known-migration",
-                "allowed_mismatch_fields": ["framework_revision"],
-                "result": "fork-required",
-            },
-            {
-                "rule_id": "known-schema-migration",
-                "priority": 11,
-                "match_kind": "known-migration",
-                "allowed_mismatch_fields": ["artifact_schema_version"],
+                "allowed_mismatch_fields": [
+                    "runtime_version",
+                    "artifact_schema_version",
+                    "validator_version",
+                    "article_contract_version",
+                ],
                 "result": "fork-required",
             },
             {
@@ -4094,15 +4091,15 @@ W5_SCHEMA_PHASES = {
 }
 
 
-def test_w5_artifacts_keep_schema_v1_and_exact_phase_ownership() -> None:
+def test_w5_artifacts_keep_document_schema_v1_and_exact_phase_ownership() -> None:
     runtime = load_runtime()
     constants = importlib.import_module("ultra_runtime.constants")
     fixtures = minimal_instances()
-    assert constants.ARTIFACT_SCHEMA_VERSION == 1
+    assert constants.ARTIFACT_SCHEMA_VERSION == 2
     for schema_name, phase_id in W5_SCHEMA_PHASES.items():
         fixture = fixtures[schema_name]
         assert fixture["schema_version"] == 1
-        assert fixture["version_binding"]["artifact_schema_version"] == 1
+        assert fixture["version_binding"]["artifact_schema_version"] == 2
         runtime.validate_instance(schema_name, fixture)
 
         wrong_phase = copy.deepcopy(fixture)
@@ -5281,7 +5278,7 @@ def test_bad_hash_version_phase_status_and_timestamp_are_rejected() -> None:
         (("version_binding", "framework_raw_sha256"), HASH_A),
         (("version_binding", "framework_semantic_sha256"), HASH_B),
         (("version_binding", "runtime_version"), "1.0.1"),
-        (("version_binding", "artifact_schema_version"), 2),
+        (("version_binding", "artifact_schema_version"), 1),
         (("phase_id",), "U13"),
         (("status",), "done"),
         (("generated_at",), "not-a-date"),

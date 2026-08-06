@@ -33,16 +33,16 @@ from ultra_runtime.world_volume import (
 
 RUN_ID = "ultra-world-fixture-run"
 EVIDENCE_ARTIFACT_SHA256 = (
-    "b2e92cdb80bc8c497b8d215ac490a418d68c7142484f6af0f073c18df8794981"
+    "dd16c63fde4626d4db4c82736f67e18ecaed9b5817d2f5cb342bc23ccc947982"
 )
 EVIDENCE_CONTENT_SHA256 = (
-    "3b59c571ff33f09c23704b4f3ada5f4941c718b6f28e7225f5de1f804dc94985"
+    "ecb1671d46a02a3a78cdf5f714e23044fee6ccad51f43053739878bb9b70b045"
 )
 WORLD_CONTENT_SHA256 = (
-    "0d0b71596320e3fe26babbe42e1a87507d873a905ce0d20b75427054753a1f07"
+    "cbc5b8bd9a7577f21a0a617aa95cca80408d237e55333079796cad8a7256920e"
 )
 WORLD_ARTIFACT_SHA256 = (
-    "29b324b8f6d3596b2e9df7c1d23adfd9f17fcd5b55a7f73113a09ebd292f6ce5"
+    "053716f0de6b642d2bc53b82862761c5815402005ecaad3e2f0abfc5103cc746"
 )
 RELATION_REFS_SHA256 = (
     "cd8b59e7c3877cb26c778f2a41d7dba6604e1288d54b7aa846292bcbdf5ab60a"
@@ -59,11 +59,11 @@ VERSION_BINDING: dict[str, object] = {
     "framework_semantic_sha256": (
         "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
     ),
-    "runtime_version": "1.0.0",
-    "artifact_schema_version": 1,
+    "runtime_version": "1.1.0",
+    "artifact_schema_version": 2,
     "compiler_version": "1.0.0",
-    "validator_version": "1.0.0",
-    "article_contract_version": "1.0.0",
+    "validator_version": "1.1.0",
+    "article_contract_version": "1.1.0",
     "source_tree_sha256": (
         "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
     ),
