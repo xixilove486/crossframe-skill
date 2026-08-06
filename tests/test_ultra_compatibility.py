@@ -23,6 +23,7 @@ MATRIX_PATH = ULTRA_ROOT / "references/compatibility-matrix.json"
 RAW_SHA256 = "608a4e4099b18c96c18ed3c92a2ab5cdacbd737daca4214c77debdd795da3a20"
 SEMANTIC_SHA256 = "4b63a6455cf73c136ae18d124aeed4301267fd2da78cca79c74e2850fb2728b0"
 TREE_SHA256 = "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
+RELEASE_EPOCH = "2026-08-06T08:53:37Z"
 BASE_COMMIT = "f0e808d3bef871895b166abbecae73ca3c9afa8f"
 LEGACY_V1_SCHEMA_NAMES = (
     "ultra-article-review.schema.json",
@@ -35,6 +36,7 @@ LEGACY_V1_SCHEMA_NAMES = (
     "ultra-recovery-checkpoint.schema.json",
     "ultra-release-manifest.schema.json",
     "ultra-run-contract.schema.json",
+    "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-validator-report.schema.json",
     "ultra-verdict.schema.json",
@@ -233,6 +235,36 @@ def test_legacy_v1_schema_snapshots_are_exact_start_commit_bytes() -> None:
         assert (legacy_root / schema_name).read_bytes() == expected
 
 
+def test_legacy_v1_run_status_rejects_v2_only_fork_authority() -> None:
+    runtime = load_runtime()
+    status = {
+        "schema_id": "crossframe.ultra.v82.run-status",
+        "schema_version": 1,
+        "run_id": "ultra-run-20260802-0001",
+        "version_binding": v1_binding(),
+        "generated_at": "2026-08-02T08:00:00Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U12",
+        "fork_authority_sha256": "a" * 64,
+        "status": "complete",
+        "previous_status": "running",
+        "current_phase": "U12",
+        "last_complete_phase": "U12",
+        "reason": None,
+        "tools_allowed": False,
+        "validation_passed": True,
+        "updated_at": "2026-08-02T08:00:00Z",
+        "created_at": "2026-08-02T07:00:00Z",
+        "revision": 13,
+    }
+
+    with pytest.raises(ValidationError):
+        runtime.validate_legacy_v1_instance(
+            "ultra-run-status.schema.json",
+            status,
+        )
+
+
 def test_v1_read_only_validation_uses_legacy_registry_without_writing(
     tmp_path: Path,
 ) -> None:
@@ -381,6 +413,7 @@ def test_compatibility_matrix_is_schema_valid_and_mechanically_loaded() -> None:
         "reject",
     ]
     assert matrix["version_binding"] == binding()
+    assert matrix["generated_at"] == RELEASE_EPOCH
     assert matrix["content_sha256"] == canonical_content_sha256(matrix)
     assert len(set(matrix["content_sha256"])) > 1
     assert [rule["priority"] for rule in matrix["rules"]] == sorted(

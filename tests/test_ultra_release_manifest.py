@@ -18,7 +18,7 @@ SKILL_SCRIPTS = ULTRA / "scripts"
 BUILDER_PATH = SKILL_SCRIPTS / "build_crossframe_ultra_release_manifest.py"
 ROOT_BUILDER_PATH = ROOT / "scripts/build_crossframe_ultra_release_manifest.py"
 MANIFEST_PATH = ULTRA / "references/release-manifest.json"
-STAMP = "2026-08-02T00:00:00Z"
+STAMP = "2026-08-06T08:53:37Z"
 
 
 def _load_builder():
@@ -89,6 +89,7 @@ def test_manifest_is_deterministic_schema_valid_and_exactly_covers_the_canonical
     assert _declared_hashes(first) == expected
     assert list(_declared_hashes(first)) == sorted(expected)
     assert "references/release-manifest.json" not in expected
+    assert "schemas/legacy-v1/ultra-run-status.schema.json" in expected
     assert all(item["media_type"] == "application/octet-stream" for item in first["release_artifacts"])
 
 
@@ -135,6 +136,9 @@ def test_builder_write_is_atomic_repeatable_and_root_wrapper_detects_staleness(
     first_bytes = manifest.read_bytes()
     parsed = json.loads(first_bytes.decode("utf-8"))
     assert parsed["content_sha256"]
+    assert parsed["generated_at"] == STAMP
+    assert parsed["built_at"] == STAMP
+    assert parsed["validated_at"] == STAMP
 
     rewrite = subprocess.run(
         [sys.executable, "-B", str(canonical), "--repo", str(repo), "--write"],

@@ -143,6 +143,7 @@ LEGACY_V1_SNAPSHOT_NAMES = (
     "ultra-recovery-checkpoint.schema.json",
     "ultra-release-manifest.schema.json",
     "ultra-run-contract.schema.json",
+    "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
     "ultra-validator-report.schema.json",
     "ultra-verdict.schema.json",

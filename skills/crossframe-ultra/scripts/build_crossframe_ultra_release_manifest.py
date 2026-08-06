@@ -23,7 +23,7 @@ from ultra_runtime.source_integrity import canonical_skill_tree_hashes
 SKILL_RELATIVE = Path("skills/crossframe-ultra")
 SOURCE_MANIFEST_RELATIVE = Path("references/source-manifest.json")
 RELEASE_MANIFEST_RELATIVE = Path("references/release-manifest.json")
-RELEASE_STAMP = "2026-08-02T00:00:00Z"
+RELEASE_STAMP = "2026-08-06T08:53:37Z"
 
 
 class ReleaseManifestBuildError(ValueError):

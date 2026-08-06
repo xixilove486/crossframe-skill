@@ -1025,6 +1025,7 @@ def test_validator_set_binds_every_runtime_and_u1_authority_checker(
         "scripts/check_crossframe_ultra_artifacts.py",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_source.py",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py",
+        "skills/crossframe-ultra/schemas/legacy-v1/ultra-run-status.schema.json",
         "skills/crossframe-ultra/scripts/ultra_runtime/errors.py",
         "skills/crossframe-ultra/scripts/ultra_runtime/evidence.py",
         "skills/crossframe-ultra/scripts/ultra_runtime/state_machine.py",

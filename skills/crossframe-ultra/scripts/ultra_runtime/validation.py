@@ -143,7 +143,7 @@ def validator_set_sha256(repo: Path) -> str:
     )
     relative_files.extend(
         path.relative_to(root).as_posix()
-        for path in sorted((root / "skills/crossframe-ultra/schemas").glob("*.json"))
+        for path in sorted((root / "skills/crossframe-ultra/schemas").rglob("*.json"))
     )
     hashes: dict[str, str] = {}
     for relative in relative_files:

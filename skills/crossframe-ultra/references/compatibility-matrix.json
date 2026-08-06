@@ -14,8 +14,8 @@
     "article_contract_version": "1.1.0",
     "source_tree_sha256": "9bb924e3d0249993b7de34d585ef805011106784fbbadd9ddbe43abc98a90187"
   },
-  "generated_at": "2026-08-02T08:00:00Z",
-  "content_sha256": "009bd1dcbdf0aae1669bcf130218e138ac45dbb8cab52d39daf3b0851aa83571",
+  "generated_at": "2026-08-06T08:53:37Z",
+  "content_sha256": "7080142348eb8d550c5b4e6f18c26c6af4006e144a027ea8f85e79bfd07027bf",
   "matrix_version": 1,
   "binding_fields": [
     "framework_version",
