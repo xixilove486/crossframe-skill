@@ -219,6 +219,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-concept-registry.schema.json",
     "ultra-contract-map.schema.json",
     "ultra-evidence-ledger.schema.json",
+    "ultra-evidence-lineage.schema.json",
     "ultra-forecast-ledger.schema.json",
     "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",
@@ -839,6 +840,28 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "resolution_condition": "Observe the next review cycle.",
                 }
             ],
+        ),
+        "ultra-evidence-lineage.schema.json": artifact(
+            "ultra-evidence-lineage.schema.json",
+            phase_id="U0",
+            parent_run_id="ultra-run-20260801-parent",
+            parent_u3_event_sha256=HASH_A,
+            parent_evidence_sha256=HASH_B,
+            parent_evidence_cutoff="2026-08-01T08:00:00Z",
+            evidence_cutoff=STAMP,
+            inherited_input_refs=[
+                {
+                    "path": "input/request.bin",
+                    "sha256": HASH_C,
+                    "media_type": "application/octet-stream",
+                }
+            ],
+            new_evidence_ref={
+                "path": "input/new-evidence.bin",
+                "sha256": HASH_A,
+                "media_type": "application/octet-stream",
+            },
+            status="pending-u0-attestation",
         ),
         "ultra-retrieval-ledger.schema.json": artifact(
             "ultra-retrieval-ledger.schema.json",
@@ -1736,6 +1759,7 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             boundary_kind="phase",
             boundary_id="U7",
             boundary_ordinal=0,
+            generation=0,
             phase_event_sha256=HASH_A,
             artifact_hashes=[
                 {
@@ -1958,6 +1982,7 @@ PRIMARY_FIELD = {
     "ultra-source-lock.schema.json": "inputs",
     "ultra-read-event.schema.json": "read_event_sha256",
     "ultra-evidence-ledger.schema.json": "entries",
+    "ultra-evidence-lineage.schema.json": "parent_evidence_sha256",
     "ultra-retrieval-ledger.schema.json": "entries",
     "ultra-world-volume.schema.json": "positions",
     "ultra-transformation-ledger.schema.json": "transformations",
@@ -2100,6 +2125,11 @@ def test_host_action_and_host_result_schemas_are_closed(
             "ultra-evidence-ledger.schema.json",
             "crossframe.ultra.v82.evidence-ledger",
             "U3",
+        ),
+        (
+            "ultra-evidence-lineage.schema.json",
+            "crossframe.ultra.v82.evidence-lineage",
+            "U0",
         ),
         (
             "ultra-world-volume.schema.json",

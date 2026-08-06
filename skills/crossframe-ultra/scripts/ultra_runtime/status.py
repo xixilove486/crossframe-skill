@@ -56,6 +56,7 @@ _RUN_STATUS_SCHEMA = "ultra-run-status.schema.json"
 _RUN_STATUS_SCHEMA_ID = "crossframe.ultra.v82.run-status"
 _UNSET = object()
 _U12_COMPLETE_AUTHORITY = object()
+_REPAIR_REOPEN_AUTHORITY = object()
 
 
 class RunStatusError(UltraRuntimeError, RuntimeError):
@@ -321,12 +322,20 @@ class RunStatusStore:
         replacement: RunStatusRecord,
         *,
         completion_authority: object | None = None,
+        repair_authority: object | None = None,
         lease: object | None = None,
     ) -> RunStatusRecord:
         run_id = self.layout.run_dir.name
         _validate_record(expected, run_id)
         _validate_record(replacement, run_id)
         completing = replacement.status == "complete"
+        repairing = repair_authority is _REPAIR_REOPEN_AUTHORITY
+        if completion_authority is not None and repair_authority is not None:
+            raise RunStatusTransitionError(
+                "completion and repair authorities are mutually exclusive"
+            )
+        if repair_authority is not None and not repairing:
+            raise RunStatusTransitionError("repair reopen authority is invalid")
         if completing and completion_authority is not _U12_COMPLETE_AUTHORITY:
             raise RunStatusTransitionError(
                 "ordinary status replacement cannot complete outside the durable U12 closure"
@@ -357,11 +366,11 @@ class RunStatusStore:
             raise RunStatusTransitionError(
                 "replacement updated_at must advance monotonically after the old value"
             )
-        if PHASES.index(replacement.current_phase) < PHASES.index(
+        if not repairing and PHASES.index(replacement.current_phase) < PHASES.index(
             expected.current_phase
         ):
             raise RunStatusTransitionError("current_phase cannot move backwards")
-        if expected.last_complete_phase is not None and (
+        if not repairing and expected.last_complete_phase is not None and (
             replacement.last_complete_phase is None
             or PHASES.index(replacement.last_complete_phase)
             < PHASES.index(expected.last_complete_phase)
@@ -369,7 +378,13 @@ class RunStatusStore:
             raise RunStatusTransitionError("last_complete_phase cannot move backwards")
         allowed = RUN_STATUS_TRANSITIONS[expected.status]
         allowed_completion = completing and expected.status == "running"
-        if not allowed_completion and replacement.status not in allowed:
+        allowed_repair = (
+            repairing
+            and expected.status not in {"complete", "failed", "cancelled"}
+            and replacement.status == "running"
+            and replacement.validation_passed is False
+        )
+        if not allowed_completion and not allowed_repair and replacement.status not in allowed:
             terminal = expected.status in {"complete", "failed", "cancelled"}
             qualifier = "terminal " if terminal else ""
             raise RunStatusTransitionError(
@@ -466,6 +481,74 @@ class RunStatusStore:
             revision=expected.revision + 1,
         )
         return self.replace(expected, replacement, lease=lease)
+
+    def reopen_for_repair(
+        self,
+        expected: RunStatusRecord,
+        now: datetime,
+        *,
+        reset_from_phase: str,
+        invalidation_event_sha256: str,
+        generation: int,
+        lease: object,
+    ) -> RunStatusRecord:
+        _require_utc(now, "now")
+        _validate_record(expected, self.layout.run_dir.name)
+        if reset_from_phase not in PHASES:
+            raise ValueError("repair reset phase is outside U0-U12")
+        if not isinstance(invalidation_event_sha256, str):
+            raise TypeError("repair invalidation event SHA-256 must be a string")
+        if type(generation) is not int or generation < 1:
+            raise ValueError("repair generation must be a positive integer")
+        from . import recovery
+
+        authority, compatibility, _ = recovery._validate_authority_record(self.layout)
+        events = recovery._read_events(
+            self.layout,
+            authority,
+            compatibility=compatibility,
+        )
+        matches = [
+            event
+            for event in events
+            if event.get("event_sha256") == invalidation_event_sha256
+        ]
+        if len(matches) != 1:
+            raise RunStatusTransitionError(
+                "repair reopen requires one validated invalidation event"
+            )
+        invalidation = matches[0]
+        if (
+            invalidation.get("status") != "invalidated"
+            or invalidation.get("reset_from_phase") != reset_from_phase
+            or invalidation.get("generation") != generation
+        ):
+            raise RunStatusTransitionError(
+                "repair reopen authority differs from the requested boundary"
+            )
+        reset_index = PHASES.index(reset_from_phase)
+        last_complete = PHASES[reset_index - 1] if reset_index else None
+        replacement = _make_record(
+            run_id=expected.run_id,
+            status="running",
+            previous_status=expected.status,
+            current_phase=reset_from_phase,
+            last_complete_phase=last_complete,
+            reason=(
+                "repair generation "
+                f"{generation} reopened by {invalidation_event_sha256}"
+            ),
+            validation_passed=False,
+            created_at=expected.created_at,
+            updated_at=_iso_utc(now),
+            revision=expected.revision + 1,
+        )
+        return self._replace(
+            expected,
+            replacement,
+            repair_authority=_REPAIR_REOPEN_AUTHORITY,
+            lease=lease,
+        )
 
     def commit_u12_complete(
         self,

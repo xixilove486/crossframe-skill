@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 import copy
 from pathlib import Path
 from pathlib import PurePosixPath
@@ -157,6 +157,36 @@ def _artifact_path(layout: RunLayout, relative: str) -> Path:
     return candidate
 
 
+def _active_phase_checkpoints(
+    recovery: object,
+    events: Sequence[Mapping[str, object]],
+    checkpoints: Sequence[Mapping[str, object]],
+) -> tuple[tuple[dict[str, object], ...], tuple[dict[str, object], ...]]:
+    selector = getattr(recovery, "_active_completed_events", None)
+    if not callable(selector):
+        raise _AuthorityDAGError("active recovery generation selector is unavailable")
+    _, active_events = selector(events)
+    selected: list[dict[str, object]] = []
+    for event in active_events:
+        event_sha256 = event.get("event_sha256")
+        matches = [
+            checkpoint
+            for checkpoint in checkpoints
+            if checkpoint.get("boundary_kind") == "phase"
+            and checkpoint.get("phase_event_sha256") == event_sha256
+        ]
+        if len(matches) != 1:
+            raise _AuthorityDAGError(
+                "active phase event must bind exactly one checkpoint",
+                phase_id=str(event.get("phase_id")),
+            )
+        selected.append(copy.deepcopy(dict(matches[0])))
+    return (
+        tuple(copy.deepcopy(dict(event)) for event in active_events),
+        tuple(selected),
+    )
+
+
 def _load_verified_disk_authority(
     layout: RunLayout,
     manifest: Mapping[str, Any],
@@ -186,7 +216,7 @@ def _load_verified_disk_authority(
         raise _AuthorityDAGError("checkpoint directory is empty")
 
     checkpoints: list[dict[str, object]] = []
-    slots: set[tuple[str, str, int]] = set()
+    slots: set[tuple[int, str, str, int]] = set()
     for path in candidates:
         phase_id: str | None = None
         try:
@@ -219,18 +249,18 @@ def _load_verified_disk_authority(
             ) from error
     checkpoints.sort(key=recovery._checkpoint_sort_key)
 
+    active_events, active_phase_checkpoints = _active_phase_checkpoints(
+        recovery,
+        events,
+        checkpoints,
+    )
     phase_ids = tuple(
         str(event["phase_id"])
-        for event in events
-        if event.get("status") == "complete"
+        for event in active_events
     )
     if phase_ids not in {_COMPLETE_THROUGH_U11, _COMPLETE_THROUGH_U12}:
         raise _AuthorityDAGError("phase chain is not complete through U11")
-    phase_checkpoints = [
-        checkpoint
-        for checkpoint in checkpoints
-        if checkpoint.get("boundary_kind") == "phase"
-    ]
+    phase_checkpoints = list(active_phase_checkpoints)
     if tuple(str(checkpoint["phase_id"]) for checkpoint in phase_checkpoints) != phase_ids:
         raise _AuthorityDAGError("phase checkpoints do not exactly cover the event chain")
 
@@ -328,12 +358,14 @@ def _load_verified_disk_authority(
                 "U12 checkpoint does not bind the fixed completion files",
                 phase_id="U12",
             )
-    u11_event = next(event for event in events if event.get("phase_id") == "U11")
+    u11_event = next(
+        event for event in active_events if event.get("phase_id") == "U11"
+    )
     if manifest.get("phase_chain_head_sha256") != u11_event.get("event_sha256"):
         raise _AuthorityDAGError("manifest does not bind the verified U11 chain head")
     return {
         "run_authority": copy.deepcopy(run_authority),
-        "events": tuple(copy.deepcopy(event) for event in events),
+        "events": tuple(copy.deepcopy(event) for event in active_events),
         "refs_by_phase": copy.deepcopy(refs_by_phase),
     }
 

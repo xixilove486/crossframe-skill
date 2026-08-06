@@ -91,6 +91,62 @@ def canonical_sha256(value: object) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
+def test_validation_selects_only_active_repair_generation_phase_authority() -> None:
+    runtime = load_validation_runtime()
+    phases = tuple(f"U{number}" for number in range(12))
+    original_events = [
+        {
+            "phase_id": phase_id,
+            "status": "complete",
+            "event_sha256": f"old-{phase_id}",
+        }
+        for phase_id in phases
+    ]
+    invalidation = {
+        "phase_id": "U10",
+        "status": "invalidated",
+        "reset_from_phase": "U10",
+        "generation": 1,
+        "event_sha256": "repair-invalidation",
+    }
+    replacements = [
+        {
+            "phase_id": phase_id,
+            "status": "complete",
+            "generation": 1,
+            "event_sha256": f"new-{phase_id}",
+        }
+        for phase_id in ("U10", "U11")
+    ]
+    checkpoints = [
+        {
+            "phase_id": event["phase_id"],
+            "boundary_kind": "phase",
+            "phase_event_sha256": event["event_sha256"],
+        }
+        for event in (*original_events, *replacements)
+    ]
+
+    active_events, active_checkpoints = (
+        runtime.validation._active_phase_checkpoints(
+            runtime.recovery,
+            (*original_events, invalidation, *replacements),
+            checkpoints,
+        )
+    )
+
+    assert [event["event_sha256"] for event in active_events] == [
+        *(f"old-U{number}" for number in range(10)),
+        "new-U10",
+        "new-U11",
+    ]
+    assert [checkpoint["phase_event_sha256"] for checkpoint in active_checkpoints] == [
+        *(f"old-U{number}" for number in range(10)),
+        "new-U10",
+        "new-U11",
+    ]
+
+
 def file_tree(root: Path) -> dict[str, str]:
     if not root.exists():
         return {}

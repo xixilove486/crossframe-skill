@@ -2321,6 +2321,18 @@ class CompleteMaterializationResult(MaterializationProgress):
     final_chat_path: Path
     postcheck_passed: bool
 
+
+@dataclass(frozen=True, slots=True)
+class RepairMaterializationResult:
+    run_id: str
+    status: str
+    outcome: str
+    repair_attempt_id: str
+    reopened_phase: str
+    active_generation: int
+    next_action: Mapping[str, str]
+
+
 def _resume_phase_store(result: object) -> object:
     phase_store = getattr(result, "phase_store", None)
     if phase_store is None and isinstance(result, Mapping):
@@ -3172,6 +3184,87 @@ def _validator_set_authority(repo: Path, validation: object) -> str:
     return value
 
 
+def _apply_pending_validation_repair(
+    layout: RunLayout,
+    *,
+    now: datetime,
+    lease: object,
+) -> RepairMaterializationResult | None:
+    _require_utc(now, "now")
+    report_path = layout.validation_current_dir / "ultra-validator-report.json"
+    if not report_path.is_file():
+        return None
+    report = load_json_object(report_path)
+    if report.get("overall_status") != "fail":
+        return None
+    from . import repair
+
+    attempt_id, attempt_number = repair.current_attempt_identity(layout, now=now)
+    attempt_root = repair._repair_attempt_root(layout, attempt_id)
+    application_path = attempt_root / "repair-application.json"
+    if application_path.is_file():
+        committed_plan = load_json_object(
+            layout.validation_current_dir / "ultra-repair-plan.json"
+        )
+        repair.apply_repair_plan(
+            layout,
+            plan=committed_plan,
+            now=now,
+            lease=lease,
+        )
+        return None
+    plan = repair.build_repair_plan(
+        layout,
+        attempt_id=attempt_id,
+        attempt_number=attempt_number,
+        now=now,
+        lease=lease,
+    )
+    committed = repair.commit_repair_plan(
+        layout,
+        attempt_id=attempt_id,
+        plan=plan,
+        lease=lease,
+    )
+    if committed.get("status") != "planned":
+        return RepairMaterializationResult(
+            run_id=layout.run_dir.name,
+            status="needs_attention",
+            outcome="repair-needs-attention",
+            repair_attempt_id=attempt_id,
+            reopened_phase=str(committed["reset_from_phase"]),
+            active_generation=0,
+            next_action={
+                "phase_id": "U12",
+                "relative_path": "operator-review",
+            },
+        )
+    application = repair.apply_repair_plan(
+        layout,
+        plan=committed,
+        now=now,
+        lease=lease,
+    )
+    next_action = application.get("next_action")
+    if not isinstance(next_action, Mapping) or any(
+        not isinstance(next_action.get(field), str)
+        for field in ("phase_id", "relative_path")
+    ):
+        raise RuntimeError("repair application next action is invalid")
+    return RepairMaterializationResult(
+        run_id=layout.run_dir.name,
+        status="running",
+        outcome="repair-applied",
+        repair_attempt_id=attempt_id,
+        reopened_phase=str(application["reopened_phase"]),
+        active_generation=int(application["active_generation"]),
+        next_action={
+            "phase_id": str(next_action["phase_id"]),
+            "relative_path": str(next_action["relative_path"]),
+        },
+    )
+
+
 def _close_u12_transaction(
     layout: RunLayout,
     phase_store: object,
@@ -3352,7 +3445,7 @@ def materialize_complete_run(
     entropy: bytes,
     fresh_check: Callable[[str], bytes],
     commit_report: Callable[[str, bytes], object],
-) -> CompleteMaterializationResult:
+) -> CompleteMaterializationResult | MaterializationProgress | RepairMaterializationResult:
     """Materialize U4-U12 through Task 12's single PhaseStore and fixed APIs."""
 
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
@@ -3455,6 +3548,15 @@ def materialize_complete_run(
             raise
         stop_if_cancel_requested()
         current = status_store.read()
+        repair_result = _apply_pending_validation_repair(
+            layout,
+            now=now,
+            lease=lease,
+        )
+        if repair_result is not None:
+            return repair_result
+        current = status_store.read()
+        checkpoints_dir = layout.recovery_dir / "checkpoints"
         if current.status != "complete":
             current = preflight_foundation_progress(
                 layout,
@@ -3462,6 +3564,10 @@ def materialize_complete_run(
                 now=now,
                 lease=lease,
             )
+        elif checkpoints_dir.is_dir() and any(
+            path.is_file() for path in checkpoints_dir.glob("*.json")
+        ):
+            _foundation_input_inventory(layout, status_record=current)
         if current.status == "complete":
             recovered_publication = recover_publish_transaction(
                 layout,
@@ -3738,6 +3844,7 @@ __all__ = (
     "ArtifactSpec",
     "CompleteMaterializationResult",
     "MaterializationProgress",
+    "RepairMaterializationResult",
     "MaterializedBundle",
     "PreparedAuthoring",
     "artifact_destination",

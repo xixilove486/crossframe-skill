@@ -66,6 +66,7 @@ COMMANDS = (
     "repair-plan",
     "resume",
     "fork",
+    "evidence-fork",
     "cancel",
     "rebuild-index",
 )
@@ -141,6 +142,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_run(fork)
     fork.add_argument("--reason", required=True, metavar="TEXT")
+
+    evidence_fork = subparsers.add_parser(
+        "evidence-fork",
+        help="fork a same-version child for new evidence",
+        add_help=False,
+    )
+    _add_run(evidence_fork)
+    evidence_input = evidence_fork.add_mutually_exclusive_group(required=True)
+    evidence_input.add_argument("--evidence-file", metavar="PATH")
+    evidence_input.add_argument("--evidence-stdin", action="store_true")
 
     cancel = subparsers.add_parser("cancel", help="cancel a run", add_help=False)
     _add_run(cancel)
@@ -539,6 +550,7 @@ def _resume(
         {
             "outcome": result.outcome,
             "compatibility_result": result.compatibility_result,
+            "active_generation": result.active_generation,
             "checkpoint": result.checkpoint,
             "status": (
                 None if result.status is None else _record_to_object(result.status)
@@ -568,6 +580,37 @@ def _fork(
             entropy=entropy,
         )
     IndexStore(layout.root).rebuild()
+    _emit_json(stdout, result)
+    return 0
+
+
+def _evidence_fork(
+    args: argparse.Namespace,
+    *,
+    stdin: object,
+    stdout: TextIO,
+    policy: RootPolicy,
+    now: datetime,
+    entropy: bytes,
+) -> int:
+    parent_layout = _layout(args, policy)
+    if args.evidence_stdin:
+        evidence_bytes = _read_stdin_bytes(stdin)
+    else:
+        evidence_path = Path(args.evidence_file).resolve()
+        if not evidence_path.is_file():
+            raise ValueError(f"--evidence-file is not a file: {evidence_path}")
+        evidence_bytes = evidence_path.read_bytes()
+    recovery = _task12("recovery")
+    result = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=_mode(args.mode),
+        policy=policy,
+        evidence_bytes=evidence_bytes,
+        now=now,
+        entropy=entropy,
+    )
+    IndexStore(result.layout.root).rebuild()
     _emit_json(stdout, result)
     return 0
 
@@ -686,6 +729,15 @@ def execute(
     if args.command == "fork":
         return _fork(
             args,
+            stdout=stdout,
+            policy=policy,
+            now=current_time,
+            entropy=entropy_value(),
+        )
+    if args.command == "evidence-fork":
+        return _evidence_fork(
+            args,
+            stdin=stdin,
             stdout=stdout,
             policy=policy,
             now=current_time,

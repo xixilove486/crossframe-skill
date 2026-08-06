@@ -142,6 +142,17 @@ _EVENT_FIELDS = frozenset(
         "event_sha256",
     }
 )
+_REPAIR_EVENT_EXTRA_FIELDS = frozenset(
+    {
+        "generation",
+        "reset_from_phase",
+        "repair_attempt_id",
+        "repair_plan_sha256",
+        "failed_report_sha256",
+        "preserved_snapshot_sha256",
+        "superseded_event_sha256s",
+    }
+)
 _SOURCE_REPOSITORY = Path(__file__).resolve().parents[4]
 
 
@@ -797,6 +808,7 @@ class PhaseStore:
         self._events: list[dict[str, object]] = []
         self._event_hashes: set[str] = set()
         self._completed: list[str] = []
+        self._generation = 0
         self._evidence_ledger = EvidenceLedger(
             run_id,
             evidence_cutoff,
@@ -847,6 +859,10 @@ class PhaseStore:
     @property
     def current_phase(self) -> str | None:
         return self._completed[-1] if self._completed else None
+
+    @property
+    def active_generation(self) -> int:
+        return self._generation
 
     @property
     def evidence_frozen(self) -> bool:
@@ -1136,13 +1152,20 @@ class PhaseStore:
             "failure_code": failure_code,
             "invalidated_phases": list(invalidated_phases),
         }
+        if self._generation:
+            event["generation"] = self._generation
         event["content_sha256"] = _compute_event_content_sha256(event)
         event["event_sha256"] = compute_event_sha256(event)
         return event
 
     def _append_event(self, event: Mapping[str, object]) -> dict[str, object]:
         snapshot = copy.deepcopy(dict(event))
-        if frozenset(snapshot) != _EVENT_FIELDS:
+        expected_fields = (
+            _EVENT_FIELDS | _REPAIR_EVENT_EXTRA_FIELDS
+            if snapshot.get("status") == "invalidated"
+            else _EVENT_FIELDS | ({"generation"} if "generation" in snapshot else set())
+        )
+        if frozenset(snapshot) != expected_fields:
             raise PhaseIntegrityError("event fields do not match the closed contract")
         if snapshot.get("schema_id") != PHASE_EVENT_SCHEMA_ID:
             raise PhaseIntegrityError("event schema_id is invalid")
@@ -1539,7 +1562,13 @@ class PhaseStore:
         if not isinstance(event, Mapping):
             raise PhaseIntegrityError("replayed event must be an object")
         snapshot = copy.deepcopy(dict(event))
-        if frozenset(snapshot) != _EVENT_FIELDS:
+        status = snapshot.get("status")
+        expected_fields = (
+            _EVENT_FIELDS | _REPAIR_EVENT_EXTRA_FIELDS
+            if status == "invalidated"
+            else _EVENT_FIELDS | ({"generation"} if "generation" in snapshot else set())
+        )
+        if frozenset(snapshot) != expected_fields:
             raise PhaseIntegrityError("replayed event fields do not match the closed contract")
         if snapshot.get("event_sha256") in self._event_hashes:
             raise PhaseIntegrityError("event hash replay detected")
@@ -1548,7 +1577,8 @@ class PhaseStore:
         phase_id = snapshot.get("phase_id")
         if not isinstance(phase_id, str):
             raise PhaseIntegrityError("replayed event phase is invalid")
-        self._check_phase(phase_id)
+        if status != "invalidated":
+            self._check_phase(phase_id)
         expected_parent = self._check_bindings(
             parent_event_sha256=(
                 snapshot.get("parent_event_sha256")
@@ -1583,7 +1613,6 @@ class PhaseStore:
         if snapshot.get("run_contract_sha256") != self._run_contract_sha256:
             raise PhaseIntegrityError("replayed event run contract differs")
         _parse_timestamp(snapshot.get("timestamp"), error_type=PhaseIntegrityError)
-        status = snapshot.get("status")
         raw_outputs = snapshot.get("output_artifact_hashes")
         if not isinstance(raw_outputs, list):
             raise PhaseIntegrityError("replayed output hashes must be an array")
@@ -1592,12 +1621,46 @@ class PhaseStore:
         if not isinstance(raw_invalidated, list):
             raise PhaseIntegrityError("replayed invalidated phases must be an array")
         if status == "complete":
+            if snapshot.get("generation", 0) != self._generation:
+                raise PhaseIntegrityError("completed event generation is inconsistent")
             if snapshot.get("event_type") != "phase-completed" or snapshot.get(
                 "failure_code"
             ) is not None:
                 raise PhaseIntegrityError("completed event failure fields are inconsistent")
             if raw_invalidated:
                 raise PhaseIntegrityError("completed events cannot invalidate phases")
+        elif status == "invalidated":
+            reset_from_phase = snapshot.get("reset_from_phase")
+            generation = snapshot.get("generation")
+            if (
+                not isinstance(reset_from_phase, str)
+                or reset_from_phase not in PHASE_ORDER
+                or phase_id != reset_from_phase
+                or generation != self._generation + 1
+                or snapshot.get("event_type") != "repair-invalidation"
+                or not isinstance(snapshot.get("failure_code"), str)
+                or not str(snapshot["failure_code"]).strip()
+                or outputs
+            ):
+                raise PhaseIntegrityError("repair invalidation fields are inconsistent")
+            reset_index = PHASE_ORDER.index(reset_from_phase)
+            if len(self._completed) <= reset_index:
+                raise PhaseIntegrityError("repair invalidates an incomplete phase")
+            active_events: list[dict[str, object]] = []
+            for prior in self._events:
+                if prior.get("status") == "complete":
+                    active_events.append(prior)
+                elif prior.get("status") == "invalidated":
+                    prior_reset = str(prior["reset_from_phase"])
+                    active_events = active_events[: PHASE_ORDER.index(prior_reset)]
+            expected_superseded = [
+                str(item["event_sha256"]) for item in active_events[reset_index:]
+            ]
+            if (
+                raw_invalidated != list(PHASE_ORDER[reset_index:])
+                or snapshot.get("superseded_event_sha256s") != expected_superseded
+            ):
+                raise PhaseIntegrityError("repair invalidation authority is inconsistent")
         elif status in {"failed", "blocked", "cancelled"}:
             failure_code = snapshot.get("failure_code")
             if (
@@ -1625,7 +1688,10 @@ class PhaseStore:
                     parent_event_sha256=expected_parent,
                 )
         appended = self._append_event(snapshot)
-        if status in {"failed", "blocked", "cancelled"}:
+        if status == "invalidated":
+            self._completed = self._completed[:reset_index]
+            self._generation = int(generation)
+        elif status in {"failed", "blocked", "cancelled"}:
             self._terminal = True
         return appended
 

@@ -33,6 +33,7 @@ SCHEMA_NAMES = (
     "ultra-concept-registry.schema.json",
     "ultra-contract-map.schema.json",
     "ultra-evidence-ledger.schema.json",
+    "ultra-evidence-lineage.schema.json",
     "ultra-forecast-ledger.schema.json",
     "ultra-forecast-resolution-event.schema.json",
     "ultra-framework-gap-ledger.schema.json",

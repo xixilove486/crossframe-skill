@@ -39,6 +39,7 @@ EXPECTED_COMMANDS = (
     "repair-plan",
     "resume",
     "fork",
+    "evidence-fork",
     "cancel",
     "rebuild-index",
 )
@@ -243,6 +244,13 @@ def test_parser_exposes_only_the_frozen_commands_and_options() -> None:
         "repair-plan": {"--repo", "--mode", "--run-id"},
         "resume": {"--repo", "--mode", "--run-id"},
         "fork": {"--repo", "--mode", "--run-id", "--reason"},
+        "evidence-fork": {
+            "--repo",
+            "--mode",
+            "--run-id",
+            "--evidence-file",
+            "--evidence-stdin",
+        },
         "cancel": {"--repo", "--mode", "--run-id"},
         "rebuild-index": {"--repo", "--mode"},
     }
@@ -282,6 +290,80 @@ def test_parser_enforces_request_xor_modes_and_phase_domain() -> None:
         ["checkpoint", *common, "--run-id", "run", "--phase", "U11"]
     )
     assert parsed.phase == "U11"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["evidence-fork", *common, "--run-id", "run"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(
+            [
+                "evidence-fork",
+                *common,
+                "--run-id",
+                "run",
+                "--evidence-file",
+                "evidence.txt",
+                "--evidence-stdin",
+            ]
+        )
+
+
+def test_evidence_fork_cli_creates_a_u0_child_without_mutating_parent(
+    tmp_path: Path,
+) -> None:
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
+
+    cli = _load_cli()
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    policy = RootPolicy(
+        tmp_path / "parent" / "production",
+        tmp_path / "parent" / "test",
+    )
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    parent_before = {
+        path.relative_to(parent_layout.run_dir): path.read_bytes()
+        for path in parent_layout.run_dir.rglob("*")
+        if path.is_file()
+    }
+    stdout = StringIO()
+    new_evidence = b"new evidence candidate\n"
+
+    return_code = cli.execute(
+        [
+            "evidence-fork",
+            "--repo",
+            str(REPO_ROOT),
+            "--mode",
+            "test",
+            "--run-id",
+            parent_layout.run_dir.name,
+            "--evidence-stdin",
+        ],
+        stdin=BytesIO(new_evidence),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: datetime(2026, 8, 5, tzinfo=timezone.utc),
+        entropy=lambda: b"cli-evidence-child",
+    )
+
+    assert return_code == 0
+    emitted = json.loads(stdout.getvalue())
+    child_layout = build_run_layout(RunMode.TEST, emitted["run_id"], policy)
+    assert {
+        path.relative_to(parent_layout.run_dir): path.read_bytes()
+        for path in parent_layout.run_dir.rglob("*")
+        if path.is_file()
+    } == parent_before
+    assert (child_layout.input_dir / "new-evidence.bin").read_bytes() == new_evidence
+    assert emitted["lineage"]["status"] == "pending-u0-attestation"
+    assert emitted["parent_evidence_sha256"] == evidence_sha256
+    assert not (child_layout.artifacts_dir / "U04-U05-world-volume").exists()
 
 
 @pytest.mark.parametrize("source_kind", ["file", "stdin"])
@@ -466,6 +548,7 @@ def test_resume_emits_json_projection_without_live_phase_store(
     expected = {
         "outcome": "resume",
         "compatibility_result": "resume",
+        "active_generation": 0,
         "checkpoint": checkpoint,
         "status": status._record_to_object(status_record),
     }
@@ -485,6 +568,7 @@ def test_resume_emits_json_projection_without_live_phase_store(
     assert set(projected) == {
         "outcome",
         "compatibility_result",
+        "active_generation",
         "checkpoint",
         "status",
     }

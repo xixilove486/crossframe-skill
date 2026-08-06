@@ -10,7 +10,7 @@
       "required": ["event_type", "parent_event_sha256", "input_artifact_hashes", "output_artifact_hashes", "source_sha256", "evidence_cutoff", "run_contract_sha256", "timestamp", "status", "failure_code", "invalidated_phases", "event_sha256"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.phase-event"},
-        "event_type": {"enum": ["phase-completed", "phase-failed", "phase-blocked", "phase-cancelled"]},
+        "event_type": {"enum": ["phase-completed", "phase-failed", "phase-blocked", "phase-cancelled", "repair-invalidation"]},
         "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "input_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
         "output_artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/hashArray"},
@@ -18,10 +18,17 @@
         "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "run_contract_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "timestamp": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
-        "status": {"enum": ["complete", "failed", "blocked", "cancelled"]},
+        "status": {"enum": ["complete", "failed", "blocked", "cancelled", "invalidated"]},
         "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nullableString"},
         "invalidated_phases": {"$ref": "ultra-common.schema.json#/$defs/phaseArray"},
-        "event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"}
+        "event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "generation": {"type": "integer", "minimum": 1},
+        "reset_from_phase": {"$ref": "ultra-common.schema.json#/$defs/phaseId"},
+        "repair_attempt_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "repair_plan_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "failed_report_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "preserved_snapshot_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "superseded_event_sha256s": {"$ref": "ultra-common.schema.json#/$defs/hashArray"}
       }
     },
     {
@@ -61,6 +68,19 @@
           "event_type": {"const": "phase-cancelled"},
           "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
           "output_artifact_hashes": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "invalidated"}}, "required": ["status"]},
+      "then": {
+        "required": ["generation", "reset_from_phase", "repair_attempt_id", "repair_plan_sha256", "failed_report_sha256", "preserved_snapshot_sha256", "superseded_event_sha256s"],
+        "properties": {
+          "event_type": {"const": "repair-invalidation"},
+          "failure_code": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+          "output_artifact_hashes": {"maxItems": 0},
+          "invalidated_phases": {"minItems": 1},
+          "superseded_event_sha256s": {"minItems": 1}
         }
       }
     }

@@ -192,6 +192,73 @@ def _checkpoint(tmp_path: Path):
     return recovery, policy, layout, store, artifact_path, checkpoint
 
 
+def _u0_repair_invalidation(store) -> dict[str, object]:
+    from ultra_runtime import jsonio, schemas
+    import ultra_runtime.state_machine as state_machine
+    from ultra_runtime.constants import PHASES
+
+    completed = store.events[-1]
+    layout = store._run_layout
+    source = layout.artifacts_dir / "ultra-run-contract.json"
+    payload = source.read_bytes()
+    attempt_root = layout.recovery_dir / "repair-attempts" / "VALIDATION-1"
+    preserved_path = attempt_root / "superseded" / "ART-0001.bin"
+    preserved_path.parent.mkdir(parents=True, exist_ok=True)
+    preserved_path.write_bytes(payload)
+    snapshot = {
+        "schema_id": "crossframe.ultra.v82.repair-superseded-snapshot",
+        "schema_version": 1,
+        "run_id": store.run_id,
+        "version_binding": copy.deepcopy(completed["version_binding"]),
+        "generated_at": "2026-08-04T00:00:01Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "repair_attempt_id": "VALIDATION-1",
+        "artifacts": [
+            {
+                "original_path": source.relative_to(layout.run_dir).as_posix(),
+                "snapshot_path": preserved_path.relative_to(layout.run_dir).as_posix(),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "media_type": "application/json",
+            }
+        ],
+    }
+    snapshot["content_sha256"] = schemas.compute_artifact_content_sha256(snapshot)
+    snapshot_raw = jsonio.canonical_json_bytes(snapshot)
+    (attempt_root / "superseded-snapshot.json").write_bytes(snapshot_raw)
+    event = {
+        "schema_id": state_machine.PHASE_EVENT_SCHEMA_ID,
+        "schema_version": 1,
+        "run_id": store.run_id,
+        "version_binding": copy.deepcopy(completed["version_binding"]),
+        "generated_at": "2026-08-04T00:00:01Z",
+        "content_sha256": "0" * 64,
+        "phase_id": "U0",
+        "event_type": "repair-invalidation",
+        "parent_event_sha256": completed["event_sha256"],
+        "input_artifact_hashes": copy.deepcopy(completed["input_artifact_hashes"]),
+        "output_artifact_hashes": [],
+        "source_sha256": completed["source_sha256"],
+        "evidence_cutoff": completed["evidence_cutoff"],
+        "run_contract_sha256": completed["run_contract_sha256"],
+        "timestamp": "2026-08-04T00:00:01Z",
+        "status": "invalidated",
+        "failure_code": "repair:VALIDATION-1",
+        "invalidated_phases": list(PHASES),
+        "generation": 1,
+        "reset_from_phase": "U0",
+        "repair_attempt_id": "VALIDATION-1",
+        "repair_plan_sha256": "1" * 64,
+        "failed_report_sha256": "2" * 64,
+        "preserved_snapshot_sha256": hashlib.sha256(snapshot_raw).hexdigest(),
+        "superseded_event_sha256s": [completed["event_sha256"]],
+        "event_sha256": "0" * 64,
+    }
+    event["content_sha256"] = state_machine._compute_event_content_sha256(event)
+    event["event_sha256"] = state_machine.compute_event_sha256(event)
+    return event
+
+
 def _clone_layout(base_root: Path, tmp_path: Path, *, run_id: str):
     from ultra_runtime.paths import RootPolicy, RunMode, build_run_layout
 
@@ -505,6 +572,172 @@ def test_checkpoint_is_content_addressed_disk_verified_and_selected(tmp_path):
     assert path.read_bytes() == raw
     assert recovery.load_checkpoints(layout) == (checkpoint,)
     assert recovery.select_resume_checkpoint(layout) == checkpoint
+
+
+def test_phase_store_replays_repair_invalidation_into_a_new_generation(
+    tmp_path,
+    monkeypatch,
+):
+    import ultra_runtime.state_machine as state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    _, _, store, _ = _fixture_run(tmp_path)
+    original = store.events
+    invalidation = _u0_repair_invalidation(store)
+
+    store.replay_event(invalidation)
+    replacement = store.complete(
+        "U0",
+        artifact_hashes=(store.run_contract_artifact_sha256,),
+    )
+
+    assert store.events[: len(original)] == original
+    assert store.active_generation == 1
+    assert store.current_phase == "U0"
+    assert replacement["generation"] == 1
+    assert replacement["parent_event_sha256"] == invalidation["event_sha256"]
+
+
+def test_checkpoint_identity_allows_the_same_phase_in_a_new_generation(
+    tmp_path,
+    monkeypatch,
+):
+    import ultra_runtime.state_machine as state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    recovery, _, layout, store, artifact_path, original = _checkpoint(tmp_path)
+    invalidation = _u0_repair_invalidation(store)
+    store.replay_event(invalidation)
+    replacement_event = store.complete(
+        "U0",
+        artifact_hashes=(store.run_contract_artifact_sha256,),
+    )
+
+    replacement = recovery.create_checkpoint(
+        layout,
+        store,
+        boundary_kind="phase",
+        boundary_id="U0",
+        boundary_ordinal=0,
+        artifact_paths=(artifact_path,),
+        now=NOW + timedelta(seconds=2),
+    )
+
+    assert original["generation"] == 0
+    assert replacement["generation"] == 1
+    assert replacement["phase_event_sha256"] == replacement_event["event_sha256"]
+    assert recovery.load_checkpoints(layout) == (original, replacement)
+    assert recovery.select_resume_checkpoint(layout) == replacement
+
+
+def test_resume_restores_the_active_repair_generation(tmp_path, monkeypatch):
+    from ultra_runtime import source_integrity, state_machine
+    from ultra_runtime.status import RunStatusStore
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    real_measure_u1 = source_integrity.measure_u1_prerequisites
+
+    def measure_u1_for_u0_resume(*args, **kwargs):
+        measurement = real_measure_u1(*args, **kwargs)
+        object.__setattr__(measurement, "ready", True)
+        object.__setattr__(measurement, "missing", ())
+        return measurement
+
+    monkeypatch.setattr(
+        source_integrity,
+        "measure_u1_prerequisites",
+        measure_u1_for_u0_resume,
+    )
+    monkeypatch.setattr(
+        source_integrity,
+        "verify_u1_prerequisites",
+        lambda measurement: measurement,
+    )
+    recovery, _, layout, store, artifact_path, _ = _checkpoint(tmp_path)
+    invalidation = _u0_repair_invalidation(store)
+    store.replay_event(invalidation)
+    replacement_event = store.complete(
+        "U0",
+        artifact_hashes=(store.run_contract_artifact_sha256,),
+    )
+    replacement_checkpoint = recovery.create_checkpoint(
+        layout,
+        store,
+        boundary_kind="phase",
+        boundary_id="U0",
+        boundary_ordinal=0,
+        artifact_paths=(artifact_path,),
+        now=NOW + timedelta(seconds=2),
+    )
+    statuses = RunStatusStore(layout)
+    created = statuses.create(NOW)
+    running = statuses.transition(created, "running", NOW + timedelta(seconds=3))
+    statuses.transition(running, "interrupted", NOW + timedelta(seconds=4))
+
+    resumed = recovery.resume_run(layout, now=NOW + timedelta(seconds=5))
+
+    assert resumed.active_generation == 1
+    assert resumed.checkpoint == replacement_checkpoint
+    assert resumed.checkpoint["phase_event_sha256"] == replacement_event["event_sha256"]
+    assert resumed.phase_store is not None
+    assert resumed.phase_store.active_generation == 1
+    assert resumed.phase_store.current_phase == "U0"
+    assert resumed.phase_store.events[-2:] == (invalidation, replacement_event)
+
+
+def test_resume_selection_rejects_a_superseded_generation_checkpoint(
+    tmp_path,
+    monkeypatch,
+):
+    import ultra_runtime.state_machine as state_machine
+
+    monkeypatch.setattr(state_machine, "PRODUCTION_ROOT", tmp_path / "production")
+    recovery, _, layout, store, _, _ = _checkpoint(tmp_path)
+    invalidation = _u0_repair_invalidation(store)
+    store.replay_event(invalidation)
+    events_path = layout.recovery_dir / "phase-events.jsonl"
+    recovery._sync_events(events_path, store.events)
+
+    with pytest.raises(recovery.RecoveryStateError, match="active|resumable"):
+        recovery.select_resume_checkpoint(layout)
+
+
+def test_resume_keeps_invalidation_but_drops_uncheckpointed_repair_completion() -> None:
+    recovery = _recovery_module()
+    events = [
+        {
+            "phase_id": f"U{number}",
+            "status": "complete",
+            "event_sha256": f"old-U{number}",
+        }
+        for number in range(12)
+    ]
+    invalidation = {
+        "phase_id": "U10",
+        "status": "invalidated",
+        "reset_from_phase": "U10",
+        "generation": 1,
+        "event_sha256": "repair-invalidation",
+    }
+    uncheckpointed = {
+        "phase_id": "U10",
+        "status": "complete",
+        "generation": 1,
+        "event_sha256": "new-U10",
+    }
+    checkpoint = {
+        "phase_id": "U9",
+        "boundary_kind": "phase",
+        "generation": 0,
+        "phase_event_sha256": "old-U9",
+    }
+
+    durable = recovery._events_for_resume(
+        (*events, invalidation, uncheckpointed),
+        checkpoint,
+    )
+
+    assert durable == (*events, invalidation)
 
 
 def test_checkpoint_without_supplied_lease_owns_one_for_all_commits(
@@ -1140,3 +1373,111 @@ def test_exact_compatible_run_cannot_use_the_migration_fork_api(tmp_path):
             now=NOW + timedelta(seconds=10),
             entropy=b"rejected-child",
         )
+
+
+def test_evidence_fork_preserves_parent_and_reopens_child_at_u0(tmp_path) -> None:
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from ultra_runtime import jsonio, recovery
+    from ultra_runtime.paths import RootPolicy, RunMode
+
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    events = _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    parent_before = {
+        path.relative_to(parent_layout.run_dir): path.read_bytes()
+        for path in parent_layout.run_dir.rglob("*")
+        if path.is_file()
+    }
+    policy = RootPolicy(tmp_path / "children-production", tmp_path / "children-test")
+    new_evidence = b"new admitted evidence candidate\n"
+
+    child = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=RunMode.TEST,
+        policy=policy,
+        evidence_bytes=new_evidence,
+        now=NOW + timedelta(days=1),
+        entropy=b"evidence-child",
+    )
+
+    assert child.parent_evidence_sha256 == evidence_sha256
+    assert child.parent_u3_event_sha256 == events[-1]["event_sha256"]
+    assert child.evidence_cutoff > "2026-08-04T04:00:00Z"
+    assert {
+        path.relative_to(parent_layout.run_dir): path.read_bytes()
+        for path in parent_layout.run_dir.rglob("*")
+        if path.is_file()
+    } == parent_before
+    assert (child.layout.input_dir / "request.bin").read_bytes() == (
+        parent_layout.input_dir / "request.bin"
+    ).read_bytes()
+    assert (child.layout.input_dir / "new-evidence.bin").read_bytes() == new_evidence
+    assert not (child.layout.artifacts_dir / "U09-U10-verdict").exists()
+    lineage = jsonio.load_json_object(
+        child.layout.recovery_dir / "evidence-lineage-request.json"
+    )
+    assert lineage["status"] == "pending-u0-attestation"
+    assert lineage["parent_run_id"] == parent_layout.run_dir.name
+    assert lineage["parent_u3_event_sha256"] == events[-1]["event_sha256"]
+    assert lineage["parent_evidence_sha256"] == evidence_sha256
+    assert lineage["new_evidence_ref"]["path"] == "input/new-evidence.bin"
+    recovery.validate_instance("ultra-evidence-lineage.schema.json", lineage)
+
+
+def test_evidence_fork_does_not_overwrite_inherited_prior_evidence(tmp_path) -> None:
+    from tests.test_ultra_repair import _prepare_attempt, _write_recovery_chain
+    from ultra_runtime import jsonio, recovery, schemas
+    from ultra_runtime.paths import RootPolicy, RunMode
+
+    parent_layout, _ = _prepare_attempt(tmp_path / "parent")
+    evidence_path = parent_layout.run_dir / "artifacts/U00-U03-evidence/evidence.json"
+    evidence_sha256 = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    _write_recovery_chain(
+        parent_layout,
+        through_phase="U3",
+        output_overrides={"U3": (evidence_sha256,)},
+    )
+    inherited_evidence = b"evidence inherited from the prior fork\n"
+    prior_path = parent_layout.input_dir / "new-evidence.bin"
+    prior_path.write_bytes(inherited_evidence)
+    authority_path = parent_layout.recovery_dir / "run-authority.json"
+    authority = jsonio.load_json_object(authority_path)
+    authority["input_refs"].append(
+        {
+            "path": "input/new-evidence.bin",
+            "sha256": hashlib.sha256(inherited_evidence).hexdigest(),
+            "media_type": "application/octet-stream",
+        }
+    )
+    authority["content_sha256"] = schemas.compute_artifact_content_sha256(
+        authority
+    )
+    jsonio.atomic_write_json(authority_path, authority)
+    policy = RootPolicy(tmp_path / "children-production", tmp_path / "children-test")
+    latest_evidence = b"newer evidence candidate\n"
+
+    child = recovery.fork_for_new_evidence(
+        parent_layout,
+        mode=RunMode.TEST,
+        policy=policy,
+        evidence_bytes=latest_evidence,
+        now=NOW + timedelta(days=1),
+        entropy=b"second-evidence-child",
+    )
+
+    inherited_ref = next(
+        item
+        for item in child.lineage["inherited_input_refs"]
+        if item["path"] == "input/new-evidence.bin"
+    )
+    new_ref = child.lineage["new_evidence_ref"]
+    assert new_ref["path"] != inherited_ref["path"]
+    assert (child.layout.run_dir / inherited_ref["path"]).read_bytes() == (
+        inherited_evidence
+    )
+    assert (child.layout.run_dir / new_ref["path"]).read_bytes() == latest_evidence

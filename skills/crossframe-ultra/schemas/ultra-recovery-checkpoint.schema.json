@@ -7,12 +7,13 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["boundary_kind", "boundary_id", "boundary_ordinal", "phase_event_sha256", "artifact_hashes", "evidence_cutoff", "completed_boundary", "resumable"],
+      "required": ["boundary_kind", "boundary_id", "boundary_ordinal", "generation", "phase_event_sha256", "artifact_hashes", "evidence_cutoff", "completed_boundary", "resumable"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.recovery-checkpoint"},
         "boundary_kind": {"enum": ["phase", "article-packet"]},
         "boundary_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "boundary_ordinal": {"type": "integer", "minimum": 0},
+        "generation": {"type": "integer", "minimum": 0},
         "phase_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "artifact_hashes": {"$ref": "ultra-common.schema.json#/$defs/artifactHashArray"},
         "evidence_cutoff": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},

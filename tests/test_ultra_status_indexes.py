@@ -1530,6 +1530,7 @@ def _seed_durable_complete_index(runtime_modules, tmp_path: Path):
         "boundary_kind": "phase",
         "boundary_id": "U12",
         "boundary_ordinal": 0,
+        "generation": 0,
         "phase_event_sha256": events[-1]["event_sha256"],
         "artifact_hashes": [
             {
