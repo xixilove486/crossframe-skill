@@ -19,6 +19,7 @@
         "overall_status",
         "official_filename_allowed",
         "review_stage",
+        "semantic_review_required",
         "needs_u12_validation",
         "u12_validator_artifact_required"
       ],
@@ -76,6 +77,7 @@
         "overall_status": {"enum": ["mechanical-complete", "mechanical-fail"]},
         "official_filename_allowed": {"const": false},
         "review_stage": {"const": "mechanical-precheck"},
+        "semantic_review_required": {"const": true},
         "needs_u12_validation": {"const": true},
         "u12_validator_artifact_required": {"const": true}
       }

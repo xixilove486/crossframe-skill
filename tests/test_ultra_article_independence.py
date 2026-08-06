@@ -307,6 +307,7 @@ def test_u11_article_review_producer_emits_frozen_fifteen_and_eleven_rows(
     assert all(row["status"] == "pass" for row in artifact["quality_checks"])
     assert artifact["overall_status"] == "mechanical-complete"
     assert artifact["official_filename_allowed"] is False
+    assert artifact["semantic_review_required"] is True
     assert artifact["needs_u12_validation"] is True
     assert artifact["u12_validator_artifact_required"] is True
     assert artifact["output_plan_artifact_sha256"] == output_plan_sha256

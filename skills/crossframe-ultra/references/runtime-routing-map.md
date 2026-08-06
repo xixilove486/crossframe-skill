@@ -131,6 +131,8 @@ Do not advance a phase until its upstream artifacts and phase event validate. Ne
 
 The runtime owns IDs, version bindings, hashes, phase events, status, manifests, indexes, validation reports, and delivery paths. It overwrites runtime-owned fields from sealed control state and never trusts a model-authored control value.
 
+Fresh U11 semantic review is not an authoring slot. The runtime issues a persistent `semantic-review` host action with a fixed result slot, accepts the bound receipt through the host handshake, and projects `artifacts/U09-U10-verdict/U11-semantic-review.json` itself.
+
 For the fresh foundation path, the listed U01–U03 authoring names are reserved compatibility slots and are not model-owned. Caller-authored U01 read events, U02 retrieval ledgers, and U03 evidence envelopes cannot authorize those phases; runtime artifacts are derived from accepted host receipts and frozen input. A model writes only the slot returned by `prepare`; ordinary semantic authoring begins at U04.
 
 ## Template authority

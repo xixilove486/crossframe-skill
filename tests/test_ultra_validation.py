@@ -937,6 +937,28 @@ def test_fresh_claim_semantics_reuses_the_support_scope_validator() -> None:
         code == "ULTRA-EVIDENCE-HOLLOW"
         for code, _ in issues["semantic-tamper-resistance"]
     )
+def test_validator_report_layers_separate_deterministic_adversarial_and_semantic() -> None:
+    modules = load_validation_runtime()
+    build_layers = getattr(modules.validation, "_build_validation_layers", None)
+    assert callable(build_layers)
+    issues = {check_id: [] for check_id in modules.validation._CHECK_ORDER}
+
+    passing = build_layers(issues, semantic_review_status="pass")
+
+    assert [row["layer_id"] for row in passing] == [
+        "deterministic",
+        "adversarial",
+        "fresh-semantic",
+    ]
+    assert [row["status"] for row in passing] == ["pass", "pass", "pass"]
+
+    issues["semantic-tamper-resistance"].append(
+        ("ULTRA-EVIDENCE-HOLLOW", "artifacts/U06")
+    )
+    failing = build_layers(issues, semantic_review_status="fail")
+    assert [row["status"] for row in failing] == ["pass", "fail", "fail"]
+
+
 def test_disk_fresh_validation_is_canonical_read_only_and_schema_valid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

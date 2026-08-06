@@ -20,6 +20,7 @@ for import_root in (REPO_ROOT, SCRIPTS_DIR):
 
 from tests.ultra_closed_fixture_support import (  # noqa: E402
     CLOSED_ORGANIZATION_CASE,
+    accept_closed_semantic_review,
     write_closed_u4_u10_authoring,
     write_closed_u11_authoring,
 )
@@ -606,11 +607,26 @@ def run_fixed_root_smoke(
         output_authority,
         generated_at=_canonical_utc(u11_time),
     )
-    bundle = materialization.materialize_u4_u11(
+    pending_semantic = materialization.materialize_u4_u11(
         repo_root,
         layout,
         phase_store,
         now=u11_time,
+        create_checkpoint=recovery.create_checkpoint,
+    )
+    if pending_semantic.document.get("action_kind") != "semantic-review":
+        raise RuntimeError("closed smoke did not issue semantic review action")
+    accept_closed_semantic_review(
+        repo_root,
+        layout,
+        pending_semantic,
+        reviewed_at=_canonical_utc(u11_time),
+    )
+    bundle = materialization.materialize_u4_u11(
+        repo_root,
+        layout,
+        phase_store,
+        now=u11_time + timedelta(microseconds=1),
         create_checkpoint=recovery.create_checkpoint,
     )
     if bundle.phase_events[-1]["phase_id"] != "U11":

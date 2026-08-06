@@ -14,6 +14,7 @@ from .foundation import (
     load_input_inventory,
     load_request_profile,
 )
+from .host_handshake import HostActionSeal
 from .jsonio import (
     atomic_write_bytes,
     atomic_write_json,
@@ -1452,13 +1453,18 @@ def _completed_phase_event(phase_store: object, phase_id: str) -> dict[str, obje
     events = getattr(phase_store, "events", None)
     if not isinstance(events, tuple):
         return None
-    matching = [
-        dict(event)
-        for event in events
-        if isinstance(event, Mapping)
-        and event.get("phase_id") == phase_id
-        and event.get("status") == "complete"
-    ]
+    active: list[dict[str, object]] = []
+    for event in events:
+        if not isinstance(event, Mapping):
+            raise ValueError("phase event history contains a non-mapping")
+        if event.get("status") == "complete":
+            active.append(dict(event))
+        elif event.get("status") == "invalidated":
+            reset_from = event.get("reset_from_phase")
+            if not isinstance(reset_from, str) or reset_from not in PHASES:
+                raise ValueError("phase invalidation has no reset authority")
+            active = active[: PHASES.index(reset_from)]
+    matching = [event for event in active if event.get("phase_id") == phase_id]
     if len(matching) > 1:
         raise ValueError(f"phase {phase_id} has multiple complete events")
     return None if not matching else matching[0]
@@ -1790,7 +1796,7 @@ def materialize_u4_u11(
     *,
     now: datetime,
     create_checkpoint: Callable[..., object],
-) -> MaterializedBundle:
+) -> MaterializedBundle | HostActionSeal:
     _validate_layout(layout)
     _require_utc(now, "now")
     if not isinstance(repo, Path) or not repo.resolve().is_dir():
@@ -1813,7 +1819,16 @@ def materialize_u4_u11(
         (evidence_path, evidence)
     ]
 
-    from . import article, concept_closure, coverage, forecast, judgment, recursion, world_volume
+    from . import (
+        article,
+        concept_closure,
+        coverage,
+        forecast,
+        judgment,
+        recursion,
+        semantic_review,
+        world_volume,
+    )
 
     u4_source = prepared.authoring_dir / "U04-world-volume.json"
 
@@ -2189,20 +2204,37 @@ def materialize_u4_u11(
     partial_path = prepared.authoring_dir / PARTIAL_ARTICLE_RELATIVE_PATH
     assembled = article.assemble_article(documents["output_plan"], packets, partial_path)
     u11_event = _completed_phase_event(phase_store, "U11")
+    active_generation = getattr(phase_store, "active_generation", 0)
+    if type(active_generation) is not int or active_generation < 0:
+        raise ValueError("U11 semantic review active generation is invalid")
+    persisted_semantic_action = semantic_review.load_semantic_review_action(
+        layout,
+        active_generation,
+    )
     u11_generated_at = now
-    if u11_event is not None:
+    if u11_event is not None or persisted_semantic_action is not None:
         existing_coverage_path = artifact_destination(
             layout,
             prepared.authoring_dir / "U11-semantic-coverage.json",
         )
         existing_coverage = load_json_object(existing_coverage_path)
+        if persisted_semantic_action is not None:
+            payload = persisted_semantic_action.document.get("payload")
+            if (
+                not isinstance(payload, Mapping)
+                or payload.get("coverage_artifact_sha256")
+                != _sha256_file(existing_coverage_path)
+            ):
+                raise ValueError(
+                    "persisted semantic review coverage authority differs"
+                )
         existing_timestamp = existing_coverage.get("generated_at")
         if not isinstance(existing_timestamp, str) or not existing_timestamp.endswith("Z"):
             raise ValueError("completed U11 coverage has no canonical generated_at")
         u11_generated_at = datetime.fromisoformat(
             existing_timestamp[:-1] + "+00:00"
         )
-    else:
+    if u11_event is None and persisted_semantic_action is None:
         checkpoint_article_packets(
             layout,
             phase_store,
@@ -2263,6 +2295,109 @@ def materialize_u4_u11(
     atomic_write_json(review_destination, built_review)
     documents["article_review"] = built_review
 
+    intake_path = _request_intake_authority_path(layout)
+    try:
+        intake_raw = intake_path.read_bytes()
+        intake = load_json_object_bytes(intake_raw, source=str(intake_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise ValueError("semantic review requires request intake authority") from error
+    request_sha256 = intake.get("request_sha256")
+    run_contract = getattr(phase_store, "run_contract", None)
+    if (
+        intake_raw != canonical_json_bytes(intake)
+        or set(intake) != _REQUEST_INTAKE_AUTHORITY_FIELDS
+        or intake.get("schema_id")
+        != "crossframe.ultra.v82.request-intake-authority"
+        or intake.get("schema_version") != 1
+        or intake.get("run_id") != layout.run_dir.name
+        or intake.get("version_binding") != current_version_binding()
+        or intake.get("content_sha256")
+        != compute_artifact_content_sha256(intake)
+        or not isinstance(request_sha256, str)
+        or not isinstance(run_contract, Mapping)
+        or run_contract.get("request_sha256") != request_sha256
+    ):
+        raise ValueError("semantic review request intake authority differs")
+    required_concept_units = semantic_review.validate_required_concept_units(
+        documents["concept_disposition"],
+        required_concept_semantic_unit_ids,
+    )
+    u10_event = _completed_phase_event(phase_store, "U10")
+    if u10_event is None:
+        raise ValueError("semantic review requires the active U10 parent event")
+    action = semantic_review.ensure_semantic_review_action(
+        layout,
+        request_sha256=request_sha256,
+        request_intake_authority_sha256=sha256_bytes(intake_raw),
+        u10_parent_event_sha256=_event_sha256(u10_event),
+        active_generation=active_generation,
+        article_sha256=assembled.article_sha256,
+        output_plan_artifact_sha256=_full_artifact_sha256(
+            documents["output_plan"]
+        ),
+        coverage_artifact_sha256=_full_artifact_sha256(coverage_document),
+        article_review_artifact_sha256=_full_artifact_sha256(built_review),
+        evidence_ledger_artifact_sha256=_full_artifact_sha256(
+            documents["evidence"]
+        ),
+        concept_disposition_artifact_sha256=_full_artifact_sha256(
+            documents["concept_disposition"]
+        ),
+        required_concept_semantic_unit_ids=required_concept_units,
+        now=now,
+    )
+    accepted = semantic_review.load_accepted_semantic_review_result(
+        layout,
+        action,
+    )
+    if accepted is None:
+        if u11_event is not None:
+            raise ValueError(
+                "completed U11 has no accepted semantic review receipt"
+            )
+        return action
+    host_result = semantic_review.load_host_semantic_review_result(
+        layout,
+        action,
+    )
+    semantic_document = semantic_review.project_semantic_review_artifact(
+        action=action,
+        accepted_result=accepted,
+        host_result=host_result,
+        version_binding=current_version_binding(),
+        generated_at=_canonical_utc(u11_generated_at),
+        deterministic_status="pass",
+        adversarial_status="pass",
+    )
+    if (
+        semantic_document.get("overall_status") != "pass"
+        or semantic_document.get("publication_allowed") is not True
+    ):
+        raise ValueError("fresh semantic review does not allow publication")
+    semantic_destination = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir
+        / "U09-U10-verdict"
+        / "U11-semantic-review.json",
+    )
+    if semantic_destination.exists():
+        try:
+            existing_raw = semantic_destination.read_bytes()
+            existing_semantic = load_json_object_bytes(
+                existing_raw,
+                source=str(semantic_destination),
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise ValueError("runtime semantic review artifact is unreadable") from error
+        if (
+            existing_raw != canonical_json_bytes(existing_semantic)
+            or existing_semantic != semantic_document
+        ):
+            raise ValueError("runtime semantic review artifact authority differs")
+    else:
+        atomic_write_json(semantic_destination, semantic_document)
+    documents["semantic_review"] = semantic_document
+
     dossier_path = prepared.authoring_dir / "完整推演档案.md"
     _canonical_markdown(dossier_path, "complete dossier")
     artifact_index_path = layout.artifacts_dir / "ultra-artifact-index.md"
@@ -2273,6 +2408,7 @@ def materialize_u4_u11(
     u11_paths = (
         coverage_destination,
         review_destination,
+        semantic_destination,
         partial_path,
         dossier_path,
         artifact_index_path,
@@ -2300,7 +2436,12 @@ def materialize_u4_u11(
         raise ValueError("completed U11 artifacts differ from the phase event")
     phase_events.append(u11_event)
     artifact_paths.extend(
-        (coverage_destination, review_destination, artifact_index_path)
+        (
+            coverage_destination,
+            review_destination,
+            semantic_destination,
+            artifact_index_path,
+        )
     )
     return MaterializedBundle(
         phase_events=tuple(phase_events),
@@ -2390,12 +2531,17 @@ def preflight_foundation_progress(
             if checkpoint.get("boundary_kind") == "article-packet"
             else expected_phase
         )
-        if (
-            current.current_phase != expected_phase
-            or current.last_complete_phase != expected_last_complete
-        ):
+        current_phase_ahead = PHASES.index(current.current_phase) > PHASES.index(
+            expected_phase
+        )
+        last_complete_ahead = (
+            current.last_complete_phase is not None
+            and PHASES.index(current.last_complete_phase)
+            > PHASES.index(expected_last_complete)
+        )
+        if current_phase_ahead or last_complete_ahead:
             raise FoundationInputError(
-                "run status boundary differs from the durable checkpoint"
+                "run status boundary is ahead of the durable checkpoint"
             )
     if current.status == "created":
         current = status_store.transition(
@@ -3630,44 +3776,6 @@ def materialize_complete_run(
         current = status_store.read()
         _foundation_input_inventory(layout, status_record=current)
         prepare_authoring(layout)
-        recovered_publication = recover_publish_transaction(
-            layout,
-            mark_needs_attention=mark_needs_attention,
-            lease=lease,
-        )
-        if attention_marked:
-            raise RuntimeError(
-                "an incomplete publication was rolled back; operator attention is required"
-            )
-        current = status_store.read()
-        if current.status == "complete":
-            if not isinstance(recovered_publication, Mapping) or recovered_publication.get(
-                "state"
-            ) != "complete":
-                raise RuntimeError("terminal complete run has no complete publish journal")
-            paths = publication_paths(
-                layout,
-                str(recovered_publication["transaction_id"]),
-            )
-            return CompleteMaterializationResult(
-                outcome="complete",
-                run_id=run_id,
-                status="complete",
-                current_phase="U12",
-                last_complete_phase="U12",
-                next_action=None,
-                final_chat=(
-                    load_json_object(layout.run_dir / "final-chat.json")
-                    if (layout.run_dir / "final-chat.json").is_file()
-                    else None
-                ),
-                manifest_path=paths.manifest_path,
-                article_path=paths.article_path,
-                dossier_path=paths.dossier_path,
-                artifact_index_path=paths.artifact_index_path,
-                final_chat_path=layout.run_dir / "final-chat.json",
-                postcheck_passed=True,
-            )
         if current.status != "running":
             raise RuntimeError(
                 f"resumed run status {current.status!r} cannot materialize"
@@ -3683,10 +3791,37 @@ def materialize_complete_run(
             now=now,
             create_checkpoint=create_owned_checkpoint,
         )
+        if isinstance(bundle, HostActionSeal):
+            stop_if_cancel_requested()
+            if (
+                bundle.document.get("action_kind") != "semantic-review"
+                or bundle.document.get("phase_id") != "U11"
+            ):
+                raise RuntimeError(
+                    "U11 materialization returned an unauthorized host action"
+                )
+            return MaterializationProgress(
+                outcome="awaiting-host-action",
+                run_id=run_id,
+                status="running",
+                current_phase="U11",
+                last_complete_phase="U10",
+                next_action=copy.deepcopy(bundle.document),
+                final_chat=None,
+            )
         u11_event = bundle.phase_events[-1]
         if u11_event.get("phase_id") != "U11":
             raise RuntimeError("materialization did not end at a complete U11 event")
         stop_if_cancel_requested()
+        recover_publish_transaction(
+            layout,
+            mark_needs_attention=mark_needs_attention,
+            lease=lease,
+        )
+        if attention_marked:
+            raise RuntimeError(
+                "an incomplete publication was rolled back; operator attention is required"
+            )
 
         validator_set_sha256 = _validator_set_authority(repo, validation)
         manifest_path = layout.artifacts_dir / "ultra-artifact-manifest.json"

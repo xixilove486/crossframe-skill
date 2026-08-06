@@ -634,6 +634,7 @@ def validate_semantic_coverage(
 
     covered: list[str] = []
     seen_mappings: set[str] = set()
+    seen_article_spans: set[tuple[str, str]] = set()
     last_position: tuple[int, int] | None = None
     for index, raw in enumerate(_sequence(mappings, "semantic coverage mappings")):
         mapping = _mapping(raw, f"semantic coverage mapping {index}")
@@ -699,6 +700,12 @@ def validate_semantic_coverage(
             raise SemanticCoverageError(
                 f"coverage excerpt for {unit_id} does not identify one exact occurrence"
             )
+        span_identity = (section_id, normalized_excerpt)
+        if span_identity in seen_article_spans:
+            raise SemanticCoverageError(
+                "distinct coverage responsibilities cannot reuse the same article span"
+            )
+        seen_article_spans.add(span_identity)
         position = (section.ordinal, occurrence)
         if last_position is not None and position < last_position:
             raise SemanticCoverageError(
@@ -1505,6 +1512,7 @@ def build_article_review_artifact(
         ),
         "official_filename_allowed": False,
         "review_stage": "mechanical-precheck",
+        "semantic_review_required": True,
         "needs_u12_validation": True,
         "u12_validator_artifact_required": True,
     }

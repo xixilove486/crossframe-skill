@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
+import hashlib
 from importlib import import_module
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
@@ -16,6 +18,23 @@ RUNTIME_DIR = SCRIPTS_DIR / "ultra_runtime"
 DELIVERABLES_PATH = RUNTIME_DIR / "deliverables.py"
 RUN_ID = "20260802T030405Z-000000000013"
 TRANSACTION_ID = "20260802T030410Z-aaaaaaaaaaaa"
+SEMANTIC_REVIEW = {
+    "schema_id": "crossframe.ultra.v82.semantic-review",
+    "phase_id": "U11",
+    "run_id": RUN_ID,
+    "overall_status": "pass",
+    "publication_allowed": True,
+    "active_generation": 0,
+}
+SEMANTIC_REVIEW_BYTES = (
+    json.dumps(
+        SEMANTIC_REVIEW,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    + "\n"
+).encode("utf-8")
 
 
 def _module(name: str):
@@ -34,7 +53,14 @@ def runtime():
 
 def _layout(paths, tmp_path: Path):
     policy = paths.RootPolicy(tmp_path / "production", tmp_path / "test")
-    return paths.build_run_layout(paths.RunMode.TEST, RUN_ID, policy)
+    layout = paths.build_run_layout(paths.RunMode.TEST, RUN_ID, policy)
+    semantic_path = (
+        layout.artifacts_dir
+        / "U09-U10-verdict/U11-semantic-review.json"
+    )
+    semantic_path.parent.mkdir(parents=True, exist_ok=True)
+    semantic_path.write_bytes(SEMANTIC_REVIEW_BYTES)
+    return layout
 
 
 def _payload() -> dict[str, bytes]:
@@ -44,6 +70,55 @@ def _payload() -> dict[str, bytes]:
         "artifact_index_bytes": "# 工件索引\n\n索引。\n".encode("utf-8"),
         "manifest_bytes": b'{"manifest":"new"}\n',
     }
+
+
+def _layered_report(
+    payload: dict[str, bytes],
+    *,
+    failed_layer: str | None = None,
+    article_sha256: str | None = None,
+    manifest_sha256: str | None = None,
+    semantic_review_artifact_sha256: str | None = None,
+    active_generation: int = 0,
+    include_checks: bool = True,
+) -> bytes:
+    layers = [
+        {
+            "layer_id": layer_id,
+            "status": "fail" if layer_id == failed_layer else "pass",
+            "artifact_refs": [],
+        }
+        for layer_id in ("deterministic", "adversarial", "fresh-semantic")
+    ]
+    report = {
+        "overall_status": "pass",
+        "publication_allowed": True,
+        "article_sha256": article_sha256
+        or hashlib.sha256(payload["article_bytes"]).hexdigest(),
+        "manifest_sha256": manifest_sha256
+        or hashlib.sha256(payload["manifest_bytes"]).hexdigest(),
+        "semantic_review_artifact_sha256": (
+            semantic_review_artifact_sha256
+            or hashlib.sha256(SEMANTIC_REVIEW_BYTES).hexdigest()
+        ),
+        "active_generation": active_generation,
+        "checks": (
+            [
+                {
+                    "validator_id": "schema-closure",
+                    "status": "pass",
+                    "error_codes": [],
+                    "artifact_refs": [],
+                }
+            ]
+            if include_checks
+            else []
+        ),
+        "layers": layers,
+    }
+    return (json.dumps(report, sort_keys=True, separators=(",", ":")) + "\n").encode(
+        "utf-8"
+    )
 
 
 def test_task13_delivery_module_exists_for_red_gate() -> None:
@@ -82,6 +157,8 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
     layout = _layout(paths, tmp_path)
     publication = deliverables.publication_paths(layout, TRANSACTION_ID)
     observed: list[str] = []
+    payload = _payload()
+    expected_report = _layered_report(payload)
 
     def fresh_check(stage: str) -> bytes:
         observed.append(f"check:{stage}")
@@ -94,13 +171,11 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
             assert publication.backup_dir.is_dir()
             assert publication.article_path.read_bytes() == _payload()["article_bytes"]
             assert publication.manifest_path.read_bytes() == _payload()["manifest_bytes"]
-        return (f'{{"overall_status":"pass","stage":"{stage}"}}\n').encode("utf-8")
+        return expected_report
 
     def commit_report(stage: str, report_bytes: bytes) -> None:
         observed.append(f"commit:{stage}")
-        assert report_bytes == (
-            f'{{"overall_status":"pass","stage":"{stage}"}}\n'
-        ).encode("utf-8")
+        assert report_bytes == expected_report
 
     result = deliverables.publish_delivery(
         layout,
@@ -108,7 +183,7 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
         fresh_check=fresh_check,
         commit_report=commit_report,
         mark_needs_attention=lambda reason: pytest.fail(reason),
-        **_payload(),
+        **payload,
     )
 
     assert observed == [
@@ -132,6 +207,56 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
     assert journal["transaction_id"] == TRANSACTION_ID
     assert journal["state"] == "postchecked"
     assert journal["postcheck_passed"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "failed-layer",
+        "missing-checks",
+        "stale-article",
+        "stale-manifest",
+        "stale-semantic",
+        "stale-generation",
+    ),
+)
+def test_publish_rejects_forged_layer_or_stale_generation_report(
+    runtime,
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    deliverables, paths, _ = runtime
+    layout = _layout(paths, tmp_path)
+    payload = _payload()
+    report = _layered_report(
+        payload,
+        failed_layer="fresh-semantic" if mutation == "failed-layer" else None,
+        article_sha256="a" * 64 if mutation == "stale-article" else None,
+        manifest_sha256="b" * 64 if mutation == "stale-manifest" else None,
+        semantic_review_artifact_sha256=(
+            "c" * 64 if mutation == "stale-semantic" else None
+        ),
+        active_generation=1 if mutation == "stale-generation" else 0,
+        include_checks=mutation != "missing-checks",
+    )
+    attentions: list[str] = []
+
+    with pytest.raises(
+        RuntimeError,
+        match="layer|check|article|manifest|semantic|generation|publication",
+    ):
+        deliverables.publish_delivery(
+            layout,
+            transaction_id=TRANSACTION_ID,
+            fresh_check=lambda stage: report,
+            commit_report=lambda stage, value: None,
+            mark_needs_attention=attentions.append,
+            **payload,
+        )
+
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    assert attentions
+    assert not any(path.exists() for path in publication.official_paths)
 
 
 def test_publish_delivery_rejects_direct_completion_before_writes(
@@ -239,7 +364,7 @@ def test_failed_replacement_restores_exact_prior_complete_bytes_and_keeps_audit(
     def fresh_check(stage: str) -> bytes:
         if stage == "post-publish":
             raise RuntimeError("injected post-publish validator failure")
-        return b'{"overall_status":"pass"}\n'
+        return _layered_report(_payload())
 
     with pytest.raises(RuntimeError, match="post-publish"):
         deliverables.publish_delivery(

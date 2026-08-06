@@ -58,6 +58,7 @@ SCHEMA_NAMES = (
     "ultra-run-migration.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
+    "ultra-semantic-review.schema.json",
     "ultra-source-lock.schema.json",
     "ultra-source-manifest.schema.json",
     "ultra-transformation-ledger.schema.json",

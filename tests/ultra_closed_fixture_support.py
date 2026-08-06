@@ -230,17 +230,26 @@ def write_closed_u4_u10_authoring(
     source_mapping = next(
         mapping for mapping in mappings if mapping["unit_id"] == "UNIT-APPENDIX-SOURCES"
     )
-    concept_excerpt = source_mapping.get("normalized_excerpt")
-    if not isinstance(concept_excerpt, str) or not concept_excerpt:
+    source_excerpt = source_mapping.get("normalized_excerpt")
+    if not isinstance(source_excerpt, str) or not source_excerpt:
         raise ValueError("closed concept section lacks normalized reader prose")
-    concept_excerpt_sha256 = hashlib.sha256(
-        concept_excerpt.encode("utf-8")
-    ).hexdigest()
+    concept_excerpts = (
+        "尺度画像已经用于区分个人、团队与组织的不同作用范围。",
+        "圈层嵌套仍缺少成员关系与边界变化证据,因此保持未知待补。",
+        "网络传播仍缺少跨节点时序记录,因此不进入当前判断。",
+        "单向尺度升级解释已经受测,但不能解释反馈回流,因而被排除。",
+        "圈层关系用于说明审批通道与反馈通道如何连接不同责任主体。",
+        "单一表征解释无法覆盖角色切换造成的信息损失,因而被排除。",
+        "团队表征用于追踪排班规则如何改变个人行动空间。",
+        "静态尺度解释无法覆盖两周观察窗中的状态变化,因而被排除。",
+    )
     obligations = concept_document.get("semantic_obligations")
     if not isinstance(obligations, list) or not obligations:
         raise ValueError("closed concept disposition lacks semantic obligations")
     concept_mappings: list[dict[str, object]] = []
-    for obligation in obligations:
+    if len(obligations) != len(concept_excerpts):
+        raise ValueError("closed concept obligations need distinct article spans")
+    for obligation, concept_excerpt in zip(obligations, concept_excerpts, strict=True):
         if not isinstance(obligation, dict):
             raise ValueError("closed semantic obligation must be an object")
         obligation_id = obligation.get("obligation_id")
@@ -269,7 +278,9 @@ def write_closed_u4_u10_authoring(
                     "U05-concept-disposition.json"
                 ],
                 "authority_locator": obligation_id,
-                "normalized_semantic_text_sha256": concept_excerpt_sha256,
+                "normalized_semantic_text_sha256": hashlib.sha256(
+                    concept_excerpt.encode("utf-8")
+                ).hexdigest(),
             }
         )
         concept_mappings.append(
@@ -349,6 +360,7 @@ def write_closed_u11_authoring(
     coverage = _module(repo_root, "coverage")
     jsonio = _module(repo_root, "jsonio")
     materialization = _module(repo_root, "materialization")
+    schemas = _module(repo_root, "schemas")
 
     article_text = (
         repo_root
@@ -406,6 +418,22 @@ def write_closed_u11_authoring(
         layout.authoring_dir / "U11-article-review.json",
         review_document,
     )
+    intake_path = layout.recovery_dir / "request-intake-authority.json"
+    if not intake_path.is_file():
+        intake = {
+            "schema_id": "crossframe.ultra.v82.request-intake-authority",
+            "schema_version": 1,
+            "run_id": layout.run_dir.name,
+            "version_binding": constants.current_version_binding(),
+            "generated_at": generated_at,
+            "request_sha256": "1" * 64,
+            "request_size": 1,
+            "content_sha256": "0" * 64,
+        }
+        intake["content_sha256"] = schemas.compute_artifact_content_sha256(
+            intake
+        )
+        jsonio.atomic_write_json(intake_path, intake)
     (layout.authoring_dir / "完整推演档案.md").write_text(
         "# 完整推演档案\n\n真实磁盘 seam 验证档案。\n",
         encoding="utf-8",
@@ -413,8 +441,86 @@ def write_closed_u11_authoring(
     )
 
 
+def accept_closed_semantic_review(
+    repo_root: Path,
+    layout: object,
+    action: object,
+    *,
+    reviewed_at: str,
+) -> object:
+    host_handshake = _module(repo_root, "host_handshake")
+    jsonio = _module(repo_root, "jsonio")
+    semantic_review = _module(repo_root, "semantic_review")
+    result = {
+        "schema_id": "crossframe.ultra.v82.host-semantic-review-result",
+        "schema_version": 1,
+        "action_sha256": action.action_sha256,
+        "reviewed_at": reviewed_at,
+        "reviewer": {
+            "reviewer_id": "CLOSED-FIXTURE-REVIEWER",
+            "host_id": "closed-fixture-host",
+            "provider_id": "CLOSED-FIXTURE-PROVIDER",
+            "model": "fresh-fixture-reviewer",
+            "execution_id": "CLOSED-FIXTURE-EXECUTION",
+            "proof_grade": "host-attested",
+        },
+        "dimension_reviews": [
+            {
+                "dimension_id": dimension,
+                "status": "pass",
+                "rationale": (
+                    f"Fresh fixture review checked {dimension} against sealed authority."
+                ),
+                "article_spans": [f"SPAN-{index:02d}"],
+                "authority_refs": [f"AUTHORITY-{index:02d}"],
+            }
+            for index, dimension in enumerate(
+                semantic_review.SEMANTIC_REVIEW_DIMENSIONS,
+                start=1,
+            )
+        ],
+    }
+    jsonio.atomic_write_json(action.result_path, result)
+    receipt = {
+        "schema_id": "crossframe.ultra.v82.host-result-receipt",
+        "schema_version": 1,
+        "run_id": action.document["run_id"],
+        "version_binding": action.document["version_binding"],
+        "phase_id": "U11",
+        "action_kind": "semantic-review",
+        "parent_event_sha256": action.document["parent_event_sha256"],
+        "request_sha256": action.document["request_sha256"],
+        "action_sha256": action.action_sha256,
+        "result_relative_path": action.document["result_relative_path"],
+        "result_sha256": jsonio.sha256_bytes(action.result_path.read_bytes()),
+        "execution_id": "CLOSED-FIXTURE-EXECUTION",
+        "completed_at": reviewed_at,
+        "provider": {
+            "provider_id": "CLOSED-FIXTURE-PROVIDER",
+            "provider_kind": "local",
+            "version": "1",
+        },
+        "tool": {
+            "tool_id": "CLOSED-FIXTURE-SEMANTIC-REVIEWER",
+            "provider_id": "CLOSED-FIXTURE-PROVIDER",
+            "version": "1",
+        },
+        "execution_status": "complete",
+        "attempts": [{"attempt": 1, "status": "success", "error": None}],
+    }
+    receipt["receipt_sha256"] = jsonio.sha256_bytes(
+        jsonio.canonical_json_bytes(receipt)
+    )
+    return host_handshake.accept_host_result(
+        layout,
+        action=action,
+        receipt=receipt,
+    )
+
+
 __all__ = (
     "CLOSED_ORGANIZATION_CASE",
+    "accept_closed_semantic_review",
     "write_closed_u4_u10_authoring",
     "write_closed_u11_authoring",
 )

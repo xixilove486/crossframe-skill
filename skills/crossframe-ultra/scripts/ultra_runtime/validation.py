@@ -59,6 +59,7 @@ _SCHEMAS_BY_ID = {
     "crossframe.ultra.v82.output-plan": "ultra-output-plan.schema.json",
     "crossframe.ultra.v82.semantic-coverage": "ultra-semantic-coverage.schema.json",
     "crossframe.ultra.v82.article-review": "ultra-article-review.schema.json",
+    "crossframe.ultra.v82.semantic-review": "ultra-semantic-review.schema.json",
 }
 _CHECK_ORDER = (
     "manifest-integrity",
@@ -85,6 +86,11 @@ _HOST_CAPABILITY_ATTESTATION_PATH = (
 )
 _COMPLETE_THROUGH_U11 = tuple(f"U{number}" for number in range(12))
 _COMPLETE_THROUGH_U12 = tuple(f"U{number}" for number in range(13))
+_VALIDATION_LAYER_IDS = (
+    "deterministic",
+    "adversarial",
+    "fresh-semantic",
+)
 
 
 class _AuthorityDAGError(ValueError):
@@ -113,6 +119,7 @@ def validator_set_sha256(repo: Path) -> str:
     root = _checked_repo(repo)
     runtime = root / "skills/crossframe-ultra/scripts/ultra_runtime"
     relative_files = [
+        "skills/crossframe-ultra/references/compatibility-matrix.json",
         "skills/crossframe-ultra/references/source-manifest.json",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_artifacts.py",
         "skills/crossframe-ultra/scripts/check_crossframe_ultra_v82_knowledge.py",
@@ -367,6 +374,7 @@ def _load_verified_disk_authority(
         "run_authority": copy.deepcopy(run_authority),
         "events": tuple(copy.deepcopy(event) for event in active_events),
         "refs_by_phase": copy.deepcopy(refs_by_phase),
+        "active_generation": int(u11_event.get("generation", 0)),
     }
 
 
@@ -1111,7 +1119,10 @@ def _validate_article_coverage(
     layout: RunLayout,
     loaded: Mapping[str, list[dict[str, object]]],
     issues: dict[str, list[tuple[str, str]]],
-) -> None:
+    *,
+    required_concept_semantic_unit_ids: frozenset[str],
+    disk_authority: Mapping[str, object] | None,
+) -> str:
     coverage_docs = loaded.get("crossframe.ultra.v82.semantic-coverage", [])
     article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
     if len(coverage_docs) != 1 or not article_path.is_file():
@@ -1121,7 +1132,7 @@ def _validate_article_coverage(
             "ULTRA-COVERAGE-MISSING",
             PARTIAL_ARTICLE_PATH,
         )
-        return
+        return "fail"
     coverage = coverage_docs[0]
     article_bytes = article_path.read_bytes()
     if coverage.get("article_sha256") != sha256_bytes(article_bytes):
@@ -1198,6 +1209,132 @@ def _validate_article_coverage(
             "artifacts/U09-U10-verdict/U11-article-review.json",
         )
 
+    semantic_status = "fail"
+    try:
+        from . import semantic_review
+
+        semantic_document = _single_document(
+            loaded, "crossframe.ultra.v82.semantic-review"
+        )
+        output_plan = _single_document(
+            loaded, "crossframe.ultra.v82.output-plan"
+        )
+        evidence = _single_document(
+            loaded, "crossframe.ultra.v82.evidence-ledger"
+        )
+        concept_disposition = _single_document(
+            loaded, "crossframe.ultra.v82.concept-disposition"
+        )
+        intake_path = layout.recovery_dir / "request-intake-authority.json"
+        intake_raw = intake_path.read_bytes()
+        intake = load_json_object_bytes(intake_raw, source=str(intake_path))
+        request_sha256 = intake.get("request_sha256")
+        article_review = _single_document(
+            loaded, "crossframe.ultra.v82.article-review"
+        )
+        if (
+            disk_authority is None
+            or intake_raw != canonical_json_bytes(intake)
+            or not isinstance(request_sha256, str)
+        ):
+            raise ValueError("semantic review request or disk authority is absent")
+        active_generation = disk_authority.get("active_generation")
+        events = disk_authority.get("events")
+        if type(active_generation) is not int or active_generation < 0 or not isinstance(
+            events,
+            tuple,
+        ):
+            raise ValueError("semantic review active generation is unavailable")
+        u10_events = [
+            event
+            for event in events
+            if isinstance(event, Mapping)
+            and event.get("phase_id") == "U10"
+            and event.get("status") == "complete"
+        ]
+        if len(u10_events) != 1:
+            raise ValueError("semantic review U10 parent authority is unavailable")
+        units = semantic_review.validate_required_concept_units(
+            concept_disposition,
+            required_concept_semantic_unit_ids,
+        )
+        action = semantic_review.load_semantic_review_action(
+            layout,
+            active_generation,
+        )
+        if action is None:
+            raise ValueError("semantic review action authority is absent")
+        semantic_review.validate_semantic_review_action(
+            layout,
+            action,
+            request_sha256=request_sha256,
+            request_intake_authority_sha256=sha256_bytes(intake_raw),
+            u10_parent_event_sha256=str(u10_events[0]["event_sha256"]),
+            active_generation=active_generation,
+            article_sha256=sha256_bytes(article_bytes),
+            output_plan_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(output_plan)
+            ),
+            coverage_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(coverage)
+            ),
+            article_review_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(article_review)
+            ),
+            evidence_ledger_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(evidence)
+            ),
+            concept_disposition_artifact_sha256=sha256_bytes(
+                canonical_json_bytes(concept_disposition)
+            ),
+            required_concept_semantic_unit_ids=units,
+        )
+        accepted = semantic_review.load_accepted_semantic_review_result(
+            layout,
+            action,
+        )
+        if accepted is None:
+            raise ValueError("semantic review accepted receipt is absent")
+        host_result = semantic_review.load_host_semantic_review_result(
+            layout,
+            action,
+        )
+        deterministic_status = (
+            "pass"
+            if not any(
+                records
+                for check_id, records in issues.items()
+                if check_id != "semantic-tamper-resistance"
+            )
+            else "fail"
+        )
+        adversarial_status = (
+            "fail" if issues["semantic-tamper-resistance"] else "pass"
+        )
+        validated_semantic = semantic_review.validate_semantic_review(
+            semantic_document,
+            action=action,
+            accepted_result=accepted,
+            host_result=host_result,
+            version_binding=current_version_binding(),
+            expected_deterministic_status=deterministic_status,
+            expected_adversarial_status=adversarial_status,
+        )
+        if (
+            validated_semantic.get("overall_status") != "pass"
+            or validated_semantic.get("publication_allowed") is not True
+        ):
+            raise ValueError("semantic review does not allow publication")
+        semantic_status = "pass"
+    except Exception:
+        _issue(
+            issues,
+            "article-coverage",
+            "ULTRA-SEMANTIC-REVIEW",
+            "artifacts/U09-U10-verdict/U11-semantic-review.json",
+        )
+    return semantic_status
+
 
 def _validate_logs(
     layout: RunLayout, issues: dict[str, list[tuple[str, str]]]
@@ -1244,6 +1381,47 @@ def _report_checks(
     return checks
 
 
+def _build_validation_layers(
+    issues: Mapping[str, list[tuple[str, str]]],
+    *,
+    semantic_review_status: str,
+) -> list[dict[str, object]]:
+    if semantic_review_status not in {"pass", "fail"}:
+        raise ValueError("semantic review status must be pass or fail")
+    adversarial_records = issues["semantic-tamper-resistance"]
+    deterministic_records = [
+        record
+        for check_id, records in issues.items()
+        if check_id != "semantic-tamper-resistance"
+        for record in records
+        if record[0] != "ULTRA-SEMANTIC-REVIEW"
+    ]
+    records_by_layer = {
+        "deterministic": deterministic_records,
+        "adversarial": adversarial_records,
+        "fresh-semantic": (
+            []
+            if semantic_review_status == "pass"
+            else [
+                (
+                    "ULTRA-SEMANTIC-REVIEW",
+                    "artifacts/U09-U10-verdict/U11-semantic-review.json",
+                )
+            ]
+        ),
+    }
+    return [
+        {
+            "layer_id": layer_id,
+            "status": "fail" if records_by_layer[layer_id] else "pass",
+            "artifact_refs": sorted(
+                {artifact for _, artifact in records_by_layer[layer_id]}
+            ),
+        }
+        for layer_id in _VALIDATION_LAYER_IDS
+    ]
+
+
 def validate_run_from_disk(
     repo: Path,
     mode: RunMode,
@@ -1265,6 +1443,10 @@ def validate_run_from_disk(
         manifest_document = {}
     manifest_sha = sha256_bytes(raw_manifest)
     manifest: dict[str, object] | None = None
+    loaded: dict[str, list[dict[str, object]]] = {}
+    required_concept_semantic_unit_ids = frozenset()
+    semantic_review_status = "fail"
+    active_generation = 0
     try:
         manifest = validate_artifact_manifest(layout, manifest_path)
     except ArtifactManifestError as error:
@@ -1294,6 +1476,7 @@ def validate_run_from_disk(
         disk_authority: dict[str, object] | None = None
         try:
             disk_authority = _load_verified_disk_authority(layout, manifest)
+            active_generation = int(disk_authority["active_generation"])
         except _AuthorityDAGError as error:
             _issue(
                 issues,
@@ -1335,11 +1518,40 @@ def validate_run_from_disk(
                 )
         _validate_claim_semantics(loaded, issues)
         _validate_world_and_lineage(loaded, issues)
-        _validate_article_coverage(layout, loaded, issues)
+        semantic_review_status = _validate_article_coverage(
+            layout,
+            loaded,
+            issues,
+            required_concept_semantic_unit_ids=(
+                required_concept_semantic_unit_ids
+            ),
+            disk_authority=disk_authority,
+        )
     _validate_logs(layout, issues)
 
     checks = _report_checks(issues)
-    status = "fail" if any(check["status"] != "pass" for check in checks) else "pass"
+    layers = _build_validation_layers(
+        issues,
+        semantic_review_status=semantic_review_status,
+    )
+    status = (
+        "pass"
+        if all(check["status"] == "pass" for check in checks)
+        and all(layer["status"] == "pass" for layer in layers)
+        else "fail"
+    )
+    article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
+    article_sha256 = (
+        sha256_bytes(article_path.read_bytes())
+        if article_path.is_file()
+        else "0" * 64
+    )
+    semantic_documents = loaded.get("crossframe.ultra.v82.semantic-review", [])
+    semantic_review_artifact_sha256 = (
+        sha256_bytes(canonical_json_bytes(semantic_documents[0]))
+        if len(semantic_documents) == 1
+        else "0" * 64
+    )
     generated_at = manifest_document.get("generated_at")
     if not isinstance(generated_at, str):
         generated_at = "1970-01-01T00:00:00Z"
@@ -1354,8 +1566,15 @@ def validate_run_from_disk(
         "attempt_id": f"fresh-{manifest_sha[:16]}",
         "manifest_sha256": manifest_sha,
         "validator_set_sha256": validator_hash,
+        "active_generation": active_generation,
+        "article_sha256": article_sha256,
+        "semantic_review_artifact_sha256": (
+            semantic_review_artifact_sha256
+        ),
         "checks": checks,
+        "layers": layers,
         "overall_status": status,
+        "publication_allowed": status == "pass",
         "validated_at": generated_at,
         "fresh_context": True,
     }
@@ -1412,15 +1631,56 @@ def _validated_report_bytes(
         raise ValueError("fresh validator report is stale for the current manifest")
     if report["validator_set_sha256"] != validator_hash:
         raise ValueError("fresh validator report uses another validator generation")
-    expected_status = (
+    checks_status = (
         "pass"
         if all(check["status"] == "pass" for check in report["checks"])
         else "blocked"
         if any(check["status"] == "blocked" for check in report["checks"])
         else "fail"
     )
+    layers = report.get("layers")
+    if not isinstance(layers, list) or tuple(
+        layer.get("layer_id") if isinstance(layer, Mapping) else None
+        for layer in layers
+    ) != _VALIDATION_LAYER_IDS:
+        raise ValueError("fresh validator report layer contract is invalid")
+    layers_pass = all(layer.get("status") == "pass" for layer in layers)
+    expected_status = "pass" if checks_status == "pass" and layers_pass else checks_status
+    if expected_status == "pass" and not layers_pass:
+        expected_status = "fail"
     if report["overall_status"] != expected_status:
         raise ValueError("fresh validator report overall status contradicts its checks")
+    if report.get("publication_allowed") is not (expected_status == "pass"):
+        raise ValueError("fresh validator report publication contradicts its layers")
+    article_path = _artifact_path(layout, PARTIAL_ARTICLE_PATH)
+    expected_article_sha256 = (
+        sha256_bytes(article_path.read_bytes())
+        if article_path.is_file()
+        else "0" * 64
+    )
+    if report.get("article_sha256") != expected_article_sha256:
+        raise ValueError("fresh validator report is stale for the current article")
+    semantic_path = _artifact_path(
+        layout,
+        "artifacts/U09-U10-verdict/U11-semantic-review.json",
+    )
+    expected_semantic_sha256 = (
+        sha256_bytes(semantic_path.read_bytes())
+        if semantic_path.is_file()
+        else "0" * 64
+    )
+    if report.get("semantic_review_artifact_sha256") != expected_semantic_sha256:
+        raise ValueError(
+            "fresh validator report is stale for the semantic review artifact"
+        )
+    if semantic_path.is_file():
+        semantic_document = load_json_object(semantic_path)
+        if report.get("active_generation") != semantic_document.get(
+            "active_generation"
+        ):
+            raise ValueError(
+                "fresh validator report uses another active recovery generation"
+            )
     return report
 
 

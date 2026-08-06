@@ -108,6 +108,17 @@ QUALITY_CHECK_IDS = (
     "semantic-coverage",
     "blind-recovery",
 )
+SEMANTIC_REVIEW_DIMENSION_IDS = (
+    "direct-answer",
+    "evidence-boundary",
+    "current-judgment",
+    "mechanism-competition",
+    "recursive-expansion",
+    "residuals",
+    "reversal-conditions",
+    "action-comparison",
+    "concept-fidelity",
+)
 RETRIEVAL_TRIGGER_KINDS = (
     "real-world",
     "time-sensitive",
@@ -244,6 +255,7 @@ EXPECTED_SCHEMA_NAMES = (
     "ultra-run-migration.schema.json",
     "ultra-run-status.schema.json",
     "ultra-semantic-coverage.schema.json",
+    "ultra-semantic-review.schema.json",
     "ultra-source-lock.schema.json",
     "ultra-source-manifest.schema.json",
     "ultra-transformation-ledger.schema.json",
@@ -1750,8 +1762,67 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             overall_status="mechanical-complete",
             official_filename_allowed=False,
             review_stage="mechanical-precheck",
+            semantic_review_required=True,
             needs_u12_validation=True,
             u12_validator_artifact_required=True,
+        ),
+        "ultra-semantic-review.schema.json": artifact(
+            "ultra-semantic-review.schema.json",
+            phase_id="U11",
+            request_sha256=HASH_1,
+            request_intake_authority_sha256=HASH_2,
+            u10_parent_event_sha256=HASH_3,
+            active_generation=2,
+            article_sha256=HASH_A,
+            output_plan_artifact_sha256=HASH_B,
+            coverage_artifact_sha256=HASH_C,
+            article_review_artifact_sha256=HASH_D,
+            evidence_ledger_artifact_sha256=HASH_D,
+            concept_disposition_artifact_sha256=HASH_E,
+            required_concept_semantic_unit_ids=["CONCEPT-UNIT-1"],
+            required_concept_semantic_units_sha256=HASH_F,
+            host_action_sha256=HASH_A,
+            host_receipt_sha256=HASH_B,
+            host_result_sha256=HASH_C,
+            host_execution={
+                "provider": {
+                    "provider_id": "PROVIDER-1",
+                    "provider_kind": "service",
+                    "version": "1",
+                },
+                "tool": {
+                    "tool_id": "SEMANTIC-REVIEWER-1",
+                    "provider_id": "PROVIDER-1",
+                    "version": "1",
+                },
+                "execution_id": "EXECUTION-1",
+                "completed_at": STAMP,
+            },
+            reviewer={
+                "reviewer_id": "REVIEWER-1",
+                "host_id": "host-1",
+                "provider_id": "PROVIDER-1",
+                "model": "model-1",
+                "execution_id": "EXECUTION-1",
+                "proof_grade": "host-attested",
+            },
+            dimension_reviews=[
+                {
+                    "dimension_id": dimension_id,
+                    "status": "pass",
+                    "rationale": f"Fresh review passed {dimension_id}.",
+                    "article_spans": [f"SPAN-{ordinal:02d}"],
+                    "authority_refs": [f"AUTHORITY-{ordinal:02d}"],
+                }
+                for ordinal, dimension_id in enumerate(
+                    SEMANTIC_REVIEW_DIMENSION_IDS, start=1
+                )
+            ],
+            deterministic_status="pass",
+            adversarial_status="pass",
+            overall_status="pass",
+            publication_allowed=True,
+            reviewed_at=STAMP,
         ),
         "ultra-recovery-checkpoint.schema.json": artifact(
             "ultra-recovery-checkpoint.schema.json",
@@ -1823,6 +1894,9 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
             attempt_id="VALIDATION-1",
             manifest_sha256=HASH_A,
             validator_set_sha256=HASH_B,
+            active_generation=2,
+            article_sha256=HASH_C,
+            semantic_review_artifact_sha256=HASH_D,
             checks=[
                 {
                     "validator_id": "schema-closure",
@@ -1831,7 +1905,16 @@ def minimal_instances() -> dict[str, dict[str, Any]]:
                     "artifact_refs": ["ultra-verdict.json"],
                 }
             ],
+            layers=[
+                {
+                    "layer_id": layer_id,
+                    "status": "pass",
+                    "artifact_refs": ["artifacts/U11-article-validation/review.json"],
+                }
+                for layer_id in ("deterministic", "adversarial", "fresh-semantic")
+            ],
             overall_status="pass",
+            publication_allowed=True,
             validated_at=STAMP,
             fresh_context=True,
         ),
@@ -1999,6 +2082,7 @@ PRIMARY_FIELD = {
     "ultra-recursive-state.schema.json": "node_id",
     "ultra-output-plan.schema.json": "sections",
     "ultra-semantic-coverage.schema.json": "mappings",
+    "ultra-semantic-review.schema.json": "dimension_reviews",
     "ultra-article-review.schema.json": "blind_reader_fields",
     "ultra-recovery-checkpoint.schema.json": "phase_event_sha256",
     "ultra-artifact-manifest.schema.json": "artifacts",

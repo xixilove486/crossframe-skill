@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://crossframe.local/schemas/ultra-semantic-review.schema.json",
+  "title": "CrossFrame Ultra runtime-owned fresh semantic review",
+  "type": "object",
+  "allOf": [
+    {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
+    {
+      "type": "object",
+      "required": [
+        "request_sha256",
+        "request_intake_authority_sha256",
+        "u10_parent_event_sha256",
+        "active_generation",
+        "article_sha256",
+        "output_plan_artifact_sha256",
+        "coverage_artifact_sha256",
+        "article_review_artifact_sha256",
+        "evidence_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "required_concept_semantic_unit_ids",
+        "required_concept_semantic_units_sha256",
+        "host_action_sha256",
+        "host_receipt_sha256",
+        "host_result_sha256",
+        "host_execution",
+        "reviewer",
+        "dimension_reviews",
+        "deterministic_status",
+        "adversarial_status",
+        "overall_status",
+        "publication_allowed",
+        "reviewed_at"
+      ],
+      "properties": {
+        "schema_id": {"const": "crossframe.ultra.v82.semantic-review"},
+        "phase_id": {"const": "U11"},
+        "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "request_intake_authority_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "u10_parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "active_generation": {"type": "integer", "minimum": 0},
+        "article_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "output_plan_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "coverage_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "article_review_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "evidence_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "concept_disposition_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "required_concept_semantic_unit_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "required_concept_semantic_units_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "host_action_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "host_receipt_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "host_result_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "host_execution": {"$ref": "#/$defs/hostExecution"},
+        "reviewer": {"$ref": "#/$defs/reviewer"},
+        "dimension_reviews": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": {"$ref": "#/$defs/dimensionReview"},
+          "allOf": [
+            {"contains": {"properties": {"dimension_id": {"const": "direct-answer"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "evidence-boundary"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "current-judgment"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "mechanism-competition"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "recursive-expansion"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "residuals"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "reversal-conditions"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "action-comparison"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"dimension_id": {"const": "concept-fidelity"}}, "required": ["dimension_id"]}, "minContains": 1, "maxContains": 1}
+          ]
+        },
+        "deterministic_status": {"enum": ["pass", "fail"]},
+        "adversarial_status": {"enum": ["pass", "fail"]},
+        "overall_status": {"enum": ["pass", "fail"]},
+        "publication_allowed": {"type": "boolean"},
+        "reviewed_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "deterministic_status": {"const": "pass"},
+          "adversarial_status": {"const": "pass"},
+          "dimension_reviews": {
+            "items": {
+              "properties": {"status": {"const": "pass"}},
+              "required": ["status"]
+            }
+          }
+        },
+        "required": ["deterministic_status", "adversarial_status", "dimension_reviews"]
+      },
+      "then": {
+        "properties": {
+          "overall_status": {"const": "pass"},
+          "publication_allowed": {"const": true}
+        }
+      },
+      "else": {
+        "properties": {
+          "overall_status": {"const": "fail"},
+          "publication_allowed": {"const": false}
+        }
+      }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "hostExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "tool", "execution_id", "completed_at"],
+      "properties": {
+        "provider": {"$ref": "ultra-host-result-receipt.schema.json#/$defs/providerIdentity"},
+        "tool": {"$ref": "ultra-host-result-receipt.schema.json#/$defs/toolIdentity"},
+        "execution_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "completed_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"}
+      }
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewer_id", "host_id", "provider_id", "model", "execution_id", "proof_grade"],
+      "properties": {
+        "reviewer_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "host_id": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "provider_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "model": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "execution_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
+        "proof_grade": {"enum": ["host-attested", "provider-signed"]}
+      }
+    },
+    "dimensionId": {
+      "enum": [
+        "direct-answer",
+        "evidence-boundary",
+        "current-judgment",
+        "mechanism-competition",
+        "recursive-expansion",
+        "residuals",
+        "reversal-conditions",
+        "action-comparison",
+        "concept-fidelity"
+      ]
+    },
+    "dimensionReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension_id", "status", "rationale", "article_spans", "authority_refs"],
+      "properties": {
+        "dimension_id": {"$ref": "#/$defs/dimensionId"},
+        "status": {"enum": ["pass", "fail", "blocked"]},
+        "rationale": {"$ref": "ultra-common.schema.json#/$defs/nonemptyString"},
+        "article_spans": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "authority_refs": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"}
+      }
+    }
+  }
+}

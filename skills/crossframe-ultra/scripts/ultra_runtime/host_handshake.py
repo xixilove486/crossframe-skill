@@ -27,6 +27,7 @@ HOST_ACTION_KINDS = frozenset(
         "retrieval",
         "evidence-authoring",
         "subagent",
+        "semantic-review",
     }
 )
 
@@ -306,7 +307,16 @@ def _seal_result(
     measured_result = sha256_bytes(result_path.read_bytes())
     if document["result_sha256"] != measured_result:
         raise HostHandshakeError("host result hash differs from result slot bytes")
-    return HostResultSeal(document, str(supplied), action.action_sha256)
+    result = HostResultSeal(document, str(supplied), action.action_sha256)
+    if action.document.get("action_kind") == "semantic-review":
+        from .semantic_review import validate_host_semantic_result_for_acceptance
+
+        validate_host_semantic_result_for_acceptance(
+            layout,
+            action=action,
+            result=result,
+        )
+    return result
 
 
 def _complete_unlocked(

@@ -13,6 +13,7 @@ from tests.pytest_import_guard import pytest
 
 from tests.ultra_closed_fixture_support import (
     CLOSED_ORGANIZATION_CASE,
+    accept_closed_semantic_review,
     write_closed_u4_u10_authoring,
     write_closed_u11_authoring,
 )
@@ -408,11 +409,26 @@ def real_seam_result(
         output_authority,
         generated_at="2026-08-04T00:00:12Z",
     )
-    bundle = materialization.materialize_u4_u11(
+    pending_semantic = materialization.materialize_u4_u11(
         REPO_ROOT,
         layout,
         restarted.phase_store,
         now=now + timedelta(seconds=12),
+        create_checkpoint=recovery.create_checkpoint,
+    )
+    assert pending_semantic.document["action_kind"] == "semantic-review"
+    assert restarted.phase_store.current_phase == "U10"
+    accept_closed_semantic_review(
+        REPO_ROOT,
+        layout,
+        pending_semantic,
+        reviewed_at="2026-08-04T00:00:12Z",
+    )
+    bundle = materialization.materialize_u4_u11(
+        REPO_ROOT,
+        layout,
+        restarted.phase_store,
+        now=now + timedelta(seconds=12, microseconds=100_000),
         create_checkpoint=recovery.create_checkpoint,
     )
     assert bundle.phase_events[-1]["phase_id"] == "U11"

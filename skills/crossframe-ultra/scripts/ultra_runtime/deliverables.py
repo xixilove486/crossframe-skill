@@ -79,6 +79,11 @@ _BACKUP_REQUIRED_STATES = frozenset(
 _PUBLISHED_STATES = frozenset(
     {"published", "postchecked", "u12-durable", "complete"}
 )
+_VALIDATION_LAYER_IDS = (
+    "deterministic",
+    "adversarial",
+    "fresh-semantic",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +268,15 @@ def _remove_staging(layout: RunLayout, paths: PublicationPaths) -> None:
         pass
 
 
-def _validate_report_bytes(report_bytes: bytes, stage: str) -> bytes:
+def _validate_report_bytes(
+    report_bytes: bytes,
+    stage: str,
+    *,
+    expected_article_sha256: str,
+    expected_manifest_sha256: str,
+    expected_semantic_review_artifact_sha256: str,
+    expected_active_generation: int,
+) -> bytes:
     if not isinstance(report_bytes, bytes):
         raise TypeError(f"{stage} fresh checker must return bytes")
     report = load_json_object_bytes(report_bytes, source=f"{stage} fresh checker stdout")
@@ -280,7 +293,76 @@ def _validate_report_bytes(report_bytes: bytes, stage: str) -> bytes:
         raise RuntimeError(
             f"{stage} fresh checker did not report overall_status=pass: {failures}"
         )
+    layers = report.get("layers")
+    if not isinstance(layers, list) or tuple(
+        layer.get("layer_id") if isinstance(layer, Mapping) else None
+        for layer in layers
+    ) != _VALIDATION_LAYER_IDS:
+        raise RuntimeError(f"{stage} fresh checker validation layer contract is invalid")
+    failed_layers = [
+        str(layer.get("layer_id"))
+        for layer in layers
+        if not isinstance(layer, Mapping) or layer.get("status") != "pass"
+    ]
+    if failed_layers:
+        raise RuntimeError(
+            f"{stage} fresh checker has failed validation layer: {failed_layers}"
+        )
+    checks = report.get("checks", [])
+    if not isinstance(checks, list) or not checks or any(
+        not isinstance(check, Mapping) or check.get("status") != "pass"
+        for check in checks
+    ):
+        raise RuntimeError(f"{stage} fresh checker contains a failed check")
+    if report.get("publication_allowed") is not True:
+        raise RuntimeError(f"{stage} fresh checker did not allow publication")
+    if report.get("article_sha256") != expected_article_sha256:
+        raise RuntimeError(f"{stage} fresh checker article generation is stale")
+    if report.get("manifest_sha256") != expected_manifest_sha256:
+        raise RuntimeError(f"{stage} fresh checker manifest generation is stale")
+    if (
+        report.get("semantic_review_artifact_sha256")
+        != expected_semantic_review_artifact_sha256
+    ):
+        raise RuntimeError(
+            f"{stage} fresh checker semantic review generation is stale"
+        )
+    if report.get("active_generation") != expected_active_generation:
+        raise RuntimeError(
+            f"{stage} fresh checker active recovery generation is stale"
+        )
     return report_bytes
+
+
+def _semantic_publication_authority(layout: RunLayout) -> tuple[str, int]:
+    path = assert_safe_descendant(
+        layout.root,
+        layout.artifacts_dir
+        / "U09-U10-verdict"
+        / "U11-semantic-review.json",
+    )
+    try:
+        raw = path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RuntimeError(
+            "publication requires the runtime-owned semantic review artifact"
+        ) from error
+    if (
+        raw != canonical_json_bytes(document)
+        or document.get("schema_id")
+        != "crossframe.ultra.v82.semantic-review"
+        or document.get("phase_id") != "U11"
+        or document.get("run_id") != layout.run_dir.name
+        or document.get("overall_status") != "pass"
+        or document.get("publication_allowed") is not True
+        or type(document.get("active_generation")) is not int
+        or int(document["active_generation"]) < 0
+    ):
+        raise RuntimeError(
+            "publication semantic review authority is invalid or non-passing"
+        )
+    return sha256_bytes(raw), int(document["active_generation"])
 
 
 def _attach_note(error: BaseException, note: str) -> None:
@@ -614,6 +696,9 @@ def publish_delivery(
         finally:
             release_run_lease(layout, owned)
     require_run_lease_owner(layout, lease)
+    semantic_review_sha256, active_generation = _semantic_publication_authority(
+        layout
+    )
     payloads = _payload_by_target(
         paths,
         article_bytes=article_bytes,
@@ -660,7 +745,12 @@ def publish_delivery(
         )
 
         precheck_report = _validate_report_bytes(
-            fresh_check("pre-publish"), "pre-publish"
+            fresh_check("pre-publish"),
+            "pre-publish",
+            expected_article_sha256=sha256_bytes(article_bytes),
+            expected_manifest_sha256=sha256_bytes(manifest_bytes),
+            expected_semantic_review_artifact_sha256=semantic_review_sha256,
+            expected_active_generation=active_generation,
         )
         precheck_passed = True
         commit_report("pre-publish", precheck_report)
@@ -710,7 +800,12 @@ def publish_delivery(
         )
 
         postcheck_report = _validate_report_bytes(
-            fresh_check("post-publish"), "post-publish"
+            fresh_check("post-publish"),
+            "post-publish",
+            expected_article_sha256=sha256_bytes(article_bytes),
+            expected_manifest_sha256=sha256_bytes(manifest_bytes),
+            expected_semantic_review_artifact_sha256=semantic_review_sha256,
+            expected_active_generation=active_generation,
         )
         postcheck_passed = True
         commit_report("post-publish", postcheck_report)

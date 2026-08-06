@@ -464,6 +464,22 @@ def test_normalized_excerpt_can_match_whitespace_variation_without_marker_stuffi
     assert result.coverage_complete is True
 
 
+def test_distinct_responsibilities_cannot_reuse_one_article_span(coverage) -> None:
+    article_text, output_plan, units, mappings = _coverage_case()
+    reused_unit_id = mappings[1]["unit_id"]
+    output_plan["sections"][0]["semantic_unit_ids"].append(reused_unit_id)
+    mappings[1]["section_id"] = mappings[0]["section_id"]
+    mappings[1]["normalized_excerpt"] = mappings[0]["normalized_excerpt"]
+
+    with pytest.raises(ValueError, match="distinct|reuse|same article span"):
+        coverage.validate_semantic_coverage(
+            article_text,
+            output_plan,
+            units,
+            mappings,
+        )
+
+
 def test_quality_inspection_penalizes_the_named_independence_failures(coverage) -> None:
     repeated = "这一段是可被复制到任何主题的空泛模板。"
     text = (

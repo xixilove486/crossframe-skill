@@ -844,6 +844,43 @@ def _require_independent_texts(
         raise ConceptClosureError(f"copied boilerplate {label} is not independent")
 
 
+def validate_required_concept_semantic_units(
+    document: Mapping[str, object],
+    expected_unit_ids: Collection[str],
+) -> tuple[str, ...]:
+    snapshot = _snapshot_mapping(document, label="concept disposition")
+    expected = _checked_ids(
+        expected_unit_ids,
+        label="required concept semantic unit IDs",
+    )
+    obligations = snapshot.get("semantic_obligations")
+    if not isinstance(obligations, list):
+        raise ConceptClosureError(
+            "concept disposition semantic obligations are unavailable"
+        )
+    retained: list[str] = []
+    for index, obligation in enumerate(obligations):
+        if not isinstance(obligation, Mapping):
+            raise ConceptClosureError(
+                f"semantic obligation {index} must be a mapping"
+            )
+        status = obligation.get("status")
+        unit_id = obligation.get("semantic_unit_id")
+        if status in _RETURNED_STATUSES:
+            if not isinstance(unit_id, str) or not unit_id:
+                raise ConceptClosureError(
+                    "retained semantic obligation has no semantic unit ID"
+                )
+            retained.append(unit_id)
+    if len(retained) != len(set(retained)):
+        raise ConceptClosureError("concept disposition repeats a semantic unit ID")
+    if set(retained) != set(expected) or len(retained) != len(expected):
+        raise ConceptClosureError(
+            "semantic review concept unit set differs from validate_concept_closure"
+        )
+    return tuple(sorted(retained))
+
+
 def validate_concept_closure(
     document: Mapping[str, object],
     *,
@@ -1077,4 +1114,8 @@ def validate_concept_closure(
     return frozenset(retained)
 
 
-__all__ = ("ConceptClosureError", "validate_concept_closure")
+__all__ = (
+    "ConceptClosureError",
+    "validate_concept_closure",
+    "validate_required_concept_semantic_units",
+)

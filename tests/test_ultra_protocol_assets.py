@@ -58,6 +58,7 @@ EXPECTED_VALIDATOR_MARKERS = {
         "validate_output_plan_artifact",
         "validate_semantic_coverage",
         "review_article_in_clean_room",
+        "validate_semantic_review",
     ),
     "ultra-safety-recovery-protocol.md": (
         "check_crossframe_ultra_artifacts.py",

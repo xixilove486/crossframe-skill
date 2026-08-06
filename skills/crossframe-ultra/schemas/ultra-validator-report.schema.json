@@ -7,17 +7,63 @@
     {"$ref": "ultra-common.schema.json#/$defs/phaseArtifactEnvelope"},
     {
       "type": "object",
-      "required": ["attempt_id", "manifest_sha256", "validator_set_sha256", "checks", "overall_status", "validated_at", "fresh_context"],
+      "required": ["attempt_id", "manifest_sha256", "validator_set_sha256", "active_generation", "article_sha256", "semantic_review_artifact_sha256", "checks", "layers", "overall_status", "publication_allowed", "validated_at", "fresh_context"],
       "properties": {
         "schema_id": {"const": "crossframe.ultra.v82.validator-report"},
         "phase_id": {"const": "U12"},
         "attempt_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "manifest_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "validator_set_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "active_generation": {"type": "integer", "minimum": 0},
+        "article_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "semantic_review_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
         "checks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/check"}},
+        "layers": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"$ref": "#/$defs/layer"},
+          "allOf": [
+            {"contains": {"properties": {"layer_id": {"const": "deterministic"}}, "required": ["layer_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"layer_id": {"const": "adversarial"}}, "required": ["layer_id"]}, "minContains": 1, "maxContains": 1},
+            {"contains": {"properties": {"layer_id": {"const": "fresh-semantic"}}, "required": ["layer_id"]}, "minContains": 1, "maxContains": 1}
+          ]
+        },
         "overall_status": {"enum": ["pass", "fail", "blocked"]},
+        "publication_allowed": {"type": "boolean"},
         "validated_at": {"$ref": "ultra-common.schema.json#/$defs/timestamp"},
         "fresh_context": {"const": true}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "checks": {
+            "items": {
+              "properties": {"status": {"const": "pass"}},
+              "required": ["status"]
+            }
+          },
+          "layers": {
+            "items": {
+              "properties": {"status": {"const": "pass"}},
+              "required": ["status"]
+            }
+          }
+        },
+        "required": ["checks", "layers"]
+      },
+      "then": {
+        "properties": {
+          "overall_status": {"const": "pass"},
+          "publication_allowed": {"const": true}
+        }
+      },
+      "else": {
+        "properties": {
+          "overall_status": {"enum": ["fail", "blocked"]},
+          "publication_allowed": {"const": false}
+        }
       }
     }
   ],
@@ -31,6 +77,16 @@
         "validator_id": {"$ref": "ultra-common.schema.json#/$defs/identifier"},
         "status": {"enum": ["pass", "fail", "blocked"]},
         "error_codes": {"$ref": "ultra-common.schema.json#/$defs/identifierArray"},
+        "artifact_refs": {"$ref": "ultra-common.schema.json#/$defs/stringArray"}
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layer_id", "status", "artifact_refs"],
+      "properties": {
+        "layer_id": {"enum": ["deterministic", "adversarial", "fresh-semantic"]},
+        "status": {"enum": ["pass", "fail", "blocked"]},
         "artifact_refs": {"$ref": "ultra-common.schema.json#/$defs/stringArray"}
       }
     }

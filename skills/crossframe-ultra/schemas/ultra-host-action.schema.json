@@ -15,6 +15,19 @@
           "payload": {"$ref": "#/$defs/retrievalPayload"}
         }
       }
+    },
+    {
+      "if": {
+        "properties": {"action_kind": {"const": "semantic-review"}},
+        "required": ["action_kind"]
+      },
+      "then": {
+        "properties": {
+          "phase_id": {"const": "U11"},
+          "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+          "payload": {"$ref": "#/$defs/semanticReviewPayload"}
+        }
+      }
     }
   ],
   "additionalProperties": false,
@@ -25,7 +38,7 @@
     "run_id": {"$ref": "ultra-common.schema.json#/$defs/runId"},
     "version_binding": {"$ref": "ultra-common.schema.json#/$defs/currentVersionBinding"},
     "phase_id": {"$ref": "ultra-common.schema.json#/$defs/phaseId"},
-    "action_kind": {"enum": ["capability-attestation", "source-read", "retrieval", "evidence-authoring", "subagent"]},
+    "action_kind": {"enum": ["capability-attestation", "source-read", "retrieval", "evidence-authoring", "subagent", "semantic-review"]},
     "parent_event_sha256": {"$ref": "ultra-common.schema.json#/$defs/nullableSha256"},
     "request_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
     "result_relative_path": {"$ref": "ultra-common.schema.json#/$defs/relativePath"},
@@ -134,6 +147,78 @@
           "maxItems": 5,
           "uniqueItems": true,
           "items": {"enum": ["entries", "provider", "queries", "sources", "tool"]}
+        }
+      }
+    },
+    "semanticReviewPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_intake_authority_sha256",
+        "active_generation",
+        "article_sha256",
+        "output_plan_artifact_sha256",
+        "coverage_artifact_sha256",
+        "article_review_artifact_sha256",
+        "evidence_ledger_artifact_sha256",
+        "concept_disposition_artifact_sha256",
+        "required_concept_semantic_unit_ids",
+        "required_concept_semantic_units_sha256",
+        "requested_dimensions",
+        "allowed_provider_kinds",
+        "allowed_proof_grades",
+        "requested_result_fields"
+      ],
+      "properties": {
+        "request_intake_authority_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "active_generation": {"type": "integer", "minimum": 0},
+        "article_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "output_plan_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "coverage_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "article_review_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "evidence_ledger_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "concept_disposition_artifact_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "required_concept_semantic_unit_ids": {"$ref": "ultra-common.schema.json#/$defs/nonemptyIdentifierArray"},
+        "required_concept_semantic_units_sha256": {"$ref": "ultra-common.schema.json#/$defs/sha256"},
+        "requested_dimensions": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "direct-answer",
+              "evidence-boundary",
+              "current-judgment",
+              "mechanism-competition",
+              "recursive-expansion",
+              "residuals",
+              "reversal-conditions",
+              "action-comparison",
+              "concept-fidelity"
+            ]
+          }
+        },
+        "allowed_provider_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["model", "service", "local"]}
+        },
+        "allowed_proof_grades": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"enum": ["host-attested", "provider-signed"]}
+        },
+        "requested_result_fields": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["dimension_reviews", "reviewed_at", "reviewer"]}
         }
       }
     }
