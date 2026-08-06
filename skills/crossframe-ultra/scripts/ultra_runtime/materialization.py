@@ -23,6 +23,7 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import Lease
 from .paths import (
     RootPolicy,
     RunLayout,
@@ -3628,7 +3629,7 @@ def materialize_complete_run(
     now: datetime,
     entropy: bytes,
     fresh_check: Callable[[str], bytes],
-    commit_report: Callable[[str, bytes], object],
+    commit_report: Callable[[str, bytes, Lease], object],
 ) -> CompleteMaterializationResult | MaterializationProgress | RepairMaterializationResult:
     """Materialize U4-U12 through Task 12's single PhaseStore and fixed APIs."""
 
@@ -3665,6 +3666,7 @@ def materialize_complete_run(
     )
     from .locks import (
         CancelledRunError,
+        LeaseOwnershipError,
         LeaseNeedsAttentionError,
         acquire_run_lease,
         release_run_lease,
@@ -4021,6 +4023,7 @@ def materialize_complete_run(
             phase_store_restored
             and publication_journal_path.is_file()
             and not attention_marked
+            and not isinstance(error, (CancelledRunError, LeaseOwnershipError))
         ):
             try:
                 mark_needs_attention(f"materialization failed: {type(error).__name__}: {error}")

@@ -265,6 +265,108 @@ def test_parser_exposes_only_the_frozen_commands_and_options() -> None:
         assert not any(option in subparser.format_help() for option in FORBIDDEN_CLI_OPTIONS)
 
 
+def test_validate_threads_its_single_owned_lease_into_report_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = _load_cli()
+    from ultra_runtime import jsonio, locks, paths
+
+    policy = _root_policy(tmp_path)
+    run_id = "20260805T010000Z-aaaaaaaaaaaa"
+    layout = paths.build_run_layout(paths.RunMode.TEST, run_id, policy)
+    layout.run_dir.mkdir(parents=True)
+    report_bytes = jsonio.canonical_json_bytes(
+        {
+            "attempt_id": "single-owned-lease",
+            "overall_status": "pass",
+            "run_id": run_id,
+        }
+    )
+    observed: list[object] = []
+
+    def commit_report(selected_layout, selected_report: bytes, lease: object):
+        assert selected_layout == layout
+        assert selected_report == report_bytes
+        locks.require_run_lease_owner(layout, lease)
+        observed.append(lease)
+        return {}
+
+    monkeypatch.setattr(cli, "_fresh_checker", lambda *args: report_bytes)
+    monkeypatch.setattr(cli, "_commit_report", commit_report)
+    stdout = StringIO()
+    assert cli.execute(
+        [
+            "validate",
+            "--repo",
+            str(REPO_ROOT),
+            "--mode",
+            "test",
+            "--run-id",
+            run_id,
+            "--json",
+        ],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: datetime(2026, 8, 5, 1, tzinfo=timezone.utc),
+        entropy=lambda: b"unused",
+    ) == 0
+
+    assert stdout.getvalue().encode("utf-8") == report_bytes
+    assert len(observed) == 1
+    assert not (layout.run_dir / ".writer-lease.json").exists()
+
+
+def test_materialize_adapter_forwards_publication_callback_lease(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = _load_cli()
+    from ultra_runtime import materialization
+
+    policy = _root_policy(tmp_path)
+    run_id = "20260805T010100Z-bbbbbbbbbbbb"
+    callback_lease = object()
+    observed: list[object] = []
+
+    def materialize(*args: object, **kwargs: object) -> dict[str, object]:
+        commit_report = kwargs["commit_report"]
+        assert callable(commit_report)
+        commit_report("pre-publish", b"fixed report bytes\n", callback_lease)
+        return {"outcome": "lease-forwarded", "run_id": run_id}
+
+    def commit_report(layout, report_bytes: bytes, lease: object) -> dict[str, object]:
+        assert report_bytes == b"fixed report bytes\n"
+        observed.append(lease)
+        return {}
+
+    monkeypatch.setattr(materialization, "materialize_complete_run", materialize)
+    monkeypatch.setattr(cli, "_commit_report", commit_report)
+    stdout = StringIO()
+    assert cli.execute(
+        [
+            "materialize",
+            "--repo",
+            str(REPO_ROOT),
+            "--mode",
+            "test",
+            "--run-id",
+            run_id,
+        ],
+        stdin=BytesIO(),
+        stdout=stdout,
+        stderr=StringIO(),
+        root_policy=policy,
+        now=lambda: datetime(2026, 8, 5, 1, 1, tzinfo=timezone.utc),
+        entropy=lambda: b"unused",
+    ) == 0
+
+    assert json.loads(stdout.getvalue())["outcome"] == "lease-forwarded"
+    assert observed == [callback_lease]
+
+
 def test_parser_enforces_request_xor_modes_and_phase_domain() -> None:
     cli = _load_cli()
     parser = cli.build_parser()

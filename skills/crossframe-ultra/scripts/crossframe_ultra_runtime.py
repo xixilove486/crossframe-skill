@@ -32,7 +32,7 @@ from ultra_runtime.jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
-from ultra_runtime.locks import acquire_run_lease, release_run_lease
+from ultra_runtime.locks import Lease, acquire_run_lease, release_run_lease
 from ultra_runtime.materialization import (
     foundation_progress_projection,
     preflight_foundation_progress,
@@ -468,7 +468,11 @@ def _fresh_checker(repo: Path, mode: RunMode, run_id: str) -> bytes:
     return completed.stdout
 
 
-def _commit_report(layout: RunLayout, report_bytes: bytes) -> dict[str, object]:
+def _commit_report(
+    layout: RunLayout,
+    report_bytes: bytes,
+    lease: Lease,
+) -> dict[str, object]:
     validation = _task12("validation")
     report = load_json_object_bytes(report_bytes, source="fresh checker stdout")
     return validation.commit_validation_attempt(
@@ -477,6 +481,7 @@ def _commit_report(layout: RunLayout, report_bytes: bytes) -> dict[str, object]:
         report_bytes=report_bytes,
         expected_manifest_sha256=report["manifest_sha256"],
         expected_validator_set_sha256=report["validator_set_sha256"],
+        lease=lease,
     )
 
 
@@ -490,10 +495,10 @@ def _validate(
 ) -> int:
     mode = _mode(args.mode)
     layout = _layout(args, policy)
-    with _run_lease(layout, now):
+    with _run_lease(layout, now) as lease:
         report_bytes = _fresh_checker(repo, mode, args.run_id)
         report = load_json_object_bytes(report_bytes, source="fresh checker stdout")
-        _commit_report(layout, report_bytes)
+        _commit_report(layout, report_bytes, lease)
     if args.json_output:
         stdout.write(report_bytes.decode("utf-8"))
     else:
@@ -656,8 +661,10 @@ def _materialize(
         now=now,
         entropy=entropy,
         fresh_check=lambda stage: _fresh_checker(repo, _mode(args.mode), args.run_id),
-        commit_report=lambda stage, report_bytes: _commit_report(
-            build_run_layout(_mode(args.mode), args.run_id, policy), report_bytes
+        commit_report=lambda stage, report_bytes, lease: _commit_report(
+            build_run_layout(_mode(args.mode), args.run_id, policy),
+            report_bytes,
+            lease,
         ),
     )
     _emit_json(stdout, result)

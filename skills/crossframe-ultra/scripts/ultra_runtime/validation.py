@@ -24,6 +24,12 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import (
+    CancelledRunError,
+    Lease,
+    load_cancel_intent,
+    require_run_lease_owner,
+)
 from .paths import (
     RunLayout,
     RunMode,
@@ -1684,6 +1690,15 @@ def _validated_report_bytes(
     return report
 
 
+def _require_validation_commit_authority(
+    layout: RunLayout,
+    lease: Lease,
+) -> None:
+    if load_cancel_intent(layout) is not None:
+        raise CancelledRunError("cancel intent blocks validation commit")
+    require_run_lease_owner(layout, lease)
+
+
 def commit_validation_attempt(
     layout: RunLayout,
     *,
@@ -1691,6 +1706,7 @@ def commit_validation_attempt(
     report_bytes: bytes,
     expected_manifest_sha256: str,
     expected_validator_set_sha256: str,
+    lease: Lease,
 ) -> dict[str, object]:
     if not isinstance(layout, RunLayout):
         raise TypeError("layout must be a RunLayout")
@@ -1704,6 +1720,8 @@ def commit_validation_attempt(
     ):
         if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
             raise ValueError(f"{name} must be a SHA-256 digest")
+
+    _require_validation_commit_authority(layout, lease)
 
     manifest_path = validation_manifest_path(layout)
     manifest = validate_artifact_manifest(layout, manifest_path)
@@ -1728,6 +1746,7 @@ def commit_validation_attempt(
     )
     if fresh_bytes != report_bytes:
         raise ValueError("parent report bytes differ from fresh disk validation")
+    _require_validation_commit_authority(layout, lease)
 
     attempt_path = (
         layout.validation_attempts_dir
@@ -1739,6 +1758,7 @@ def commit_validation_attempt(
         assert_safe_descendant(layout.root, path)
     if attempt_path.exists() and attempt_path.read_bytes() != report_bytes:
         raise ValueError("validation attempt slot already contains different bytes")
+    _require_validation_commit_authority(layout, lease)
     atomic_write_bytes(attempt_path, report_bytes)
     if attempt_path.read_bytes() != report_bytes:
         raise ValueError("validation attempt changed during durable write")
@@ -1749,6 +1769,7 @@ def commit_validation_attempt(
         manifest_sha256=current_manifest_sha,
         validator_hash=current_validator_hash,
     )
+    _require_validation_commit_authority(layout, lease)
     atomic_write_bytes(current_path, report_bytes)
     if current_path.read_bytes() != report_bytes:
         raise ValueError("validation/current changed during atomic replacement")

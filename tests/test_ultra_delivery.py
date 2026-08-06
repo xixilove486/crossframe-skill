@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 from importlib import import_module
 import json
@@ -173,7 +173,7 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
             assert publication.manifest_path.read_bytes() == _payload()["manifest_bytes"]
         return expected_report
 
-    def commit_report(stage: str, report_bytes: bytes) -> None:
+    def commit_report(stage: str, report_bytes: bytes, lease: object) -> None:
         observed.append(f"commit:{stage}")
         assert report_bytes == expected_report
 
@@ -207,6 +207,260 @@ def test_successful_publish_is_journal_stage_precheck_backup_publish_postcheck(
     assert journal["transaction_id"] == TRANSACTION_ID
     assert journal["state"] == "postchecked"
     assert journal["postcheck_passed"] is True
+
+
+def test_publish_rejects_existing_cancel_intent_before_any_publication_work(
+    runtime, tmp_path: Path
+) -> None:
+    deliverables, paths, _ = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    previous = {
+        target: f"previous {target.name}\n".encode("utf-8")
+        for target in publication.official_paths
+    }
+    for target, value in previous.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(value)
+    lease = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    try:
+        locks.request_cancel(
+            layout,
+            reason="cancel before publication",
+            now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+        )
+        with pytest.raises(locks.CancelledRunError):
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=lambda stage: pytest.fail(
+                    f"fresh checker ran after cancellation: {stage}"
+                ),
+                commit_report=lambda stage, report, lease: pytest.fail(
+                    f"report commit ran after cancellation: {stage}"
+                ),
+                mark_needs_attention=lambda reason: pytest.fail(reason),
+                lease=lease,
+                **_payload(),
+            )
+    finally:
+        locks.release_run_lease(layout, lease)
+
+    assert not publication.journal_path.exists()
+    assert not publication.staging_dir.exists()
+    assert all(target.read_bytes() == value for target, value in previous.items())
+
+
+@pytest.mark.parametrize("cancel_boundary", ("fresh", "commit"))
+@pytest.mark.parametrize("cancel_stage", ("pre-publish", "post-publish"))
+def test_publish_rechecks_cancel_after_each_checker_and_report_commit(
+    runtime,
+    tmp_path: Path,
+    cancel_boundary: str,
+    cancel_stage: str,
+) -> None:
+    deliverables, paths, _ = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    payload = _payload()
+    report = _layered_report(payload)
+    previous = {
+        target: f"previous {target.name}\n".encode("utf-8")
+        for target in publication.official_paths
+    }
+    for target, value in previous.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(value)
+    lease = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    observed: list[str] = []
+    callback_leases: list[object | None] = []
+    attentions: list[str] = []
+
+    def request_cancel() -> None:
+        locks.request_cancel(
+            layout,
+            reason=f"cancel during {cancel_stage} {cancel_boundary}",
+            now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+        )
+
+    def fresh_check(stage: str) -> bytes:
+        observed.append(f"fresh:{stage}")
+        if cancel_boundary == "fresh" and stage == cancel_stage:
+            request_cancel()
+        return report
+
+    def commit_report(
+        stage: str,
+        report_bytes: bytes,
+        callback_lease: object | None = None,
+    ) -> None:
+        observed.append(f"commit:{stage}")
+        callback_leases.append(callback_lease)
+        assert report_bytes == report
+        if cancel_boundary == "commit" and stage == cancel_stage:
+            request_cancel()
+
+    try:
+        with pytest.raises(locks.CancelledRunError):
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=fresh_check,
+                commit_report=commit_report,
+                mark_needs_attention=attentions.append,
+                lease=lease,
+                **payload,
+            )
+    finally:
+        locks.release_run_lease(layout, lease)
+
+    all_callbacks = [
+        "fresh:pre-publish",
+        "commit:pre-publish",
+        "fresh:post-publish",
+        "commit:post-publish",
+    ]
+    expected_last = f"{cancel_boundary}:{cancel_stage}"
+    assert observed == all_callbacks[: all_callbacks.index(expected_last) + 1]
+    assert all(callback_lease is lease for callback_lease in callback_leases)
+    assert all(target.read_bytes() == value for target, value in previous.items())
+    assert attentions == []
+
+
+def test_publish_rechecks_current_owner_after_fresh_check(
+    runtime,
+    tmp_path: Path,
+) -> None:
+    deliverables, paths, jsonio = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    payload = _payload()
+    report = _layered_report(payload)
+    previous = {
+        target: f"previous {target.name}\n".encode("utf-8")
+        for target in publication.official_paths
+    }
+    for target, value in previous.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(value)
+    lease = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    lease_path = layout.run_dir / ".writer-lease.json"
+    lease_bytes = lease_path.read_bytes()
+    observed: list[str] = []
+    attentions: list[str] = []
+
+    def fresh_check(stage: str) -> bytes:
+        observed.append(f"fresh:{stage}")
+        jsonio.atomic_write_json(
+            lease_path,
+            {
+                "run_id": lease.run_id,
+                "owner_pid": lease.owner_pid,
+                "owner_nonce": "foreign-owner-nonce-000000000000",
+                "acquired_at": lease.acquired_at,
+                "heartbeat_at": lease.heartbeat_at,
+                "expires_at": lease.expires_at,
+            },
+        )
+        return report
+
+    try:
+        with pytest.raises(locks.LeaseOwnershipError):
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=fresh_check,
+                commit_report=lambda stage, report_bytes, callback_lease: None,
+                mark_needs_attention=attentions.append,
+                lease=lease,
+                **payload,
+            )
+    finally:
+        jsonio.atomic_write_bytes(lease_path, lease_bytes)
+        locks.release_run_lease(layout, lease)
+
+    assert observed == ["fresh:pre-publish"]
+    assert all(target.read_bytes() == value for target, value in previous.items())
+    assert attentions == []
+
+
+def test_publish_cancel_during_first_official_write_rolls_back_and_stops(
+    runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deliverables, paths, _ = runtime
+    locks = _module("locks")
+    layout = _layout(paths, tmp_path)
+    publication = deliverables.publication_paths(layout, TRANSACTION_ID)
+    payload = _payload()
+    report = _layered_report(payload)
+    new_payloads = {
+        publication.manifest_path: payload["manifest_bytes"],
+        publication.article_path: payload["article_bytes"],
+        publication.dossier_path: payload["dossier_bytes"],
+        publication.artifact_index_path: payload["artifact_index_bytes"],
+    }
+    previous = {
+        target: f"previous {target.name}\n".encode("utf-8")
+        for target in publication.official_paths
+    }
+    for target, value in previous.items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(value)
+    lease = locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 2, 3, 4, 5, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    original_write = deliverables.atomic_write_bytes
+    new_official_writes: list[Path] = []
+    attentions: list[str] = []
+
+    def cancelling_write(path: Path, value: bytes) -> None:
+        original_write(path, value)
+        if path in new_payloads and value == new_payloads[path]:
+            new_official_writes.append(path)
+            if len(new_official_writes) == 1:
+                locks.request_cancel(
+                    layout,
+                    reason="cancel during first official write",
+                    now=datetime(2026, 8, 2, 3, 4, 6, tzinfo=timezone.utc),
+                )
+
+    monkeypatch.setattr(deliverables, "atomic_write_bytes", cancelling_write)
+    try:
+        with pytest.raises(locks.CancelledRunError):
+            deliverables.publish_delivery(
+                layout,
+                transaction_id=TRANSACTION_ID,
+                fresh_check=lambda stage: report,
+                commit_report=lambda stage, report_bytes, callback_lease=None: None,
+                mark_needs_attention=attentions.append,
+                lease=lease,
+                **payload,
+            )
+    finally:
+        locks.release_run_lease(layout, lease)
+
+    assert new_official_writes == [publication.manifest_path]
+    assert all(target.read_bytes() == value for target, value in previous.items())
+    assert attentions == []
 
 
 @pytest.mark.parametrize(
@@ -249,7 +503,7 @@ def test_publish_rejects_forged_layer_or_stale_generation_report(
             layout,
             transaction_id=TRANSACTION_ID,
             fresh_check=lambda stage: report,
-            commit_report=lambda stage, value: None,
+            commit_report=lambda stage, value, lease: None,
             mark_needs_attention=attentions.append,
             **payload,
         )
@@ -271,7 +525,7 @@ def test_publish_delivery_rejects_direct_completion_before_writes(
             layout,
             transaction_id=TRANSACTION_ID,
             fresh_check=lambda stage: b'{"overall_status":"pass"}\n',
-            commit_report=lambda stage, report: None,
+            commit_report=lambda stage, report, lease: None,
             mark_needs_attention=lambda reason: pytest.fail(reason),
             defer_completion=False,
             **_payload(),
@@ -327,7 +581,7 @@ def test_directory_at_fixed_publish_journal_path_fails_closed_before_mutation(
                 layout,
                 transaction_id=TRANSACTION_ID,
                 fresh_check=lambda stage: events.append(f"check:{stage}"),
-                commit_report=lambda stage, report: events.append(
+                commit_report=lambda stage, report, lease: events.append(
                     f"commit:{stage}"
                 ),
                 mark_needs_attention=events.append,
@@ -371,7 +625,7 @@ def test_failed_replacement_restores_exact_prior_complete_bytes_and_keeps_audit(
             layout,
             transaction_id=TRANSACTION_ID,
             fresh_check=fresh_check,
-            commit_report=lambda stage, report: None,
+            commit_report=lambda stage, report, lease: None,
             mark_needs_attention=attentions.append,
             **_payload(),
         )
@@ -404,7 +658,7 @@ def test_failed_first_publication_leaves_all_official_names_absent(
             fresh_check=lambda stage: (_ for _ in ()).throw(
                 RuntimeError("injected pre-publish failure")
             ),
-            commit_report=lambda stage, report: None,
+            commit_report=lambda stage, report, lease: None,
             mark_needs_attention=lambda reason: None,
             **_payload(),
         )

@@ -661,7 +661,11 @@ def run_fixed_root_smoke(
                 run_id,
             )
 
-        def commit_report(stage: str, report_bytes: bytes) -> object:
+        def commit_report(
+            stage: str,
+            report_bytes: bytes,
+            lease: object,
+        ) -> object:
             if stage not in {"pre-publish", "post-publish"}:
                 raise ValueError(f"unexpected validation commit stage: {stage}")
             report = jsonio.load_json_object_bytes(
@@ -674,6 +678,7 @@ def run_fixed_root_smoke(
                 report_bytes=report_bytes,
                 expected_manifest_sha256=report["manifest_sha256"],
                 expected_validator_set_sha256=report["validator_set_sha256"],
+                lease=lease,
             )
 
         complete = materialization.materialize_complete_run(

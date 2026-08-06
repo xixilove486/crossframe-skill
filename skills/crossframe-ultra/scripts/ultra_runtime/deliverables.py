@@ -17,6 +17,13 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
+from .locks import (
+    CancelledRunError,
+    Lease,
+    LeaseOwnershipError,
+    load_cancel_intent,
+    require_run_lease_owner,
+)
 from .paths import RunLayout, assert_safe_descendant
 
 
@@ -634,6 +641,12 @@ def _restore_previous(
                 atomic_write_bytes(official, prior)
 
 
+def _require_publication_authority(layout: RunLayout, lease: Lease) -> None:
+    if load_cancel_intent(layout) is not None:
+        raise CancelledRunError("cancel intent blocks publication")
+    require_run_lease_owner(layout, lease)
+
+
 def publish_delivery(
     layout: RunLayout,
     *,
@@ -643,10 +656,10 @@ def publish_delivery(
     artifact_index_bytes: bytes,
     manifest_bytes: bytes,
     fresh_check: Callable[[str], bytes],
-    commit_report: Callable[[str, bytes], object],
+    commit_report: Callable[[str, bytes, Lease], object],
     mark_needs_attention: Callable[[str], object],
     defer_completion: bool = True,
-    lease: object | None = None,
+    lease: Lease | None = None,
 ) -> PublicationResult:
     """Publish the fixed final set with durable rollback evidence.
 
@@ -670,7 +683,6 @@ def publish_delivery(
     from .locks import (
         acquire_run_lease,
         release_run_lease,
-        require_run_lease_owner,
     )
 
     if lease is None:
@@ -695,7 +707,7 @@ def publish_delivery(
             )
         finally:
             release_run_lease(layout, owned)
-    require_run_lease_owner(layout, lease)
+    _require_publication_authority(layout, lease)
     semantic_review_sha256, active_generation = _semantic_publication_authority(
         layout
     )
@@ -744,8 +756,11 @@ def publish_delivery(
             failure=None,
         )
 
+        _require_publication_authority(layout, lease)
+        precheck_report_bytes = fresh_check("pre-publish")
+        _require_publication_authority(layout, lease)
         precheck_report = _validate_report_bytes(
-            fresh_check("pre-publish"),
+            precheck_report_bytes,
             "pre-publish",
             expected_article_sha256=sha256_bytes(article_bytes),
             expected_manifest_sha256=sha256_bytes(manifest_bytes),
@@ -753,7 +768,9 @@ def publish_delivery(
             expected_active_generation=active_generation,
         )
         precheck_passed = True
-        commit_report("pre-publish", precheck_report)
+        _require_publication_authority(layout, lease)
+        commit_report("pre-publish", precheck_report, lease)
+        _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -786,7 +803,9 @@ def publish_delivery(
             staged = _staged_path(paths, official)
             if sha256_bytes(staged.read_bytes()) != sha256_bytes(payloads[official]):
                 raise RuntimeError(f"staged publication hash mismatch for {official.name}")
+            _require_publication_authority(layout, lease)
             atomic_write_bytes(official, staged.read_bytes())
+            _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -799,8 +818,11 @@ def publish_delivery(
             failure=None,
         )
 
+        _require_publication_authority(layout, lease)
+        postcheck_report_bytes = fresh_check("post-publish")
+        _require_publication_authority(layout, lease)
         postcheck_report = _validate_report_bytes(
-            fresh_check("post-publish"),
+            postcheck_report_bytes,
             "post-publish",
             expected_article_sha256=sha256_bytes(article_bytes),
             expected_manifest_sha256=sha256_bytes(manifest_bytes),
@@ -808,7 +830,9 @@ def publish_delivery(
             expected_active_generation=active_generation,
         )
         postcheck_passed = True
-        commit_report("post-publish", postcheck_report)
+        _require_publication_authority(layout, lease)
+        commit_report("post-publish", postcheck_report, lease)
+        _require_publication_authority(layout, lease)
         _write_journal(
             layout,
             paths,
@@ -850,13 +874,17 @@ def publish_delivery(
             )
         except BaseException as journal_error:
             _attach_note(error, f"failed to update publish journal: {journal_error}")
-        try:
-            mark_needs_attention(failure)
-        except BaseException as attention_error:
-            _attach_note(
-                error,
-                f"failed to mark run needs_attention: {attention_error}",
-            )
+        if not isinstance(
+            error,
+            (CancelledRunError, LeaseOwnershipError),
+        ):
+            try:
+                mark_needs_attention(failure)
+            except BaseException as attention_error:
+                _attach_note(
+                    error,
+                    f"failed to mark run needs_attention: {attention_error}",
+                )
         try:
             _remove_staging(layout, paths)
         except BaseException as staging_error:

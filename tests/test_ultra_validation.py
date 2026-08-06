@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import copy
 import hashlib
 import importlib
@@ -66,6 +67,7 @@ def load_validation_runtime() -> SimpleNamespace:
         validation=importlib.import_module("ultra_runtime.validation"),
         constants=importlib.import_module("ultra_runtime.constants"),
         jsonio=importlib.import_module("ultra_runtime.jsonio"),
+        locks=importlib.import_module("ultra_runtime.locks"),
         paths=importlib.import_module("ultra_runtime.paths"),
         recovery=importlib.import_module("ultra_runtime.recovery"),
         schemas=importlib.import_module("ultra_runtime.schemas"),
@@ -424,6 +426,19 @@ def build_valid_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuiltRun
     )
     refresh_manifest(run)
     return run
+
+
+@contextmanager
+def _owned_validation_lease(run: BuiltRun):
+    lease = run.modules.locks.acquire_run_lease(
+        run.layout,
+        datetime(2026, 8, 4, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    try:
+        yield lease
+    finally:
+        run.modules.locks.release_run_lease(run.layout, lease)
 
 
 def persisted_u1_authority_args(run: BuiltRun) -> dict[str, object]:
@@ -1115,34 +1130,353 @@ def test_parent_commits_exact_child_bytes_and_rejects_edited_report(
     report = parse_report(report_bytes)
     manifest_sha = str(report["manifest_sha256"])
 
-    committed = run.modules.validation.commit_validation_attempt(
-        run.layout,
-        attempt_id=str(report["attempt_id"]),
-        report_bytes=report_bytes,
-        expected_manifest_sha256=manifest_sha,
-        expected_validator_set_sha256=run.validator_set_sha256,
-    )
-    attempt_path = (
-        run.layout.validation_attempts_dir
-        / str(report["attempt_id"])
-        / "ultra-validator-report.json"
-    )
-    current_path = run.layout.validation_current_dir / "ultra-validator-report.json"
-    assert committed == report
-    assert attempt_path.read_bytes() == report_bytes
-    assert current_path.read_bytes() == report_bytes
-
-    edited = copy.deepcopy(report)
-    edited["overall_status"] = "fail"
-    edited["content_sha256"] = run.modules.schemas.compute_artifact_content_sha256(edited)
-    with pytest.raises(ValueError, match="fresh|report|bytes|status"):
-        run.modules.validation.commit_validation_attempt(
+    with _owned_validation_lease(run) as lease:
+        committed = run.modules.validation.commit_validation_attempt(
             run.layout,
             attempt_id=str(report["attempt_id"]),
-            report_bytes=canonical_bytes(edited),
+            report_bytes=report_bytes,
             expected_manifest_sha256=manifest_sha,
             expected_validator_set_sha256=run.validator_set_sha256,
+            lease=lease,
         )
+        attempt_path = (
+            run.layout.validation_attempts_dir
+            / str(report["attempt_id"])
+            / "ultra-validator-report.json"
+        )
+        current_path = run.layout.validation_current_dir / "ultra-validator-report.json"
+        assert committed == report
+        assert attempt_path.read_bytes() == report_bytes
+        assert current_path.read_bytes() == report_bytes
+
+        edited = copy.deepcopy(report)
+        edited["overall_status"] = "fail"
+        edited["content_sha256"] = run.modules.schemas.compute_artifact_content_sha256(
+            edited
+        )
+        with pytest.raises(ValueError, match="fresh|report|bytes|status"):
+            run.modules.validation.commit_validation_attempt(
+                run.layout,
+                attempt_id=str(report["attempt_id"]),
+                report_bytes=canonical_bytes(edited),
+                expected_manifest_sha256=manifest_sha,
+                expected_validator_set_sha256=run.validator_set_sha256,
+                lease=lease,
+            )
+
+
+def test_validation_commit_requires_current_lease_owner_before_any_write(
+    tmp_path: Path,
+) -> None:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=tmp_path / "production",
+        test_root=tmp_path / "test",
+    )
+    layout = modules.paths.build_run_layout(
+        modules.paths.RunMode.TEST,
+        RUN_ID,
+        policy,
+    )
+    layout.run_dir.mkdir(parents=True)
+    attempt_id = "lease-owner-boundary"
+    attempt_path = (
+        layout.validation_attempts_dir
+        / attempt_id
+        / "ultra-validator-report.json"
+    )
+    current_path = layout.validation_current_dir / "ultra-validator-report.json"
+    before = {
+        path: path.read_bytes() if path.is_file() else None
+        for path in (attempt_path, current_path)
+    }
+    owner = modules.locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 4, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    foreign = modules.locks.Lease(
+        run_id=owner.run_id,
+        owner_pid=owner.owner_pid,
+        owner_nonce="foreign-owner-nonce-000000000000",
+        acquired_at=owner.acquired_at,
+        heartbeat_at=owner.heartbeat_at,
+        expires_at=owner.expires_at,
+    )
+    try:
+        with pytest.raises(modules.locks.LeaseOwnershipError):
+            modules.validation.commit_validation_attempt(
+                layout,
+                attempt_id=attempt_id,
+                report_bytes=b"foreign lease must fail before report parsing\n",
+                expected_manifest_sha256="a" * 64,
+                expected_validator_set_sha256="b" * 64,
+                lease=foreign,
+            )
+    finally:
+        modules.locks.release_run_lease(layout, owner)
+
+    for path, previous in before.items():
+        if previous is None:
+            assert not path.exists()
+        else:
+            assert path.read_bytes() == previous
+
+
+def test_validation_commit_rejects_existing_cancel_intent_before_any_write(
+    tmp_path: Path,
+) -> None:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=tmp_path / "production",
+        test_root=tmp_path / "test",
+    )
+    layout = modules.paths.build_run_layout(
+        modules.paths.RunMode.TEST,
+        RUN_ID,
+        policy,
+    )
+    layout.run_dir.mkdir(parents=True)
+    attempt_id = "cancel-intent-boundary"
+    attempt_path = (
+        layout.validation_attempts_dir
+        / attempt_id
+        / "ultra-validator-report.json"
+    )
+    current_path = layout.validation_current_dir / "ultra-validator-report.json"
+    before = {
+        path: path.read_bytes() if path.is_file() else None
+        for path in (attempt_path, current_path)
+    }
+    lease = modules.locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 4, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    try:
+        modules.locks.request_cancel(
+            layout,
+            reason="cancel before validation commit",
+            now=datetime(2026, 8, 4, 0, 0, 1, tzinfo=timezone.utc),
+        )
+        with pytest.raises(modules.locks.CancelledRunError):
+            modules.validation.commit_validation_attempt(
+                layout,
+                attempt_id=attempt_id,
+                report_bytes=b"cancel intent must fail before report parsing\n",
+                expected_manifest_sha256="a" * 64,
+                expected_validator_set_sha256="b" * 64,
+                lease=lease,
+            )
+    finally:
+        modules.locks.release_run_lease(layout, lease)
+
+    for path, previous in before.items():
+        if previous is None:
+            assert not path.exists()
+        else:
+            assert path.read_bytes() == previous
+
+
+def _validation_commit_boundary_harness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    attempt_id: str,
+) -> SimpleNamespace:
+    modules = load_validation_runtime()
+    policy = modules.paths.RootPolicy(
+        production_root=tmp_path / "production",
+        test_root=tmp_path / "test",
+    )
+    layout = modules.paths.build_run_layout(
+        modules.paths.RunMode.TEST,
+        RUN_ID,
+        policy,
+    )
+    layout.run_dir.mkdir(parents=True)
+    manifest_path = modules.artifacts.validation_manifest_path(layout)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_bytes = b"fixed validation manifest generation\n"
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    validator_sha256 = "d" * 64
+    report_bytes = b"fixed fresh validator report bytes\n"
+    monkeypatch.setattr(modules.validation, "default_root_policy", lambda: policy)
+    monkeypatch.setattr(
+        modules.validation,
+        "validate_artifact_manifest",
+        lambda selected_layout, selected_path: {
+            "validator_set_sha256": validator_sha256
+        },
+    )
+    monkeypatch.setattr(
+        modules.validation,
+        "validator_set_sha256",
+        lambda repo: validator_sha256,
+    )
+    monkeypatch.setattr(
+        modules.validation,
+        "_validated_report_bytes",
+        lambda *args, **kwargs: {"attempt_id": attempt_id},
+    )
+    lease = modules.locks.acquire_run_lease(
+        layout,
+        datetime(2026, 8, 4, tzinfo=timezone.utc),
+        timedelta(minutes=5),
+    )
+    attempt_path = (
+        layout.validation_attempts_dir
+        / attempt_id
+        / "ultra-validator-report.json"
+    )
+    current_path = layout.validation_current_dir / "ultra-validator-report.json"
+    return SimpleNamespace(
+        modules=modules,
+        layout=layout,
+        lease=lease,
+        lease_path=layout.run_dir / ".writer-lease.json",
+        lease_bytes=(layout.run_dir / ".writer-lease.json").read_bytes(),
+        attempt_id=attempt_id,
+        attempt_path=attempt_path,
+        current_path=current_path,
+        report_bytes=report_bytes,
+        manifest_sha256=manifest_sha256,
+        validator_sha256=validator_sha256,
+    )
+
+
+def _replace_with_foreign_lease(harness: SimpleNamespace) -> None:
+    lease = harness.lease
+    harness.modules.jsonio.atomic_write_json(
+        harness.lease_path,
+        {
+            "run_id": lease.run_id,
+            "owner_pid": lease.owner_pid,
+            "owner_nonce": "foreign-owner-nonce-000000000000",
+            "acquired_at": lease.acquired_at,
+            "heartbeat_at": lease.heartbeat_at,
+            "expires_at": lease.expires_at,
+        },
+    )
+
+
+@pytest.mark.parametrize("authority_loss", ("cancel", "foreign-owner"))
+def test_validation_commit_rechecks_authority_after_fresh_disk_comparison(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authority_loss: str,
+) -> None:
+    harness = _validation_commit_boundary_harness(
+        tmp_path,
+        monkeypatch,
+        attempt_id=f"fresh-boundary-{authority_loss}",
+    )
+
+    def fresh_validation(*args: object) -> bytes:
+        if authority_loss == "cancel":
+            harness.modules.locks.request_cancel(
+                harness.layout,
+                reason="cancel after fresh validation",
+                now=datetime(2026, 8, 4, 0, 0, 1, tzinfo=timezone.utc),
+            )
+        else:
+            _replace_with_foreign_lease(harness)
+        return harness.report_bytes
+
+    monkeypatch.setattr(
+        harness.modules.validation,
+        "validate_run_from_disk",
+        fresh_validation,
+    )
+    expected_error = (
+        harness.modules.locks.CancelledRunError
+        if authority_loss == "cancel"
+        else harness.modules.locks.LeaseOwnershipError
+    )
+    try:
+        with pytest.raises(expected_error):
+            harness.modules.validation.commit_validation_attempt(
+                harness.layout,
+                attempt_id=harness.attempt_id,
+                report_bytes=harness.report_bytes,
+                expected_manifest_sha256=harness.manifest_sha256,
+                expected_validator_set_sha256=harness.validator_sha256,
+                lease=harness.lease,
+            )
+    finally:
+        if authority_loss == "foreign-owner":
+            harness.modules.jsonio.atomic_write_bytes(
+                harness.lease_path,
+                harness.lease_bytes,
+            )
+        harness.modules.locks.release_run_lease(harness.layout, harness.lease)
+
+    assert not harness.attempt_path.exists()
+    assert not harness.current_path.exists()
+
+
+@pytest.mark.parametrize("authority_loss", ("cancel", "foreign-owner"))
+def test_validation_commit_rechecks_authority_between_attempt_and_current(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    authority_loss: str,
+) -> None:
+    harness = _validation_commit_boundary_harness(
+        tmp_path,
+        monkeypatch,
+        attempt_id=f"current-boundary-{authority_loss}",
+    )
+    monkeypatch.setattr(
+        harness.modules.validation,
+        "validate_run_from_disk",
+        lambda *args: harness.report_bytes,
+    )
+    original_write = harness.modules.validation.atomic_write_bytes
+
+    def mutate_after_attempt(path: Path, value: bytes) -> None:
+        original_write(path, value)
+        if path != harness.attempt_path:
+            return
+        if authority_loss == "cancel":
+            harness.modules.locks.request_cancel(
+                harness.layout,
+                reason="cancel after validation attempt write",
+                now=datetime(2026, 8, 4, 0, 0, 1, tzinfo=timezone.utc),
+            )
+        else:
+            _replace_with_foreign_lease(harness)
+
+    monkeypatch.setattr(
+        harness.modules.validation,
+        "atomic_write_bytes",
+        mutate_after_attempt,
+    )
+    expected_error = (
+        harness.modules.locks.CancelledRunError
+        if authority_loss == "cancel"
+        else harness.modules.locks.LeaseOwnershipError
+    )
+    try:
+        with pytest.raises(expected_error):
+            harness.modules.validation.commit_validation_attempt(
+                harness.layout,
+                attempt_id=harness.attempt_id,
+                report_bytes=harness.report_bytes,
+                expected_manifest_sha256=harness.manifest_sha256,
+                expected_validator_set_sha256=harness.validator_sha256,
+                lease=harness.lease,
+            )
+    finally:
+        if authority_loss == "foreign-owner":
+            harness.modules.jsonio.atomic_write_bytes(
+                harness.lease_path,
+                harness.lease_bytes,
+            )
+        harness.modules.locks.release_run_lease(harness.layout, harness.lease)
+
+    assert harness.attempt_path.read_bytes() == harness.report_bytes
+    assert not harness.current_path.exists()
 
 
 def test_parent_rejects_stale_report_after_manifest_generation_changes(
@@ -1157,14 +1491,16 @@ def test_parent_rejects_stale_report_after_manifest_generation_changes(
     article.write_bytes(article.read_bytes() + b"changed after validation\n")
     refresh_manifest(run)
 
-    with pytest.raises(ValueError, match="stale|manifest|fresh"):
-        run.modules.validation.commit_validation_attempt(
-            run.layout,
-            attempt_id=str(stale["attempt_id"]),
-            report_bytes=stale_bytes,
-            expected_manifest_sha256=str(stale["manifest_sha256"]),
-            expected_validator_set_sha256=run.validator_set_sha256,
-        )
+    with _owned_validation_lease(run) as lease:
+        with pytest.raises(ValueError, match="stale|manifest|fresh"):
+            run.modules.validation.commit_validation_attempt(
+                run.layout,
+                attempt_id=str(stale["attempt_id"]),
+                report_bytes=stale_bytes,
+                expected_manifest_sha256=str(stale["manifest_sha256"]),
+                expected_validator_set_sha256=run.validator_set_sha256,
+                lease=lease,
+            )
 
 
 @pytest.mark.parametrize(

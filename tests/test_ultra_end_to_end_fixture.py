@@ -473,7 +473,11 @@ def real_seam_result(
             layout.run_dir.name,
         )
 
-    def commit_report(stage: str, report_bytes: bytes) -> object:
+    def commit_report(
+        stage: str,
+        report_bytes: bytes,
+        lease: object,
+    ) -> object:
         assert stage in {"pre-publish", "post-publish"}
         report = json.loads(report_bytes.decode("utf-8"))
         return validation.commit_validation_attempt(
@@ -482,6 +486,7 @@ def real_seam_result(
             report_bytes=report_bytes,
             expected_manifest_sha256=report["manifest_sha256"],
             expected_validator_set_sha256=report["validator_set_sha256"],
+            lease=lease,
         )
 
     complete = materialization.materialize_complete_run(
@@ -793,7 +798,11 @@ def _snapshot_materialization_runtime(
             layout.run_dir.name,
         )
 
-    def commit_report(stage: str, report_bytes: bytes) -> object:
+    def commit_report(
+        stage: str,
+        report_bytes: bytes,
+        lease: object,
+    ) -> object:
         report = json.loads(report_bytes.decode("utf-8"))
         return validation.commit_validation_attempt(
             layout,
@@ -801,6 +810,7 @@ def _snapshot_materialization_runtime(
             report_bytes=report_bytes,
             expected_manifest_sha256=report["manifest_sha256"],
             expected_validator_set_sha256=report["validator_set_sha256"],
+            lease=lease,
         )
 
     return paths, layout, policy, fresh_check, commit_report
@@ -1159,7 +1169,7 @@ def test_full_fixture_records_u0_u12_once_and_packet_checkpoints_are_not_phase_e
         fresh_check=lambda stage: (
             f'{{"overall_status":"pass","stage":"{stage}"}}\n'.encode("utf-8")
         ),
-        commit_report=lambda stage, report: None,
+        commit_report=lambda stage, report, lease: None,
         mark_needs_attention=lambda reason: pytest.fail(reason),
     )
     postcheck_report_path = (
