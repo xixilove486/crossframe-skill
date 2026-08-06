@@ -1561,6 +1561,9 @@ def test_u12_requires_hash_verified_post_publish_authority_before_status_commit(
         "attempt_id": "post-publish-1",
         "manifest_sha256": manifest_sha256,
         "validator_set_sha256": validator_set_sha256,
+        "active_generation": 0,
+        "article_sha256": delivery_refs[0]["sha256"],
+        "semantic_review_artifact_sha256": _late_phase_hash("semantic-review"),
         "checks": [
             {
                 "validator_id": "post-publish",
@@ -1569,7 +1572,16 @@ def test_u12_requires_hash_verified_post_publish_authority_before_status_commit(
                 "artifact_refs": [item["path"] for item in delivery_refs],
             }
         ],
+        "layers": [
+            {
+                "layer_id": layer_id,
+                "status": "pass",
+                "artifact_refs": [item["path"] for item in delivery_refs],
+            }
+            for layer_id in ("deterministic", "adversarial", "fresh-semantic")
+        ],
         "overall_status": "pass",
+        "publication_allowed": True,
         "validated_at": "2026-08-02T00:00:02Z",
         "fresh_context": True,
     }
