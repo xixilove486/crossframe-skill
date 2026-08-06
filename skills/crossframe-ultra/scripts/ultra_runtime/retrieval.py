@@ -2457,6 +2457,182 @@ def _validate_host_identities(
         raise RetrievalPolicyError("host retrieval used an unmeasured provider or tool")
 
 
+def _validate_host_retrieval_result_for_acceptance(
+    layout: object,
+    *,
+    action: object,
+    receipt: object,
+) -> None:
+    from .host_handshake import HostActionSeal, HostResultSeal
+    from .paths import RunLayout
+
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    if not isinstance(action, HostActionSeal):
+        raise TypeError("action must be a HostActionSeal")
+    if not isinstance(receipt, HostResultSeal):
+        raise TypeError("receipt must be a HostResultSeal")
+    if (
+        action.document.get("action_kind") != "retrieval"
+        or action.document.get("phase_id") != "U2"
+    ):
+        raise RetrievalPolicyError("host retrieval action authority is invalid")
+    action_payload = action.document.get("payload")
+    if not isinstance(action_payload, Mapping):
+        raise RetrievalPolicyError("host retrieval action payload is invalid")
+    maximum_attempts = action_payload.get("maximum_tool_retries")
+    if type(maximum_attempts) is not int:
+        raise RetrievalPolicyError("host retrieval retry authority is invalid")
+    _validate_host_execution_receipt(
+        receipt.document,
+        maximum_attempts=maximum_attempts,
+    )
+    try:
+        result_raw = action.result_path.read_bytes()
+        result = load_json_object_bytes(result_raw, source=str(action.result_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("host retrieval result is unavailable") from error
+    if result_raw != canonical_json_bytes(result):
+        raise RetrievalPolicyError("host retrieval result is not canonical")
+    if receipt.document.get("result_sha256") != sha256_bytes(result_raw):
+        raise RetrievalPolicyError("host retrieval result hash differs")
+    expected_result_fields = {
+        "schema_id",
+        "schema_version",
+        "action_sha256",
+        "provider",
+        "tool",
+        "execution_id",
+        "queries",
+        "sources",
+        "entries",
+    }
+    if (
+        set(result) != expected_result_fields
+        or result.get("schema_id")
+        != "crossframe.ultra.v82.host-retrieval-result"
+        or result.get("schema_version") != 1
+        or result.get("action_sha256") != action.action_sha256
+    ):
+        raise RetrievalPolicyError("host retrieval result fields are not closed")
+    _validate_host_identities(
+        receipt.document,
+        result,
+        action_payload=action_payload,
+    )
+    queries = action_payload.get("queries")
+    if not isinstance(queries, list) or not queries:
+        raise RetrievalPolicyError("host retrieval action has no authorized queries")
+    expected_query_hashes = {
+        str(query.get("query_sha256"))
+        for query in queries
+        if isinstance(query, Mapping)
+    }
+    if len(expected_query_hashes) != len(queries):
+        raise RetrievalPolicyError("host retrieval action queries are invalid")
+    result_queries = result.get("queries")
+    if not isinstance(result_queries, list) or not result_queries:
+        raise RetrievalPolicyError("required retrieval returned no query results")
+    returned_query_hashes: set[str] = set()
+    for query_result in result_queries:
+        if (
+            not isinstance(query_result, Mapping)
+            or set(query_result) != {"query_sha256", "status"}
+            or query_result.get("status") != "complete"
+            or query_result.get("query_sha256") not in expected_query_hashes
+        ):
+            raise RetrievalPolicyError("host retrieval query result is invalid")
+        query_sha256 = str(query_result["query_sha256"])
+        if query_sha256 in returned_query_hashes:
+            raise RetrievalPolicyError("host retrieval repeats a query result")
+        returned_query_hashes.add(query_sha256)
+    if returned_query_hashes != expected_query_hashes:
+        raise RetrievalPolicyError("host retrieval omitted an authorized query")
+    source_results = result.get("sources")
+    if not isinstance(source_results, list) or not source_results:
+        raise RetrievalPolicyError("required retrieval returned no sources")
+    source_fields = {
+        "source_id",
+        "query_sha256",
+        "url",
+        "content",
+        "content_sha256",
+        "event_date",
+        "publication_date",
+        "interest",
+        "upstream_lineage",
+        "supported_claim",
+        "cannot_prove",
+    }
+    source_ids: set[str] = set()
+    for source in source_results:
+        if not isinstance(source, Mapping) or set(source) != source_fields:
+            raise RetrievalPolicyError("host retrieval source fields are not closed")
+        if source.get("query_sha256") not in returned_query_hashes:
+            raise RetrievalPolicyError("host retrieval source has no completed query")
+        content = _nonempty(source.get("content"), field="content")
+        external = store_external_content(content)
+        if source.get("content_sha256") != external["content_sha256"]:
+            raise RetrievalPolicyError("host retrieval source content hash differs")
+        record = make_source_record(
+            source_id=_nonempty(source.get("source_id"), field="source_id"),
+            url=_nonempty(source.get("url"), field="url"),
+            event_date=source.get("event_date"),
+            publication_date=source.get("publication_date"),
+            interest=_nonempty(source.get("interest"), field="interest"),
+            upstream_lineage=source.get("upstream_lineage"),
+            supported_claim=_nonempty(
+                source.get("supported_claim"), field="supported_claim"
+            ),
+            cannot_prove=_nonempty(
+                source.get("cannot_prove"), field="cannot_prove"
+            ),
+        )
+        source_id = str(record["source_id"])
+        if source_id in source_ids:
+            raise RetrievalPolicyError("host retrieval repeats a source identifier")
+        source_ids.add(source_id)
+    raw_entries = result.get("entries")
+    if not isinstance(raw_entries, list) or not raw_entries:
+        raise RetrievalPolicyError(
+            "required retrieval returned no source-linked entries"
+        )
+    entry_fields = {
+        "query_id",
+        "query_sha256",
+        "direction",
+        "result_summary",
+        "source_refs",
+        "stop_reason",
+    }
+    query_ids: set[str] = set()
+    for entry in raw_entries:
+        if not isinstance(entry, Mapping) or set(entry) != entry_fields:
+            raise RetrievalPolicyError("host retrieval entry fields are not closed")
+        query_id = _nonempty(entry.get("query_id"), field="query_id")
+        refs = entry.get("source_refs")
+        if (
+            query_id in query_ids
+            or entry.get("query_sha256") not in returned_query_hashes
+            or entry.get("direction")
+            not in {
+                "support",
+                "counterexample",
+                "affected-position",
+                "source-lineage",
+                "calibration",
+            }
+            or not isinstance(refs, list)
+            or not refs
+            or len(refs) != len(set(refs))
+            or not set(refs).issubset(source_ids)
+        ):
+            raise RetrievalPolicyError("host retrieval entry has invalid authority")
+        query_ids.add(query_id)
+        _nonempty(entry.get("result_summary"), field="result_summary")
+        _nonempty(entry.get("stop_reason"), field="stop_reason")
+
+
 def _persist_admitted_host_result(
     layout,
     *,
@@ -2846,6 +3022,74 @@ def admit_subagent_candidates(
         if set(refs).issubset(admitted):
             accepted.append(copy.deepcopy(dict(candidate)))
     return tuple(accepted)
+
+
+def _validate_host_subagent_result_for_acceptance(
+    layout: object,
+    *,
+    action: object,
+    receipt: object,
+) -> None:
+    from .host_handshake import HostActionSeal, HostResultSeal
+    from .paths import RunLayout
+
+    if not isinstance(layout, RunLayout):
+        raise TypeError("layout must be a RunLayout")
+    if not isinstance(action, HostActionSeal):
+        raise TypeError("action must be a HostActionSeal")
+    if not isinstance(receipt, HostResultSeal):
+        raise TypeError("receipt must be a HostResultSeal")
+    if (
+        action.document.get("action_kind") != "subagent"
+        or action.document.get("phase_id") != "U2"
+    ):
+        raise RetrievalPolicyError("subagent action authority is invalid")
+    try:
+        result_raw = action.result_path.read_bytes()
+        slot_result = load_json_object_bytes(
+            result_raw,
+            source=str(action.result_path),
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise RetrievalPolicyError("subagent result is unavailable") from error
+    receipt_result = receipt.document.get("result")
+    if (
+        result_raw != canonical_json_bytes(slot_result)
+        or receipt.document.get("result_sha256") != sha256_bytes(result_raw)
+        or not isinstance(receipt_result, Mapping)
+        or slot_result != receipt_result
+    ):
+        raise RetrievalPolicyError(
+            "subagent fixed result differs from its receipt"
+        )
+    action_payload = action.document.get("payload")
+    if (
+        isinstance(action_payload, Mapping)
+        and "task_id" in action_payload
+        and receipt_result.get("task_id") != action_payload.get("task_id")
+    ):
+        raise RetrievalPolicyError("subagent result task authority differs")
+    raw_candidates = receipt_result.get("candidates")
+    if not isinstance(raw_candidates, list):
+        raise RetrievalPolicyError("subagent result has no candidate list")
+    source_ids: set[str] = set()
+    for candidate in raw_candidates:
+        if not isinstance(candidate, Mapping):
+            raise RetrievalPolicyError("subagent candidate is invalid")
+        refs = candidate.get("source_refs")
+        if not isinstance(refs, list):
+            raise RetrievalPolicyError(
+                "subagent candidate source references are invalid"
+            )
+        source_ids.update(str(ref) for ref in refs)
+    accepted = admit_subagent_candidates(
+        receipt,
+        admitted_source_ids=source_ids,
+    )
+    if len(accepted) != len(raw_candidates):
+        raise RetrievalPolicyError(
+            "subagent result candidates failed action-specific validation"
+        )
 
 
 __all__ = (

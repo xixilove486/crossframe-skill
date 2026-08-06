@@ -520,6 +520,9 @@ class DeterministicFakeHost:
         include_attempts = False
         if kind == "capability-attestation":
             result = self._capability_result(action, completed_at)
+            provider = self._provider("fixture-local-provider")
+            tool = self._tool("fixture-source-reader")
+            include_attempts = True
         elif kind == "source-read":
             result = self._source_read_result(
                 action,
@@ -528,6 +531,7 @@ class DeterministicFakeHost:
             )
             provider = self._provider("fixture-local-provider")
             tool = self._tool("fixture-source-reader")
+            include_attempts = True
         elif kind == "retrieval":
             result, provider, tool = self._retrieval_result(action, execution_id)
             include_attempts = True

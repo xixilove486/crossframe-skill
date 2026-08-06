@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import math
 from pathlib import Path
 
@@ -16,7 +16,12 @@ from .jsonio import (
     load_json_object,
     sha256_bytes,
 )
-from .paths import RunLayout, _require_utc, assert_safe_descendant
+from .paths import (
+    RunLayout,
+    _parse_canonical_utc,
+    _require_utc,
+    assert_safe_descendant,
+)
 from .schemas import validate_instance
 
 
@@ -36,6 +41,7 @@ _RESULT_SCHEMA = "ultra-host-result-receipt.schema.json"
 _ACTION_SCHEMA_ID = "crossframe.ultra.v82.host-action"
 _PENDING_NAME = "pending-action.json"
 _LOCK_NAME = ".host-handshake.lock"
+_HOST_ACTION_TTL = timedelta(minutes=30)
 _RESULT_AUTHORITY_FIELDS = (
     "run_id",
     "version_binding",
@@ -158,6 +164,21 @@ def _seal_action(layout: RunLayout, document: Mapping[str, object]) -> HostActio
         raise HostHandshakeError(
             f"host action authority is invalid: {error}"
         ) from error
+    try:
+        issued_at = _parse_canonical_utc(
+            snapshot.get("issued_at"),
+            "host action issued_at",
+        )
+        expires_at = _parse_canonical_utc(
+            snapshot.get("expires_at"),
+            "host action expires_at",
+        )
+    except (TypeError, ValueError) as error:
+        raise HostHandshakeError(
+            f"host action authority timestamp is invalid: {error}"
+        ) from error
+    if expires_at < issued_at:
+        raise HostHandshakeError("host action expires before it is issued")
     if snapshot["run_id"] != layout.run_dir.name:
         raise HostHandshakeError("host action run authority differs")
     if snapshot["version_binding"] != current_version_binding():
@@ -210,6 +231,7 @@ def issue_host_action(
         "result_relative_path": result_relative_path,
         "payload": payload_snapshot,
         "issued_at": _canonical_utc(now),
+        "expires_at": _canonical_utc(now + _HOST_ACTION_TTL),
     }
     document["action_sha256"] = sha256_bytes(canonical_json_bytes(document))
     try:
@@ -302,13 +324,69 @@ def _seal_result(
     result_path = _checked_result_path(layout, document["result_relative_path"])
     if result_path != action.result_path:
         raise HostHandshakeError("host result slot authority differs from action")
+    _validate_execution_receipt(action, document)
     if not result_path.is_file():
         raise HostHandshakeError("host result is missing from its fixed result slot")
     measured_result = sha256_bytes(result_path.read_bytes())
     if document["result_sha256"] != measured_result:
         raise HostHandshakeError("host result hash differs from result slot bytes")
     result = HostResultSeal(document, str(supplied), action.action_sha256)
-    if action.document.get("action_kind") == "semantic-review":
+    action_kind = action.document.get("action_kind")
+    if action_kind == "capability-attestation":
+        from .foundation import _build_capability_attestation
+
+        _build_capability_attestation(
+            layout,
+            action=action,
+            result=result,
+            profile=None,
+        )
+    elif action_kind == "source-read":
+        from . import source_integrity
+
+        repo = Path(__file__).resolve().parents[4]
+        manifest_path = (
+            repo
+            / "skills"
+            / "crossframe-ultra"
+            / "references"
+            / "source-manifest.json"
+        )
+        manifest = source_integrity.load_source_manifest(
+            manifest_path,
+            expected_sha256=source_integrity._authority_manifest_sha256(),
+        )
+        source_integrity.validate_host_read_receipt(
+            document,
+            action=action,
+            repo=repo,
+            manifest=manifest,
+        )
+    elif action_kind == "retrieval":
+        from .retrieval import _validate_host_retrieval_result_for_acceptance
+
+        _validate_host_retrieval_result_for_acceptance(
+            layout,
+            action=action,
+            receipt=result,
+        )
+    elif action_kind == "evidence-authoring":
+        from .foundation import _validate_host_evidence_result_for_acceptance
+
+        _validate_host_evidence_result_for_acceptance(
+            layout,
+            action=action,
+            result=result,
+        )
+    elif action_kind == "subagent":
+        from .retrieval import _validate_host_subagent_result_for_acceptance
+
+        _validate_host_subagent_result_for_acceptance(
+            layout,
+            action=action,
+            receipt=result,
+        )
+    elif action_kind == "semantic-review":
         from .semantic_review import validate_host_semantic_result_for_acceptance
 
         validate_host_semantic_result_for_acceptance(
@@ -319,19 +397,72 @@ def _seal_result(
     return result
 
 
+def _validate_execution_receipt(
+    action: HostActionSeal,
+    document: Mapping[str, object],
+) -> None:
+    provider = document.get("provider")
+    tool = document.get("tool")
+    if (
+        not isinstance(provider, Mapping)
+        or not isinstance(tool, Mapping)
+        or tool.get("provider_id") != provider.get("provider_id")
+    ):
+        raise HostHandshakeError(
+            "host result provider or tool identity is invalid"
+        )
+    if document.get("execution_status") != "complete":
+        raise HostHandshakeError("host result execution status is not complete")
+    attempts = document.get("attempts")
+    if not isinstance(attempts, list) or not attempts:
+        raise HostHandshakeError("host result attempts are empty")
+    for index, attempt in enumerate(attempts, start=1):
+        if not isinstance(attempt, Mapping) or attempt.get("attempt") != index:
+            raise HostHandshakeError("host result attempt sequence is invalid")
+        status = attempt.get("status")
+        if status == "success":
+            if attempt.get("error") is not None:
+                raise HostHandshakeError(
+                    "successful host result attempt carries an error"
+                )
+            if index != len(attempts):
+                raise HostHandshakeError(
+                    "host result attempts continued after success"
+                )
+    if (
+        not isinstance(attempts[-1], Mapping)
+        or attempts[-1].get("status") != "success"
+    ):
+        raise HostHandshakeError("host result has no successful final attempt")
+    try:
+        issued_at = _parse_canonical_utc(
+            action.document.get("issued_at"),
+            "host action issued_at",
+        )
+        completed_at = _parse_canonical_utc(
+            document.get("completed_at"),
+            "host result completed_at",
+        )
+        expires_at = _parse_canonical_utc(
+            action.document.get("expires_at"),
+            "host action expires_at",
+        )
+    except (TypeError, ValueError) as error:
+        raise HostHandshakeError(
+            f"host result timestamp is invalid: {error}"
+        ) from error
+    if not issued_at <= completed_at <= expires_at:
+        raise HostHandshakeError(
+            "host result completed outside its issued action expiry window"
+        )
+
+
 def _complete_unlocked(
     layout: RunLayout,
     *,
     action: HostActionSeal,
     result: HostResultSeal,
 ) -> None:
-    validated_result = _seal_result(
-        layout,
-        action=action,
-        receipt=result.document,
-    )
-    if validated_result != result:
-        raise HostHandshakeError("host result seal authority differs")
     pending = _load_pending_unlocked(layout)
     if pending is None or pending != action:
         raise HostHandshakeError(
@@ -357,6 +488,13 @@ def complete_host_action(
     if not isinstance(result, HostResultSeal):
         raise TypeError("result must be a HostResultSeal")
     with _exclusive_path_lock(_lock_path(layout)):
+        validated_result = _seal_result(
+            layout,
+            action=action,
+            receipt=result.document,
+        )
+        if validated_result != result:
+            raise HostHandshakeError("host result seal authority differs")
         _complete_unlocked(layout, action=action, result=result)
 
 

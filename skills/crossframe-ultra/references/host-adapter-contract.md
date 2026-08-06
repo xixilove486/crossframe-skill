@@ -28,7 +28,7 @@ Exact naming limits activation only. After the host has selected Ultra, pass the
 | `evidence-authoring` | Produce only the requested evidence or semantic candidate in the fixed slot. | Do not assign evidence identity, phase authority, final judgment, or publication state. |
 | `semantic-review` | At U11, execute the issued fresh review with the bound reviewer/provider/execution identity and all nine requested dimensions. | Return only the action-bound judgment; runtime owns the semantic-review artifact envelope and publication disposition, and the result cannot override deterministic or adversarial failure. |
 
-Codex, Reasonix, Claude, and other adapters translate their real tool results into this same receipt shape. Preserve the runtime's action ID, action SHA-256, request/run/version/parent binding, provider/tool/execution identity, actual execution status, timestamps, content hashes, and fixed result-relative path. A receipt is untrusted until runtime admission; the adapter cannot promote a candidate by labeling it evidence.
+Codex, Reasonix, Claude, and other adapters translate their real tool results into this same receipt shape. Preserve the runtime's action ID, action SHA-256, request/run/version/parent binding, provider/tool/execution identity, actual execution status, attempts, timestamps, content hashes, and fixed result-relative path. Every runtime-issued action carries a 30-minute `expires_at`; a successful receipt must complete from `issued_at` through `expires_at`, inclusive. A receipt is untrusted until runtime admission; the adapter cannot promote a candidate by labeling it evidence.
 
 ## Ownership and failure
 

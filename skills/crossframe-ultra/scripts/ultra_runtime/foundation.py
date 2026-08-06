@@ -24,7 +24,13 @@ from .jsonio import (
     load_json_object_bytes,
     sha256_bytes,
 )
-from .paths import PRODUCTION_ROOT, RunLayout, _require_utc, assert_safe_descendant
+from .paths import (
+    PRODUCTION_ROOT,
+    RunLayout,
+    _parse_canonical_utc,
+    _require_utc,
+    assert_safe_descendant,
+)
 from .schemas import compute_artifact_content_sha256, validate_instance
 from .status import RunStatusStore
 
@@ -721,11 +727,12 @@ def _build_capability_attestation(
     *,
     action: HostActionSeal,
     result: HostResultSeal,
-    profile: RequestProfile,
+    profile: RequestProfile | None,
 ) -> HostCapabilitySeal:
     try:
+        result_raw = action.result_path.read_bytes()
         result_document = load_json_object_bytes(
-            action.result_path.read_bytes(),
+            result_raw,
             source=str(action.result_path),
         )
     except (OSError, TypeError, ValueError) as error:
@@ -741,6 +748,8 @@ def _build_capability_attestation(
         raise FoundationInputError(
             "host capability result contains runtime-owned or unknown fields"
         )
+    if result_raw != canonical_json_bytes(result_document):
+        raise FoundationInputError("host capability result is not canonical")
     payload = action.document.get("payload")
     if not isinstance(payload, Mapping):
         raise FoundationInputError("U0 capability action payload is invalid")
@@ -757,11 +766,49 @@ def _build_capability_attestation(
     }
     if set(payload) != expected_payload_fields:
         raise FoundationInputError("U0 capability action payload is not closed")
+    analysis_kind = payload.get("analysis_kind")
     if (
-        payload.get("analysis_kind") != profile.analysis_kind
+        action.document.get("phase_id") != "U0"
+        or action.document.get("action_kind") != "capability-attestation"
+        or analysis_kind not in {"open-world", "closed-input"}
+        or (profile is not None and analysis_kind != profile.analysis_kind)
         or payload.get("requested_result_fields") != sorted(expected_result_fields)
     ):
         raise FoundationInputError("U0 capability action differs from request profile")
+    receipt_provider = result.document.get("provider")
+    receipt_tool = result.document.get("tool")
+    providers = result_document.get("providers")
+    tools = result_document.get("tools")
+    if (
+        not isinstance(receipt_provider, Mapping)
+        or not isinstance(receipt_tool, Mapping)
+        or not isinstance(providers, list)
+        or not isinstance(tools, list)
+        or dict(receipt_provider) not in providers
+        or dict(receipt_tool) not in tools
+    ):
+        raise FoundationInputError(
+            "host capability receipt identity differs from measured providers or tools"
+        )
+    try:
+        issued_at = _parse_canonical_utc(
+            action.document.get("issued_at"),
+            "U0 capability issued_at",
+        )
+        measured_at = _parse_canonical_utc(
+            result_document.get("measured_at"),
+            "U0 capability measured_at",
+        )
+        completed_at = _parse_canonical_utc(
+            result.document.get("completed_at"),
+            "U0 capability completed_at",
+        )
+    except (TypeError, ValueError) as error:
+        raise FoundationInputError("host capability timestamps are invalid") from error
+    if not issued_at <= measured_at <= completed_at:
+        raise FoundationInputError(
+            "host capability measurement is outside its action execution"
+        )
     document: dict[str, object] = {
         "schema_id": "crossframe.ultra.v82.host-capability-attestation",
         "schema_version": 1,
@@ -772,7 +819,7 @@ def _build_capability_attestation(
         "request_sha256": action.document["request_sha256"],
         "action_sha256": action.action_sha256,
         "receipt_sha256": result.receipt_sha256,
-        "analysis_kind": profile.analysis_kind,
+        "analysis_kind": analysis_kind,
         "run_mode": payload["run_mode"],
         "requirements": copy.deepcopy(payload["requirements"]),
         "measured_availability": copy.deepcopy(
@@ -1978,7 +2025,8 @@ def _u2_ledger_path(layout: RunLayout) -> Path:
 def _load_u2_admitted_sources(
     layout: RunLayout,
     *,
-    phase_store: object,
+    phase_store: object | None = None,
+    action: HostActionSeal | None = None,
 ) -> tuple[dict[str, dict[str, object]], dict[str, object]]:
     """Reload the sealed U2 ledger and its host-admitted source content.
 
@@ -1999,17 +2047,40 @@ def _load_u2_admitted_sources(
         validate_instance("ultra-retrieval-ledger.schema.json", ledger)
     except Exception as error:
         raise FoundationInputError("persisted U2 retrieval ledger is invalid") from error
-    events = getattr(phase_store, "events", ())
-    if not isinstance(events, tuple) or not events or events[-1].get("phase_id") != "U2":
-        raise FoundationInputError("U3 requires a completed U2 phase event")
-    event = events[-1]
-    output_hashes = event.get("output_artifact_hashes")
     ledger_sha256 = sha256_bytes(raw)
+    if (phase_store is None) == (action is None):
+        raise FoundationInputError(
+            "U2 source reload requires one phase or action authority"
+        )
+    if action is not None:
+        action_payload = action.document.get("payload")
+        if (
+            action.document.get("phase_id") != "U3"
+            or action.document.get("action_kind") != "evidence-authoring"
+            or not isinstance(action_payload, Mapping)
+        ):
+            raise FoundationInputError("U3 evidence action authority is invalid")
+        expected_request_sha256 = action.document.get("request_sha256")
+        output_hashes = [action_payload.get("u2_ledger_sha256")]
+    else:
+        events = getattr(phase_store, "events", ())
+        if (
+            not isinstance(events, tuple)
+            or not events
+            or events[-1].get("phase_id") != "U2"
+        ):
+            raise FoundationInputError("U3 requires a completed U2 phase event")
+        event = events[-1]
+        output_hashes = event.get("output_artifact_hashes")
+        run_contract = getattr(phase_store, "run_contract", None)
+        if not isinstance(run_contract, Mapping):
+            raise FoundationInputError("U3 phase run contract is invalid")
+        expected_request_sha256 = run_contract.get("request_sha256")
     if (
         ledger.get("run_id") != layout.run_dir.name
         or ledger.get("version_binding") != current_version_binding()
         or ledger.get("phase_id") != "U2"
-        or ledger.get("request_sha256") != phase_store.run_contract.get("request_sha256")
+        or ledger.get("request_sha256") != expected_request_sha256
         or not isinstance(output_hashes, list)
         or ledger_sha256 not in output_hashes
     ):
@@ -2086,6 +2157,95 @@ def _load_u2_admitted_sources(
     if set(sources) != set(external_by_id):
         raise FoundationInputError("U2 admitted source set differs from its ledger")
     return sources, ledger
+
+
+def _validate_host_evidence_result_for_acceptance(
+    layout: RunLayout,
+    *,
+    action: HostActionSeal,
+    result: HostResultSeal,
+) -> None:
+    from . import evidence
+
+    try:
+        raw = action.result_path.read_bytes()
+        document = load_json_object_bytes(raw, source=str(action.result_path))
+    except (OSError, TypeError, ValueError) as error:
+        raise FoundationInputError(
+            "U3 evidence authoring result is unavailable"
+        ) from error
+    if raw != canonical_json_bytes(document):
+        raise FoundationInputError(
+            "U3 evidence authoring result is not canonical"
+        )
+    if result.document.get("result_sha256") != sha256_bytes(raw):
+        raise FoundationInputError("U3 evidence authoring result hash differs")
+    if set(document) != {"candidate_entries", "verified_subagent_candidates"}:
+        raise FoundationInputError(
+            "U3 evidence authoring result fields are not closed"
+        )
+    candidates = document.get("candidate_entries")
+    subagent_candidates = document.get("verified_subagent_candidates")
+    if (
+        not isinstance(candidates, list)
+        or not isinstance(subagent_candidates, list)
+        or any(not isinstance(item, Mapping) for item in candidates)
+        or any(not isinstance(item, Mapping) for item in subagent_candidates)
+        or not candidates + subagent_candidates
+    ):
+        raise FoundationInputError("U3 evidence authoring candidates are invalid")
+    payload = action.document.get("payload")
+    if not isinstance(payload, Mapping):
+        raise FoundationInputError("U3 evidence action payload is invalid")
+    sources, _ = _load_u2_admitted_sources(layout, action=action)
+    expected_sources = [
+        {
+            "source_id": source_id,
+            "content_sha256": str(source["content_sha256"]),
+        }
+        for source_id, source in sorted(sources.items())
+    ]
+    if (
+        payload.get("u2_ledger_sha256")
+        != sha256_bytes(_u2_ledger_path(layout).read_bytes())
+        or payload.get("request_sha256") != action.document.get("request_sha256")
+        or payload.get("admitted_sources") != expected_sources
+    ):
+        raise FoundationInputError(
+            "U3 evidence action differs from persisted U2 source authority"
+        )
+    authority = build_evidence_admission_authority(
+        layout,
+        admitted_sources=sources,
+        evidence_cutoff=str(payload["evidence_cutoff"]),
+    )
+    for candidate in candidates:
+        attribution = candidate.get("attribution")
+        if (
+            isinstance(attribution, Mapping)
+            and attribution.get("origin_kind") == "subagent"
+        ):
+            raise FoundationInputError(
+                "subagent candidates must use the verified candidate seam"
+            )
+    for candidate in subagent_candidates:
+        attribution = candidate.get("attribution")
+        if (
+            not isinstance(attribution, Mapping)
+            or attribution.get("origin_kind") != "subagent"
+        ):
+            raise FoundationInputError(
+                "verified subagent candidate lacks subagent attribution"
+            )
+    admitted = tuple(
+        evidence.admit_evidence_candidate(candidate, authority=authority)
+        for candidate in (*candidates, *subagent_candidates)
+    )
+    evidence_ids = tuple(str(entry["evidence_id"]) for entry in admitted)
+    if len(evidence_ids) != len(set(evidence_ids)):
+        raise evidence.EvidenceValidationError(
+            "duplicate evidence_id in U3 admission candidates"
+        )
 
 
 def _u3_action_path(layout: RunLayout) -> Path:

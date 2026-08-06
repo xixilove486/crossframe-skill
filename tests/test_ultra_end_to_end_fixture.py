@@ -134,7 +134,21 @@ def _accept_source_read_batch(layout, action, *, batch_ordinal: int) -> None:
         "action_sha256": action.action_sha256,
         "result_relative_path": action.document["result_relative_path"],
         "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "provider": {
+            "provider_id": "fixture-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "fixture-source-reader",
+            "provider_id": "fixture-host",
+            "version": "1.0.0",
+        },
         "execution_id": execution_id,
+        "execution_status": "complete",
+        "attempts": [
+            {"attempt": 1, "status": "success", "error": None},
+        ],
         "completed_at": read_at,
     }
     receipt["receipt_sha256"] = hashlib.sha256(

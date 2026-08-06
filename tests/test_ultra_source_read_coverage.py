@@ -581,11 +581,77 @@ def _task3_host_read_receipt(
         "action_sha256": action.action_sha256,
         "result_relative_path": "work/host/U01-read-000001.json",
         "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "provider": {
+            "provider_id": "test-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "test-source-reader",
+            "provider_id": "test-host",
+            "version": "1.0.0",
+        },
         "execution_id": execution_id,
+        "execution_status": "complete",
+        "attempts": [
+            {"attempt": 1, "status": "success", "error": None},
+        ],
         "completed_at": "2026-08-02T00:00:02Z",
     }
     receipt["receipt_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
-    return module, snapshot, action, receipt
+    return module, snapshot, layout, action, receipt
+
+
+def test_invalid_source_read_result_is_rejected_before_pending_is_consumed(
+    tmp_path: Path,
+) -> None:
+    from ultra_runtime import host_handshake
+
+    _, _, layout, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-001",
+        mutation="plan",
+    )
+
+    with pytest.raises(
+        host_handshake.HostHandshakeError,
+        match="source|read|plan|result|invalid",
+    ):
+        host_handshake.accept_host_result(
+            layout,
+            action=action,
+            receipt=receipt,
+        )
+    assert host_handshake.load_pending_action(layout) == action
+    accepted = (
+        layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json"
+    )
+    assert not accepted.exists()
+    assert len(tuple((accepted.parent / "attempts").glob("*-rejected.json"))) == 1
+
+
+def test_valid_source_read_result_is_accepted_after_action_specific_validation(
+    tmp_path: Path,
+) -> None:
+    from ultra_runtime import host_handshake
+
+    _, _, layout, action, receipt = _task3_host_read_receipt(
+        tmp_path,
+        execution_id="host-reader-001",
+        mutation="none",
+    )
+
+    accepted = host_handshake.accept_host_result(
+        layout,
+        action=action,
+        receipt=receipt,
+    )
+
+    assert accepted.action_sha256 == action.action_sha256
+    assert host_handshake.load_pending_action(layout) is None
 
 
 @pytest.mark.parametrize(
@@ -602,7 +668,7 @@ def test_task3_u1_rejects_runtime_or_tampered_host_read_receipts(
     mutation: str,
     message: str,
 ) -> None:
-    module, snapshot, action, receipt = _task3_host_read_receipt(
+    module, snapshot, _, action, receipt = _task3_host_read_receipt(
         tmp_path,
         execution_id=execution_id,
         mutation=mutation,
@@ -621,7 +687,7 @@ def test_task3_u1_receipt_reloads_only_its_requested_source_units(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    module, snapshot, action, receipt = _task3_host_read_receipt(
+    module, snapshot, _, action, receipt = _task3_host_read_receipt(
         tmp_path,
         execution_id="host-reader-001",
         mutation="none",

@@ -135,7 +135,21 @@ def accept_pending_capability_result(
         "action_sha256": action.action_sha256,
         "result_relative_path": action.document["result_relative_path"],
         "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "provider": {
+            "provider_id": "test-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "local-filesystem",
+            "provider_id": "test-host",
+            "version": "1.0.0",
+        },
         "execution_id": "test-host-capability",
+        "execution_status": "complete",
+        "attempts": [
+            {"attempt": 1, "status": "success", "error": None},
+        ],
         "completed_at": completed_at,
     }
     encoded = (

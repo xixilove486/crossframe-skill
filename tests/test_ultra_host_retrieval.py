@@ -334,7 +334,12 @@ def _advance_fresh_u1_to_u2(fresh_u1):
     return completed.phase_store
 
 
-def _accept_evidence_authoring_result(fresh_u1, action) -> None:
+def _accept_evidence_authoring_result(
+    fresh_u1,
+    action,
+    *,
+    mutate_result=None,
+) -> None:
     from ultra_runtime import host_handshake, jsonio
 
     content_sha256 = hashlib.sha256(RETRIEVED_CONTENT.encode("utf-8")).hexdigest()
@@ -364,6 +369,8 @@ def _accept_evidence_authoring_result(fresh_u1, action) -> None:
         ],
         "verified_subagent_candidates": [],
     }
+    if mutate_result is not None:
+        mutate_result(result)
     jsonio.atomic_write_json(action.result_path, result)
     receipt = {
         "schema_id": "crossframe.ultra.v82.host-result-receipt",
@@ -398,6 +405,42 @@ def _accept_evidence_authoring_result(fresh_u1, action) -> None:
         action=action,
         receipt=receipt,
     )
+
+
+def test_invalid_evidence_authoring_result_is_rejected_before_pending_is_consumed(
+    fresh_u1,
+) -> None:
+    from ultra_runtime import foundation, host_handshake
+
+    phase_store = _advance_fresh_u1_to_u2(fresh_u1)
+    profile = foundation.RequestProfile("open-world", fresh_u1.claim, (), None)
+    progress = foundation._advance_u3(
+        fresh_u1.layout,
+        phase_store=phase_store,
+        profile=profile,
+        now=fresh_u1.later + timedelta(seconds=1),
+    )
+    action = progress.pending_action
+    assert action is not None
+
+    def invalidate(result):
+        result["candidate_entries"][0]["evidence_id"] = ""
+
+    with pytest.raises(host_handshake.HostHandshakeError):
+        _accept_evidence_authoring_result(
+            fresh_u1,
+            action,
+            mutate_result=invalidate,
+        )
+    assert host_handshake.load_pending_action(fresh_u1.layout) == action
+    accepted = (
+        fresh_u1.layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json"
+    )
+    assert not accepted.exists()
+    assert len(tuple((accepted.parent / "attempts").glob("*-rejected.json"))) == 1
 
 
 def test_u3_evidence_authoring_wait_is_u2_bound_and_idempotent(fresh_u1) -> None:
@@ -702,7 +745,7 @@ def test_host_result_requires_real_closed_retrieval_evidence(
     fresh_u1,
     mutation: str,
 ) -> None:
-    from ultra_runtime import retrieval
+    from ultra_runtime import host_handshake, retrieval
 
     action = retrieval.issue_retrieval_action(
         fresh_u1.phase_store,
@@ -723,21 +766,22 @@ def test_host_result_requires_real_closed_retrieval_evidence(
         elif mutation == "completed-before-issued":
             receipt["completed_at"] = "2026-08-05T18:59:59Z"
 
-    receipt = _accept_retrieval_result(
-        fresh_u1,
-        action,
-        mutate_result=mutate,
-        mutate_receipt=align_receipt,
-    )
-    decision, authorization = _retrieval_authority(fresh_u1)
-
-    with pytest.raises(retrieval.RetrievalPolicyError):
-        retrieval.admit_host_retrieval_result(
-            receipt,
-            phase_store=fresh_u1.phase_store,
-            decision=decision,
-            authorization=authorization,
+    with pytest.raises(host_handshake.HostHandshakeError):
+        _accept_retrieval_result(
+            fresh_u1,
+            action,
+            mutate_result=mutate,
+            mutate_receipt=align_receipt,
         )
+    assert host_handshake.load_pending_action(fresh_u1.layout) == action
+    accepted = (
+        fresh_u1.layout.recovery_dir
+        / "host-results"
+        / action.action_sha256
+        / "accepted.json"
+    )
+    assert not accepted.exists()
+    assert len(tuple((accepted.parent / "attempts").glob("*-rejected.json"))) == 1
 
 
 def test_host_retrieval_receipt_replay_is_rejected(fresh_u1) -> None:
@@ -861,6 +905,11 @@ def test_subagent_candidate_without_admitted_source_cannot_enter_u3() -> None:
         "provider": {
             "provider_id": "test-host",
             "provider_kind": "model",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "test-subagent",
+            "provider_id": "test-host",
             "version": "1.0.0",
         },
         "execution_status": "complete",

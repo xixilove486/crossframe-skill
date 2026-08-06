@@ -106,7 +106,13 @@ def _accept_capability_result(
         "action_sha256": action.action_sha256,
         "result_relative_path": action.document["result_relative_path"],
         "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "provider": dict(result["providers"][0]),
+        "tool": dict(result["tools"][0]),
         "execution_id": "task-2-capability-host",
+        "execution_status": "complete",
+        "attempts": [
+            {"attempt": 1, "status": "success", "error": None},
+        ],
         "completed_at": completed_at,
     }
     receipt["receipt_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
@@ -254,6 +260,7 @@ def test_host_capability_result_cannot_submit_runtime_owned_attestation_fields(
     fresh_run,
 ) -> None:
     foundation = _module("foundation")
+    host_handshake = _module("host_handshake")
     first = foundation.advance_u0(
         fresh_run.layout,
         repo=fresh_run.repo,
@@ -262,17 +269,16 @@ def test_host_capability_result_cannot_submit_runtime_owned_attestation_fields(
     assert first.pending_action is not None
     result = _capability_result()
     result["run_id"] = fresh_run.layout.run_dir.name
-    _accept_capability_result(fresh_run.layout, first.pending_action, result)
-
     with pytest.raises(
-        foundation.FoundationInputError,
+        host_handshake.HostHandshakeError,
         match="runtime-owned|host capability result",
     ):
-        foundation.advance_u0(
+        _accept_capability_result(
             fresh_run.layout,
-            repo=fresh_run.repo,
-            now=fresh_run.now + timedelta(seconds=3),
+            first.pending_action,
+            result,
         )
+    assert host_handshake.load_pending_action(fresh_run.layout) == first.pending_action
 
 
 def test_material_files_are_copied_into_an_anonymous_profile_inventory(
@@ -492,7 +498,21 @@ def _accept_task3_source_read(layout, action, *, batch_ordinal: int) -> int:
         "action_sha256": action.action_sha256,
         "result_relative_path": action.document["result_relative_path"],
         "result_sha256": hashlib.sha256(action.result_path.read_bytes()).hexdigest(),
+        "provider": {
+            "provider_id": "task-3-host",
+            "provider_kind": "runtime",
+            "version": "1.0.0",
+        },
+        "tool": {
+            "tool_id": "task-3-source-reader",
+            "provider_id": "task-3-host",
+            "version": "1.0.0",
+        },
         "execution_id": execution_id,
+        "execution_status": "complete",
+        "attempts": [
+            {"attempt": 1, "status": "success", "error": None},
+        ],
         "completed_at": read_at,
     }
     receipt["receipt_sha256"] = hashlib.sha256(_canonical(receipt)).hexdigest()
