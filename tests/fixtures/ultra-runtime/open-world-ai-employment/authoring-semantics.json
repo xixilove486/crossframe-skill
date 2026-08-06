@@ -9,6 +9,25 @@
     "SOURCE-ASSOCIATION-CHARTER": "SOURCE-AI-TRANSITION-COUNTER",
     "SOURCE-INTERVIEW-ONE": "SOURCE-AI-INSTITUTION-CALIBRATION"
   },
+  "additional_world_unknowns": [
+    {
+      "unknown_id": "UNKNOWN-M09-INDEPENDENT-TARGET-MAPPING",
+      "location_ref": "OMEGA-FIXTURE",
+      "description": "横向迁移所需的独立目标域实例、源目标映射和目标域验证证据尚未登记。"
+    }
+  ],
+  "pending_concept_contracts": {
+    "V82-M09": {
+      "unknown_ids": [
+        "UNKNOWN-M09-INDEPENDENT-TARGET-MAPPING"
+      ],
+      "condition": "只有独立于源域材料的目标域实例与映射被预注册,并由目标域证据验证时,横向迁移才可进入评价。",
+      "required_evidence": [
+        "独立目标域实例及其责任链、J轴差异和禁止映射。",
+        "预注册的源目标映射、差异、断裂及目标域验证证据。"
+      ]
+    }
+  },
   "record_text": {
     "ACTOR-ONE": {"label": "受人工智能影响的劳动者"},
     "CIRCLE-FAMILY": {"label": "家庭与收入保障圈"},

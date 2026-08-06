@@ -36,7 +36,7 @@ _CONCEPT_STATUS = {
     "V82-M06": "applied",
     "V82-M07": "tested-rejected",
     "V82-M08": "applied",
-    "V82-M09": "tested-rejected",
+    "V82-M09": "unknown-pending",
 }
 _ACTION_KINDS = (
     "active",
@@ -608,6 +608,16 @@ class FixtureAuthor:
         _apply_record_text(document, self.semantics["record_text"])
         if name == "world-volume-valid.json":
             _downgrade_observed_evidence_to_reported(document)
+            additional_unknowns = self.semantics.get(
+                "additional_world_unknowns",
+                [],
+            )
+            if not isinstance(additional_unknowns, list) or any(
+                not isinstance(unknown, Mapping)
+                for unknown in additional_unknowns
+            ):
+                raise ValueError("additional world unknowns must be records")
+            document["unknowns"].extend(copy.deepcopy(additional_unknowns))
         return _rehash(self.repo_root, document)
 
     def _write_json(self, layout: object, relative: str, value: object) -> None:
@@ -708,7 +718,23 @@ class FixtureAuthor:
                 condition_branch = None
             else:
                 selected_evidence = [evidence_ids[(index - 1) % len(evidence_ids)]]
-                unknown_ids = ["UNKNOWN-ADAPTATION"] if status == "unknown-pending" else []
+                pending_contracts = self.semantics.get(
+                    "pending_concept_contracts",
+                    {},
+                )
+                pending_contract = (
+                    pending_contracts.get(concept_id)
+                    if isinstance(pending_contracts, Mapping)
+                    else None
+                )
+                unknown_ids = (
+                    [str(value) for value in pending_contract["unknown_ids"]]
+                    if status == "unknown-pending"
+                    and isinstance(pending_contract, Mapping)
+                    else ["UNKNOWN-ADAPTATION"]
+                    if status == "unknown-pending"
+                    else []
+                )
                 selected_transforms = [
                     transform_ids[(index - 1) % len(transform_ids)]
                 ]
@@ -723,15 +749,28 @@ class FixtureAuthor:
                     {
                         "branch_id": branch_id,
                         "condition": (
-                            "只有新增的时序与边界证据区分描述关系和因果转换时，"
-                            "该人工智能就业分支才可升级。"
+                            str(pending_contract["condition"])
+                            if isinstance(pending_contract, Mapping)
+                            else (
+                                "只有新增的时序与边界证据区分描述关系和因果转换时，"
+                                "该人工智能就业分支才可升级。"
+                            )
                         ),
                         "evidence_plan": {
                             "plan_id": f"PLAN-{concept_id}",
-                            "required_evidence": [
-                                "同类岗位、相近采用强度下的时序比较。",
-                                "能区分技术采用、行业周期和制度承接的中断检验。",
-                            ],
+                            "required_evidence": (
+                                [
+                                    str(value)
+                                    for value in pending_contract[
+                                        "required_evidence"
+                                    ]
+                                ]
+                                if isinstance(pending_contract, Mapping)
+                                else [
+                                    "同类岗位、相近采用强度下的时序比较。",
+                                    "能区分技术采用、行业周期和制度承接的中断检验。",
+                                ]
+                            ),
                         },
                     }
                     if branch_id is not None

@@ -18,6 +18,7 @@ from tests.ultra_closed_fixture_support import (
     write_closed_u11_authoring,
 )
 from tests.ultra_fake_host import (
+    FixtureAuthor,
     _assert_raw_phase_journal,
     _assert_retrieval_evidence_attribution_contract,
     _assert_restart_contract,
@@ -191,8 +192,11 @@ def test_closed_fixture_contract_has_the_required_structural_stressors() -> None
     ]
 
 
-def test_open_world_fixture_preserves_v82_m09_lateral_transfer_semantics() -> None:
+def test_open_world_fixture_preserves_v82_m09_lateral_transfer_semantics(
+    tmp_path: Path,
+) -> None:
     frozen = "缺少独立目标域映射,因此横向类比迁移不进入当前判断。"
+    target_mapping_unknown = "UNKNOWN-M09-INDEPENDENT-TARGET-MAPPING"
     registry = json.loads(
         (
             REPO_ROOT
@@ -207,10 +211,67 @@ def test_open_world_fixture_preserves_v82_m09_lateral_transfer_semantics() -> No
         (OPEN_WORLD_FIXTURE_DIR / "semantic-mappings.json").read_text("utf-8")
     )
     article = (OPEN_WORLD_FIXTURE_DIR / "article.md").read_text("utf-8")
+    paths = _module("paths")
+    schemas = _module("schemas")
+    layout = _layout(paths, tmp_path)
+    evidence_path = (
+        layout.artifacts_dir / "U00-U03-evidence/U03-evidence-ledger.json"
+    )
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(
+        REPO_ROOT / "tests/fixtures/ultra-runtime/evidence-ledger-valid.json",
+        evidence_path,
+    )
+    author = FixtureAuthor(REPO_ROOT, OPEN_WORLD_FIXTURE_DIR)
+    author.write(
+        layout,
+        {
+            "action_kind": "authoring",
+            "owner": "model",
+            "phase_id": "U4",
+            "relative_path": "U04-world-volume.json",
+        },
+    )
+    author.write(
+        layout,
+        {
+            "action_kind": "authoring",
+            "owner": "model",
+            "phase_id": "U5",
+            "relative_path": "U05-transformation-ledger.json",
+            "relative_paths": [
+                "U05-transformation-ledger.json",
+                "U05-concept-disposition.json",
+            ],
+        },
+    )
+    world = json.loads(
+        (layout.authoring_dir / "U04-world-volume.json").read_text("utf-8")
+    )
+    disposition_document = json.loads(
+        (layout.authoring_dir / "U05-concept-disposition.json").read_text(
+            "utf-8"
+        )
+    )
+    schemas.validate_instance("ultra-world-volume.schema.json", world)
+    schemas.validate_instance(
+        "ultra-concept-disposition.schema.json",
+        disposition_document,
+    )
     m09 = next(
         concept
         for concept in registry["concepts"]
         if concept["concept_id"] == "V82-M09"
+    )
+    m09_disposition = next(
+        disposition
+        for disposition in disposition_document["dispositions"]
+        if disposition["concept_id"] == "V82-M09"
+    )
+    m09_obligation = next(
+        obligation
+        for obligation in disposition_document["semantic_obligations"]
+        if obligation["concept_id"] == "V82-M09"
     )
 
     assert m09["canonical_zh"] == "横向迁移"
@@ -218,6 +279,29 @@ def test_open_world_fixture_preserves_v82_m09_lateral_transfer_semantics() -> No
     assert semantics["concept_rationales"]["V82-M09"] == frozen
     assert mappings["overrides"]["SEMANTIC-UNIT-V82-M09"] == frozen
     assert article.count(frozen) == 1
+    assert m09_disposition["status"] == "unknown-pending"
+    assert m09_disposition["unknown_ids"] == [target_mapping_unknown]
+    assert m09_disposition["condition_branch"] == {
+        "branch_id": "BRANCH-V82-M09",
+        "condition": (
+            "只有独立于源域材料的目标域实例与映射被预注册,"
+            "并由目标域证据验证时,横向迁移才可进入评价。"
+        ),
+        "evidence_plan": {
+            "plan_id": "PLAN-V82-M09",
+            "required_evidence": [
+                "独立目标域实例及其责任链、J轴差异和禁止映射。",
+                "预注册的源目标映射、差异、断裂及目标域验证证据。",
+            ],
+        },
+    }
+    assert m09_obligation["status"] == "unknown-pending"
+    assert m09_obligation["unknown_ids"] == [target_mapping_unknown]
+    assert m09_obligation["condition_branch_id"] == "BRANCH-V82-M09"
+    assert any(
+        unknown["unknown_id"] == target_mapping_unknown
+        for unknown in world["unknowns"]
+    )
 
 
 def test_fake_host_restart_contract_requires_exact_seams_and_action_kinds() -> None:
