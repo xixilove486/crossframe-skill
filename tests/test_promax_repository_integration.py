@@ -35,7 +35,6 @@ EXPECTED_CROSSFRAME_SKILLS = {
     "crossframe-review",
     "crossframe-suite",
     "crossframe-teach",
-    "crossframe-ultra",
 }
 ROUTING_BEGIN = "<!-- PROMAX-ROUTING-BEGIN -->"
 ROUTING_END = "<!-- PROMAX-ROUTING-END -->"
@@ -376,7 +375,7 @@ class ProMaxPreservationTests(unittest.TestCase):
 
 
 class ProMaxRepositoryTargetTests(unittest.TestCase):
-    def test_crossframe_skill_inventory_matches_frozen_seventeen_entries(self) -> None:
+    def test_crossframe_skill_inventory_matches_frozen_sixteen_entries(self) -> None:
         skills = {
             path.name
             for path in (ROOT / "skills").iterdir()

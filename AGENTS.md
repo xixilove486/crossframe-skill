@@ -15,7 +15,6 @@
 - `skills/crossframe-inquiry/`：已完成 CrossFrame 流程后的结构追问层。
 - `skills/crossframe-max/`：显式点名的最大化结构推演入口，把一件事当作局部世界展开世界观、运行规律、问题结构、处理路径和演化分支；不走 suite 的 `2+1` 选择器。
 - `skills/crossframe-promax/`：只接受精确名称的 v8 独立推演入口，内置生成、反证、校验和修复闭环。
-- `skills/crossframe-ultra/`：只接受精确名称的固定 v8.2 参考运行时。
 - `skills/crossframe-public/`：公共议题、平台申诉、制度评论和合规材料专项。
 - `skills/crossframe-org/`：团队、项目、组织修复专项。
 - `skills/crossframe-teach/`：CrossFrame 概念教学解释专项。
@@ -46,10 +45,6 @@
 `crossframe-max` 是独立模式：只有用户明确点名 `crossframe-max`、`/crossframe-max`、`$crossframe-max`，或明确要求最大算力、全尺度穷尽推演、不设字数限制完整解释时才读取。它不走 `crossframe-suite` 的 `2+1` 模式/角色选择器，也不走普通文章类型选择器。
 
 CrossFrame ProMax 是 v8-only 的 exact-name only 独立 skill：仅在用户精确点名 `crossframe-promax`、`CrossFrame ProMax`、`$crossframe-promax` 或 `/crossframe-promax` 时读取 `skills/crossframe-promax/SKILL.md`。Max 与 ProMax 同时出现时 ProMax 优先；泛化最大化请求仍由 Max；suite 不得自动升级；ProMax 使用独立审计，不串联 review，也不得降级回 Max。
-
-<!-- CROSSFRAME-ULTRA-ROUTING-BEGIN -->
-CrossFrame Ultra Skill 是固定的 v8.2 参考运行时，仅在用户精确点名 `crossframe-ultra`、`CrossFrame Ultra`、`$crossframe-ultra` 或 `/crossframe-ultra` 时读取 `skills/crossframe-ultra/SKILL.md`。单独精确点名 Ultra 时直接进入 Ultra；泛化的最大/深度/完整请求仍由 Max；Max 与 ProMax 同时出现仍由 ProMax 优先；Ultra 与其它 runtime 同时点名且显式要求比较时分别独立运行；同时点名但未要求比较时暂停确认 runtime；suite 未精确点名 Ultra 时绝不进入 Ultra；Ultra 失败不得回退。
-<!-- CROSSFRAME-ULTRA-ROUTING-END -->
 
 显式调用后，按任务内容路由到以下能力：
 
@@ -100,7 +95,6 @@ CrossFrame Essay 仍然必须读取 `skills/crossframe/SKILL.md` 与 `skills/cro
 - 完成态后继续追问、反证、补证、迁移应用或行动边界确认：`skills/crossframe-inquiry/SKILL.md`
 - 最大化结构推演、局部世界建模、全尺度解释、演化路径穷尽：`skills/crossframe-max/SKILL.md`
 - 精确点名的 v8 ProMax 穷尽推演、全概念命中、自反例攻击：`skills/crossframe-promax/SKILL.md`
-- 精确点名的固定 v8.2 参考运行时：`skills/crossframe-ultra/SKILL.md`
 - 公共议题、平台申诉、制度评论、机构合规材料、公共承诺兑现：`skills/crossframe-public/SKILL.md`
 - 团队、项目、组织修复、复盘改造、反馈写回、低风险试点：`skills/crossframe-org/SKILL.md`
 - CrossFrame 概念教学、误读纠偏、现实信号、练习题：`skills/crossframe-teach/SKILL.md`
